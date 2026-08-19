@@ -1,0 +1,7 @@
+node_modules/
+engine/
+dist/
+.vercel/
+.env
+.env.*
+.DS_Store
