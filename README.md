@@ -6,11 +6,14 @@ The league harness is the authority for rules, legality, schedules, standings, a
 
 ## Public season data
 
-Place a `season-bundle-v1` artifact at:
+Place a `season-bundle-v2` artifact and its matching schema at:
 
 ```text
 public/season-bundle.json
+public/season-bundle-v2.schema.json
 ```
+
+The v2 bundle includes released weekly-review and post-transaction reconciliation evidence. The spectator validates the artifact against the schema before rendering it.
 
 Pokémon sprites are optional presentation assets at:
 

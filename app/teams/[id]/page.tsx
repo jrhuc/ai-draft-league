@@ -5,6 +5,7 @@ import { SetCard } from "@/components/set-card";
 import { Sprite } from "@/components/sprite";
 import { TeamTag, teamStyle } from "@/components/team";
 import { franchise, franchiseName, matchesFor, monName, season } from "@/lib/load";
+import { weeklyReviewsForFranchise } from "@/lib/weekly-reviews";
 
 export function generateStaticParams() {
   return season.franchises.map((team) => ({ id: team.id }));
@@ -23,6 +24,7 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
   const standing = season.standings.find((row) => row.franchiseId === team.id);
   const rows = matchesFor(team.id);
   const review = season.reviews.find((entry) => entry.franchiseId === team.id);
+  const weeklyReviews = weeklyReviewsForFranchise(season.weeklyReviews, team.id);
   return (
     <>
       <section className="hero team-hero" style={teamStyle(team.id)}>
@@ -106,6 +108,33 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
           );
         })}
       </section>
+      {weeklyReviews.length > 0 ? (
+        <section className="section">
+          <div className="section-head">
+            <h2>Weekly reviews</h2>
+            <p>Released memory reviews, including reconciliation after transaction windows.</p>
+          </div>
+          <ol className="weekly-reviews">
+            {weeklyReviews.map((entry) => (
+              <li key={`${entry.week}-${entry.stage}-${entry.rosterVersion}`}>
+                <article className="card weekly-review">
+                  <header>
+                    <div>
+                      <span className="label">Week {entry.week} · Roster version {entry.rosterVersion}</span>
+                      <h3>{entry.stageLabel}</h3>
+                    </div>
+                    <div className="review-meta">
+                      <span className="chip">{entry.memoryLabel}</span>
+                      {entry.fallbackLabel ? <span className="chip chip-warn">{entry.fallbackLabel}</span> : null}
+                    </div>
+                  </header>
+                  <p className="prose">{entry.reasoningText}</p>
+                </article>
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
 
       {review ? (
         <section className="section">

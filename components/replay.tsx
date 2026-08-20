@@ -76,7 +76,10 @@ function narrate(text: string, teams: [Team, Team]): string {
   return text.replace(/\bP([12])\b/g, (_, n: string) => teams[Number(n) - 1]!.name).replace(/\b([A-Z][a-z]+(?:-[A-Za-z]+)*)-Mega(?:-([XY]))?\b/g, (_, base: string, form?: string) => `Mega ${base}${form ? ` ${form}` : ""}`);
 }
 
-function DecisionRow({ decision, team }: { decision: Decision; team: Team }) {
+function DecisionRow({ decision, team, position }: { decision: Decision; team: Team; position: number }) {
+  const choice = decision.action && decision.phase ? `${decision.phase}: ${decision.action}` : decision.action || decision.phase;
+  const context = decision.turn === 0 ? "team preview" : `turn ${decision.turn}`;
+  const rationaleLabel = `${team.name} rationale for ${choice}, ${context}, decision ${position + 1}`;
   return (
     <div className="dec" style={{ ["--tone" as string]: team.tone } as React.CSSProperties}>
       <span className="who">{team.name}</span>
@@ -89,7 +92,7 @@ function DecisionRow({ decision, team }: { decision: Decision; team: Team }) {
       </span>
       {decision.rationale ? (
         <details>
-          <summary>why</summary>
+          <summary aria-label={rationaleLabel}>why</summary>
           <p>{decision.rationale}</p>
         </details>
       ) : null}
@@ -118,10 +121,10 @@ function Game({ game, teams, sprite }: { game: ReplayGame; teams: [Team, Team]; 
   const shown = game.events.slice(0, cursor);
   const currentTurn = shown.length ? shown[shown.length - 1]!.turn : 0;
   const decisionsByTurn = useMemo(() => {
-    const map = new Map<number, Decision[]>();
-    for (const decision of game.decisions) {
+    const map = new Map<number, Array<{ decision: Decision; position: number }>>();
+    for (const [position, decision] of game.decisions.entries()) {
       const list = map.get(decision.turn) ?? [];
-      list.push(decision);
+      list.push({ decision, position });
       map.set(decision.turn, list);
     }
     return map;
@@ -189,8 +192,8 @@ function Game({ game, teams, sprite }: { game: ReplayGame; teams: [Team, Team]; 
         {turns.map(({ turn, events }) => (
           <section key={turn} className="turn">
             <div className="turn-head">{turn === 0 ? "Team preview" : `Turn ${turn}`}</div>
-            {(decisionsByTurn.get(turn) ?? []).map((decision, i) => (
-              <DecisionRow key={`${turn}-${decision.franchiseId}-${i}`} decision={decision} team={teamFor(decision.franchiseId)} />
+            {(decisionsByTurn.get(turn) ?? []).map(({ decision, position }) => (
+              <DecisionRow key={`${turn}-${decision.franchiseId}-${position}`} decision={decision} team={teamFor(decision.franchiseId)} position={position} />
             ))}
             <div className="log">
               {events

@@ -146,6 +146,16 @@ export type Review = {
   fallback: boolean;
 };
 
+export type WeeklyReview = {
+  week: number;
+  stage: "week" | "transactions";
+  franchiseId: string;
+  rosterVersion: number;
+  reasoning: string;
+  notebookChanged: boolean;
+  fallback: boolean;
+};
+
 export type SeasonBundle = {
   protocolVersion: "season-bundle-v2";
   generatedAt: string;
@@ -170,6 +180,7 @@ export type SeasonBundle = {
   standings: Standing[];
   weeks: Week[];
   transactions: TransactionWindow[];
+  weeklyReviews: WeeklyReview[];
   playoffs: { rounds: BracketSlot[][] } | null;
   replays: { [seriesId: string]: Replay };
   reviews: Review[];

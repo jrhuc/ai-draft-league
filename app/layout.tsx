@@ -5,6 +5,11 @@ import { NavLink } from "@/components/nav-link";
 import { formatLabel } from "@/lib/format";
 import { season } from "@/lib/load";
 import "./globals.css";
+import "./styles/draft.css";
+import "./styles/teams.css";
+import "./styles/matches.css";
+import "./styles/transactions.css";
+import "./styles/playoffs.css";
 
 const sans = Geist({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
 const mono = Geist_Mono({ subsets: ["latin"], variable: "--font-mono", display: "swap" });
