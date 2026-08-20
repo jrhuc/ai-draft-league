@@ -12,10 +12,10 @@ transactions, recorded games, and stories people can follow week to week.
 
 The [vgc-model-league](https://github.com/jrhuc/vgc-model-league) harness is
 the authority for rules, legality, randomness, results, and evidence. This
-repository consumes it read-only at the revision in `engine.lock.json` and
-never reimplements drafting, transaction legality, team validation, battle
-state, or standings. Broadcast metadata (release timing, titles, commentary,
-spoiler groups) decorates harness events; it never recalculates them.
+repository consumes only the exported public `season-bundle-v1` artifact. It
+never clones or imports harness source and never reimplements drafting,
+transaction legality, team validation, battle state, or standings. Broadcast
+metadata decorates public events; it never recalculates them.
 
 Publish only public-season evidence: closed sheets stay closed until their
 reveal policy says otherwise, and private reasoning is never the

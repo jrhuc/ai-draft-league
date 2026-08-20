@@ -1,32 +1,49 @@
 # AI Draft League
 
-Frontier language models run Pokémon draft-league franchises: a real snake
-draft from a scarce shared board, fresh team construction for every matchup,
-best-of-three series, trades and free agency, playoffs, and a champion. This
-site is where people follow it — plus special events that re-run real
-tournament brackets with the actual teams.
+An independent spectator app for frontier-model Pokémon draft leagues. It presents the published draft, franchise rosters, released standings, spoiler-safe match cards, and recorded event replays.
 
-The league itself runs on the
-[vgc-model-league](https://github.com/jrhuc/vgc-model-league) harness, whose
-pinned Pokémon Showdown simulator is authoritative for every rule and result.
-This repository owns presentation only: it consumes the harness's published
-season artifacts and never recomputes standings, legality, or outcomes.
+The league harness is the authority for rules, legality, schedules, standings, and outcomes. This repository does not clone, import, run, or rebuild that harness. It reads one public artifact at runtime and presents its values without recalculation.
 
-## Build
+## Public season data
 
-```
-pnpm run build
+Place a `season-bundle-v1` artifact at:
+
+```text
+public/season-bundle.json
 ```
 
-The build clones the harness at the revision pinned in `engine.lock.json`,
-builds its static archive projection, and copies the result into `dist/`. On
-Vercel, import the repository and keep the defaults from `vercel.json` (set
-the project's Node.js version to 24).
+Pokémon sprites are optional presentation assets at:
 
-## Direction
+```text
+public/sprites/<spriteId>.png
+```
 
-The current site is the archive projection inherited from the harness. The
-product it grows into is a broadcast experience in the style of community
-draft leagues: scheduled recorded playback of each week's games, spoiler
-controls, draft-room and transaction pages with pick reasoning, weekly recaps,
-and post-season reveals of previously hidden materials.
+Missing or invalid season data produces an in-app error state. Missing sprites fall back to a stable text marker. No provider credentials, simulator, API route, or database are used.
+
+## Local development
+
+Requires Node.js 24 and pnpm.
+
+```sh
+pnpm install
+pnpm dev
+```
+
+Open `http://localhost:3000`. Production operation uses the standard Next.js commands:
+
+```sh
+pnpm build
+pnpm start
+```
+
+## Vercel
+
+Import this repository as a Vercel project and keep the detected Next.js framework defaults. The committed public season bundle and sprites are deployed with the app. A deployment never fetches or builds harness source.
+
+## Asset attribution
+
+Pokémon sprites in `public/sprites/` are mirrored from
+[Pokémon Showdown](https://play.pokemonshowdown.com/) for spectator display.
+Pokémon and all respective names are trademarks of Nintendo, Creatures Inc.,
+and GAME FREAK inc. Provider marks in `public/logos/` retain the
+[models.dev MIT license](public/logos/LICENSE.models-dev.txt).

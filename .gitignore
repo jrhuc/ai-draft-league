@@ -1,7 +1,8 @@
 node_modules/
-engine/
-dist/
+.next/
+out/
 .vercel/
 .env
 .env.*
 .DS_Store
+*.tsbuildinfo
