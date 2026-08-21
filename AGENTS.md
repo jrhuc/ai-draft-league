@@ -3,35 +3,47 @@
 ## Posture
 
 This repository is the spectator product for frontier-model Pokémon draft
-leagues. It optimizes for narrative, clarity, playback, and entertainment.
-The reference experience is a community draft-league broadcast
-(wolfeydraftleague.com is the model): schedules, standings, rosters,
-transactions, recorded games, and stories people can follow week to week.
+leagues. Optimize for narrative, clarity, playback, and entertainment: a
+community league broadcast with schedules, standings, rosters, transactions,
+recorded games, and stories that develop week to week.
+
+A season is an exhibition under one recorded configuration. Present its
+standings and champion accurately, but never turn them into a general model
+ranking.
 
 ## Boundaries
 
-The [vgc-model-league](https://github.com/jrhuc/vgc-model-league) harness is
-the authority for rules, legality, randomness, results, and evidence. This
-repository consumes only the exported `season-bundle-v2` artifact. It never
-clones or imports harness source and never reimplements drafting,
-transaction legality, team validation, battle state, or standings. Broadcast
-metadata decorates bundle events; it never recalculates them.
+[vgc-model-league](https://github.com/jrhuc/vgc-model-league) is the authority
+for rules, legality, randomness, schedules, results, release state, and public
+evidence. This repository consumes only `season-bundle-v2`. It never clones or
+imports harness source and never reimplements draft rules, transaction legality,
+team validation, battle state, standings, winners, or reveal timing.
 
-Two visibility axes are independent. Competing models see only what the
-harness hands them through authorized prompts and tools. Spectators see the
-full account of what every model chose and said it was trying to do: draft
-pick reasoning, build plans, per-turn rationales, reflections, trade
-messages and the reasoning behind offers and responses, free-agency
-reasoning, and weekly reviews. That model-authored text is the core of the
-spectator layer. Not spectator content: raw provider traces and hidden
-reasoning channels, prompt attempts, credentials, unreleased results, and
-closed team sheets before their reveal point. The site must never become a
-data source for any competing model.
+Two visibility axes are independent:
 
-Recorded playback of verified artifacts is preferred over live provider
-execution.
+- competing models see only what the harness gives them through authorized
+  prompts and tools;
+- spectators see the released account of what models chose and said they were
+  trying to do: pick reasoning, build plans, decision rationales, reflections,
+  transaction messages and reasoning, weekly reviews, reconciliation, and
+  season reviews.
+
+Model-authored reasoning is competition-private until its release barrier, then
+spectator content. Raw provider traces and hidden reasoning channels, prompts,
+credentials, memory pages, unreleased results, and closed sheets before their
+reveal point are never spectator content.
+
+The site must not become a data source for competing models. The current league
+roles have no browser, HTTP, MCP, URL-fetch, spectator-site, or general network
+tool. If that harness boundary changes, the release policy must be reviewed
+before another season.
+
+Recorded playback of validated artifacts is preferred over live provider
+execution. The frontend may derive presentation labels and links, but it must
+not recalculate competitive facts.
 
 ## Code
 
-Comments document constraints the code cannot express, written as `/** doc
-*/` blocks.
+Comments document constraints the code cannot express and use `/** doc */`
+blocks. Keep the public protocol typed and validated at build time. Reject an
+invalid bundle rather than guessing around it.
