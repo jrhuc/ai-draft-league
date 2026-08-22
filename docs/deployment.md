@@ -49,7 +49,8 @@ round also releases season reviews and opens closed team sheets.
 
 The bundle carries the released public evidence: stated rationales for picks,
 builds, decisions, offers and responses; structured battle events;
-reflections; transactions; the bracket; and provenance. It never carries
+reflections; transactions; weekly review and reconciliation reasoning; the
+bracket; and provenance. It never carries
 notebooks, traces, prompts, provider responses, credentials, or future results.
 
 The exporter validates the projection once before writing it. The spectator

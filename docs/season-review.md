@@ -53,7 +53,7 @@ after the concurrent games complete.
 ## Prompt contents
 
 The review uses the same voice and dex-tool access as the draft and transaction
-window prompts. It has a separate policy object and hash. Prompts identify seats
+window prompts. It has its own prompt policy. Prompts identify seats
 by coach and model identity. They do not include spectator-facing franchise
 names.
 

@@ -268,7 +268,8 @@ The command fails if a named released week is incomplete or lacks verified
 replay evidence. `season-bundle.json` contains the released public evidence:
 draft picks and stated rationales, the board, rosters and acquisitions, builds
 and plans, standings, results, canonical game summaries, structured battle
-events, submitted decisions, reflections, transactions, the bracket, and
+events, submitted decisions, reflections, transactions, weekly review and
+reconciliation reasoning with memory sizes, the bracket, and
 season reviews at season end. Notebooks, traces, prompts, provider responses,
 credentials, and future results are absent.
 

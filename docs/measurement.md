@@ -24,7 +24,7 @@ Describe observable behavior: a choice was submitted, a fallback was used, a Pok
 
 Do not infer belief, honesty, deception, enjoyment, understanding, or exploitability from model-authored text. Do not turn one season's standings into a model ranking. Pokémon variance, draft order, rosters, opponents, schedules, provider conditions, and small samples remain part of every result.
 
-When comparing runs, report the models and seating, seed, board and format, pinned Showdown revision, timer and sheet policy, schedule, and released evidence. Do not use internal protocol numbers, scaffold hashes, provider retry counts, or helper labels as outcomes.
+When comparing runs, report the models and seating, seed, board and format, pinned Showdown revision, timer and sheet policy, schedule, and released evidence. Do not use provider retry counts or helper labels as outcomes.
 
 ## Visibility
 
