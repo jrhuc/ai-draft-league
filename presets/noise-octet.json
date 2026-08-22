@@ -1,0 +1,135 @@
+{
+  "id": "noise-octet",
+  "board": "regmb-202607",
+  "description": "Eight original rosters for a four- or eight-coach league: sound controls, functional-but-flawed teams, and deliberately incoherent ones. The flaw field is tester-facing; coaches never see it.",
+  "teams": [
+    {
+      "name": "Harbour Lights",
+      "flaw": "none: a sound rain roster with three megas; a coach with nothing to fix should usually stand pat",
+      "roster": [
+        "basculegion",
+        "pelipper",
+        "archaludon",
+        "kangaskhan-mega",
+        "scizor-mega",
+        "raichu-alola",
+        "sharpedo",
+        "pidgeot-mega",
+        "castform",
+        "pikachu"
+      ]
+    },
+    {
+      "name": "Clockwork Gap",
+      "flaw": "no mega: a functional balance roster that never spent its mega slot",
+      "roster": [
+        "sinistcha",
+        "kommo-o",
+        "sableye",
+        "rotom-wash",
+        "corviknight",
+        "drampa",
+        "weavile",
+        "toxapex",
+        "toxicroak",
+        "beartic"
+      ]
+    },
+    {
+      "name": "Four Seasons Buffet",
+      "flaw": "no synergy: sun, sand, snow and rain setters, one mega, no abuser and a one-point filler",
+      "roster": [
+        "torkoal",
+        "tyranitar",
+        "abomasnow",
+        "hippowdon",
+        "ninetales",
+        "vanilluxe",
+        "aurorus",
+        "politoed",
+        "gyarados-mega",
+        "glalie"
+      ]
+    },
+    {
+      "name": "Bargain Bin",
+      "flaw": "unspent budget: 21 points idle behind three one-point fillers",
+      "roster": [
+        "charizard-mega-y",
+        "garchomp",
+        "dragapult",
+        "sableye-mega",
+        "empoleon",
+        "heliolisk",
+        "victreebel",
+        "slurpuff",
+        "chimecho",
+        "watchog"
+      ]
+    },
+    {
+      "name": "Stone Hoarders",
+      "flaw": "too many megas: five mega entries when only one can evolve per game, and no Fake Out, redirection, or speed control",
+      "roster": [
+        "lucario-mega",
+        "gardevoir-mega",
+        "absol-mega",
+        "pinsir-mega",
+        "heracross-mega",
+        "kingambit",
+        "hydreigon",
+        "volcarona",
+        "greninja",
+        "beedrill"
+      ]
+    },
+    {
+      "name": "Steel Curtain",
+      "flaw": "type stacking: functional, but every entry is a Steel type sharing Fire and Ground weaknesses",
+      "roster": [
+        "excadrill-mega",
+        "aegislash",
+        "metagross",
+        "steelix-mega",
+        "gholdengo",
+        "klefki",
+        "tinkaton",
+        "goodra-hisui",
+        "skarmory",
+        "mawile-mega"
+      ]
+    },
+    {
+      "name": "Slow Lane",
+      "flaw": "none: a coherent Trick Room roster with three megas",
+      "roster": [
+        "hatterene",
+        "slowbro-mega",
+        "farigiraf",
+        "mudsdale",
+        "rhyperior",
+        "crabominable-mega",
+        "reuniclus",
+        "camerupt-mega",
+        "snorlax",
+        "armarouge"
+      ]
+    },
+    {
+      "name": "Fairy Ring",
+      "flaw": "mono-type: nine Fairy types with one mega, helpless into Steel",
+      "roster": [
+        "floette-mega",
+        "primarina",
+        "clefable",
+        "azumarill",
+        "mimikyu",
+        "florges",
+        "aromatisse",
+        "alcremie",
+        "dedenne",
+        "altaria-mega"
+      ]
+    }
+  ]
+}
