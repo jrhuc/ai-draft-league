@@ -16,7 +16,7 @@ export default function TransactionsPage() {
       </section>
       {windows.length === 0 ? (
         <p className="card card-pad hint">
-          {season.season.status === "complete" ? "This season had no trade window." : "The trade window opens after week " + (season.season.totalWeeks > 3 ? 3 : season.season.totalWeeks) + "."}
+          {season.season.status === "complete" ? "This season had no transaction window." : "No transaction window has been released yet."}
         </p>
       ) : null}
       {windows.map((window) => (
@@ -71,6 +71,12 @@ export default function TransactionsPage() {
                 <div className="line">
                   <TeamTag id={move.franchiseId} />
                   {move.swaps.length === 0 ? <span className="arrow">stood pat</span> : null}
+                  {move.swapsRemaining !== null ? (
+                    <span className="chip">
+                      {move.swapsRemaining}
+                      {season.season.swapsAllowed !== null ? ` of ${season.season.swapsAllowed}` : ""} swaps left
+                    </span>
+                  ) : null}
                   {move.fallback ? <span className="chip chip-warn">AUTO</span> : null}
                 </div>
                 {move.swaps.map((swap) => (

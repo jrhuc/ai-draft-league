@@ -27,16 +27,13 @@ have no browser, HTTP, MCP, URL-fetch, or spectator-site tool.
 
 ## Public season data
 
-Place a `season-bundle-v2` artifact and its matching schema at:
+Place the published season artifact at:
 
 ```text
 public/season-bundle.json
-public/season-bundle-v2.schema.json
 ```
 
-The bundle includes released weekly-review and post-transaction reconciliation
-evidence. The spectator validates it against the schema before rendering.
-Missing or invalid data produces an in-app error state.
+The bundle includes released weekly-review and post-transaction reconciliation evidence. The spectator statically imports and trusts it as its hand-written `SeasonBundle`. Changes to the bundle shape must be coordinated between the producer and consumer.
 
 Pokémon sprites are optional presentation assets at:
 
@@ -44,8 +41,7 @@ Pokémon sprites are optional presentation assets at:
 public/sprites/<spriteId>.png
 ```
 
-Missing sprites fall back to a stable text marker. The site uses no provider
-credentials, simulator, API route, or database.
+The committed bundle is required at build time. Missing sprites fall back to a stable text marker. No provider credentials, simulator, API route, runtime validator, or database are used.
 
 ## Local development
 

@@ -1,29 +1,7 @@
-import Ajv2020 from "ajv/dist/2020";
 import bundleJson from "@/public/season-bundle.json";
-import schemaJson from "@/public/season-bundle-v2.schema.json";
-import { assertSeasonBundleSchemaRoot } from "@/lib/protocol";
 import type { Franchise, Match, SeasonBundle, Week } from "@/lib/season";
 
-assertSeasonBundleSchemaRoot(schemaJson);
-
-const check = new Ajv2020({ strict: false, validateFormats: false, allErrors: true }).compile(schemaJson as object);
-
-function isSeasonBundle(value: unknown): value is SeasonBundle {
-  return check(value);
-}
-
-function validate(value: unknown): SeasonBundle {
-  if (!isSeasonBundle(value)) {
-    const detail = (check.errors ?? [])
-      .slice(0, 5)
-      .map((error) => `${error.instancePath || "/"} ${error.message ?? ""}`)
-      .join("; ");
-    throw new Error(`public/season-bundle.json does not match season-bundle-v2: ${detail}`);
-  }
-  return value;
-}
-
-export const season: SeasonBundle = validate(bundleJson);
+export const season: SeasonBundle = bundleJson as unknown as SeasonBundle;
 
 const franchiseMap = new Map(season.franchises.map((franchise) => [franchise.id, franchise]));
 

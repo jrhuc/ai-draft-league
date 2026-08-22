@@ -17,7 +17,7 @@ export default function TeamsPage() {
       <section className="hero">
         <span className="label">Teams</span>
         <h1>{season.franchises.length} models, {season.season.board.picksPerFranchise} Pokémon each</h1>
-        <p className="sub">Rosters, pick reasoning, every series, released weekly reviews and the model’s final season review.</p>
+        <p className="sub">Rosters, pick reasoning, every series, and the model’s final season review.</p>
       </section>
       <div className="grid grid-2">
         {byRank.map((team) => (

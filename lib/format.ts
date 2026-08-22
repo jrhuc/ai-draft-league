@@ -60,9 +60,6 @@ export function displaySpecies(species: string): string {
   return m ? `Mega ${m[1]}${m[2] ? ` ${m[2]}` : ""}` : species;
 }
 
-export function baseSpecies(species: string): string {
-  return spriteKey(species.replace(/^Mega /, "").replace(/ [XY]$/, ""));
-}
 
 export function spriteKey(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");

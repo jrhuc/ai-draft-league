@@ -3,9 +3,9 @@ import { Model } from "@/components/mark";
 import { ReplayViewer } from "@/components/replay";
 import { SetCard } from "@/components/set-card";
 import { TeamTag, teamStyle } from "@/components/team";
-import { baseSpecies, spriteKey, tone } from "@/lib/format";
+import { spriteKey, tone } from "@/lib/format";
 import { franchise, franchiseIndex, matchBySeries, monName, releasedSeriesIds, season } from "@/lib/load";
-import type { Match, Replay, ReplayGame } from "@/lib/season";
+import type { Match } from "@/lib/season";
 
 export function generateStaticParams() {
   return releasedSeriesIds().map((seriesId) => ({ seriesId }));
@@ -19,20 +19,9 @@ export async function generateMetadata({ params }: { params: Promise<{ seriesId:
   return { title: `${franchise(a).name} vs ${franchise(b).name} · ${row.label}` };
 }
 
-function sameSpecies(a: string, b: string): boolean {
-  return a === b || a.startsWith(b) || b.startsWith(a);
-}
 
-function broughtIn(game: ReplayGame, side: 0 | 1, franchiseId: string, key: string): boolean {
-  const preview = game.events.filter((event) => event.kind === "preview" && event.actor?.side === side).map((event) => baseSpecies(event.species ?? ""));
-  const order = game.decisions.find((decision) => decision.franchiseId === franchiseId && decision.phase === "team_preview")?.action.match(/^team\s+(\d+)$/);
-  if (order && preview.length > 0) return [...order[1]!].some((digit) => sameSpecies(preview[Number(digit) - 1] ?? "", key));
-  return game.events.some((event) => event.kind === "switch" && event.actor?.side === side && sameSpecies(baseSpecies(event.species ?? ""), key));
-}
-
-function brought(replay: Replay, side: 0 | 1, species: string): number[] {
-  const key = baseSpecies(species);
-  return replay.games.filter((game) => broughtIn(game, side, replay.franchises[side], key)).map((game) => game.number);
+function fieldedGames(match: Match, side: 0 | 1, draftId: string): number[] {
+  return match.games.filter((game) => game.brought[side].includes(draftId)).map((game) => game.number);
 }
 
 function spriteMap(match: Match): Array<[string, string]> {
@@ -99,9 +88,11 @@ export default async function MatchPage({ params }: { params: Promise<{ seriesId
               </details>
               {build.sets ? (
                 <div className="grid grid-2">
-                  {build.sets.map((set) => (
-                    <SetCard key={set.species} set={set} games={brought(replay, side as 0 | 1, set.species)} />
-                  ))}
+                  {build.sets.map((set, index) => {
+                    const draftId = build.prepared[index];
+                    if (!draftId) throw new Error(`build ${build.franchiseId} has a set without a draft pick`);
+                    return <SetCard key={draftId} set={set} games={fieldedGames(match, side as 0 | 1, draftId)} />;
+                  })}
                 </div>
               ) : (
                 <p className="closed-note">Registered: {build.prepared.map(monName).join(", ")}. Full sets are published when the season ends.</p>
@@ -110,6 +101,33 @@ export default async function MatchPage({ params }: { params: Promise<{ seriesId
           ))}
         </div>
       </section>
+
+      {match.games.some((game) => game.brought[0].length || game.brought[1].length) ? (
+        <section className="section">
+          <div className="section-head">
+            <h2>Game by game</h2>
+            <p>What each side actually sent out, read from the battle log.</p>
+          </div>
+          <div className="two-col">
+            {([0, 1] as const).map((side) => (
+              <div key={side} className="card card-pad" style={teamStyle(match.franchises[side])}>
+                <TeamTag id={match.franchises[side]} />
+                <ul className="game-usage">
+                  {match.games.map((game) => (
+                    <li key={game.number}>
+                      <span className="label">
+                        G{game.number} · {game.winnerId === null ? "no winner" : game.winnerId === match.franchises[side] ? "won" : "lost"} · {game.turns}t
+                      </span>
+                      <span>{game.brought[side].length ? game.brought[side].map(monName).join(", ") : "Nothing recorded"}</span>
+                      {game.megaEvolved[side] ? <span className="chip">{monName(game.megaEvolved[side])}</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="section">
         <div className="section-head">

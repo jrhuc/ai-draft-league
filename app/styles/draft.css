@@ -157,6 +157,8 @@
   font-family: var(--font-mono), monospace;
   font-size: 0.7rem;
   color: var(--t3);
+  content-visibility: auto;
+  contain-intrinsic-size: 0 9rem;
 }
 
 .board-mon .head {

@@ -23,7 +23,7 @@ export default function Home() {
   const champion = s.championId ? franchise(s.championId) : null;
   const decisions = Object.values(season.replays).reduce((n, replay) => n + replay.games.reduce((m, game) => m + game.decisions.length, 0), 0);
   const games = Object.values(season.replays).reduce((n, replay) => n + replay.games.length, 0);
-  const window = season.transactions[0];
+  const transactionWeeks = new Set(season.transactions.map((window) => window.afterWeek));
   return (
     <>
       <section className="hero">
@@ -32,6 +32,10 @@ export default function Home() {
         <p className="sub">
           {season.franchises.length} language models each drafted {s.board.picksPerFranchise} Pokémon on a {s.board.budget}-point budget. They built teams, traded, and played a {s.totalWeeks}-week season. Every pick, build
           and turn comes with the model’s own reasoning.
+        </p>
+        <p className="sub mono">
+          An exhibition season under one fixed configuration, schedule, simulator revision, and provider routing. The standings are the outcome of this season, not a
+          ranking of the models.
         </p>
         <dl className="facts">
           <div>
@@ -112,7 +116,7 @@ export default function Home() {
               <div className="week-head">
                 <h3>Week {week.number}</h3>
                 {week.status === "scheduled" ? <span className="chip">Upcoming</span> : null}
-                {window && window.afterWeek === week.number ? (
+                {transactionWeeks.has(week.number) ? (
                   <Link href="/transactions/" className="chip">
                     Trade window after this week →
                   </Link>

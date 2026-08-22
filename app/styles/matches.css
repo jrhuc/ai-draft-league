@@ -9,19 +9,6 @@
   border-bottom: 1px solid var(--line);
 }
 
-html {
-  scroll-padding-top: 4rem;
-}
-
-button,
-a {
-  touch-action: manipulation;
-}
-
-.board-mon {
-  content-visibility: auto;
-  contain-intrinsic-size: 0 9rem;
-}
 
 .match-hero > .label {
   grid-column: 1 / -1;
@@ -92,7 +79,7 @@ a {
   margin-bottom: -1px;
 }
 
-.game-tabs button[aria-selected="true"] {
+.game-tabs button[aria-pressed="true"] {
   color: var(--t1);
   border-bottom-color: var(--t1);
 }
@@ -381,3 +368,21 @@ a {
   color: var(--t3);
 }
 
+
+.game-usage {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.game-usage li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: baseline;
+  font-size: 0.9rem;
+}
+.game-usage .label {
+  min-width: 9ch;
+}

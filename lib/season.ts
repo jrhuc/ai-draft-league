@@ -58,7 +58,14 @@ export type Build = {
   attempts: number;
 };
 
-export type GameSummary = { number: number; winnerId: string | null; turns: number };
+export type GameSummary = {
+  number: number;
+  winnerId: string | null;
+  turns: number;
+  brought: [string[], string[]];
+  megaEvolved: [string | null, string | null];
+  faints: [{ [draftId: string]: number }, { [draftId: string]: number }];
+};
 
 export type Match = {
   id: string;
@@ -126,7 +133,7 @@ export type TransactionWindow = {
   afterWeek: number;
   order: string[];
   offers: TradeOffer[];
-  moves: Array<{ franchiseId: string; swaps: Array<{ drop: string; add: string }>; reasoning: string; fallback: boolean }>;
+  moves: Array<{ franchiseId: string; swaps: Array<{ drop: string; add: string }>; swapsRemaining: number | null; reasoning: string; fallback: boolean }>;
 };
 
 export type BracketSlot = {
@@ -152,12 +159,12 @@ export type WeeklyReview = {
   franchiseId: string;
   rosterVersion: number;
   reasoning: string;
-  notebookChanged: boolean;
+  memoryPages: number;
+  memoryCharacters: number;
   fallback: boolean;
 };
 
 export type SeasonBundle = {
-  protocolVersion: "season-bundle-v2";
   generatedAt: string;
   season: {
     id: string;
@@ -171,9 +178,10 @@ export type SeasonBundle = {
     totalWeeks: number;
     playoffRounds: number;
     sheets: "open" | "closed";
+    swapsAllowed: number | null;
     championId: string | null;
   };
-  provenance: { harnessCommit: string | null; showdownCommit: string | null; models: Array<{ franchiseId: string; spec: string }> };
+  provenance: { showdownCommit: string | null; models: Array<{ franchiseId: string; spec: string }> };
   franchises: Franchise[];
   board: BoardMon[];
   draft: { picks: DraftPick[] };

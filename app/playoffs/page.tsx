@@ -12,7 +12,7 @@ export default function PlayoffsPage() {
     <>
       <section className="hero">
         <span className="label">Playoffs</span>
-        <h1>{champion ? `${champion.name} take the title` : "Bracket"}</h1>
+        <h1>{champion ? `${champion.name} takes the title` : "Bracket"}</h1>
         <p className="sub">
           {bracket ? `Top ${season.season.playoffRounds === 2 ? 4 : 2} by series record, seeded ${season.season.playoffRounds === 2 ? "1v4 and 2v3" : "1v2"}. Best-of-three throughout.` : "The bracket is set when the regular season ends."}
         </p>

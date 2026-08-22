@@ -74,8 +74,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             <span>
               Games played in a pinned Pokémon Showdown fork
               {season.provenance.showdownCommit ? ` (${season.provenance.showdownCommit.slice(0, 10)})` : ""}; full logs in{" "}
-              <a href="https://github.com/jrhuc/vgc-model-league">vgc-model-league</a>
-              {season.provenance.harnessCommit ? ` @ ${season.provenance.harnessCommit.slice(0, 10)}` : ""}.
+              <a href="https://github.com/jrhuc/vgc-model-league">vgc-model-league</a>.
             </span>
             <span>Sprites © Pokémon Showdown. Pokémon names are trademarks of Nintendo, Creatures Inc., and GAME FREAK inc.</span>
           </div>

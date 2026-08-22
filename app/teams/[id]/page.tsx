@@ -112,7 +112,10 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
         <section className="section">
           <div className="section-head">
             <h2>Weekly reviews</h2>
-            <p>Released memory reviews, including reconciliation after transaction windows.</p>
+            <p>
+              Released memory reviews
+              {weeklyReviews.some((entry) => entry.stage === "transactions") ? ", including reconciliation after transaction windows." : "."}
+            </p>
           </div>
           <ol className="weekly-reviews">
             {weeklyReviews.map((entry) => (
@@ -124,7 +127,9 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
                       <h3>{entry.stageLabel}</h3>
                     </div>
                     <div className="review-meta">
-                      <span className="chip">{entry.memoryLabel}</span>
+                      <span className="chip">
+                        {entry.memoryPages} {entry.memoryPages === 1 ? "page" : "pages"} · {entry.memoryCharacters.toLocaleString("en-US")} chars
+                      </span>
                       {entry.fallbackLabel ? <span className="chip chip-warn">{entry.fallbackLabel}</span> : null}
                     </div>
                   </header>

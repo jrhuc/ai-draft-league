@@ -15,9 +15,12 @@ ranking.
 
 [vgc-model-league](https://github.com/jrhuc/vgc-model-league) is the authority
 for rules, legality, randomness, schedules, results, release state, and public
-evidence. This repository consumes only `season-bundle-v2`. It never clones or
-imports harness source and never reimplements draft rules, transaction legality,
-team validation, battle state, standings, winners, or reveal timing.
+evidence. This repository consumes only the exported `season-bundle.json`
+artifact. Any change to its shape must be coordinated between the producer and
+consumer. This repository never clones or imports harness source and never
+reimplements draft rules, transaction legality, team validation, battle state,
+standings, winners, or reveal timing. Broadcast metadata decorates bundle
+events; it never recalculates them.
 
 Two visibility axes are independent:
 
