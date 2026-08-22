@@ -1,0 +1,63 @@
+{
+  "name": "vgc-model-league",
+  "version": "0.1.0",
+  "description": "Operator harness for language-model decisions across VGC drafts and battles",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.22.0+sha512.1ff870c4c6133dfd88fb2afc46dd13d47f09c9794b438c6fdb47ca98caf3bc16381ee0be93a091b8e3824cf01f889f46d7d9e20910fb0be1ab0fb5baa80dd621",
+  "bin": {
+    "vgcleague": "dist/src/cli.js"
+  },
+  "exports": {
+    "./protocol": {
+      "types": "./dist/src/public/index.d.ts",
+      "default": "./dist/src/public/index.js"
+    }
+  },
+  "scripts": {
+    "setup:showdown": "node tools/setup-showdown.mjs",
+    "update:showdown": "node tools/setup-showdown.mjs --update",
+    "check:showdown-update": "node tools/setup-showdown.mjs --update --check",
+    "prebuild": "node tools/setup-showdown.mjs --check && pnpm run clean",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.client.json && vite build --logLevel warn",
+    "check": "biome check . && pnpm run check:comments",
+    "check:fix": "biome check --write .",
+    "check:comments": "node tools/check-comments.mjs",
+    "typecheck": "node tools/setup-showdown.mjs --check && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json",
+    "dev:gui": "vite build --watch",
+    "build:docs": "node tools/build-docs.mjs",
+    "export:season": "node dist/src/cli.js export-season",
+    "test:unit": "node -e 'for (const d of [\"runs\", \"records\"]) require(\"node:fs\").mkdirSync(d, { recursive: true })' && node --test --test-concurrency=4 --test-timeout=300000 dist/tests/*.test.js",
+    "test": "pnpm run check && pnpm run build && pnpm run test:unit",
+    "archive-run": "node tools/archive-run.mjs",
+    "start": "node dist/src/cli.js gui",
+    "vgcleague": "node --env-file-if-exists=.env dist/src/cli.js",
+    "build-pool": "node dist/tools/build-pool.js",
+    "build-event-pool": "node dist/tools/build-event-pool.js",
+    "build-board": "node dist/tools/build-draft-board.js",
+    "fetch-sprites": "node dist/tools/fetch-sprites.js",
+    "capture-requests": "node dist/tools/capture-requests.js"
+  },
+  "engines": {
+    "node": ">=24.18.1 <25"
+  },
+  "devDependencies": {
+    "@babel/parser": "8.0.4",
+    "@biomejs/biome": "2.5.8",
+    "@preact/preset-vite": "2.10.6",
+    "@types/node": "24.13.3",
+    "happy-dom": "20.11.2",
+    "marked": "18.0.9",
+    "preact": "10.29.8",
+    "typescript": "7.0.2",
+    "vite": "8.2.1"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "4.0.38",
+    "@ai-sdk/openai": "4.0.41",
+    "@ai-sdk/openai-compatible": "3.0.30",
+    "ai": "7.0.62",
+    "zod": "4.4.3"
+  }
+}
