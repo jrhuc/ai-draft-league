@@ -8,15 +8,17 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const docs = path.join(root, 'docs');
 const out = path.join(root, 'dist', 'docs');
 const pages = [
-  ['index', 'Overview'],
-  ['measurement', 'Measurement'],
-  ['architecture', 'Architecture'],
-  ['usage', 'Usage'],
-  ['deployment', 'Deployment'],
-  ['weekly-review', 'Weekly review'],
-  ['trade-window', 'Trade window'],
-  ['season-review', 'Season review'],
+  ['index', 'Overview', 'Start'],
+  ['architecture', 'Architecture', 'Start'],
+  ['manager-model', 'Franchise managers', 'Concepts'],
+  ['measurement', 'Evidence', 'Concepts'],
+  ['usage', 'Usage', 'Operate'],
+  ['trade-window', 'Transactions', 'Operate'],
+  ['weekly-review', 'Weekly review', 'Operate'],
+  ['season-review', 'Season review', 'Operate'],
+  ['deployment', 'Deployment', 'Operate'],
 ];
+const primaryPages = new Set(['index', 'architecture', 'usage', 'measurement']);
 
 function slug(value, counts) {
   const base = value
@@ -49,11 +51,20 @@ function pageLink(id) {
 
 function document(pageId, label, body) {
   const nav = pages
-    .slice(0, 5)
+    .filter(([id]) => primaryPages.has(id))
     .map(([id, text]) => `<a href="${pageLink(id)}"${id === pageId ? ' aria-current="page"' : ''}>${text}</a>`)
     .join('');
-  const sidebar = pages
-    .map(([id, text]) => `<li><a href="${pageLink(id)}"${id === pageId ? ' aria-current="page"' : ''}>${text}</a></li>`)
+  const sidebar = ['Start', 'Concepts', 'Operate']
+    .map((section) => {
+      const links = pages
+        .filter(([, , group]) => group === section)
+        .map(
+          ([id, text]) =>
+            `<li><a href="${pageLink(id)}"${id === pageId ? ' aria-current="page"' : ''}>${text}</a></li>`,
+        )
+        .join('');
+      return `<section><p>${section}</p><ul>${links}</ul></section>`;
+    })
     .join('');
   const title = pageId === 'index' ? 'VGC Model League' : `${label} · VGC Model League`;
   return `<!doctype html>
@@ -74,11 +85,11 @@ function document(pageId, label, body) {
   <a class="spectator-link" href="https://github.com/jrhuc/ai-draft-league">Spectator site <span aria-hidden="true">↗</span></a>
 </header>
 <div class="docs-shell">
-  <aside class="sidebar" aria-label="Documentation"><p>Harness</p><ul>${sidebar}</ul></aside>
+  <aside class="sidebar" aria-label="Documentation">${sidebar}</aside>
   <main id="content" class="doc-content">${body}</main>
   <aside class="page-meta"><a href="https://github.com/jrhuc/vgc-model-league/blob/main/docs/${pageId}.md">View source <span aria-hidden="true">↗</span></a></aside>
 </div>
-<footer><span>The simulator decides outcomes. The record preserves decisions.</span><a href="https://github.com/jrhuc/vgc-model-league">GitHub <span aria-hidden="true">↗</span></a></footer>
+<footer><span>Operator documentation for VGC Model League.</span><a href="https://github.com/jrhuc/vgc-model-league">GitHub <span aria-hidden="true">↗</span></a></footer>
 </body>
 </html>`;
 }
@@ -91,4 +102,5 @@ for (const [id, label] of pages) {
   fs.writeFileSync(path.join(out, target), document(id, label, renderMarkdown(source)), 'utf8');
 }
 fs.copyFileSync(path.join(docs, 'site.css'), path.join(out, 'site.css'));
+fs.cpSync(path.join(docs, 'assets'), path.join(out, 'assets'), { recursive: true });
 console.log(`documentation built into ${path.relative(root, out)}/`);

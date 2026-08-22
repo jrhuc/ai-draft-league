@@ -1,117 +1,72 @@
 # Weekly review
 
-A coach's memory is the only seat-private state that carries across a season.
-The draft writes its notebook, the weekly review and the post-window
-reconciliation revise the whole memory, every team build and transaction
-decision reads it, and the season review sees its final form. No other stage
-writes it.
+Weekly review updates the private memory that a franchise manager carries through the season. This page explains when reviews run, which evidence they can read, and how their replies persist.
 
-## Memory
+## Memory across the season
 
-Memory is a set of named pages. The `notebook` page appears in full in every
-later prompt of that coach. Every other page appears in those prompts as an
-index line (name, size, first line) and is fetched in full with
-`read_memory_page`, which the builder, the transaction stages, and the review
-all offer. A coach may hold 16 pages of up to 8,000 characters each, 48,000 in
-all; page names are lowercase slugs. A reply that exceeds a limit is rejected
-with the reason and the coach replies again; nothing is clipped. The harness
-does not suggest what pages to keep or how to organise them.
+Memory is the only seat-private state that lasts for the whole season. The draft writes the first `notebook` page. Weekly reviews and post-window reconciliations can update memory. Team builds and transaction decisions read it, and the season review receives its final form. No other stage writes it.
 
-## When it runs
+Memory contains named pages. The `notebook` page appears in full in every later prompt for that franchise manager. Every other page appears as an index line with its name, size, and first line. The team builder, transaction stages, and review can fetch a full page with `read_memory_page`.
 
-A review runs at each barrier the league exposes. With `--sequential-weeks`,
-that is the end of every round-robin week. With the default blind batches, it is
-the end of each transaction-window week and the end of the round robin. The
-review precedes the transaction window that opens in the same week, so the
-window reads the revised notebook. `--through-week` stops before the review of
-the week it stops at.
+A franchise manager may hold 16 pages, with at most 8,000 characters per page and 48,000 characters in total. Page names are lowercase slugs. If a reply exceeds a limit, the harness rejects it with the reason and asks the manager to reply again. It does not clip the reply or suggest which pages to keep.
 
-`review_weeks` in `config.json` records the schedule. Playoffs run on the final
-round-robin review.
+## Review timing
 
-### Reconciliation after a window
+A weekly review runs at each barrier exposed by the league. With `--sequential-weeks`, it runs at the end of every round-robin week. With the default blind batches, it runs at the end of each transaction-window week and at the end of the round robin.
 
-When a transaction window closes, every coach whose roster changed runs a
-reconciliation before any later build: the same tools and reply shape, with
-the roster before and after the window in place of the period's results.
-Coaches whose roster did not change are not called. Rows live in
-`reviews/week-<n>-transactions.jsonl` and bind the new roster version.
+The review runs before the transaction window that opens in the same week, so that window reads the revised memory. `--through-week <n>` completes week `n` and stops before the review at that barrier. `review_weeks` in `config.json` records the schedule. Playoffs use the final round-robin review.
 
-## What the coach sees
+### Reconciliation after a transaction window
 
-Each coach receives, for its own seat only:
+After a transaction window closes, each franchise manager whose roster changed runs reconciliation before any later build. Reconciliation offers the same tools and reply shape as weekly review, but supplies the roster before and after the window instead of the period's results. The league does not call managers whose rosters did not change.
 
-- standings through the week;
-- its own series since the previous review: result, registered sets, and its
-  final battle note;
-- the public results of every other series in the same period;
-- its remaining schedule with each opponent's current roster;
-- the public transactions of the season so far;
-- its roster and its current memory;
-- which window opens next, or that rosters are locked.
+Reconciliation rows live in `reviews/week-<n>-transactions.jsonl` and bind the new roster version.
 
-It has the draft dex and board tools and five league tools:
+## Review inputs
 
-- `read_public_series` returns the spectator log of any completed series.
-  Closed sheets never publish `|showteam|`, so the tool returns exactly what a
-  viewer saw.
-- `read_own_series` returns the coach's own turn-by-turn choices with the
-  reasons it gave at the time and its end-of-game notes.
-- `read_own_build` returns the six the coach registered for a series, its
-  plan, what was left behind on the roster it held *at the time*, and for each
-  game which Pokémon it brought and which one Mega Evolved, read from the game
-  log.
-- `read_memory_page` returns one of the coach's own pages in full.
-- `read_memory_history` returns the coach's own memory as it stood after an
-  earlier barrier: `{week, stage}` where `stage` is `week` (the weekly review,
-  the default) or `transactions` (the reconciliation after that week's
-  window). A build after a window read the reconciled memory, so the two are
-  addressed separately; the same week's review is readable from its own
-  reconciliation.
+Each franchise manager receives this information for its own seat:
 
-A coach cannot read another coach's decisions, builds, or memory. The prompt
-states that every coach builds a new six for each matchup and that sets seen in
-one series may not return. Later team builds repeat that notice and list the
-coach's own results with what it registered; the full context of a series
-against the same opponent comes along only when the matchup repeats.
+- Standings through the week
+- Its series since the previous review, including the result, registered sets, and final battle note
+- Public results for every other series in the same period
+- Its remaining schedule with each opponent's current roster
+- Public transactions from the season so far
+- Its roster and current memory
+- The next transaction window, or notice that rosters are locked
 
-## Response data
+The review also has the draft dex and board tools plus five league tools:
 
-The coach replies with one JSON object in which every field is optional and
-every omission keeps what exists: `notebook` replaces the notebook page,
-`set_pages` writes the pages it names and leaves the rest alone, `delete_pages`
-is the only way a page is removed, and `reasoning` is recorded as evidence.
-`{}` keeps the current memory unchanged and is a complete answer. A reply that
-sets and deletes the same page, deletes the notebook, or uses the retired
-whole-replacement `pages` field is rejected with the reason. Nothing a coach
-did not name can be lost.
+- **`read_public_series`**: returns the spectator log for any completed series. Closed sheets never publish `|showteam|`, so the tool returns exactly what a viewer saw
+- **`read_own_series`**: returns the manager's turn-by-turn choices, reasons supplied at the time, and end-of-game notes
+- **`read_own_build`**: returns the six registered for a series, the plan, and what remained on the roster held at that time. It also returns the Pokémon brought and Mega Evolved in each game, based on the game log
+- **`read_memory_page`**: returns one of the manager's memory pages in full
+- **`read_memory_history`**: returns that manager's memory after an earlier barrier as `{week, stage}`. `stage` is `week` for weekly review or `transactions` for reconciliation. A same-week weekly review remains readable from its reconciliation
 
-### Release model
+A manager cannot read another seat's decisions, builds, or memory. Each matchup gets a new build. Later build prompts list the manager's own earlier results and registrations, but include full context against the same opponent only when that matchup repeats.
 
-Review reasoning is *seat-private while the barrier is open*: no other coach
-sees it, and the season bundle releases it to spectators only with its
-completed week or transaction window. After release it is public on purpose —
-the spectator site exists to show how the managers thought. That is safe
-because the site is outside every agent's information set: seats have no
-browser, HTTP, MCP, URL-fetch, or spectator-site tool, and the selected
-provider must not add built-in web search. Adding any network-capable tool to a
-seat would require revisiting this policy. The memory pages themselves never
-leave the run directory; the bundle carries only the reasoning and memory size
-in pages and characters.
+## Reply shape
+
+The manager replies with one JSON object. Every field is optional, and every omission preserves the current value:
+
+- **`notebook`**: replaces the `notebook` page
+- **`set_pages`**: writes the named pages and leaves all other pages unchanged
+- **`delete_pages`**: removes the named pages and is the only way to remove a page
+- **`reasoning`**: records the manager's stated reasoning as evidence
+
+`{}` is a complete answer that leaves memory unchanged. The harness rejects a reply that sets and deletes the same page, deletes `notebook`, or uses the retired whole-replacement `pages` field. It returns the rejection reason, and no unnamed page can be lost.
+
+## Visibility and release
+
+Review reasoning remains private from other active managers while its barrier is open. The season bundle releases that reasoning only with the completed week or transaction window. [Publication boundary](architecture.md#publication-boundary) lists the data that never leaves the run directory.
+
+The spectator site is outside every manager's information set. Seats have no browser, HTTP, Model Context Protocol (MCP), URL-fetch, or spectator-site tool, and the selected provider must not add built-in web search. Any network-capable seat tool requires a new review of this policy.
+
+Memory pages never enter the season bundle. The public review record contains only the reasoning and memory size in pages and characters. [Interpret league evidence](measurement.md#how-to-interpret-reviews) covers the limits on claims based on that reasoning.
 
 ## Persistence and resume
 
-`reviews/week-<n>.jsonl` holds one row per coach: entrant and model identity,
-stage, week, roster version, the complete memory after the review, reasoning,
-and fallback status. Rows appear in completion order and replay in file order.
-An entrant may occur only once in a stage file.
+`reviews/week-<n>.jsonl` stores one row per franchise manager. Each row includes entrant and model identity, stage, week, roster version, the complete memory after review, reasoning, and fallback status. Rows appear in completion order and replay in file order. An entrant may appear only once in a stage file.
 
-Seat transcripts are under `reviews/week-<n>/`, one row per answer attempt.
-They retain response text, finish reason, latency, usage, and tool calls with
-their results. Provider adapters own external-call timeouts and transport
-retries; the weekly-review stage retries only rejected answer shapes.
+Seat transcripts live under `reviews/week-<n>/`, with one row per answer attempt. They retain response text, finish reason, latency, usage, and tool calls with their results. Provider adapters own external-call timeouts and transport retries. Weekly review retries only rejected answer shapes.
 
-Completed rows replay without provider calls. A stored window must follow the
-complete review of its week, and later evidence must follow the reconciliation
-of every roster that window changed. Resume stops when identity, roster
-version, or barrier ordering does not match.
+On resume, completed rows replay without provider calls. A stored transaction window must follow the complete review for its week. Later evidence must follow reconciliation for every roster changed by that window. Resume stops when identity, roster version, or barrier ordering does not match.

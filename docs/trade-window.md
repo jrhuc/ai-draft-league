@@ -1,172 +1,109 @@
-# Configure the transaction windows
+# Change rosters during the season
 
-By default, a draft league opens a transaction window after each of round-robin
-weeks 1, 2, and 3. A league with fewer weeks keeps only the windows that fit.
-Rosters lock when the last window closes and stay locked through the playoffs.
+Transaction windows let franchise managers trade with each other and sign undrafted Pokémon. The current schedule opens a window after weeks 1, 2, and 3, then locks every roster for the rest of the season.
 
-## League rule
+## Current transaction rules
 
-Real leagues are far less liquid than a per-window refill: the Wolfey Draft
-League holds rosters fixed except for one mid-season trade window; Smogon's
-draft team tournaments allow one midseason window with a fixed allowance of
-six transactions per team in the Champions format, trades between teams not
-counting; community leagues typically allow three to five free-agency swaps for
-the whole season with a trade deadline around week 4. This league keeps
-several windows because its managers are models and the transaction reasoning
-is the spectator content, but it adopts the season-allowance rule: **six
-free-agent swaps per franchise for the whole season**, spent across the
-windows in any split, unspent swaps expiring at lock; **up to two trade offers
-per coach per window**, trades not spending the allowance; rosters locked
-before week 4. `--swaps <n>` changes the allowance and `config.json` records it
-as `swaps_allowed`, frozen for the run.
+Each franchise gets the same two ways to change its roster:
 
-Sources: [WDL](https://wolfeydraftleague.com/), [Smogon DCL IV
-rules](https://www.smogon.com/forums/threads/dcl-iv-admin-decisions-and-announcements.3785811/),
-[Smogon beginner's guide](https://www.smogon.com/articles/beginners-guide-draft),
-[UBA trades and free agency](https://unitedbattlersassociation.wordpress.com/season-rules-regulations/trades-and-free-agency-rules/).
+1. **Trades**: make up to two one-for-one offers in each window
+2. **Free agency**: make up to six drop-and-add swaps across the whole season
 
-Use `--transactions <weeks>` with a comma-separated list, for example
-`--transactions 2,4`, to choose the windows. Use `--transactions off` for the
-labeled locked-roster control. Results record the schedule and the roster
-version each series was built on, so analyses do not combine conditions without
-labeling them.
+A trade does not use the free-agency allowance. Unused swaps expire when the week 3 window closes.
 
-## Scheduling
+The six-swap season allowance follows the approach used by Smogon's Champions draft tournaments, where trades also do not count against the allowance. The harness keeps three windows because the manager decisions are part of the season record. Background sources include the [Wolfey Draft League](https://wolfeydraftleague.com/), [Smogon DCL IV rules](https://www.smogon.com/forums/threads/dcl-iv-admin-decisions-and-announcements.3785811/), the [Smogon draft guide](https://www.smogon.com/articles/beginners-guide-draft), and [UBA transaction rules](https://unitedbattlersassociation.wordpress.com/season-rules-regulations/trades-and-free-agency-rules/).
 
-Each window acts as a barrier. No later matchup can build or start until every
-series through that window's week finishes. Without sequential weeks, the
-round-robin series between two barriers run as one blind, concurrency-limited
-batch. With `--sequential-weeks`, each week is its own batch and the window
-opens as soon as its week ends.
+## When a window opens
 
-Coaches act in inverse standings order through that week, using the standard
-playoff-seeding tiebreak. Earlier transactions are visible to later coaches. The
-complete trade offer phase runs before the free-agency phase. Every coach sees
-the public record of accepted trades and swaps from earlier windows, and which
-window of the schedule is open.
+A window is a barrier between weeks. Every series through that week must finish before the weekly review and transaction window can run. No later matchup can build against a roster that is still changing.
 
-## Coach actions
+The order inside a window is fixed:
 
-Each coach can take these actions:
+1. Run the weekly review
+2. Process all trade offers
+3. Process all free-agent decisions
+4. Reconcile the memory of each manager whose roster changed
+5. Start later team builds with the new roster version
 
-1. Make up to `trades_allowed` one-for-one offers to other coaches. This integer
-   setting accepts values from zero through three and defaults to two. A value
-   of zero skips trade offers but keeps free agency enabled. The counterparty
-   immediately accepts or rejects each offer before the next offer, and the
-   proposer is told which offer of its allowance it is making. Each offer uses
-   the current rosters and does not include counteroffers or negotiation
-   history. The protocol does not cap received offers. Trades do not spend the
-   swap allowance.
-2. Submit an atomic list of free-agent swaps, from zero up to the swaps it has
-   left of its season allowance (`swaps_allowed`, default six). Each swap
-   drops one roster entry and adds one currently undrafted board entry. The
-   prompt states the allowance and the remainder; a list longer than the
-   remainder is rejected with the reason.
+Managers act from last place to first place using the normal standings tiebreaks. Each manager sees the accepted trades and swaps made earlier in the same window.
 
-Every resulting roster must:
+With `--sequential-weeks`, each weekly batch reaches its window as soon as the week ends. Without it, series between two windows run as one blind, concurrency-limited batch.
 
-- contain ten entries;
-- remain within the original 100-point limit;
-- preserve entry exclusivity;
-- contain at most one entry for each base species; and
-- satisfy Mega locks.
+## Trade offers
 
-Drops refund the full board price. A trade can exchange entries with different
-prices if both resulting rosters remain legal and within budget. Invalid
-submissions use the standard reject-with-reason retry policy.
+A manager can make up to `trades_allowed` offers per window. The current season uses two. The stored setting accepts values from zero through three.
 
-A coach completes a legal decision by making no offer, rejecting an offer, or
-submitting an empty swap list. Prompts must present action and inaction equally
-so that the phase measures diagnosis without encouraging roster changes. The
-protocol does not support counteroffers, multi-round negotiation, multi-Pokémon
-trades, or transaction fees.
+Each offer names:
 
-## Prompt information
+- The receiving franchise
+- One roster entry to give
+- One roster entry to receive
+- A public message
+- A private rationale
 
-Each acting or responding coach receives:
+The other manager immediately accepts or rejects the exact offer. There are no counteroffers, negotiation rounds, multi-Pokémon deals, or transaction fees. A manager may receive any number of offers, even after using its own offer allowance.
 
-- public standings and rosters;
-- the public transactions of earlier windows;
-- its own weekly results and opponents;
-- its own draft note and series reflections;
-- the remaining priced board and its roster and budget calculations;
-- the transaction-window rules; and
-- for a response, the exact offer terms.
+Trades can exchange Pokémon with different draft prices. Both resulting rosters must still pass every roster rule. A rejected offer and choosing not to make an offer are both complete decisions, not fallbacks.
 
-The harness does not provide a diagnosis, suggested swap, or preferred action.
-Prompts identify coaches by model and seat identity and omit presentation-only
-franchise names. Draft dex and board-search tools remain available.
+## Free-agent swaps
 
-## Response data
+After trades finish, each manager submits one atomic list of free-agent swaps. Every item drops one roster entry and adds one undrafted board entry.
 
-An offer contains:
+The harness applies the whole list or none of it. If one swap is illegal, the manager receives the rejection reason and submits another answer. A manager can also submit an empty list.
 
-- the recipient;
-- one entry owned by the proposer to give;
-- one entry owned by the recipient to receive; and
-- a public message.
+The six-swap allowance is shared across every scheduled window. Drops refund their full board price. Each completed window records how many swaps every franchise has used.
 
-The acting coach also returns a competition-private rationale. The responder
-returns an accept or reject decision and its own rationale. Neither reply
-rewrites the coach's notebook; a coach whose roster changed revises it in the
-reconciliation that follows the window (see [Weekly review](weekly-review.md)).
+## Roster legality
 
-Offer evidence records `proposerFallback` and `responderFallback`. The value is
-`null` when no offer exists. The applicable flag is set only after all parse
-attempts fail. An explicit no-offer or rejection does not set it, and neither
-does a random coach's deterministic inaction. A fallback does not create a
-rationale.
+Every roster produced by a trade or free-agent decision must meet these rules:
 
-A free-agency response contains an atomic swap list and a rationale.
+- Exactly 10 entries
+- No more than 100 draft points
+- No entry owned by two franchises
+- No repeated base species on one roster
+- All Mega Evolution locks satisfied
 
-Rationales are competition-private: no other coach can read them, and the
-public season bundle releases them to spectators once the window is complete.
+The harness validates these rules. Model text cannot waive them.
 
-## Interpret the evidence
+## What managers know
 
-Keep these evidence layers separate:
+An acting manager receives:
 
-- the observable public message;
-- mechanically computed terms, legality, prices, and roster changes; and
-- each coach's competition-private stated rationale.
+- Current standings and public rosters
+- Public transactions from earlier windows
+- Its own results and previous series reflections
+- Its own franchise memory
+- The priced board and remaining free agents
+- Its remaining free-agent allowance
+- The current window number and rules
 
-Use these layers for descriptions and consistency checks. Do not use them to
-claim belief, honesty, deception, enjoyment, or exploitability. Semantic labels
-must follow the rubric and audit rules in [Measurement](measurement.md).
-Deterministic `roster-to-built-to-brought-to-used` links remain the primary
-evidence.
+A manager responding to a trade also receives the exact offer. Draft dex, board search, and `read_memory_page` remain available.
 
-Archive visibility follows the facts-only projection in
-[Architecture](architecture.md#state-evidence-and-trust). Transaction files do
-not define an independent publication surface.
+Prompts present changing the roster and keeping it unchanged as equal options. They do not recommend a diagnosis, target, or transaction.
 
-## Persistence and resume
+## Memory and visibility
 
-Each window writes into `transactions/after-week-<n>/`. Its `window.jsonl` is
-the append-only decision and replay log. It includes no-offer, declined-offer,
-accepted-offer, and empty-swap decisions. Each physical line is a nonblank
-canonical JSON object, and the file ends with a newline.
+Trade and free-agent replies record a rationale, but they do not edit franchise memory. If the roster changes, a [reconciliation review](weekly-review.md#reconciliation-after-a-transaction-window) updates that manager's memory before the next build.
 
-`window.json` materializes the completed order, transactions, rationales,
-resulting rosters, and `swaps_used`, the season swaps each seat has spent once
-the window closed. The next window starts its allowance from that record and a
-replay that exceeds it is rejected. `rosters.json` remains the draft-time
-snapshot.
+Rationales stay private from other active managers. The season bundle releases them to spectators only after the whole window completes. [Evidence interpretation](measurement.md) explains how to report offers, decisions, and stated reasoning without treating rationale as hidden intent.
 
-Later construction uses only a completed transaction overlay. Each closed
-window increments the roster version; every build and series record binds the
-version it used, and resume replays the windows in order before adopting later
-evidence.
+## Files and resume behavior
 
-On resume, the league replays retained rows without provider calls and continues
-with unresolved coaches. After atomically renaming the final artifact, it reads
-and replays that artifact before returning the overlay to the caller.
+Each window writes to `transactions/after-week-<n>/`:
 
-A stored build for a later matchup is reusable only if its stage, series, seats,
-models, and both candidate-ID lists exactly match the current overlaid rosters.
-Rows without artifacts and rows with stale candidates rebuild.
+- `window.jsonl` is the append-only decision and replay log
+- `window.json` records the completed order, transactions, rationales, rosters, and `swaps_used`
 
-A draft-only configuration can be promoted only if no result, build, series,
-coaching, or season evidence exists. Resume stops rather than constructing a
-continuation when it finds an inconsistent journal, completion artifact, result
-prefix, playoff binding, or roster overlay.
+Every completed window increments the roster version. Later builds and series record the version they used. A saved build can resume only when its stage, series, seats, models, and both roster candidate lists still match.
+
+On resume, the harness replays valid completed rows without another provider call. It stops on an incomplete barrier, invalid journal, stale roster binding, or evidence that appears after a missing window. [Architecture](architecture.md#publication-boundary) explains which transaction data can enter a public season bundle.
+
+## Change the schedule
+
+Use a comma-separated list to choose different weeks:
+
+```sh
+pnpm run vgcleague draft --models <specs...> --transactions 2,4
+```
+
+Use `--transactions off` for a locked-roster control. Use `--swaps <n>` to change the season free-agent allowance. `config.json` records the schedule, the offer cap for each window, and `swaps_allowed`; those values stay fixed for the run.

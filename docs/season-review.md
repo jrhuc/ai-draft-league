@@ -1,85 +1,53 @@
-# Generate season reviews
+# Season review
 
-Each coach generates one retrospective when its season ends. The access rules
-follow the evidence projection in
-[Architecture](architecture.md#state-evidence-and-trust).
+Each franchise manager writes one retrospective when its season ends. The review records that manager's account of the season without changing any completed result.
 
-## Evidence limits
+## Review timing
 
-The review provides the coach with its season outcome and earlier draft, build,
-transaction-window, and match records. It records the coach's statements about
-what worked, what failed, and what it would change. You can compare these
-statements with earlier plans and with mechanically observed
-`drafted-to-built-to-brought-to-used` links to measure statement consistency.
+The harness starts reviews as soon as each franchise finishes:
 
-Do not treat a review as direct evidence of belief, causal attribution,
-self-awareness, or deliberate earlier behavior. A loss cannot label a specific
-draft or piloting decision, and a fluent retrospective is not a calibrated
-explanation. Any semantic plan-fidelity or attribution score requires:
+- Teams outside the playoff cut review after the round-robin standings are final
+- Semifinal losers review after their semifinal
+- The runner-up and champion review after the final
 
-- a preregistered observable rubric;
-- identity-stripped traces;
-- several independent graders;
-- reported grader disagreement; and
-- blinded human audit.
+The harness does not wait until every game has finished. Eliminated round-robin seats can review while the semifinals run, and semifinal losers can review during the final. Seats in the same review batch respond concurrently.
 
-The review does not change the completed season or reach another active seat.
-Because the coach takes no later action in the same season, the review cannot
-demonstrate a notebook handoff, behavioral change, learning, or causal transfer.
-Prompt context and the expectation of a later review can still affect its text,
-so the artifact is not incentive-free ground truth. Evaluate a reflection
-intervention separately, assign it a version, and bind its complete
-reflection-to-later-prompt-to-action chain.
+The run waits for all outstanding reviews before returning. If a review fails, the run reports that failure after any concurrent games finish.
 
-## Timing
+## Available evidence
 
-Generate each review as soon as the corresponding coach's season ends:
-
-- Generate reviews for teams outside the playoff cut after finalizing the
-  round-robin standings.
-- Generate reviews for semifinal losers after resolving their semifinal.
-- Generate reviews for the runner-up and champion after resolving the final.
-
-Do not generate all reviews in a single end-of-season batch. A team eliminated
-in the round robin reviews its draft without seeing playoff results in which it
-did not participate.
-
-Reviews do not block the bracket. Eliminated round-robin seats generate reviews
-while semifinals run, and semifinal losers generate reviews while the final
-runs. Seats in the same review batch respond concurrently. The run waits for all
-outstanding reviews before returning, so a failed review causes the run to fail
-after the concurrent games complete.
-
-## Prompt contents
-
-The review uses the same voice and dex-tool access as the draft and transaction
-window prompts. It has its own prompt policy. Prompts identify seats
-by coach and model identity. They do not include spectator-facing franchise
-names.
+The review can use the manager's season outcome, draft or roster preset, builds, transaction windows, match records, final roster, and final memory. It uses the same manager identity and dex-tool access as the draft and transaction prompts, with a separate prompt policy. Spectator-facing franchise names stay out of the prompt.
 
 The prompt contains:
 
-- how the coach's season ended;
-- final standings;
-- the coach's draft in pick order, including its original reasoning;
-- its free-agency decision and every other seat's decision;
-- its final roster;
-- each of its series in order; and
-- its final memory, every page in full.
+- How the franchise's season ended
+- Final standings
+- Its draft in pick order, including the original reasoning when a live draft occurred
+- Its offers, responses, and free-agent decisions from every transaction window
+- Each other seat's public transaction decisions
+- Its final roster
+- Each of its series in order
+- Its final memory, with every page in full
 
-The instruction asks the coach to distinguish among roster drafting, registration
-of six Pokémon, and piloting as possible causes of a series loss. It also asks
-the coach to identify what worked. The instruction does not lead the coach
-toward specific picks, and the harness does not analyze the coach's play. Treat
-the resulting attribution as generated evidence, not as a measurement of hidden
-mental state.
+The instruction asks the manager to separate drafting or roster construction, registration of six Pokémon, and battle piloting as possible causes of a series loss. It also asks what worked. The harness does not analyze the play or steer the manager toward specific picks.
 
-The coach returns
-`{"summary": ..., "did_well": ..., "did_poorly": ..., "would_change": ...}`.
+A season review cannot change the season or reach another active seat. [Interpret league evidence](measurement.md#how-to-interpret-reviews) explains how to compare its statements with earlier plans and recorded actions. Access and release follow the [publication boundary](architecture.md#publication-boundary).
+
+## Reply shape
+
+The manager returns one JSON object:
+
+```json
+{
+  "summary": "",
+  "did_well": "",
+  "did_poorly": "",
+  "would_change": ""
+}
+```
 
 ## Persistence and resume
 
-The run directory stores one row per coach in `season.jsonl`. It stores
-per-seat prompt and response-attempt traces under `season/`. On resume, the
-league replays existing rows instead of requesting another retrospective for a
-coach whose season has ended.
+The run directory stores one row per manager in `season.jsonl`. Per-seat prompt and response-attempt traces live under `season/`.
+
+On resume, the league replays an existing row instead of requesting another retrospective from a manager whose season has ended.

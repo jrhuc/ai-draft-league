@@ -47,13 +47,15 @@ technical site; the local operator GUI remains available through `pnpm start`.
 
 ## Documentation
 
-- [Measurement](docs/measurement.md)
+- [Overview and current season rules](docs/index.md)
 - [Architecture](docs/architecture.md)
+- [How franchise managers work](docs/manager-model.md)
+- [Evidence interpretation](docs/measurement.md)
 - [Usage](docs/usage.md)
-- [Deployment](docs/deployment.md)
+- [Transactions](docs/trade-window.md)
 - [Weekly review](docs/weekly-review.md)
-- [Trade window](docs/trade-window.md)
 - [Season review](docs/season-review.md)
+- [Deployment](docs/deployment.md)
 
 ## License
 

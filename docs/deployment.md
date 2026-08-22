@@ -1,31 +1,20 @@
 # Deploy documentation and season bundles
 
-The repository publishes two different outputs with separate responsibilities.
+This repository publishes documentation and spectator data as separate outputs. The local operator GUI is not deployed.
 
-- GitHub Pages serves this technical documentation.
-- `export-season` writes a validated, public-only bundle for the spectator
-  product.
+## Publish the documentation
 
-The local operator GUI is not deployed.
+In **Settings → Pages**, set **Source** to **GitHub Actions**. `.github/workflows/pages.yml` runs when `docs/`, the package lock, or the workflow changes. It renders the Markdown files as zero-runtime HTML and deploys `dist/docs`.
 
-## GitHub Pages
-
-In **Settings → Pages**, set **Source** to **GitHub Actions**.
-`.github/workflows/pages.yml` runs when `docs/`, the package lock, or the
-workflow changes. It renders the canonical Markdown files as zero-runtime HTML
-and deploys `dist/docs`.
-
-Build the same output locally with:
+Build the same output locally:
 
 ```sh
 pnpm run build:docs
 ```
 
-The output contains the documentation theme and text only. League archives,
-replays, sprites, model logos, provider controls, and local operator routes do
-not enter the Pages artifact.
+The Pages artifact contains the documentation theme, text, and diagrams. It excludes league archives, replays, sprites, model logos, provider controls, local operator routes, run data, and GUI assets.
 
-## Spectator bundle
+## Export a season bundle
 
 Build the harness, then export one explicit release boundary:
 
@@ -37,22 +26,10 @@ pnpm run export:season \
   --title "AI Draft League"
 ```
 
-The default output is
-`artifacts/public/seasons/<run-id>/season-bundle.json`. Pass `--out <file>` to
-write directly into a checked-out spectator repository's `public/` directory.
+The default output is `artifacts/public/seasons/<run-id>/season-bundle.json`. Pass `--out <file>` to write directly into a checked-out spectator repository's `public/` directory.
 
-`--through-week` is required. Publication never advances merely because more
-private results exist locally. A released week must contain every completed
-series and verified replay for that week or export fails. Values past the last
-regular-season week release playoff rounds one at a time; releasing the final
-round also releases season reviews and opens closed team sheets.
+`--through-week` is required. Publication never advances because more private results exist locally. A released week must contain every completed series and a verified replay for each series, or export fails. Values past the last regular-season week release playoff rounds one at a time. Releasing the final round also releases season reviews and opens closed team sheets.
 
-The bundle carries the released public evidence: stated rationales for picks,
-builds, decisions, offers and responses; structured battle events;
-reflections; transactions; weekly review and reconciliation reasoning; the
-bracket; and provenance. It never carries
-notebooks, traces, prompts, provider responses, credentials, or future results.
+The exporter validates the projection before writing it. The spectator statically imports the committed artifact. It does not clone the harness, run Showdown, or recompute standings and outcomes.
 
-The exporter validates the projection once before writing it. The spectator
-statically imports that committed artifact and must not clone the harness, run
-Showdown, or recompute standings and outcomes.
+See the [publication boundary](architecture.md#publication-boundary) for the season bundle's public evidence and exclusions.
