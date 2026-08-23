@@ -11,6 +11,7 @@ import type {
   BattleRequest,
   Pid,
   PlayerOptions,
+  SubmissionContext,
   SubmissionOutcome,
   TimerScale,
 } from './types.js';
@@ -22,6 +23,43 @@ interface RouteState {
   pendingSplit: string[];
   winner: string | null;
   turns: number;
+}
+interface SimulationSideState {
+  povCursor: number;
+  errors: number;
+  simulatorSubstitutions: number;
+  timerAutodefaults: number;
+  lastRequest: BattleRequest | undefined;
+  requestAt: number;
+  retryCount: number;
+  pendingError: string | undefined;
+  suppressRequest: boolean;
+  submissionSequence: number;
+}
+
+function sideStateFor(): SimulationSideState {
+  return {
+    povCursor: 0,
+    errors: 0,
+    simulatorSubstitutions: 0,
+    timerAutodefaults: 0,
+    lastRequest: undefined,
+    requestAt: 0,
+    retryCount: 0,
+    pendingError: undefined,
+    suppressRequest: false,
+    submissionSequence: 0,
+  };
+}
+
+interface StartCommand {
+  formatid: string;
+  seed?: [number, number, number, number];
+}
+
+interface BattleEndData {
+  winner?: string;
+  turns?: number;
 }
 
 export function routeUpdateLines(lines: string[], state: RouteState): void {
@@ -104,11 +142,11 @@ export class SimBattle {
       this.seed = seed;
     } else if (seed !== undefined) {
       let value = BigInt.asUintN(64, BigInt(seed));
-      const parts = Array.from({ length: 4 }, () => {
+      const nextPart = () => {
         value = BigInt.asUintN(64, value * 6364136223846793005n + 1442695040888963407n);
         return Number((value >> 16n) & 0xffffn);
-      });
-      this.seed = parts as [number, number, number, number];
+      };
+      this.seed = [nextPart(), nextPart(), nextPart(), nextPart()];
     }
   }
 
@@ -118,7 +156,7 @@ export class SimBattle {
     signal?: AbortSignal,
   ): Promise<BattleOutcome> {
     const { BattleStream } = loadShowdown(this.psDir);
-    const stream = new BattleStream({ noCatch: true }) as BattleStream;
+    const stream = new BattleStream({ noCatch: true });
     const state: RouteState = {
       pov: { p1: [], p2: [] },
       log: [],
@@ -127,18 +165,9 @@ export class SimBattle {
       winner: null,
       turns: 0,
     };
-    const povCursor: Record<Pid, number> = { p1: 0, p2: 0 };
-    const errors: Record<Pid, number> = { p1: 0, p2: 0 };
-    const simulatorSubstitutions: Record<Pid, number> = { p1: 0, p2: 0 };
-    const timerAutodefaults: Record<Pid, number> = { p1: 0, p2: 0 };
-    const lastRequest: Record<Pid, BattleRequest | undefined> = { p1: undefined, p2: undefined };
-    const requestAt: Record<Pid, number> = { p1: 0, p2: 0 };
-    const retryCount: Record<Pid, number> = { p1: 0, p2: 0 };
-    const pendingError: Record<Pid, string | undefined> = { p1: undefined, p2: undefined };
-    const suppressRequest: Record<Pid, boolean> = { p1: false, p2: false };
+    const sideState = { p1: sideStateFor(), p2: sideStateFor() };
     const pending = new Map<Pid, PendingAction>();
     const inflight = new Map<Pid, ActionSubmission>();
-    const submissionSequence: Record<Pid, number> = { p1: 0, p2: 0 };
     signal?.throwIfAborted();
     let abortPromise: Promise<never> | undefined;
     let onAbort: (() => void) | undefined;
@@ -158,7 +187,7 @@ export class SimBattle {
       }
     };
 
-    const nextSubmissionId = (pid: Pid) => `${this.submissionNamespace}:${pid}:${++submissionSequence[pid]}`;
+    const nextSubmissionId = (pid: Pid) => `${this.submissionNamespace}:${pid}:${++sideState[pid].submissionSequence}`;
     const resolveSubmission = (pid: Pid, outcome: SubmissionOutcome = 'accepted', showdownError?: string) => {
       const submission = inflight.get(pid);
       if (!submission) return;
@@ -176,7 +205,7 @@ export class SimBattle {
         agents[pid].abandonDecision?.();
       }
       if (event === 'autodefault') {
-        timerAutodefaults[pid] += 1;
+        sideState[pid].timerAutodefaults += 1;
         submitDefault(pid, 'timer-default');
       }
       const line = `|timer|${event}`;
@@ -186,7 +215,7 @@ export class SimBattle {
       onUpdate?.([spectatorLine], [spectatorLine]);
     };
 
-    const start: Record<string, unknown> = { formatid: this.format };
+    const start: StartCommand = { formatid: this.format };
     if (this.seed) start.seed = this.seed;
     stream.write(`>start ${JSON.stringify(start)}`);
     for (const pid of ['p1', 'p2'] as const) stream.write(`>player ${pid} ${JSON.stringify(this.players[pid])}`);
@@ -195,21 +224,18 @@ export class SimBattle {
 
     const schedule = (pid: Pid, request: BattleRequest, error?: string) => {
       if (pending.has(pid)) throw new Error(`received another request while ${pid} is still deciding`);
-      const elapsed = error && request.timer ? (this.now() - requestAt[pid]) / 1000 : 0;
-      const currentRequest =
-        request.timer && elapsed > 0
-          ? {
-              ...request,
-              timer: {
-                ...(request.timer.seconds === undefined
-                  ? {}
-                  : { seconds: Math.max(0, request.timer.seconds - elapsed) }),
-                ...(request.timer.turnSeconds === undefined
-                  ? {}
-                  : { turnSeconds: Math.max(0, request.timer.turnSeconds - elapsed) }),
-              },
-            }
-          : request;
+      const elapsed = error && request.timer ? (this.now() - sideState[pid].requestAt) / 1000 : 0;
+      let currentRequest = request;
+      if (request.timer && elapsed > 0) {
+        const { seconds, turnSeconds } = request.timer;
+        currentRequest = {
+          ...request,
+          timer: {
+            seconds: seconds === undefined ? undefined : Math.max(0, seconds - elapsed),
+            turnSeconds: turnSeconds === undefined ? undefined : Math.max(0, turnSeconds - elapsed),
+          },
+        };
+      }
       if (currentRequest.timer) {
         const line = `|-vgctimer|${pid}|${currentRequest.timer.seconds ?? ''}|${currentRequest.timer.turnSeconds ?? ''}`;
         onUpdate?.([line], [line]);
@@ -217,11 +243,11 @@ export class SimBattle {
         const line = `|-vgcdeciding|${pid}`;
         onUpdate?.([line], [line]);
       }
-      const lines = state.pov[pid].slice(povCursor[pid]);
-      povCursor[pid] = state.pov[pid].length;
+      const lines = state.pov[pid].slice(sideState[pid].povCursor);
+      sideState[pid].povCursor = state.pov[pid].length;
       const token = Symbol(pid);
       const submissionId = nextSubmissionId(pid);
-      const agentContext = { povLines: lines, ...(error ? { error } : {}), submissionId };
+      const agentContext: SubmissionContext = { povLines: lines, submissionId, error: error || undefined };
       let action: Promise<ActionSubmission | null>;
       try {
         action = Promise.resolve(agents[pid].submit(currentRequest, agentContext));
@@ -236,37 +262,39 @@ export class SimBattle {
     };
 
     const handleSideUpdate = (lines: string[]) => {
-      const pid = lines[0] as Pid;
+      const pid = lines[0];
       if (pid !== 'p1' && pid !== 'p2') return;
       for (const line of lines.slice(1)) {
         if (line.startsWith('|error|')) {
-          errors[pid] += 1;
-          retryCount[pid] += 1;
-          pendingError[pid] = line;
+          const side = sideState[pid];
+          side.errors += 1;
+          side.retryCount += 1;
+          side.pendingError = line;
           resolveSubmission(pid, 'rejected', line);
-          if (retryCount[pid] >= 3) {
+          if (side.retryCount >= 3) {
             const unavailable = line.includes('[Unavailable choice]');
-            suppressRequest[pid] = unavailable;
+            side.suppressRequest = unavailable;
             if (!unavailable) {
               submitDefault(pid, 'simulator-default');
               void Promise.resolve(timer.choose(pid, 'default')).catch(() => {});
               const stopLine = `|-vgctimerstop|${pid}`;
               onUpdate?.([stopLine], [stopLine]);
             }
-            simulatorSubstitutions[pid] += 1;
-            pendingError[pid] = undefined;
-          } else if (!line.includes('[Unavailable choice]') && lastRequest[pid]) {
-            schedule(pid, lastRequest[pid], line);
-            pendingError[pid] = undefined;
+            side.simulatorSubstitutions += 1;
+            side.pendingError = undefined;
+          } else if (!line.includes('[Unavailable choice]') && side.lastRequest) {
+            schedule(pid, side.lastRequest, line);
+            side.pendingError = undefined;
           }
         } else if (line.startsWith('|request|')) {
           const payload = line.slice(9);
           if (!payload) continue;
-          const request = JSON.parse(payload) as BattleRequest;
-          lastRequest[pid] = request;
-          requestAt[pid] = this.now();
-          if (suppressRequest[pid]) {
-            suppressRequest[pid] = false;
+          const request: BattleRequest = JSON.parse(payload);
+          const side = sideState[pid];
+          side.lastRequest = request;
+          side.requestAt = this.now();
+          if (side.suppressRequest) {
+            side.suppressRequest = false;
             submitDefault(pid, 'simulator-default');
             void Promise.resolve(timer.choose(pid, 'default')).catch(() => {});
             const stopLine = `|-vgctimerstop|${pid}`;
@@ -274,9 +302,9 @@ export class SimBattle {
             continue;
           }
           resolveSubmission(pid);
-          const error = pendingError[pid];
-          if (!error) retryCount[pid] = 0;
-          pendingError[pid] = undefined;
+          const error = side.pendingError;
+          if (!error) side.retryCount = 0;
+          side.pendingError = undefined;
           if (!request.wait) schedule(pid, request, error);
         }
       }
@@ -323,7 +351,7 @@ export class SimBattle {
           finishUpdateRouting(state);
           for (const pid of ['p1', 'p2'] as const) resolveSubmission(pid);
           if (lines[1]) {
-            const data = JSON.parse(lines.slice(1).join('\n')) as { winner?: string; turns?: number };
+            const data: BattleEndData = JSON.parse(lines.slice(1).join('\n'));
             state.winner = data.winner || state.winner;
             state.turns = data.turns ?? state.turns;
           }
@@ -339,7 +367,7 @@ export class SimBattle {
     }
 
     for (const pid of ['p1', 'p2'] as const) {
-      const remaining = state.pov[pid].slice(povCursor[pid]);
+      const remaining = state.pov[pid].slice(sideState[pid].povCursor);
       if (remaining.length) await agents[pid].observe(remaining);
     }
     return {
@@ -347,9 +375,12 @@ export class SimBattle {
       turns: state.turns,
       log: state.log,
       pov: state.pov,
-      errors,
-      simulatorSubstitutions,
-      timerAutodefaults,
+      errors: { p1: sideState.p1.errors, p2: sideState.p2.errors },
+      simulatorSubstitutions: {
+        p1: sideState.p1.simulatorSubstitutions,
+        p2: sideState.p2.simulatorSubstitutions,
+      },
+      timerAutodefaults: { p1: sideState.p1.timerAutodefaults, p2: sideState.p2.timerAutodefaults },
     };
   }
 }

@@ -17,7 +17,7 @@ function writeJson(file: string, value: unknown): void {
   fs.writeFileSync(file, `${JSON.stringify(value)}\n`, 'utf8');
 }
 
-function writeArchiveFixture(root: string): { runsDir: string; recordsPath: string } {
+function writeArchiveFixture(root: string) {
   const runsDir = path.join(root, 'runs');
   const recordsPath = path.join(root, 'records.jsonl');
   const tournamentDir = path.join(runsDir, TOURNAMENT_RUN);
@@ -83,7 +83,7 @@ async function archiveGet(port: number, pathname: string): Promise<{ status: num
       response.on('data', (chunk: Buffer) => chunks.push(chunk));
       response.on('end', () => {
         const body = Buffer.concat(chunks).toString('utf8');
-        resolve({ status: response.statusCode ?? 0, body, json: JSON.parse(body) as unknown });
+        resolve({ status: response.statusCode ?? 0, body, json: JSON.parse(body) });
       });
     });
     request.on('error', reject);

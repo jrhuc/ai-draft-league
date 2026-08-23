@@ -3,9 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test, { after } from 'node:test';
-
 import { Window } from 'happy-dom';
-
 import { GuiServer } from '../src/gui/server.js';
 
 const RUNS_SCRATCH = fs.mkdtempSync(path.join(os.tmpdir(), 'vgc-gui-dom-'));
@@ -29,10 +27,12 @@ test('built client boots to the live operator workspace', async () => {
     assert.ok(asset);
     const bundle = await (await fetch(new URL(asset, base))).text();
     window.document.body.innerHTML = '<div id="app"></div>';
-    (window as unknown as Record<string, unknown>).EventSource = class {
-      onmessage: unknown = null;
-      close(): void {}
-    };
+    Object.assign(window, {
+      EventSource: class {
+        onmessage: ((event: { data: string }) => void) | null = null;
+        close(): void {}
+      },
+    });
     window.eval(bundle);
     await waitFor(() => window.document.querySelector('main h1') !== null);
     await waitFor(() => window.document.title === 'Live · VGC Model League');

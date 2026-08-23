@@ -1,12 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { z } from 'zod';
 
 import { buildLeague, buildLeagueGame } from './archive.js';
 import { describeBoardMon, loadBoard } from './draft.js';
 import { buildDraftLeagueSchedule } from './draftleague.js';
 import { SAFE_SEGMENT } from './path-safety.js';
-import { buildPublicSeasonBundle, type PublicSeasonGameInput } from './public/season-bundle.js';
+import {
+  type BuildPublicSeasonBundleOptions,
+  buildPublicSeasonBundle,
+  type PublicSeasonGameInput,
+} from './public/season-bundle.js';
 import type { PublicSeasonBundle } from './public/season-protocol.js';
 import { loadSeriesRecords } from './records.js';
 import { showdownCommit as currentShowdownCommit } from './showdown.js';
@@ -29,18 +34,21 @@ interface StoredLeagueConfig {
 
 function storedLeagueConfig(runsDir: string, runId: string): StoredLeagueConfig {
   const file = path.join(runsDir, runId, 'config.json');
-  const value = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
-  if (typeof value.seed !== 'number' || !Number.isSafeInteger(value.seed)) {
+  const parsed = z.record(z.string(), z.json()).safeParse(JSON.parse(fs.readFileSync(file, 'utf8')));
+  if (!parsed.success) throw new Error(`league ${runId} has no valid schedule seed`);
+  const seed = z.number().safeParse(parsed.data.seed);
+  if (!seed.success || !Number.isSafeInteger(seed.data)) {
     throw new Error(`league ${runId} has no valid schedule seed`);
   }
-  if (typeof value.closed_sheets !== 'boolean') throw new Error(`league ${runId} has no team-sheet policy`);
+  const closedSheets = z.boolean().safeParse(parsed.data.closed_sheets);
+  if (!closedSheets.success) throw new Error(`league ${runId} has no team-sheet policy`);
   let showdownCommit: string | null;
-  if (Object.hasOwn(value, 'showdown_commit')) {
-    const stored = value.showdown_commit;
-    if (typeof stored !== 'string' && stored !== null) {
+  if (Object.hasOwn(parsed.data, 'showdown_commit')) {
+    const stored = z.union([z.string(), z.null()]).safeParse(parsed.data.showdown_commit);
+    if (!stored.success) {
       throw new Error(`league ${runId} has an invalid frozen Showdown commit`);
     }
-    showdownCommit = stored;
+    showdownCommit = stored.data;
   } else {
     try {
       showdownCommit = currentShowdownCommit();
@@ -48,7 +56,7 @@ function storedLeagueConfig(runsDir: string, runId: string): StoredLeagueConfig 
       showdownCommit = null;
     }
   }
-  return { seed: value.seed, closedSheets: value.closed_sheets, showdownCommit };
+  return { seed: seed.data, closedSheets: closedSheets.data, showdownCommit };
 }
 
 export function exportSeasonBundle(options: ExportSeasonOptions): PublicSeasonBundle {
@@ -75,7 +83,7 @@ export function exportSeasonBundle(options: ExportSeasonOptions): PublicSeasonBu
       }),
     );
   }
-  const bundle = buildPublicSeasonBundle({
+  const bundleOptions: BuildPublicSeasonBundleOptions = {
     league,
     plans: schedule.plans,
     board: boardView,
@@ -84,8 +92,9 @@ export function exportSeasonBundle(options: ExportSeasonOptions): PublicSeasonBu
     releasedThroughWeek: options.releasedThroughWeek,
     closedSheets: config.closedSheets,
     showdownCommit: config.showdownCommit,
-    ...(options.generatedAt === undefined ? {} : { generatedAt: options.generatedAt }),
-  });
+    generatedAt: options.generatedAt,
+  };
+  const bundle = buildPublicSeasonBundle(bundleOptions);
   const directory = path.dirname(options.out);
   const suffix = `${process.pid}.${randomUUID()}.tmp`;
   const bundleStaged = `${options.out}.${suffix}`;

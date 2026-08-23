@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
-import type { DraftBoardMon } from './draft.js';
+import type { DraftBoardMon, RunDraftOptions } from './draft.js';
 import { loadBoard, runDraft } from './draft.js';
 import { draftLeagueTopology, roundRobinWeeks } from './draftleague-topology.js';
 import { cloneMemory, emptyMemory, type FranchiseMemory, renderMemory } from './franchise-memory.js';
@@ -34,7 +34,7 @@ import { runSeasonReview } from './season-review.js';
 import type { ExperimentOptions, RecordedSeriesContext } from './series.js';
 import { mapLimit, playRecordedSeries, readCompletedSeriesEvidence } from './series.js';
 import { showdownCommit } from './showdown.js';
-import { runTeambuild, type TeamBuildSheetPolicy } from './teambuild.js';
+import { runTeambuild, type TeamBuildSheetPolicy, type TeambuildOptions } from './teambuild.js';
 import { validateTeam } from './teams.js';
 import { DEFAULT_TIMER_SCALE } from './timer.js';
 import { applyBracketOutcome, type BracketMatch, type TournamentEvent } from './tournament.js';
@@ -42,6 +42,7 @@ import {
   DEFAULT_SWAPS_ALLOWED,
   defaultTransactionSchedule,
   describeTransactionHistory,
+  type RunTradeWindowOptions,
   readValidatedTradeWindow,
   runTradeWindow,
   type TradeWindowArtifact,
@@ -53,7 +54,7 @@ import {
   validateSwapsAllowed,
   validateTransactionSchedule,
 } from './trade-window.js';
-import type { Pid } from './types.js';
+import type { JsonObject, Pid } from './types.js';
 import { ordinal } from './value.js';
 import {
   type ReviewStage,
@@ -269,6 +270,11 @@ export async function runDraftLeague(
   }
   const completed = new Map<number, SeriesRecord>();
   const storedOutcomes = new Map<number, StoredSeriesOutcome>();
+  const outcomeFor = (plan: DraftLeagueSeriesPlan): StoredSeriesOutcome => {
+    const outcome = storedOutcomes.get(plan.index);
+    if (!outcome) throw new Error(`run ${runId} series ${plan.index} lacks a validated outcome`);
+    return outcome;
+  };
   const storedRoundRobinRows = storedRows.roundRobin;
   const storedPlayoffRows = storedRows.playoffs;
   const storedRunRows = storedRows.all;
@@ -361,28 +367,29 @@ export async function runDraftLeague(
     memories = draftNotes.map((note) => emptyMemory(note));
   } else {
     writeConfig();
-    const outcome = await runDraft(entrants, board, {
+    const draftOptions: RunDraftOptions = {
       psDir,
       logDir: path.join(runDir, 'draft'),
       rng: random,
       rosterPolicy: transactionPolicyLine(schedule, swapsAllowed),
-      ...(options.reasoning === undefined ? {} : { reasoning: options.reasoning }),
-      ...(options.reasoningByModel === undefined ? {} : { reasoningByModel: options.reasoningByModel }),
-      ...(options.apiKeys === undefined ? {} : { apiKeys: options.apiKeys }),
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
-      onPick: (view, state) => {
-        picks = [...picks, view];
-        rosters = state.rosters;
-        budgets = state.budgets;
-        writeConfig();
-        options.onEvent?.({ type: 'draft', draft: draftView(false) });
-      },
-      onName: (_entrant, _teamName, state) => {
-        teamNames = [...state.teamNames];
-        writeConfig();
-        options.onEvent?.({ type: 'draft', draft: draftView(false) });
-      },
-    });
+      reasoning: options.reasoning,
+      reasoningByModel: options.reasoningByModel,
+      apiKeys: options.apiKeys,
+      signal: options.signal,
+    };
+    draftOptions.onPick = (view, state) => {
+      picks = [...picks, view];
+      rosters = state.rosters;
+      budgets = state.budgets;
+      writeConfig();
+      options.onEvent?.({ type: 'draft', draft: draftView(false) });
+    };
+    draftOptions.onName = (_entrant, _teamName, state) => {
+      teamNames = [...state.teamNames];
+      writeConfig();
+      options.onEvent?.({ type: 'draft', draft: draftView(false) });
+    };
+    const outcome = await runDraft(entrants, board, draftOptions);
     rosters = outcome.rosters;
     budgets = outcome.budgets;
     teamNames = outcome.teamNames;
@@ -410,7 +417,7 @@ export async function runDraftLeague(
     );
   }
   const windowArtifacts: TradeWindowArtifact[] = [];
-  const swapsUsed = (): number[] => windowArtifacts.at(-1)?.swaps_used.slice() ?? entrants.map(() => 0);
+  const swapsUsed = (): number[] => windowArtifacts.at(-1)?.swaps_used?.slice() ?? entrants.map(() => 0);
   const rosterHistory: DraftBoardMon[][][] = [initialRosters];
   const rosterStateFor = (plan: DraftLeagueSeriesPlan): readonly DraftBoardMon[][] => {
     const state = rosterHistory[rosterVersionFor(plan)];
@@ -499,14 +506,14 @@ export async function runDraftLeague(
         p1: draftRosterSummary(rosterState[pair[0]]!, builds.p1.view),
         p2: draftRosterSummary(rosterState[pair[1]]!, builds.p2.view),
       },
-      ...(plan.stage === 'playoff' ? { requireWinner: true } : {}),
-      ...(options.closedSheets === true ? { closedSheets: true } : {}),
-      ...(options.reasoning === undefined ? {} : { reasoning: options.reasoning }),
-      ...(options.reasoningByModel === undefined ? {} : { reasoningByModel: options.reasoningByModel }),
+      requireWinner: plan.stage === 'playoff',
+      closedSheets: options.closedSheets,
+      reasoning: options.reasoning,
+      reasoningByModel: options.reasoningByModel,
       timerScale,
     };
     const canonical = readCompletedSeriesEvidence(evidenceContext);
-    const storedFields = {
+    const storedFields: JsonObject = {
       series_id: row.series_id,
       attempt_id: row.attempt_id,
       format: row.format,
@@ -519,10 +526,11 @@ export async function runDraftLeague(
       games: row.games,
       engine_seeds: row.engine_seeds,
       timer_scale: row.timer_scale,
-      ...(row.closed_sheets === undefined ? {} : { closed_sheets: row.closed_sheets }),
       reasoning: row.reasoning,
-      ...(row.reasoning_by_player === undefined ? {} : { reasoning_by_player: row.reasoning_by_player }),
+      sampling: 'provider-default',
     };
+    if (row.closed_sheets !== undefined) storedFields.closed_sheets = row.closed_sheets;
+    if (row.reasoning_by_player !== undefined) storedFields.reasoning_by_player = row.reasoning_by_player;
     if (
       row.schema_version !== 1 ||
       row.mode !== 'draft' ||
@@ -584,32 +592,31 @@ export async function runDraftLeague(
       } catch {}
     }
 
-    const result = await runTeambuild(
-      {
-        seriesIndex: plan.index,
-        entrant,
-        opponent,
-        stage: plan.stage,
-        model: entrants[entrant]!,
-        opponentModel: entrants[opponent]!,
-        franchiseName: teamNames[entrant]!,
-        roster: rosters[entrant]!,
-        opponentRoster: rosters[opponent]!,
-        memory: memories[entrant]!,
-        playoffContext: priorContextFor(entrant, opponent),
-        format: board.format,
-        sheetPolicy,
-      },
-      {
-        psDir,
-        logDir: path.join(runDir, 'teambuild'),
-        rng: seededRng(`${seed}:tb:${plan.index}:${entrant}`),
-        signal,
-        ...(options.reasoning === undefined ? {} : { reasoning: options.reasoning }),
-        ...(options.reasoningByModel === undefined ? {} : { reasoningByModel: options.reasoningByModel }),
-        ...(options.apiKeys === undefined ? {} : { apiKeys: options.apiKeys }),
-      },
-    );
+    const request = {
+      seriesIndex: plan.index,
+      entrant,
+      opponent,
+      stage: plan.stage,
+      model: entrants[entrant]!,
+      opponentModel: entrants[opponent]!,
+      franchiseName: teamNames[entrant]!,
+      roster: rosters[entrant]!,
+      opponentRoster: rosters[opponent]!,
+      memory: memories[entrant]!,
+      playoffContext: priorContextFor(entrant, opponent),
+      format: board.format,
+      sheetPolicy,
+    };
+    const teambuildOptions: TeambuildOptions = {
+      psDir,
+      logDir: path.join(runDir, 'teambuild'),
+      rng: seededRng(`${seed}:tb:${plan.index}:${entrant}`),
+      signal,
+      reasoning: options.reasoning,
+      reasoningByModel: options.reasoningByModel,
+      apiKeys: options.apiKeys,
+    };
+    const result = await runTeambuild(request, teambuildOptions);
     validateTeam(result.packed, board.format, psDir);
     teambuilds.push(result.view);
     options.onEvent?.({ type: 'draft', draft: draftView(true) });
@@ -621,11 +628,11 @@ export async function runDraftLeague(
   let playoffBracketRounds: BracketMatch[][] | undefined;
   const playSeries = async (plan: DraftLeagueSeriesPlan, signal: AbortSignal): Promise<SeriesRecord> => {
     const [a, b] = plan.entrants!;
-    const players: Record<Pid, string> = { p1: entrants[a]!, p2: entrants[b]! };
+    const players = { p1: entrants[a]!, p2: entrants[b]! };
     options.onEvent?.({ type: 'series-players', index: plan.index, players });
     const [home, away] = await Promise.all([teambuildFor(plan, a, b, signal), teambuildFor(plan, b, a, signal)]);
     options.onEvent?.({ type: 'series-start', index: plan.index });
-    const { winnerSide, fields, coachNotes } = await playRecordedSeries({
+    const seriesContext: RecordedSeriesContext = {
       seriesIndex: plan.index,
       players,
       teams: {
@@ -646,21 +653,19 @@ export async function runDraftLeague(
       psDir,
       runDir,
       signal,
-      ...(plan.stage === 'playoff' ? { requireWinner: true } : {}),
-      ...(options.closedSheets === true ? { closedSheets: true } : {}),
-      ...(options.reasoning === undefined ? {} : { reasoning: options.reasoning }),
-      ...(options.apiKeys === undefined ? {} : { apiKeys: options.apiKeys }),
-      ...(options.reasoningByModel === undefined ? {} : { reasoningByModel: options.reasoningByModel }),
+      requireWinner: plan.stage === 'playoff',
+      closedSheets: options.closedSheets,
+      reasoning: options.reasoning,
+      apiKeys: options.apiKeys,
+      reasoningByModel: options.reasoningByModel,
       timerScale,
       onGameUpdate: (game, lines, publicLines) =>
         options.onEvent?.({ type: 'game-update', index: plan.index, game, lines, publicLines }),
       onGameEnd: (game, winner, turns, score) =>
         options.onEvent?.({ type: 'game-end', index: plan.index, game, winner, turns, score }),
       onDecision: (pid, row) => options.onEvent?.({ type: 'decision', index: plan.index, pid, row }),
-    });
-    if (plan.stage === 'playoff' && !winnerSide) {
-      throw new Error(`draft playoff series ${plan.index + 1} ended without a winner`);
-    }
+    };
+    const { winnerSide, fields, coachNotes } = await playRecordedSeries(seriesContext);
     const row: SeriesRecord = {
       schema_version: 1,
       mode: 'draft',
@@ -668,18 +673,22 @@ export async function runDraftLeague(
       entrants: [a, b],
       stage: plan.stage,
       round: plan.round,
-      ...(plan.stage === 'playoff' ? { advanced: entrants[winnerSide === 'p1' ? a : b]! } : {}),
       board: board.id,
       transactions: configuredTransactions,
       roster_version: rosterVersionFor(plan),
-      ...(options.contributor === undefined ? {} : { contributor: options.contributor }),
       run_seed: seed,
       ps_commit: showdownCommit(psDir),
       ...fields,
-    } as SeriesRecord;
+    };
+    if (plan.stage === 'playoff') {
+      if (!winnerSide) throw new Error(`draft playoff series ${plan.index + 1} ended without a winner`);
+      row.advanced = entrants[winnerSide === 'p1' ? a : b]!;
+    }
+    if (options.contributor !== undefined) row.contributor = options.contributor;
     appendRow(recordsPath, row);
     completed.set(plan.index, row);
-    applyOutcome(plan, row, {
+    storedOutcomes.set(plan.index, { score: fields.score, winnerSide });
+    applyOutcome(plan, {
       p1: { build: home.view, notebook: coachNotes.p1 },
       p2: { build: away.view, notebook: coachNotes.p2 },
     });
@@ -689,13 +698,10 @@ export async function runDraftLeague(
 
   const applyOutcome = (
     plan: DraftLeagueSeriesPlan,
-    row: SeriesRecord,
     coaching?: Record<Pid, { build: TeambuildView; notebook: string }>,
   ): void => {
     const [a, b] = plan.entrants!;
-    const storedOutcome = storedOutcomes.get(plan.index);
-    const winnerSide = storedOutcome?.winnerSide ?? ((row.winner_side ?? undefined) as Pid | undefined);
-    const score = storedOutcome?.score ?? (row.score as Record<Pid, number>);
+    const { winnerSide, score } = outcomeFor(plan);
     for (const [entrant, opponent, side] of [
       [a, b, 'p1'],
       [b, a, 'p2'],
@@ -757,9 +763,7 @@ export async function runDraftLeague(
       if (plan.stage !== 'roundrobin' || plan.round > afterWeek || !plan.entrants) continue;
       const row = completed.get(plan.index);
       if (!row) continue;
-      const storedOutcome = storedOutcomes.get(plan.index);
-      const score = storedOutcome?.score ?? (row.score as Record<Pid, number>);
-      const winner = storedOutcome?.winnerSide ?? ((row.winner_side ?? undefined) as Pid | undefined);
+      const { score, winnerSide: winner } = outcomeFor(plan);
       const [a, b] = plan.entrants;
       rows[a]!.gw += score.p1;
       rows[a]!.gl += score.p2;
@@ -787,9 +791,7 @@ export async function runDraftLeague(
       if (plan.stage !== 'roundrobin' || plan.round > throughWeek || !plan.entrants) continue;
       const row = completed.get(plan.index);
       if (!row) continue;
-      const storedOutcome = storedOutcomes.get(plan.index);
-      const score = storedOutcome?.score ?? (row.score as Record<Pid, number>);
-      const winnerSide = storedOutcome?.winnerSide ?? ((row.winner_side ?? undefined) as Pid | undefined);
+      const { score, winnerSide } = outcomeFor(plan);
       const [a, b] = plan.entrants;
       list.push({
         index: plan.index,
@@ -817,6 +819,14 @@ export async function runDraftLeague(
     );
     if (missing) throw new Error(`run ${runId} ${context} for week ${week} precedes scheduled series ${missing.index}`);
   };
+  const reviewOptions = {
+    runDir,
+    psDir,
+    reasoning: options.reasoning,
+    reasoningByModel: options.reasoningByModel,
+    apiKeys: options.apiKeys,
+    signal: options.signal,
+  };
   const reviewWeekFor = async (week: number): Promise<void> => {
     if (!reviewWeeks.includes(week) || reviewedThrough >= week) return;
     requireWeekComplete(week, 'weekly review');
@@ -843,14 +853,7 @@ export async function runDraftLeague(
         transactions: describeTransactionHistory(windowArtifacts, entrants),
         nextWindowWeek: nextWindow ? nextWindow.afterWeek : null,
       },
-      {
-        runDir,
-        psDir,
-        ...(options.reasoning === undefined ? {} : { reasoning: options.reasoning }),
-        ...(options.reasoningByModel === undefined ? {} : { reasoningByModel: options.reasoningByModel }),
-        ...(options.apiKeys === undefined ? {} : { apiKeys: options.apiKeys }),
-        ...(options.signal === undefined ? {} : { signal: options.signal }),
-      },
+      reviewOptions,
     );
     reviewedThrough = week;
     options.onEvent?.({ type: 'draft', draft: draftView(true) });
@@ -928,14 +931,7 @@ export async function runDraftLeague(
           transactions: describeTransactionHistory(windowArtifacts, entrants),
           nextWindowWeek: nextWindow ? nextWindow.afterWeek : null,
         },
-        {
-          runDir,
-          psDir,
-          ...(options.reasoning === undefined ? {} : { reasoning: options.reasoning }),
-          ...(options.reasoningByModel === undefined ? {} : { reasoningByModel: options.reasoningByModel }),
-          ...(options.apiKeys === undefined ? {} : { apiKeys: options.apiKeys }),
-          ...(options.signal === undefined ? {} : { signal: options.signal }),
-        },
+        reviewOptions,
       );
     }
     reconciled.add(index);
@@ -1010,7 +1006,7 @@ export async function runDraftLeague(
     if (plan.stage !== 'roundrobin') continue;
     const row = completed.get(plan.index);
     if (row) {
-      applyOutcome(plan, row);
+      applyOutcome(plan);
       results.push(row);
     }
   }
@@ -1083,9 +1079,7 @@ export async function runDraftLeague(
       const row = completed.get(plan.index);
       if (!row) continue;
       const [a, b] = plan.entrants;
-      const storedOutcome = storedOutcomes.get(plan.index);
-      const score = storedOutcome?.score ?? (row.score as Record<Pid, number>);
-      const winner = storedOutcome?.winnerSide ?? ((row.winner_side ?? undefined) as Pid | undefined);
+      const { score, winnerSide: winner } = outcomeFor(plan);
       for (const [entrant, opponent, side] of [
         [a, b, 'p1'],
         [b, a, 'p2'],
@@ -1101,34 +1095,33 @@ export async function runDraftLeague(
         });
       }
     }
-    const artifact = await runTradeWindow(
-      {
-        board,
-        models: entrants,
-        teamNames,
-        rosters,
-        budgets,
-        memories,
-        standings: rankedTable(table),
-        results: windowResults,
-        reflections: reflectionNotes.map((notes) =>
-          [...notes.entries()].sort(([a], [b]) => a - b).map(([, note]) => note),
-        ),
-        history: describeTransactionHistory(windowArtifacts, entrants),
-        swapsAllowed,
-        swapsUsed: swapsUsed(),
-      },
-      {
-        epochDir: transactionEpochDir(runDir, window.afterWeek),
-        psDir,
-        position: { afterWeek: window.afterWeek, index, count: schedule.length },
-        tradesAllowed: window.tradesAllowed,
-        ...(options.reasoning === undefined ? {} : { reasoning: options.reasoning }),
-        ...(options.reasoningByModel === undefined ? {} : { reasoningByModel: options.reasoningByModel }),
-        ...(options.apiKeys === undefined ? {} : { apiKeys: options.apiKeys }),
-        ...(options.signal === undefined ? {} : { signal: options.signal }),
-      },
-    );
+    const tradeState = {
+      board,
+      models: entrants,
+      teamNames,
+      rosters,
+      budgets,
+      memories,
+      standings: rankedTable(table),
+      results: windowResults,
+      reflections: reflectionNotes.map((notes) =>
+        [...notes.entries()].sort(([a], [b]) => a - b).map(([, note]) => note),
+      ),
+      history: describeTransactionHistory(windowArtifacts, entrants),
+      swapsAllowed,
+      swapsUsed: swapsUsed(),
+    };
+    const tradeOptions: RunTradeWindowOptions = {
+      epochDir: transactionEpochDir(runDir, window.afterWeek),
+      psDir,
+      position: { afterWeek: window.afterWeek, index, count: schedule.length },
+      tradesAllowed: window.tradesAllowed,
+      reasoning: options.reasoning,
+      reasoningByModel: options.reasoningByModel,
+      apiKeys: options.apiKeys,
+      signal: options.signal,
+    };
+    const artifact = await runTradeWindow(tradeState, tradeOptions);
     windowArtifacts.push(artifact);
     rosterHistory.push(rosters.map((roster) => [...roster]));
     phase = 'roundrobin';
@@ -1138,29 +1131,19 @@ export async function runDraftLeague(
    * judges its draft without seeing playoff results it was never part of. */
   const closeSeason = async (finished: Array<{ entrant: number; outcome: string }>): Promise<void> => {
     if (!finished.length || options.signal?.aborted) return;
-    await runSeasonReview(
-      finished,
-      {
-        board,
-        models: entrants,
-        picks,
-        rosters,
-        windows: windowArtifacts,
-        standings: rankedTable(table),
-        series: playoffContext.map((context) =>
-          [...context.entries()].sort(([a], [b]) => a - b).map(([, entry]) => entry),
-        ),
-        notebooks: memories.map((memory) => renderMemory(memory, 'full').join('\n')),
-      },
-      {
-        runDir,
-        psDir,
-        ...(options.reasoning === undefined ? {} : { reasoning: options.reasoning }),
-        ...(options.reasoningByModel === undefined ? {} : { reasoningByModel: options.reasoningByModel }),
-        ...(options.apiKeys === undefined ? {} : { apiKeys: options.apiKeys }),
-        ...(options.signal === undefined ? {} : { signal: options.signal }),
-      },
-    );
+    const seasonState = {
+      board,
+      models: entrants,
+      picks,
+      rosters,
+      windows: windowArtifacts,
+      standings: rankedTable(table),
+      series: playoffContext.map((context) =>
+        [...context.entries()].sort(([a], [b]) => a - b).map(([, entry]) => entry),
+      ),
+      notebooks: memories.map((memory) => renderMemory(memory, 'full').join('\n')),
+    };
+    await runSeasonReview(finished, seasonState, reviewOptions);
   };
   /** A retrospective buys nothing later games depend on, so an eliminated coach writes its review while the
    * bracket plays on; the run joins the outstanding reviews, and surfaces their failures, before it returns. */
@@ -1168,7 +1151,7 @@ export async function runDraftLeague(
   let seasonFailure: unknown;
   const startSeasonClose = (finished: Array<{ entrant: number; outcome: string }>): void => {
     seasonJobs.push(
-      closeSeason(finished).catch((error: unknown) => {
+      closeSeason(finished).catch((error) => {
         seasonFailure ??= error;
       }),
     );
@@ -1248,26 +1231,31 @@ export async function runDraftLeague(
   if (options.signal?.aborted) return finish();
 
   const playoffs = plans.filter((plan) => plan.stage === 'playoff');
-  playoffBracketRounds ??= buildDraftPlayoffBracket(playoffs, seeding);
-  const bracketView = (): BracketView => ({
-    entrants: entrants.map((model, index) => ({
-      model,
-      team: teamNames[index] || `seed ${seeding.indexOf(index) + 1}`,
-    })),
-    rounds: playoffBracketRounds!.map((round) =>
-      round.map((match) => ({
-        seriesIndex: match.seriesIndex,
-        slots: [...match.slots],
-        winner: match.winner,
+  let bracketRounds = playoffBracketRounds ?? buildDraftPlayoffBracket(playoffs, seeding);
+  const bracketView = (): BracketView => {
+    const championship = bracketRounds.at(-1)?.[0];
+    if (!championship) throw new Error(`run ${runId} has no championship bracket match`);
+    return {
+      entrants: entrants.map((model, index) => ({
+        model,
+        team: teamNames[index] || `seed ${seeding.indexOf(index) + 1}`,
       })),
-    ),
-    champion: playoffBracketRounds!.at(-1)![0]!.winner,
-  });
+      rounds: bracketRounds.map((round) =>
+        round.map((match) => ({
+          seriesIndex: match.seriesIndex,
+          slots: [...match.slots],
+          winner: match.winner,
+        })),
+      ),
+      champion: championship.winner,
+    };
+  };
   options.onEvent?.({ type: 'bracket', bracket: bracketView() });
 
   const resolve = (scheduled: BracketMatch, winnerSide: Pid): number => {
-    const winner = scheduled.slots[winnerSide === 'p1' ? 0 : 1]!;
-    playoffBracketRounds = applyBracketOutcome(playoffBracketRounds!, scheduled, winnerSide);
+    const winner = scheduled.slots[winnerSide === 'p1' ? 0 : 1];
+    if (winner === null) throw new Error(`run ${runId} cannot resolve an empty playoff slot`);
+    bracketRounds = applyBracketOutcome(bracketRounds, scheduled, winnerSide);
     options.onEvent?.({ type: 'bracket', bracket: bracketView() });
     return winner;
   };
@@ -1279,22 +1267,28 @@ export async function runDraftLeague(
       options.signal,
       async (matchIndex, signal) => {
         const plan = playoffs[matchIndex]!;
-        const scheduled = playoffBracketRounds![0]![matchIndex]!;
-        plan.entrants = [...scheduled.slots] as [number, number];
+        const scheduled = bracketRounds[0]![matchIndex]!;
+        const [first, second] = scheduled.slots;
+        if (first === null || second === null) {
+          throw new Error(`run ${runId} semifinal ${matchIndex + 1} has unresolved bracket slots`);
+        }
+        plan.entrants = [first, second];
         const existing = completed.get(plan.index);
         if (existing) {
-          applyOutcome(plan, existing);
+          applyOutcome(plan);
           return existing;
         }
         const row = await playSeries(plan, signal);
-        resolve(scheduled, row.winner_side as Pid);
+        const winnerSide = outcomeFor(plan).winnerSide;
+        if (!winnerSide) throw new Error(`draft playoff series ${plan.index + 1} ended without a winner`);
+        resolve(scheduled, winnerSide);
         return row;
       },
     );
     results.push(...semis);
     if (options.signal?.aborted) return finish();
     startSeasonClose(
-      playoffBracketRounds![0]!.flatMap((match) => {
+      bracketRounds[0]!.flatMap((match) => {
         const loser = match.slots.find((slot) => slot !== null && slot !== match.winner);
         return loser === null || loser === undefined
           ? []
@@ -1310,16 +1304,23 @@ export async function runDraftLeague(
   }
   const finalPlan = playoffs[playoffs.length - 1]!;
   const finalRound = playoffRounds - 1;
-  const scheduledFinal = playoffBracketRounds[finalRound]![0]!;
-  finalPlan.entrants = [...scheduledFinal.slots] as [number, number];
-  if (finalPlan.entrants[0] === null || finalPlan.entrants[1] === null) return finish();
+  const scheduledFinal = bracketRounds[finalRound]![0]!;
+  const [finalFirst, finalSecond] = scheduledFinal.slots;
+  if (finalFirst === null || finalSecond === null) return finish();
+  finalPlan.entrants = [finalFirst, finalSecond];
   const storedFinal = completed.get(finalPlan.index);
   const finalRow = storedFinal
     ? [storedFinal]
     : await mapLimit([finalPlan], 1, options.signal, (plan, signal) => playSeries(plan, signal));
   if (finalRow[0]) {
-    if (storedFinal) applyOutcome(finalPlan, storedFinal);
-    const champion = storedFinal ? scheduledFinal.winner! : resolve(scheduledFinal, finalRow[0].winner_side as Pid);
+    if (storedFinal) applyOutcome(finalPlan);
+    const finalWinnerSide = outcomeFor(finalPlan).winnerSide;
+    if (!finalWinnerSide) throw new Error(`draft playoff series ${finalPlan.index + 1} ended without a winner`);
+    const champion = storedFinal
+      ? finalWinnerSide === 'p1'
+        ? finalFirst
+        : finalSecond
+      : resolve(scheduledFinal, finalWinnerSide);
     results.push(finalRow[0]);
     const runnerUp = finalPlan.entrants.find((entrant) => entrant !== champion);
     await closeSeason([
@@ -1340,7 +1341,7 @@ export async function runDraftLeague(
 }
 
 function sorted(rows: SeriesRecord[]): SeriesRecord[] {
-  return [...rows].sort((a, b) => (a.series_index as number) - (b.series_index as number));
+  return [...rows].sort((a, b) => Number(a.series_index) - Number(b.series_index));
 }
 
 export function rankedTable(table: DraftTableRow[]): DraftTableRow[] {

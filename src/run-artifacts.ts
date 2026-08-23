@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { z } from 'zod';
+
 import type {
   BattleLogEntryView,
   BattleSnapshot,
@@ -15,13 +17,50 @@ import { BattleLog } from './gui/battlelog.js';
 import { readJsonlObjects } from './jsonl.js';
 import { SAFE_SEGMENT } from './path-safety.js';
 import type { SeriesRecord } from './records.js';
+import { runStatusSchema } from './run-status.js';
+import { storedSeriesMetadataSchema } from './series.js';
 import { loadShowdown } from './showdown.js';
 import { BattleState, type MonState } from './state.js';
-import type { Pid } from './types.js';
-import { afterColon } from './value.js';
+import type { JsonValue, Pid } from './types.js';
+import { afterColon, isErrnoCode } from './value.js';
 
-export function count(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+const pidSchema = z.enum(['p1', 'p2']);
+const runLeaseArtifactSchema = z.looseObject({ pid: z.number().optional().catch(undefined) });
+const decisionLogArtifactSchema = z.looseObject({
+  kind: z.string().catch(''),
+  automatic: z.boolean().catch(false),
+  game_number: z.number().finite().catch(0),
+  turn: z.number().finite().catch(0),
+  phase: z.string().catch('turn'),
+  latency_ms: z.number().finite().nullable().catch(null),
+  total_tokens: z.number().finite().nullable().catch(null),
+  reasoning_tokens: z.number().finite().nullable().catch(null),
+});
+const decisionArtifactSchema = z.looseObject({
+  action: z.string().catch(''),
+  adjustment: z.string().catch(''),
+  automatic: z.boolean().catch(false),
+  fallback: z.boolean().catch(false),
+  game_number: z.number().finite().catch(0),
+  kind: z.string().catch(''),
+  latency_ms: z.number().finite().nullable().catch(null),
+  notebook: z.string().catch(''),
+  phase: z.string().catch('turn'),
+  rationale: z.string().catch(''),
+  reasoning_tokens: z.number().finite().nullable().catch(null),
+  result: z.enum(['won', 'lost']).catch('lost'),
+  selection: z.array(z.json()).catch([]),
+  series_over: z.boolean().catch(false),
+  summary: z.string().catch(''),
+  total_tokens: z.number().finite().nullable().catch(null),
+  turn: z.number().finite().catch(0),
+});
+const gameArtifactSchema = z.looseObject({
+  winner_side: z.enum(['p1', 'p2']).nullable().catch(null),
+});
+
+export function count(value: JsonValue | undefined): number {
+  return Number.isFinite(value) ? Number(value) : 0;
 }
 
 export function decisionLogPath(runsDir: string, runId: string, seriesId: string, pid: Pid): string | null {
@@ -56,23 +95,21 @@ export function readDecisionLog(file: string): DecisionLogRow[] {
   const rows: DecisionLogRow[] = [];
   for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
     if (!line.trim()) continue;
-    let entry: Record<string, unknown>;
     try {
-      entry = JSON.parse(line) as Record<string, unknown>;
-    } catch {
-      continue;
-    }
-    const numeric = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
-    rows.push({
-      kind: typeof entry.kind === 'string' ? entry.kind : '',
-      automatic: entry.automatic === true,
-      game: count(entry.game_number),
-      turn: count(entry.turn),
-      phase: typeof entry.phase === 'string' ? entry.phase : 'turn',
-      latencyMs: numeric(entry.latency_ms),
-      totalTokens: numeric(entry.total_tokens),
-      reasoningTokens: numeric(entry.reasoning_tokens),
-    });
+      const parsed = decisionLogArtifactSchema.safeParse(JSON.parse(line));
+      if (!parsed.success) continue;
+      const entry = parsed.data;
+      rows.push({
+        kind: entry.kind,
+        automatic: entry.automatic,
+        game: entry.game_number,
+        turn: entry.turn,
+        phase: entry.phase,
+        latencyMs: entry.latency_ms,
+        totalTokens: entry.total_tokens,
+        reasoningTokens: entry.reasoning_tokens,
+      });
+    } catch {}
   }
   logCache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, rows });
   return rows;
@@ -103,9 +140,6 @@ export function spriteIdFor(species: string): string {
 export function viewTeamSheet(packed: string): TeambuildSetView[] {
   const { Teams } = loadShowdown();
   return (Teams.unpack(packed) ?? []).map((set) => {
-    const evs = Object.fromEntries(
-      Object.entries(set.evs ?? {}).filter((entry): entry is [string, number] => typeof entry[1] === 'number'),
-    );
     const species = set.species || set.name || 'Pokémon';
     return {
       species,
@@ -114,7 +148,7 @@ export function viewTeamSheet(packed: string): TeambuildSetView[] {
       ability: set.ability,
       nature: set.nature,
       moves: set.moves,
-      evs,
+      evs: { ...set.evs },
       repaired: false,
       repairs: [],
     };
@@ -186,17 +220,20 @@ export function snapshotBattle(
 }
 
 export function isRunLive(runsDir: string, runId: string): boolean {
-  const status = readRunJson(runsDir, runId, 'status.json') as Record<string, unknown> | null;
-  if (status?.state !== 'running' || typeof status.pid !== 'number') return false;
+  const status = runStatusSchema.safeParse(readRunJson(runsDir, runId, 'status.json'));
+  if (!status.success || status.data.state !== 'running') return false;
+  const lease = runLeaseArtifactSchema.safeParse(readRunJson(runsDir, runId, '.run.lease'));
+  const pid = status.data.pid ?? (lease.success ? lease.data.pid : undefined);
+  if (pid === undefined) return false;
   try {
-    process.kill(status.pid, 0);
+    process.kill(pid, 0);
     return true;
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
+    return isErrnoCode(error, 'EPERM');
   }
 }
 
-export function readRunJson(runsDir: string, runId: string, ...segments: string[]): unknown {
+export function readRunJson(runsDir: string, runId: string, ...segments: string[]): JsonValue {
   try {
     return JSON.parse(fs.readFileSync(path.join(runsDir, runId, ...segments), 'utf8'));
   } catch {
@@ -204,7 +241,7 @@ export function readRunJson(runsDir: string, runId: string, ...segments: string[
   }
 }
 
-export function readRunLines(runsDir: string, runId: string, ...segments: string[]): Record<string, unknown>[] {
+export function readRunLines(runsDir: string, runId: string, ...segments: string[]) {
   return readJsonlObjects(path.join(runsDir, runId, ...segments));
 }
 
@@ -240,16 +277,13 @@ export function scanUnfinishedSeries(runsDir: string, runId: string, rows: Serie
         turn = Math.max(turn, count(last.turn));
       }
     }
-    const meta = readRunJson(runsDir, runId, 'series', seriesId, 'series.json') as Record<string, unknown> | null;
-    const storedIdentity =
-      meta?.schema_version === 3 && meta.identity && typeof meta.identity === 'object' && !Array.isArray(meta.identity)
-        ? (meta.identity as Record<string, unknown>)
-        : null;
-    const raw = (storedIdentity?.players ?? null) as Record<string, unknown> | null;
-    const players = raw && typeof raw.p1 === 'string' && typeof raw.p2 === 'string' ? { p1: raw.p1, p2: raw.p2 } : null;
+    const metadata = storedSeriesMetadataSchema.safeParse(
+      readRunJson(runsDir, runId, 'series', seriesId, 'series.json'),
+    );
+    const players = metadata.success ? metadata.data.players : null;
     found.push({
       seriesId,
-      seriesIndex: typeof storedIdentity?.series_index === 'number' ? storedIdentity.series_index : null,
+      seriesIndex: metadata.success ? metadata.data.seriesIndex : null,
       game: Math.max(1, game),
       turn,
       decisions,
@@ -297,37 +331,37 @@ export function buildSeriesGame(
     [0, 'p1'],
     [1, 'p2'],
   ] as const) {
-    for (const entry of readRunLines(runsDir, runId, 'series', seriesId, `${pid}-decisions.jsonl`)) {
-      const entryGame = count(entry.game_number);
+    for (const artifact of readRunLines(runsDir, runId, 'series', seriesId, `${pid}-decisions.jsonl`)) {
+      const entry = decisionArtifactSchema.parse(artifact);
+      const entryGame = entry.game_number;
       if (entryGame > 0) gameNumbers.add(entryGame);
       if (entryGame !== game) continue;
       if (entry.kind === 'game_reflection') {
         reflections.push({
           side,
-          result: entry.result === 'won' ? 'won' : 'lost',
-          summary: typeof entry.summary === 'string' ? entry.summary : '',
-          adjustment: typeof entry.adjustment === 'string' ? entry.adjustment : '',
-          notebook: typeof entry.notebook === 'string' ? entry.notebook : '',
-          fallback: entry.fallback === true,
-          seriesOver: entry.series_over === true,
+          result: entry.result,
+          summary: entry.summary,
+          adjustment: entry.adjustment,
+          notebook: entry.notebook,
+          fallback: entry.fallback,
+          seriesOver: entry.series_over,
         });
         continue;
       }
       if (entry.kind !== 'decision') continue;
-      const numeric = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
       decisions.push({
         side,
-        turn: count(entry.turn),
-        phase: typeof entry.phase === 'string' ? entry.phase : 'turn',
-        selection: Array.isArray(entry.selection) ? entry.selection.map(String) : [],
-        action: typeof entry.action === 'string' ? entry.action : '',
-        rationale: typeof entry.rationale === 'string' ? entry.rationale : '',
-        notebook: typeof entry.notebook === 'string' ? entry.notebook : '',
-        fallback: entry.fallback === true,
-        automatic: entry.automatic === true,
-        latencyMs: numeric(entry.latency_ms),
-        totalTokens: numeric(entry.total_tokens),
-        reasoningTokens: numeric(entry.reasoning_tokens),
+        turn: entry.turn,
+        phase: entry.phase,
+        selection: entry.selection.map(String),
+        action: entry.action,
+        rationale: entry.rationale,
+        notebook: entry.notebook,
+        fallback: entry.fallback,
+        automatic: entry.automatic,
+        latencyMs: entry.latency_ms,
+        totalTokens: entry.total_tokens,
+        reasoningTokens: entry.reasoning_tokens,
       });
     }
   }
@@ -357,13 +391,17 @@ export function buildSeriesGame(
     });
   }
 
-  const gameRows = row && Array.isArray(row.games) ? (row.games as Record<string, unknown>[]) : [];
+  const parsedGameRows = z.array(gameArtifactSchema).safeParse(row?.games);
+  const gameRows = parsedGameRows.success ? parsedGameRows.data : [];
   const logWinner = (text: string): number | null => {
     const lines = text.split('\n');
     const players = new Map<string, Pid>();
     for (const line of lines) {
       const match = /^\|player\|(p[12])\|([^|]+)\|/.exec(line);
-      if (match) players.set(match[2]!, match[1] as Pid);
+      if (!match) continue;
+      const pid = pidSchema.safeParse(match[1]);
+      const player = z.string().min(1).safeParse(match[2]);
+      if (pid.success && player.success) players.set(player.data, pid.data);
     }
     const winLine = lines.find((line) => line.startsWith('|win|'));
     const pid = winLine === undefined ? undefined : players.get(winLine.slice(5).trim());

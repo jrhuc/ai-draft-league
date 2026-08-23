@@ -1,5 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
+
+import { z } from 'zod';
 import type {
   ArchivedMatchView,
   BracketEntrantView,
@@ -11,11 +13,34 @@ import type {
   TournamentsResponse,
 } from './gui/api.js';
 import { SAFE_SEGMENT } from './path-safety.js';
-import { type SeriesRecord, TEST_POOL } from './records.js';
-import { buildSeriesGame, count, isRunLive, scanUnfinishedSeries, viewTeamSheet } from './run-artifacts.js';
+import { type ParsedSeriesRecord, TEST_POOL } from './records.js';
+import { buildSeriesGame, isRunLive, scanUnfinishedSeries, viewTeamSheet } from './run-artifacts.js';
+import { runStatusSchema } from './run-status.js';
 import { loadPool } from './teams.js';
-import { buildBracket } from './tournament.js';
-import type { Pid } from './types.js';
+import { buildBracket, tournamentConfigSchema } from './tournament.js';
+
+const safeIntegerSchema = z.number().int().safe();
+const tournamentSeedsSchema = z.strictObject({ p1: safeIntegerSchema, p2: safeIntegerSchema });
+const runConfigSchema = tournamentConfigSchema.partial().extend({
+  mode: z.enum(['rotation', 'exhibition', 'tournament', 'draft']).optional(),
+  entrants: z
+    .array(
+      tournamentConfigSchema.shape.entrants.element.extend({
+        seed: z.number().nullable().optional(),
+        placement: z.number().nullable().optional(),
+      }),
+    )
+    .optional(),
+});
+
+type RunConfig = z.output<typeof runConfigSchema>;
+
+type SeriesIndexArtifact = number | null | undefined;
+
+interface PoolProvenance {
+  event: TournamentEventView | null;
+  teams: Map<string, BracketEntrantView>;
+}
 
 function summarizeTournaments(tournaments: Array<{ rounds: ArchivedMatchView[][] }>): TournamentSummary {
   const counts = tournaments.map(
@@ -38,10 +63,14 @@ function liveTournamentRuns(runsDir: string): string[] {
   });
 }
 
-function runConfig(runsDir: string, runId: string): Record<string, unknown> | null {
+function runConfig(runsDir: string, runId: string): RunConfig | null {
   if (!SAFE_SEGMENT.test(runId)) return null;
   try {
-    return JSON.parse(fs.readFileSync(path.join(runsDir, runId, 'config.json'), 'utf8')) as Record<string, unknown>;
+    const parsed = runConfigSchema.safeParse(
+      JSON.parse(fs.readFileSync(path.join(runsDir, runId, 'config.json'), 'utf8')),
+    );
+    if (!parsed.success) return null;
+    return parsed.data;
   } catch {
     return null;
   }
@@ -50,34 +79,21 @@ function runConfig(runsDir: string, runId: string): Record<string, unknown> | nu
 function runStartedAt(runsDir: string, runId: string): string {
   if (!SAFE_SEGMENT.test(runId)) return '';
   try {
-    const status = JSON.parse(fs.readFileSync(path.join(runsDir, runId, 'status.json'), 'utf8')) as Record<
-      string,
-      unknown
-    >;
-    return typeof status.start_time === 'string' ? status.start_time : '';
+    const parsed = runStatusSchema.safeParse(
+      JSON.parse(fs.readFileSync(path.join(runsDir, runId, 'status.json'), 'utf8')),
+    );
+    return parsed.success ? (parsed.data.start_time ?? '') : '';
   } catch {
     return '';
   }
 }
 
-function configEntrants(config: Record<string, unknown> | null): BracketEntrantView[] | null {
-  if (!config || !Array.isArray(config.entrants)) return null;
-  const entrants = (config.entrants as Array<Record<string, unknown>>).map((entry) => ({
-    model: String(entry.model ?? ''),
-    team: String(entry.team ?? ''),
-    seed: typeof entry.seed === 'number' ? entry.seed : null,
-    placement: typeof entry.placement === 'number' ? entry.placement : null,
-  }));
-  return entrants.every((entry: BracketEntrantView) => entry.model && entry.team) ? entrants : null;
+function configEntrants(config: RunConfig | null): BracketEntrantView[] | null {
+  if (!config?.entrants) return null;
+  return config.entrants.every((entry) => entry.model && entry.team) ? config.entrants : null;
 }
 
-function poolProvenance(
-  poolId: string | null,
-  teamsDir?: string,
-): {
-  event: TournamentEventView | null;
-  teams: Map<string, BracketEntrantView>;
-} {
+function poolProvenance(poolId: string | null, teamsDir?: string): PoolProvenance {
   const teams = new Map<string, BracketEntrantView>();
   if (!poolId) return { event: null, teams };
   try {
@@ -131,7 +147,7 @@ interface TournamentFold {
   entrants: TournamentEntrantFact[];
   rounds: ArchivedMatchView[][];
   champion: number | null;
-  rowsBySeries: Map<number, SeriesRecord>;
+  rowsBySeries: Map<number, ParsedSeriesRecord>;
   locations: Map<number, TournamentSeriesLocation>;
 }
 
@@ -142,7 +158,7 @@ interface TournamentProjection<View> {
 
 /** Rebuilds a tournament solely from selected structural facts and rejects facts that cannot all be true. */
 function foldTournament(
-  rows: SeriesRecord[],
+  rows: ParsedSeriesRecord[],
   configured: readonly TournamentEntrantFact[] | null,
 ): TournamentFold | null {
   let size = configured?.length ?? null;
@@ -159,39 +175,28 @@ function foldTournament(
     ? configured.map(({ model, team }) => (model && team ? { model, team } : null))
     : Array.from({ length: size }, () => null);
   if (configured && identities.some((identity) => identity === null)) return null;
-  const rowsBySeries = new Map<number, SeriesRecord>();
+  const rowsBySeries = new Map<number, ParsedSeriesRecord>();
+  const seedsBySeries = new Map<number, z.output<typeof tournamentSeedsSchema>>();
   for (const row of rows) {
     const seriesIndex = row.series_index;
-    if (!Number.isSafeInteger(seriesIndex) || Number(seriesIndex) < 0 || rowsBySeries.has(Number(seriesIndex))) {
-      return null;
-    }
-    rowsBySeries.set(Number(seriesIndex), row);
-    const seeds = row.seeds as Record<Pid, unknown> | undefined;
-    const teams = row.teams as Record<Pid, unknown> | undefined;
+    if (rowsBySeries.has(seriesIndex)) return null;
+    rowsBySeries.set(seriesIndex, row);
+    const parsedSeeds = tournamentSeedsSchema.safeParse(row.seeds);
+    if (!parsedSeeds.success) return null;
+    const seeds = parsedSeeds.data;
+    seedsBySeries.set(seriesIndex, seeds);
     for (const pid of ['p1', 'p2'] as const) {
-      const seed = seeds?.[pid];
-      const model = row.players?.[pid];
-      const team = teams?.[pid];
-      if (
-        !Number.isSafeInteger(seed) ||
-        Number(seed) < 0 ||
-        Number(seed) >= size ||
-        typeof model !== 'string' ||
-        !model ||
-        typeof team !== 'string' ||
-        !team
-      ) {
-        return null;
-      }
-      const entrant = { model, team };
-      const previous = identities[Number(seed)];
+      const seed = seeds[pid];
+      if (seed >= size) return null;
+      const entrant = { model: row.players[pid], team: row.teams[pid] };
+      const previous = identities[seed];
       if (previous && (previous.model !== entrant.model || previous.team !== entrant.team)) return null;
-      identities[Number(seed)] = entrant;
+      identities[seed] = entrant;
     }
-    if (seeds?.p1 === seeds?.p2) return null;
+    if (seeds.p1 === seeds.p2) return null;
   }
-  if (identities.some((identity) => identity === null)) return null;
-  const resolvedIdentities = identities as Array<{ model: string; team: string }>;
+  const resolvedIdentities = identities.filter((identity) => identity !== null);
+  if (resolvedIdentities.length !== size) return null;
   if (new Set(resolvedIdentities.map((identity) => identity.model)).size !== size) return null;
 
   const entrants = configured
@@ -220,40 +225,32 @@ function foldTournament(
         locations.set(match.seriesIndex, { round: roundIndex, slots });
         const row = rowsBySeries.get(match.seriesIndex);
         if (row) {
-          const seeds = row.seeds as Record<Pid, unknown> | undefined;
-          const sideScore = row.score as Record<Pid, unknown> | undefined;
-          const firstScore = sideScore?.p1;
-          const secondScore = sideScore?.p2;
+          const seeds = seedsBySeries.get(match.seriesIndex)!;
+          const firstScore = row.score.p1;
+          const secondScore = row.score.p2;
           if (
             slots[0] === null ||
             slots[1] === null ||
-            seeds?.p1 !== slots[0] ||
+            seeds.p1 !== slots[0] ||
             seeds.p2 !== slots[1] ||
             (row.round !== undefined && row.round !== roundIndex + 1) ||
-            (row.winner_side !== 'p1' && row.winner_side !== 'p2') ||
-            !Number.isSafeInteger(firstScore) ||
-            Number(firstScore) < 0 ||
-            !Number.isSafeInteger(secondScore) ||
-            Number(secondScore) < 0
+            (row.winner_side !== 'p1' && row.winner_side !== 'p2')
           ) {
             return null;
           }
           const winnerPid = row.winner_side;
-          if (
-            (winnerPid === 'p1' && Number(firstScore) <= Number(secondScore)) ||
-            (winnerPid === 'p2' && Number(secondScore) <= Number(firstScore))
-          ) {
+          if ((winnerPid === 'p1' && firstScore <= secondScore) || (winnerPid === 'p2' && secondScore <= firstScore)) {
             return null;
           }
           const winnerModel = row.players[winnerPid];
           if (
-            (typeof row.winner === 'string' && row.winner !== winnerModel) ||
-            (typeof row.advanced === 'string' && row.advanced !== winnerModel)
+            (row.winner !== null && row.winner !== winnerModel) ||
+            (row.advanced !== undefined && row.advanced !== winnerModel)
           ) {
             return null;
           }
-          score = [Number(firstScore), Number(secondScore)];
-          turns = count(row.turns);
+          score = [firstScore, secondScore];
+          turns = row.turns;
           winner = slots[winnerPid === 'p1' ? 0 : 1];
         }
       }
@@ -271,19 +268,24 @@ function foldTournament(
   };
 }
 
-function tournamentSeriesLocation(fold: TournamentFold, seriesIndex: unknown): TournamentSeriesLocation | null {
-  return Number.isSafeInteger(seriesIndex) ? (fold.locations.get(Number(seriesIndex)) ?? null) : null;
+function tournamentSeriesLocation(
+  fold: TournamentFold,
+  seriesIndex: SeriesIndexArtifact,
+): TournamentSeriesLocation | null {
+  const parsed = safeIntegerSchema.safeParse(seriesIndex);
+  return parsed.success ? (fold.locations.get(parsed.data) ?? null) : null;
 }
 
 function locateTournamentStarts<T>(
   fold: TournamentFold,
-  starts: Array<{ value: T; seriesIndex: unknown }>,
+  starts: Array<{ value: T; seriesIndex: SeriesIndexArtifact }>,
 ): Array<{ value: T; seriesIndex: number; location: TournamentSeriesLocation }> | null {
   const seen = new Set<number>();
   const located: Array<{ value: T; seriesIndex: number; location: TournamentSeriesLocation }> = [];
   for (const start of starts) {
-    if (!Number.isSafeInteger(start.seriesIndex)) continue;
-    const seriesIndex = Number(start.seriesIndex);
+    const parsed = safeIntegerSchema.safeParse(start.seriesIndex);
+    if (!parsed.success) continue;
+    const seriesIndex = parsed.data;
     if (fold.rowsBySeries.has(seriesIndex)) continue;
     const location = tournamentSeriesLocation(fold, seriesIndex);
     if (!location || location.slots[0] === null || location.slots[1] === null || seen.has(seriesIndex)) return null;
@@ -295,19 +297,18 @@ function locateTournamentStarts<T>(
 
 function archiveTournament(
   runId: string,
-  rows: SeriesRecord[],
+  rows: ParsedSeriesRecord[],
   runsDir: string,
   teamsDir?: string,
 ): TournamentProjection<TournamentArchiveView> | null {
   const config = runConfig(runsDir, runId);
   const fold = foldTournament(rows, configEntrants(config));
   if (!fold) return null;
-  const poolField = rows.find((row) => typeof row.pool === 'string')?.pool ?? config?.pool;
-  const pool = typeof poolField === 'string' ? poolField : null;
+  const pool = rows.find((row) => row.pool !== undefined)?.pool ?? config?.pool ?? null;
   const { event, teams } = poolProvenance(pool, teamsDir);
   const detailed = fold.entrants.map((entrant) => ({
     ...entrant,
-    ...(teams.get(entrant.team) ?? {}),
+    ...teams.get(entrant.team),
     model: entrant.model,
   }));
   const live = isRunLive(runsDir, runId);
@@ -343,13 +344,13 @@ function archiveTournament(
       live,
       liveSeries,
       event,
-      provenance: provenance === 'disclosed' || provenance === 'blind' ? provenance : null,
+      provenance: provenance ?? null,
     },
   };
 }
 
 export function buildTournamentGame(
-  allRows: SeriesRecord[],
+  allRows: ParsedSeriesRecord[],
   runsDir: string,
   runId: string,
   seriesIndex: number,
@@ -386,27 +387,23 @@ export function buildTournamentGame(
 }
 
 export function buildTournaments(
-  allRows: SeriesRecord[],
+  allRows: ParsedSeriesRecord[],
   runsDir: string,
   pool: string | null,
   teamsDir?: string,
 ): TournamentsResponse {
   const tournamentRows = allRows.filter(
-    (row) =>
-      row.mode === 'tournament' &&
-      typeof row.players?.p1 === 'string' &&
-      typeof row.players?.p2 === 'string' &&
-      (pool === null ? row.pool !== TEST_POOL : row.pool === pool),
+    (row) => row.mode === 'tournament' && (pool === null ? row.pool !== TEST_POOL : row.pool === pool),
   );
   const pools = [
     ...new Set(
       allRows
         .filter((row) => row.mode === 'tournament')
-        .map((row) => (typeof row.pool === 'string' ? row.pool : ''))
+        .map((row) => row.pool ?? '')
         .filter(Boolean),
     ),
   ].sort();
-  const runs = new Map<string, SeriesRecord[]>();
+  const runs = new Map<string, ParsedSeriesRecord[]>();
   for (const row of tournamentRows) {
     const runId = String(row.run_id ?? '');
     if (!runId) continue;

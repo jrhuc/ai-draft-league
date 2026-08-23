@@ -1,5 +1,6 @@
+import { z } from 'zod';
+
 import type { JsonObject, ToolDefinition } from './types.js';
-import { isRecord } from './value.js';
 
 export const NOTEBOOK_PAGE = 'notebook';
 
@@ -12,19 +13,19 @@ export const MEMORY_LIMITS = {
 
 export type FranchiseMemory = Record<string, string>;
 
-export function emptyMemory(notebook = ''): FranchiseMemory {
-  return { [NOTEBOOK_PAGE]: notebook };
+export function emptyMemory(notebook = '') {
+  return Object.fromEntries([[NOTEBOOK_PAGE, notebook]]);
 }
 
-export function canonicalMemory(memory: FranchiseMemory): FranchiseMemory {
-  const ordered: FranchiseMemory = { [NOTEBOOK_PAGE]: memory[NOTEBOOK_PAGE] ?? '' };
+export function canonicalMemory(memory: FranchiseMemory) {
+  const entries: Array<[string, string]> = [[NOTEBOOK_PAGE, memory[NOTEBOOK_PAGE] ?? '']];
   for (const name of Object.keys(memory).sort()) {
-    if (name !== NOTEBOOK_PAGE) ordered[name] = memory[name]!;
+    if (name !== NOTEBOOK_PAGE) entries.push([name, memory[name]!]);
   }
-  return ordered;
+  return Object.fromEntries(entries);
 }
 
-export function cloneMemory(memory: FranchiseMemory): FranchiseMemory {
+export function cloneMemory(memory: FranchiseMemory) {
   return { ...canonicalMemory(memory) };
 }
 
@@ -32,13 +33,14 @@ const PAGE_NAME = /^[a-z0-9][a-z0-9._-]*$/;
 
 export function validateMemory(memory: FranchiseMemory): string | undefined {
   const names = Object.keys(memory);
-  if (typeof memory[NOTEBOOK_PAGE] !== 'string') return `the "${NOTEBOOK_PAGE}" page must be a string`;
+  if (!z.string().safeParse(memory[NOTEBOOK_PAGE]).success) return `the "${NOTEBOOK_PAGE}" page must be a string`;
   if (names.length > MEMORY_LIMITS.pages)
     return `memory holds ${names.length} pages; the limit is ${MEMORY_LIMITS.pages}`;
   let total = 0;
   for (const name of names) {
-    const text = memory[name];
-    if (typeof text !== 'string') return `page ${JSON.stringify(name)} must be a string`;
+    const textResult = z.string().safeParse(memory[name]);
+    if (!textResult.success) return `page ${JSON.stringify(name)} must be a string`;
+    const text = textResult.data;
     if (name.length > MEMORY_LIMITS.nameChars || !PAGE_NAME.test(name)) {
       return `page name ${JSON.stringify(name)} must be 1-${MEMORY_LIMITS.nameChars} lowercase letters, digits, ".", "_" or "-"`;
     }
@@ -59,34 +61,36 @@ export interface MemoryReply {
 
 /** Every field is optional and every omission keeps what exists: `notebook` replaces the notebook page,
  * `set_pages` writes the named pages and leaves the rest alone, and only `delete_pages` removes a page. */
-export function parseMemoryReply(record: Record<string, unknown>, current: FranchiseMemory): MemoryReply | string {
+export function parseMemoryReply(record: JsonObject, current: FranchiseMemory): MemoryReply | string {
   if (record.pages !== undefined) {
     return '"pages" is not a field; write pages with "set_pages" and remove them with "delete_pages"';
   }
-  if (record.notebook !== undefined && typeof record.notebook !== 'string') {
+  const notebook = z.string().safeParse(record.notebook);
+  if (record.notebook !== undefined && !notebook.success) {
     return '"notebook" must be a string holding the complete replacement notebook';
   }
-  const next: FranchiseMemory = { ...current };
-  if (typeof record.notebook === 'string') next[NOTEBOOK_PAGE] = record.notebook.trim();
+  const next = { ...current };
+  if (notebook.success) next[NOTEBOOK_PAGE] = notebook.data.trim();
   const deleted = new Set<string>();
   if (record.delete_pages !== undefined) {
-    if (!Array.isArray(record.delete_pages) || record.delete_pages.some((name) => typeof name !== 'string')) {
-      return '"delete_pages" must be an array of page names';
-    }
-    for (const name of record.delete_pages as string[]) {
+    const deletePages = z.array(z.string()).safeParse(record.delete_pages);
+    if (!deletePages.success) return '"delete_pages" must be an array of page names';
+    for (const name of deletePages.data) {
       if (name === NOTEBOOK_PAGE) return `the "${NOTEBOOK_PAGE}" page cannot be deleted; replace it with "notebook"`;
       deleted.add(name);
       delete next[name];
     }
   }
   if (record.set_pages !== undefined) {
-    if (!isRecord(record.set_pages)) return '"set_pages" must be an object mapping page names to their complete text';
-    for (const [name, text] of Object.entries(record.set_pages)) {
+    const setPages = z.object({}).passthrough().safeParse(record.set_pages);
+    if (!setPages.success) return '"set_pages" must be an object mapping page names to their complete text';
+    for (const [name, candidate] of Object.entries(setPages.data)) {
       if (name === NOTEBOOK_PAGE)
         return `"set_pages" may not contain "${NOTEBOOK_PAGE}"; that page is the "notebook" field`;
-      if (typeof text !== 'string') return `page ${JSON.stringify(name)} must be a string`;
+      const text = z.string().safeParse(candidate);
+      if (!text.success) return `page ${JSON.stringify(name)} must be a string`;
       if (deleted.has(name)) return `page ${JSON.stringify(name)} is both set and deleted`;
-      next[name] = text.trim();
+      next[name] = text.data.trim();
     }
   }
   const problem = validateMemory(next);
@@ -127,7 +131,8 @@ export const READ_MEMORY_PAGE: ToolDefinition = {
 };
 
 export function readMemoryPage(memory: FranchiseMemory, args: JsonObject): string {
-  const name = typeof args.name === 'string' ? args.name.trim() : '';
+  const parsedName = z.string().safeParse(args.name);
+  const name = parsedName.success ? parsedName.data.trim() : '';
   if (!Object.hasOwn(memory, name)) {
     const names = Object.keys(canonicalMemory(memory));
     return `You have no page named ${JSON.stringify(name)}. Your pages: ${names.join(', ')}.`;
@@ -135,9 +140,6 @@ export function readMemoryPage(memory: FranchiseMemory, args: JsonObject): strin
   return memory[name] || '(empty)';
 }
 
-export function memoryPageTool(memory: () => FranchiseMemory): {
-  definition: ToolDefinition;
-  run: (args: JsonObject) => string;
-} {
-  return { definition: READ_MEMORY_PAGE, run: (args) => readMemoryPage(memory(), args) };
+export function memoryPageTool(memory: () => FranchiseMemory) {
+  return { definition: READ_MEMORY_PAGE, run: (args: JsonObject) => readMemoryPage(memory(), args) };
 }

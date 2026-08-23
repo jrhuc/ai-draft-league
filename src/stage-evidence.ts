@@ -1,3 +1,4 @@
+import type { JsonValue } from './types.js';
 import { clip } from './value.js';
 
 export interface EvidenceSupplied {
@@ -16,33 +17,22 @@ export interface StageEvidenceOptions {
   rationaleLimit: number;
   notebookLimit: number;
 }
-
 /** Optional evidence is distinguished by field presence: an absent notebook retains prior context,
  * while a supplied empty string deliberately clears it. */
 export function normalizeStageEvidence(
-  rationale: unknown,
-  notebook: unknown,
+  rationale: JsonValue | undefined,
+  notebook: JsonValue | undefined,
   options: StageEvidenceOptions,
 ): StageEvidence {
-  const rationaleSupplied = typeof rationale === 'string';
-  const notebookSupplied = typeof notebook === 'string';
+  const hasRationale = String(rationale) === rationale;
+  const hasNotebook = String(notebook) === notebook;
   return {
-    rationale: rationaleSupplied ? clip(rationale.trim(), options.rationaleLimit) : '',
-    notebook: notebookSupplied ? clip(notebook.trim(), options.notebookLimit) : options.currentNotebook,
-    supplied: { rationale: rationaleSupplied, notebookUpdate: notebookSupplied },
+    rationale: hasRationale ? clip(rationale.trim(), options.rationaleLimit) : '',
+    notebook: hasNotebook ? clip(notebook.trim(), options.notebookLimit) : options.currentNotebook,
+    supplied: { rationale: hasRationale, notebookUpdate: hasNotebook },
   };
 }
 
 export function noStageEvidence(currentNotebook: string): StageEvidence {
   return { rationale: '', notebook: currentNotebook, supplied: { rationale: false, notebookUpdate: false } };
-}
-
-export function evidenceSuppliedRecord(evidence: StageEvidence): {
-  rationale: boolean;
-  notebook_update: boolean;
-} {
-  return {
-    rationale: evidence.supplied.rationale,
-    notebook_update: evidence.supplied.notebookUpdate,
-  };
 }

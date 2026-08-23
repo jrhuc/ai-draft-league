@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { z } from 'zod';
 
 import type { DraftBoard, DraftBoardMon } from './draft.js';
 
@@ -17,29 +18,36 @@ export interface RosterPreset {
 
 /** A packaged roster set that seeds a league in place of a live draft. */
 export function loadRosterPreset(file: string): RosterPreset {
-  const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as unknown;
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+  const parsed = z.record(z.string(), z.json()).safeParse(JSON.parse(fs.readFileSync(file, 'utf8')));
+  if (!parsed.success) {
     throw new Error(`${file} must hold one roster preset object`);
   }
-  const record = parsed as Record<string, unknown>;
-  const id = typeof record.id === 'string' && record.id ? record.id : path.basename(file, '.json');
-  if (typeof record.board !== 'string' || !record.board) throw new Error(`${file} must name its board`);
-  if (!Array.isArray(record.teams) || record.teams.length < 2) throw new Error(`${file} must list at least two teams`);
-  const teams = record.teams.map((value, index): RosterPresetTeam => {
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+  const record = parsed.data;
+  const parsedId = z.string().min(1).safeParse(record.id);
+  const id = parsedId.success ? parsedId.data : path.basename(file, '.json');
+  const board = z.string().min(1).safeParse(record.board);
+  if (!board.success) throw new Error(`${file} must name its board`);
+  const teamList = z.array(z.json()).min(2).safeParse(record.teams);
+  if (!teamList.success) throw new Error(`${file} must list at least two teams`);
+  const teams = teamList.data.map((value, index): RosterPresetTeam => {
+    const parsedTeam = z.record(z.string(), z.json()).safeParse(value);
+    if (!parsedTeam.success) {
       throw new Error(`${file} team ${index + 1} must be an object`);
     }
-    const team = value as Record<string, unknown>;
-    if (typeof team.name !== 'string' || !team.name.trim()) throw new Error(`${file} team ${index + 1} needs a name`);
-    if (!Array.isArray(team.roster) || team.roster.some((entry) => typeof entry !== 'string' || !entry)) {
-      throw new Error(`${file} team ${JSON.stringify(team.name)} must list roster ids`);
+    const team = parsedTeam.data;
+    const name = z.string().safeParse(team.name);
+    if (!name.success || !name.data.trim()) throw new Error(`${file} team ${index + 1} needs a name`);
+    const roster = z.array(z.string().min(1)).safeParse(team.roster);
+    if (!roster.success) {
+      throw new Error(`${file} team ${JSON.stringify(name.data)} must list roster ids`);
     }
-    if (team.note !== undefined && typeof team.note !== 'string') {
-      throw new Error(`${file} team ${JSON.stringify(team.name)} note must be a string`);
+    const note = z.string().optional().safeParse(team.note);
+    if (!note.success) {
+      throw new Error(`${file} team ${JSON.stringify(name.data)} note must be a string`);
     }
-    return { name: team.name.trim(), roster: team.roster as string[], note: team.note ?? '' };
+    return { name: name.data.trim(), roster: roster.data, note: note.data ?? '' };
   });
-  return { id, board: record.board, teams };
+  return { id, board: board.data, teams };
 }
 
 export function presetRosters(preset: RosterPreset, board: DraftBoard, entrants: number): DraftBoardMon[][] {

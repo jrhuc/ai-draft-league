@@ -84,7 +84,7 @@ export function OperationalWorkspace({
     if (!eventsPath) return;
     const events = new EventSource(eventsPath);
     events.onmessage = (event: MessageEvent<string>) => {
-      const message = JSON.parse(event.data) as ServerEvent;
+      const message: ServerEvent = JSON.parse(event.data);
       if (message.type === 'run') {
         acceptRun(message.run);
       } else {
@@ -106,6 +106,22 @@ export function OperationalWorkspace({
   const running = run?.state === 'running';
   const externalRun = run ? null : (app?.externalRun ?? null);
   const externallyRunning = externalRun !== null;
+  const [externalSnapshot, setExternalSnapshot] = useState<RunView | null>(null);
+  const externalDraftId = externalRun?.mode === 'draft' ? externalRun.runId : null;
+  useEffect(() => {
+    if (!externalDraftId) {
+      setExternalSnapshot(null);
+      return;
+    }
+    setLiveTab('draft');
+    const poll = () =>
+      api<RunView | null>('/api/external')
+        .then((snapshot) => setExternalSnapshot(snapshot?.runId === externalDraftId ? snapshot : null))
+        .catch(() => {});
+    poll();
+    const timer = setInterval(poll, 5000);
+    return () => clearInterval(timer);
+  }, [externalDraftId]);
   const headerLabel = running
     ? 'Run in progress'
     : externallyRunning
@@ -149,11 +165,12 @@ export function OperationalWorkspace({
     () => (app ? <FixturesView app={app} run={run} onStarted={onStarted} onPools={onPools} /> : null),
     [app, run],
   );
+  const draftRun = run ?? externalSnapshot;
   const draftRoomSection = useMemo(
-    () => (run?.mode === 'draft' && run.draft ? <DraftRoomView run={run} /> : null),
-    [run],
+    () => (draftRun?.mode === 'draft' && draftRun.draft ? <DraftRoomView run={draftRun} /> : null),
+    [draftRun],
   );
-  const showLiveTabs = Boolean(run?.mode === 'draft' && run.draft);
+  const showLiveTabs = Boolean(draftRun?.mode === 'draft' && draftRun.draft);
   const liveShowsDraft = showLiveTabs && liveTab === 'draft';
   const externalTournament = externalRun?.mode === 'tournament' ? externalRun : null;
 

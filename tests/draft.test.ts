@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-
 import { createBoardSearch } from '../src/board-search.js';
 import type { DraftBoardMon, DraftState } from '../src/draft.js';
 import {
@@ -24,6 +23,7 @@ import { runDraftLeague } from '../src/draftleague.js';
 import { draftLeagueTopology, roundRobinWeeks } from '../src/draftleague-topology.js';
 import { emptyMemory } from '../src/franchise-memory.js';
 import { readJsonlObjects } from '../src/jsonl.js';
+import { draftLeagueConfigSchema } from '../src/league-store.js';
 import { defaultPsDir } from '../src/paths.js';
 import { FORMAT_AUTHORITY_NOTICE } from '../src/prompts.js';
 import { ApiError } from '../src/providers.js';
@@ -34,7 +34,7 @@ import { parseSeasonReview, runSeasonReview, type SeasonReviewState } from '../s
 import { canonicalJson } from '../src/serialization.js';
 import { foldSeriesGames } from '../src/series.js';
 import { loadShowdown } from '../src/showdown.js';
-import { runTeambuild } from '../src/teambuild.js';
+import { decodeTeamBuildJournalRow, runTeambuild } from '../src/teambuild.js';
 import {
   applyFreeAgency,
   applyTradeOffer,
@@ -49,7 +49,8 @@ import {
   runTradeWindow,
   type TradeWindowState,
 } from '../src/trade-window.js';
-import type { Completion, Provider, ProviderMessage } from '../src/types.js';
+import type { Completion, JsonObject, Provider, ProviderMessage } from '../src/types.js';
+import { asRecord, asRecords, asStrings } from '../src/value.js';
 import { runWeeklyReview } from '../src/weekly-review.js';
 import { legalTeamResponse } from './fixtures/team-build.js';
 
@@ -76,7 +77,7 @@ function freshState(overrides: Partial<DraftState> = {}): DraftState {
 }
 
 function transactionState(entrants = 2): TradeWindowState {
-  const rosters = Array.from({ length: entrants }, () => [] as DraftBoardMon[]);
+  const rosters = Array.from({ length: entrants }, (): DraftBoardMon[] => []);
   const bases = new Set<string>();
   let cursor = 0;
   for (const candidate of [...BOARD.mons].sort((a, b) => a.cost - b.cost || a.id.localeCompare(b.id))) {
@@ -645,7 +646,7 @@ test('trade-offer caps are enforced by direct, fresh-league, and stored-resume i
     draftOnly: true,
   });
   const configFile = path.join(leagueDir, 'config.json');
-  const config = JSON.parse(fs.readFileSync(configFile, 'utf8')) as Record<string, unknown>;
+  const config: JsonObject = JSON.parse(fs.readFileSync(configFile, 'utf8'));
   config.draft_only = false;
   config.transactions = [{ after_week: 1, trades_allowed: invalid }];
   fs.writeFileSync(
@@ -859,7 +860,7 @@ test('drafters name their franchise only after every pick is complete', async (t
     .readFileSync(path.join(logDir, 'drafter-0-fake-model.jsonl'), 'utf8')
     .trim()
     .split('\n')
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+    .map((line): JsonObject => JSON.parse(line));
   assert.match(String(rows[0]!.error), /is not a board id/);
   assert.ok(String(rows[0]!.system).includes('DRAFT BOARD'), 'the board rides in the cacheable system prompt');
   assertFormatAuthority(String(rows[0]!.system));
@@ -870,7 +871,7 @@ test('drafters name their franchise only after every pick is complete', async (t
     .readFileSync(path.join(logDir, 'draft.jsonl'), 'utf8')
     .trim()
     .split('\n')
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+    .map((line): JsonObject => JSON.parse(line));
   assert.equal(transcript[0]!.team_name, undefined);
   assert.equal(transcript[0]!.rationale, 'Best ground type available.');
   const names = readJsonlObjects(path.join(logDir, 'franchise-names.jsonl'));
@@ -1017,8 +1018,8 @@ test('drafters can look up the dex before committing a pick', async (t) => {
     .readFileSync(path.join(logDir, 'drafter-0-fake-model.jsonl'), 'utf8')
     .trim()
     .split('\n')
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
-  const lookups = rows[0]!.tool_lookups as Array<Record<string, unknown>>;
+    .map((line): JsonObject => JSON.parse(line));
+  const lookups = asRecords(rows[0]!.tool_lookups);
   assert.equal(lookups.length, 1, 'lookups are logged for the audit trail');
   assert.equal(lookups[0]!.name, 'lookup_species');
   assert.match(String(lookups[0]!.result), /Blastoise-Mega/, 'the result content is preserved for audits');
@@ -1103,7 +1104,7 @@ test('a pick cut off by its token budget is told so, not blamed for formatting',
     .readFileSync(path.join(logDir, 'drafter-0-fake-model.jsonl'), 'utf8')
     .trim()
     .split('\n')
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+    .map((line): JsonObject => JSON.parse(line));
   assert.match(String(rows[0]!.error), /whole 65536-token budget before naming a pick/);
 });
 
@@ -1160,7 +1161,7 @@ test('a drafter that never answers falls back to a random legal pick', async (t)
     .readFileSync(path.join(logDir, 'drafter-0-fake-model.jsonl'), 'utf8')
     .split('\n')
     .filter((line) => line.trim())
-    .map((line) => JSON.parse(line) as { pick: number; attempt: number; user: string });
+    .map((line): { pick: number; attempt: number; user: string } => JSON.parse(line));
   const laterFirstAttempt = seatLog.find((row) => row.pick > 1 && row.attempt === 1);
   assert.match(
     laterFirstAttempt!.user,
@@ -1236,6 +1237,7 @@ test('a resumed draft replays its transcript and continues from the next pick', 
       rationale: 'Original pick before the crash.',
       notebook: 'Carry this plan across the resume.',
       fallback: false,
+      timestamp: '2026-01-01T00:00:00.000Z',
     },
     {
       pick: 2,
@@ -1247,6 +1249,7 @@ test('a resumed draft replays its transcript and continues from the next pick', 
       budget_left: BOARD.budget - incineroar.cost,
       rationale: 'random baseline pick',
       fallback: false,
+      timestamp: '2026-01-01T00:00:00.000Z',
     },
     {
       pick: 3,
@@ -1258,6 +1261,7 @@ test('a resumed draft replays its transcript and continues from the next pick', 
       budget_left: BOARD.budget - incineroar.cost - whimsicott.cost,
       rationale: 'random baseline pick',
       fallback: false,
+      timestamp: '2026-01-01T00:00:00.000Z',
     },
   ];
   fs.writeFileSync(
@@ -1313,18 +1317,20 @@ test('a resumed draft replays its transcript and continues from the next pick', 
 test('an explicit empty draft notebook survives transcript replay', async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vgc-draft-empty-notebook-'));
   t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
-  const replies: Record<string, string[]> = {
-    'fake:a': [
-      '{"pick":"garchomp","reasoning":"Start here.","notebook":"Keep this until the final pick."}',
-      '{"pick":"incineroar","reasoning":"Roster complete.","notebook":""}',
-      '{"team_name":"Empty Notes"}',
-    ],
-    'fake:b': [
-      '{"pick":"sinistcha","reasoning":"Support.","notebook":"Tea mode."}',
-      '{"pick":"farigiraf","reasoning":"Speed control.","notebook":"Room mode."}',
-      '{"team_name":"Room Notes"}',
-    ],
-  };
+  const replies = new Map<string, string[]>(
+    Object.entries({
+      'fake:a': [
+        '{"pick":"garchomp","reasoning":"Start here.","notebook":"Keep this until the final pick."}',
+        '{"pick":"incineroar","reasoning":"Roster complete.","notebook":""}',
+        '{"team_name":"Empty Notes"}',
+      ],
+      'fake:b': [
+        '{"pick":"sinistcha","reasoning":"Support.","notebook":"Tea mode."}',
+        '{"pick":"farigiraf","reasoning":"Speed control.","notebook":"Room mode."}',
+        '{"team_name":"Room Notes"}',
+      ],
+    }),
+  );
   const calls = new Map<string, number>();
   const first = await runDraft(
     ['fake:a', 'fake:b'],
@@ -1336,7 +1342,7 @@ test('an explicit empty draft notebook survives transcript replay', async (t) =>
         complete(): Promise<Completion> {
           const call = calls.get(spec) ?? 0;
           calls.set(spec, call + 1);
-          return Promise.resolve({ text: replies[spec]![call]!, usage: {}, toolCalls: [] });
+          return Promise.resolve({ text: replies.get(spec)![call]!, usage: {}, toolCalls: [] });
         },
       }),
     },
@@ -1379,7 +1385,7 @@ const TEAMBUILD_ROSTER = [
   'gholdengo',
 ].map(mon);
 
-function teambuildRequest(overrides: Record<string, unknown> = {}) {
+function teambuildRequest(overrides: JsonObject = {}) {
   return {
     seriesIndex: 0,
     entrant: 0,
@@ -1402,15 +1408,15 @@ const GOOD_TEAM = legalTeamResponse('Rain beats their sun core, so Pelipper lead
 test('malformed set shapes and EV values are compliance rejections before a canonical noted team', async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vgc-teambuild-compliance-'));
   t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
-  const malformed = JSON.parse(GOOD_TEAM) as { sets: unknown[] };
+  const malformed: { sets: unknown[] } = JSON.parse(GOOD_TEAM);
   malformed.sets[0] = null;
-  const stringEv = JSON.parse(GOOD_TEAM) as { sets: Array<{ evs: Record<string, unknown> }> };
+  const stringEv: { sets: Array<{ evs: JsonObject }> } = JSON.parse(GOOD_TEAM);
   stringEv.sets[0]!.evs.hp = '2';
-  const floatEv = JSON.parse(GOOD_TEAM) as { sets: Array<{ evs: Record<string, unknown> }> };
+  const floatEv: { sets: Array<{ evs: JsonObject }> } = JSON.parse(GOOD_TEAM);
   floatEv.sets[0]!.evs.atk = 1.5;
-  const negativeEv = JSON.parse(GOOD_TEAM) as { sets: Array<{ evs: Record<string, unknown> }> };
+  const negativeEv: { sets: Array<{ evs: JsonObject }> } = JSON.parse(GOOD_TEAM);
   negativeEv.sets[0]!.evs.def = -1;
-  const noted = JSON.parse(GOOD_TEAM) as { sets: Array<Record<string, unknown>> };
+  const noted: { sets: Array<JsonObject> } = JSON.parse(GOOD_TEAM);
   noted.sets[0]!.note = 'Fast Ground pressure and spread damage.';
 
   const result = await runTeambuild(teambuildRequest(), {
@@ -1438,8 +1444,8 @@ test('malformed set shapes and EV values are compliance rejections before a cano
     assert.match(String(attempt.error), /finite, safe, non-negative integer/);
   }
   const stored = readJsonlObjects(path.join(logDir, 'teambuild.jsonl'))[0]!;
-  const artifact = stored.artifact as Record<string, unknown>;
-  const action = artifact.action as Record<string, unknown>;
+  const artifact = asRecord(stored.artifact);
+  const action = asRecord(artifact.action);
   assert.equal(action.packed, result.packed);
   assert.deepEqual(Object.keys(stored), ['artifact']);
 });
@@ -1470,7 +1476,7 @@ test('a legal teambuild is accepted as written and packs the base forme', async 
 test('canonical packing delegates punctuation handling to Showdown Teams.pack', async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vgc-teambuild-showdown-pack-'));
   t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
-  const team = JSON.parse(GOOD_TEAM) as { sets: Array<{ moves: string[] }> };
+  const team: { sets: Array<{ moves: string[] }> } = JSON.parse(GOOD_TEAM);
   const { packed } = await runTeambuild(teambuildRequest(), {
     logDir,
     rng: seededRng(21),
@@ -1484,7 +1490,7 @@ test('canonical packing delegates punctuation handling to Showdown Teams.pack', 
 test('an accepted teambuild preserves fewer than four legal moves', async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vgc-teambuild-three-moves-'));
   t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
-  const team = JSON.parse(GOOD_TEAM) as { sets: Array<{ moves: string[] }> };
+  const team: { sets: Array<{ moves: string[] }> } = JSON.parse(GOOD_TEAM);
   team.sets[0]!.moves = team.sets[0]!.moves.slice(0, 3);
   const { view } = await runTeambuild(teambuildRequest(), {
     logDir,
@@ -1604,7 +1610,7 @@ test('the system prompt lists the Champions item list, which Gen 9 knowledge get
 test('an illegal team is rejected with Showdown’s own errors, then repaired', async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vgc-teambuild-repair-'));
   t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
-  const broken = JSON.parse(GOOD_TEAM) as { sets: Array<Record<string, unknown>> };
+  const broken: { sets: Array<JsonObject> } = JSON.parse(GOOD_TEAM);
   broken.sets[0]!.moves = ['Earthquake', 'Bounce', 'Rock Slide', 'Protect'];
   broken.sets[0]!.evs = { hp: 60, atk: 60, def: 60, spa: 60, spd: 60, spe: 60 };
   broken.sets[5]!.item = 'Leftovers';
@@ -1631,7 +1637,7 @@ test('an illegal team is rejected with Showdown’s own errors, then repaired', 
     .readFileSync(path.join(logDir, 'series-1-e0-fake-model.jsonl'), 'utf8')
     .trim()
     .split('\n')
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+    .map((line): JsonObject => JSON.parse(line));
   assert.match(String(errors[0]!.error), /Bounce|Stat Points|Charizardite/);
 
   const { Teams } = loadShowdown();
@@ -1641,7 +1647,7 @@ test('an illegal team is rejected with Showdown’s own errors, then repaired', 
 test('a team that survives repair still illegal is rebuilt rather than aborting the league', async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vgc-teambuild-rebuild-'));
   t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
-  const broken = JSON.parse(GOOD_TEAM) as { sets: Array<Record<string, unknown>> };
+  const broken: { sets: Array<JsonObject> } = JSON.parse(GOOD_TEAM);
   for (const set of broken.sets) {
     set.moves = [];
     set.evs = { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 };
@@ -1700,7 +1706,9 @@ test('a full draft league drafts, plays weekly rounds, and crowns a champion', a
     );
   }
 
-  const config = JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8')) as Record<string, unknown>;
+  const config = draftLeagueConfigSchema.parse(
+    JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8')),
+  );
   assert.equal(config.mode, 'draft');
   assert.equal(config.weeks, 3);
   assert.equal(config.sequential_weeks, false, 'round-robin series run concurrently by default');
@@ -1715,28 +1723,24 @@ test('a full draft league drafts, plays weekly rounds, and crowns a champion', a
     'a window after each of the first three weeks is the default',
   );
   assert.deepEqual(config.draft_notes, ['', '', '', '']);
-  const rosters = config.rosters as string[][];
+  const rosters = config.rosters!;
   assert.equal(rosters.length, 4);
   for (const roster of rosters) assert.equal(roster.length, 10);
   assert.equal(new Set(rosters.flat()).size, 40, 'no entry is drafted twice');
 
-  const stored = JSON.parse(fs.readFileSync(path.join(directory, 'rosters.json'), 'utf8')) as Array<
-    Record<string, unknown>
-  >;
+  const stored: Array<JsonObject> = JSON.parse(fs.readFileSync(path.join(directory, 'rosters.json'), 'utf8'));
   assert.deepEqual(
     stored.map((entry) => entry.entrant),
     [0, 1, 2, 3],
   );
-  for (const entry of stored) assert.ok((entry.spent as number) <= 100, 'no coach overspends');
-  const window = JSON.parse(
-    fs.readFileSync(path.join(directory, 'transactions', 'after-week-3', 'window.json'), 'utf8'),
-  ) as {
+  for (const entry of stored) assert.ok(Number(entry.spent) <= 100, 'no coach overspends');
+  const window: {
     after_week: number;
     order: number[];
     offers: Array<{ to: number | null; proposerFallback: boolean; responderFallback: boolean | null }>;
     decisions: Array<{ swaps: unknown[] }>;
     rosters: Array<{ entrant: number }>;
-  };
+  } = JSON.parse(fs.readFileSync(path.join(directory, 'transactions', 'after-week-3', 'window.json'), 'utf8'));
   assert.equal(window.after_week, 3);
   assert.equal(window.decisions.length, 4);
   assert.equal(window.offers.length, 4);
@@ -1756,20 +1760,20 @@ test('a full draft league drafts, plays weekly rounds, and crowns a champion', a
     .readFileSync(path.join(directory, 'teambuild', 'teambuild.jsonl'), 'utf8')
     .trim()
     .split('\n')
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+    .map((line): JsonObject => JSON.parse(line));
   assert.equal(teambuilds.length, rows.length * 2, 'both coaches build before every series');
   for (const build of teambuilds) {
-    const artifact = build.artifact as Record<string, unknown>;
-    const action = artifact.action as Record<string, unknown>;
+    const artifact = asRecord(build.artifact);
+    const action = asRecord(artifact.action);
     assert.equal(artifact.status, 'valid');
-    assert.equal((action.selected as string[]).length, 6);
+    assert.equal(asStrings(action.selected).length, 6);
     assert.deepEqual(Object.keys(build), ['artifact']);
   }
   const coaching = fs
     .readFileSync(path.join(directory, 'coaching.jsonl'), 'utf8')
     .trim()
     .split('\n')
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+    .map((line): JsonObject => JSON.parse(line));
   assert.equal(coaching.length, rows.length * 2, 'each coach receives resumable private playoff context');
   assert.ok(coaching.every((entry) => String(entry.context).includes('Registered sets:')));
 
@@ -1893,16 +1897,16 @@ test('the real league window updates the outer roster used by later construction
     transactions: [{ afterWeek: 1, tradesAllowed: 0 }],
   });
 
-  const config = JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8')) as {
+  const config: {
     entrants: string[];
     team_names: string[];
     rosters: string[][];
     draft_notes: string[];
-  };
+  } = JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8'));
   const rosters = config.rosters.map((ids) => ids.map((id) => BOARD.mons.find((candidate) => candidate.id === id)!));
   const result = loadSeriesRecords(recordsPath)[0]!;
   const [a, b] = roundRobinWeeks(2)[0]![0]!;
-  const score = result.score as Record<'p1' | 'p2', number>;
+  const { score } = result;
   const table = [
     {
       entrant: a,
@@ -2024,29 +2028,19 @@ test('the real league window updates the outer roster used by later construction
   );
 
   const teambuildLog = path.join(directory, 'teambuild', 'teambuild.jsonl');
-  const donor = structuredClone(
-    readJsonlObjects(teambuildLog).find((row) => {
-      const artifact = row.artifact as { task?: { provenance?: Record<string, unknown> } } | undefined;
-      return artifact?.task?.provenance?.seriesIndex === 0 && artifact.task.provenance.entrant === first;
-    })!,
-  ) as Record<string, unknown>;
-  const donorArtifact = donor.artifact as {
-    task: { objective: { stage: string }; provenance: Record<string, unknown> };
-  };
-  donorArtifact.task.objective.stage = 'playoff';
-  donorArtifact.task.provenance.seriesIndex = 1;
-  donorArtifact.task.provenance.opponent = first === 0 ? 1 : 0;
-  fs.appendFileSync(teambuildLog, `${JSON.stringify(donor)}\n`);
+  const donor = readJsonlObjects(teambuildLog)
+    .map((row) => decodeTeamBuildJournalRow(row))
+    .find(({ artifact }) => artifact.task.provenance.seriesIndex === 0 && artifact.task.provenance.entrant === first)!;
+  donor.artifact.task.provenance.seriesIndex = 1;
+  donor.artifact.task.provenance.opponent = first === 0 ? 1 : 0;
+  fs.appendFileSync(teambuildLog, `${JSON.stringify({ artifact: donor.artifact })}\n`);
 
   await runDraftLeague(models, directory, { recordsPath, seed: 41, concurrency: 1, resume: true });
-  const postWindowBuilds = readJsonlObjects(teambuildLog).filter((row) => {
-    const artifact = row.artifact as { task?: { provenance?: Record<string, unknown> } } | undefined;
-    return artifact?.task?.provenance?.seriesIndex === 1 && artifact.task.provenance.entrant === first;
-  });
+  const postWindowBuilds = readJsonlObjects(teambuildLog)
+    .map((row) => decodeTeamBuildJournalRow(row))
+    .filter(({ artifact }) => artifact.task.provenance.seriesIndex === 1 && artifact.task.provenance.entrant === first);
   assert.equal(postWindowBuilds.length, 2, 'a stored build bound to the dropped candidate is rebuilt');
-  const playoffBuild = postWindowBuilds.at(-1)!;
-  const artifact = playoffBuild.artifact as { task: { constraint: { candidates: Array<{ id: string }> } } };
-  const candidates = artifact.task.constraint.candidates.map((candidate) => candidate.id);
+  const candidates = postWindowBuilds.at(-1)!.artifact.task.constraint.candidates.map((candidate) => candidate.id);
   assert.ok(candidates.includes(replayed.add));
   assert.ok(!candidates.includes(replayed.drop));
 });
@@ -2078,14 +2072,13 @@ test('durable journal and atomic final-artifact faults retry provider-free and c
   const originalAppend = fs.appendFileSync;
   let completions = 0;
   let injected = false;
-  fs.appendFileSync = ((file: fs.PathOrFileDescriptor, ...args: unknown[]) => {
-    const result = (originalAppend as (...values: unknown[]) => unknown)(file, ...args);
+  fs.appendFileSync = (file, data, options) => {
+    originalAppend(file, data, options);
     if (!injected && String(file) === transcript) {
       injected = true;
       throw new Error('fault after durable append');
     }
-    return result;
-  }) as typeof fs.appendFileSync;
+  };
   try {
     await assert.rejects(
       runTradeWindow(state, {
@@ -2115,11 +2108,10 @@ test('durable journal and atomic final-artifact faults retry provider-free and c
 
   const artifactFile = path.join(directory, 'window.json');
   const originalRename = fs.renameSync;
-  fs.renameSync = ((source: fs.PathLike, destination: fs.PathLike) => {
-    const renamed = originalRename(source, destination);
+  fs.renameSync = (source, destination) => {
+    originalRename(source, destination);
     if (String(destination) === artifactFile) throw new Error('fault after physical artifact rename');
-    return renamed;
-  }) as typeof fs.renameSync;
+  };
   try {
     await assert.rejects(
       runTradeWindow(state, {
@@ -2174,16 +2166,12 @@ test('current teambuild provenance counts as post-window transaction-barrier evi
   const models = ['random', 'random'];
   await runDraftLeague(models, directory, { recordsPath, seed: 79, concurrency: 1, throughWeek: 1 });
   const teambuildFile = path.join(directory, 'teambuild', 'teambuild.jsonl');
-  const postWindow = structuredClone(readJsonlObjects(teambuildFile)[0]!);
-  const artifact = postWindow.artifact as {
-    task: { objective: { stage: string }; provenance: { seriesIndex: number; opponent: number } };
-  };
-  artifact.task.objective.stage = 'playoff';
-  artifact.task.provenance.seriesIndex = 1;
-  artifact.task.provenance.opponent = 1;
+  const postWindow = decodeTeamBuildJournalRow(readJsonlObjects(teambuildFile)[0]!);
+  postWindow.artifact.task.provenance.seriesIndex = 1;
+  postWindow.artifact.task.provenance.opponent = 1;
   fs.appendFileSync(
     teambuildFile,
-    `${JSON.stringify(postWindow)}
+    `${JSON.stringify({ artifact: postWindow.artifact })}
 `,
   );
 
@@ -2200,7 +2188,7 @@ test('committed overlays fail closed when tampered or missing past the transacti
   await runDraftLeague(['random', 'random'], directory, { recordsPath, seed: 73, concurrency: 1 });
   const artifactFile = path.join(directory, 'transactions', 'after-week-1', 'window.json');
   const original = fs.readFileSync(artifactFile, 'utf8');
-  const artifact = JSON.parse(original) as { rosters: Array<{ spent: number }> };
+  const artifact: { rosters: Array<{ spent: number }> } = JSON.parse(original);
   artifact.rosters[0]!.spent += 1;
   fs.writeFileSync(artifactFile, `${JSON.stringify(artifact)}\n`);
   await assert.rejects(
@@ -2254,7 +2242,7 @@ test('transaction replay enforces one current schema, privacy shape, and phase o
     {
       name: 'no-offer private responder field',
       write: () => {
-        const rows = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+        const rows: JsonObject[] = lines.map((line) => JSON.parse(line));
         rows[0]!.responseNotebook = 'not applicable';
         fs.writeFileSync(transcript, `${rows.map(canonicalJson).join('\n')}\n`);
       },
@@ -2273,7 +2261,7 @@ test('transaction replay enforces one current schema, privacy shape, and phase o
     {
       name: 'missing current artifact field',
       write: () => {
-        const parsed = JSON.parse(artifact) as Record<string, unknown>;
+        const parsed: JsonObject = JSON.parse(artifact);
         delete parsed.offers;
         fs.writeFileSync(artifactFile, `${JSON.stringify(parsed)}\n`);
       },
@@ -2301,7 +2289,7 @@ test('season resume requires canonical stored series evidence before standings a
     .readFileSync(recordsPath, 'utf8')
     .trim()
     .split('\n')
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+    .map((line): JsonObject => JSON.parse(line));
   const roundRobin = original.findIndex((row) => row.stage === 'roundrobin');
   const playoff = original.findIndex((row) => row.stage === 'playoff');
   assert.ok(roundRobin >= 0 && playoff >= 0);
@@ -2318,8 +2306,8 @@ test('season resume requires canonical stored series evidence before standings a
     seed: gameSeed,
   }));
   const tiebreakSeed = foldSeriesGames(regulationSeeds, tiedRegulation, { requireWinner: true }).nextSeed!;
-  const winnerSide = playoffRow.winner_side as 'p1' | 'p2';
-  const players = playoffRow.players as Record<'p1' | 'p2', string>;
+  const winnerSide = playoffRow.winner_side === 'p1' ? 'p1' : 'p2';
+  const players = asRecord(playoffRow.players);
   playoffRow.games = [
     ...tiedRegulation,
     { number: 4, winner: players[winnerSide], winner_side: winnerSide, turns: 1, seed: tiebreakSeed },
@@ -2339,7 +2327,7 @@ test('season resume requires canonical stored series evidence before standings a
     'a fourth playoff game invented only in results.jsonl is not stored series evidence',
   );
 
-  const scenarios: Array<{ name: string; mutate: (rows: Array<Record<string, unknown>>) => void; error: RegExp }> = [
+  const scenarios: Array<{ name: string; mutate: (rows: Array<JsonObject>) => void; error: RegExp }> = [
     {
       name: 'Bo3 cardinality',
       mutate: (rows) => {
@@ -2357,7 +2345,7 @@ test('season resume requires canonical stored series evidence before standings a
     {
       name: 'seed',
       mutate: (rows) => {
-        const games = rows[roundRobin]!.games as Array<Record<string, unknown>>;
+        const games = asRecords(rows[roundRobin]!.games);
         games[0]!.seed = [1, 1, 1, 1];
       },
       error: /canonical completed series evidence/,
@@ -2410,7 +2398,7 @@ test('a two-coach league plays one week and a single final', async (t) => {
   assert.equal(rows[0]!.stage, 'roundrobin');
   assert.equal(rows[1]!.stage, 'playoff');
   assert.ok(rows[1]!.winner, 'a playoff series must produce a winner');
-  const config = JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8')) as Record<string, unknown>;
+  const config: JsonObject = JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8'));
   assert.equal(config.sequential_weeks, true);
   assert.equal(config.closed_sheets, true);
   assert.deepEqual(
@@ -2421,8 +2409,8 @@ test('a two-coach league plays one week and a single final', async (t) => {
   for (const row of rows) assert.equal(row.closed_sheets, true, 'series records carry the sheet rule');
   const builds = readJsonlObjects(path.join(directory, 'teambuild', 'teambuild.jsonl'));
   for (const build of builds) {
-    const artifact = build.artifact as Record<string, unknown>;
-    const task = artifact.task as Record<string, unknown>;
+    const artifact = asRecord(build.artifact);
+    const task = asRecord(artifact.task);
     assert.equal(task.sheetPolicy, 'closed');
   }
   const gameLog = fs.readFileSync(path.join(directory, 'series', String(rows[0]!.series_id), 'game-1.log'), 'utf8');
@@ -2443,12 +2431,10 @@ test('a draft-only league stops at the rosters and resumes into a full season', 
   assert.ok(!fs.existsSync(path.join(directory, 'series')), 'no series directory is created');
   assert.ok(!fs.existsSync(recordsPath), 'no rows reach the records file');
 
-  const config = JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8')) as Record<string, unknown>;
+  const config: JsonObject = JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8'));
   assert.equal(config.draft_only, true);
   assert.equal(config.transactions, null, 'a league that plays no games holds no transaction window');
-  const rosters = JSON.parse(fs.readFileSync(path.join(directory, 'rosters.json'), 'utf8')) as Array<
-    Record<string, unknown>
-  >;
+  const rosters: Array<JsonObject> = JSON.parse(fs.readFileSync(path.join(directory, 'rosters.json'), 'utf8'));
   assert.equal(rosters.length, 2);
 
   const played = await runDraftLeague(['random', 'random'], directory, {
@@ -2458,7 +2444,7 @@ test('a draft-only league stops at the rosters and resumes into a full season', 
     resume: true,
   });
   assert.equal(played.length, 2, 'resuming a draft-only run plays the season it skipped');
-  const promoted = JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8')) as Record<string, unknown>;
+  const promoted: JsonObject = JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8'));
   assert.deepEqual(promoted.rosters, config.rosters, 'the drafted rosters carry into the season');
   assert.equal(promoted.draft_only, false, 'a resumed draft-only run is a season');
   assert.deepEqual(
@@ -2835,9 +2821,9 @@ test('a league stopped between two closed windows resumes on the right roster ve
   }
   for (const week of [1, 2]) {
     const windowFile = path.join(directory, 'transactions', `after-week-${week}`, 'window.json');
-    const window = JSON.parse(fs.readFileSync(windowFile, 'utf8')) as {
+    const window: {
       decisions: Array<{ entrant: number; swaps: unknown[] }>;
-    };
+    } = JSON.parse(fs.readFileSync(windowFile, 'utf8'));
     const changed = window.decisions.filter((decision) => decision.swaps.length).map((decision) => decision.entrant);
     const reconciliations = readJsonlObjects(path.join(directory, 'reviews', `week-${week}-transactions.jsonl`));
     assert.deepEqual(
@@ -2847,7 +2833,7 @@ test('a league stopped between two closed windows resumes on the right roster ve
     );
     assert.ok(reconciliations.every((row) => row.roster_version === week && row.stage === 'transactions'));
   }
-  const config = JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8')) as Record<string, unknown>;
+  const config: JsonObject = JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8'));
   assert.equal(config.sequential_weeks, true);
   for (const row of resumed) {
     assert.deepEqual(row.transactions, [
@@ -2880,12 +2866,12 @@ test('a roster preset seeds the league without a draft and resumes on its roster
   });
   assert.equal(rows.length, 2);
   assert.ok(!fs.existsSync(path.join(directory, 'draft')), 'no draft log is written');
-  const config = JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8')) as {
+  const config: {
     preset: string;
     team_names: string[];
     rosters: string[][];
     draft_notes: string[];
-  };
+  } = JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8'));
   assert.equal(config.preset, 'noise-quartet');
   assert.deepEqual(
     config.team_names,
@@ -2898,7 +2884,7 @@ test('a roster preset seeds the league without a draft and resumes on its roster
   assert.deepEqual(config.draft_notes, ['', '', '', '']);
   const resumed = await runDraftLeague(models, directory, { recordsPath, seed: 5, concurrency: 2, resume: true });
   assert.equal(resumed.length, 7);
-  const after = JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8')) as { preset: string };
+  const after: { preset: string } = JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8'));
   assert.equal(after.preset, 'noise-quartet');
 });
 

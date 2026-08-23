@@ -48,7 +48,7 @@ const SERIES_REFLECTION_OVER =
   'You are reviewing the final game of a best-of-three VGC series that is now over: the stated result and final score are authoritative, and there is no next game against this opponent in this series.';
 const SERIES_REFLECTION_RESULT =
   'Identify the main reason for the game and series result, including whether your between-game adjustments helped or backfired.';
-const SERIES_REFLECTION_SHAPE =
+const SERIES_REFLECTION_RESPONSE =
   'Respond with exactly one JSON object: {"summary":"why the game and series were won or lost","adjustment":"what you would change against this opponent in a future series","notebook":"durable notes for a future rematch"}.';
 
 export const SERIES_REFLECTION_SYSTEM = [
@@ -58,7 +58,7 @@ export const SERIES_REFLECTION_SYSTEM = [
   SERIES_REFLECTION_RESULT,
   REFLECTION_PREVIEW_PLAN,
   'Rewrite the private notebook for a possible future rematch: only durable opponent tendencies and revealed strategic facts worth carrying forward; omit current HP, active positions, turn recaps, and repeated roster facts.',
-  SERIES_REFLECTION_SHAPE,
+  SERIES_REFLECTION_RESPONSE,
 ].join('\n');
 
 export const DRAFT_SERIES_REFLECTION_SYSTEM = [
@@ -69,7 +69,7 @@ export const DRAFT_SERIES_REFLECTION_SYSTEM = [
   REFLECTION_PREVIEW_PLAN,
   'Also assess the preparation for this series: how well the six you registered and their sets fit this opponent, what worked, and whether the full roster offered a materially better alternative.',
   'Rewrite the private notebook for a possible future rematch: durable opponent tendencies, revealed strategic facts, and brief prep conclusions worth carrying forward; omit current HP, active positions, turn recaps, and repeated roster facts.',
-  SERIES_REFLECTION_SHAPE,
+  SERIES_REFLECTION_RESPONSE,
 ].join('\n');
 
 export interface DecisionPrompt {

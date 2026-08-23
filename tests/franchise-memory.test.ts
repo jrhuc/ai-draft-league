@@ -14,11 +14,15 @@ test('memory limits reject with the reason instead of clipping', () => {
   assert.equal(validateMemory(emptyMemory('x'.repeat(MEMORY_LIMITS.pageChars))), undefined);
   assert.match(String(validateMemory(emptyMemory('x'.repeat(MEMORY_LIMITS.pageChars + 1)))), /limit is 8000/);
   assert.match(String(validateMemory({ notebook: '', 'Bad Name': 'x' })), /page name "Bad Name"/);
-  const many: Record<string, string> = { notebook: '' };
-  for (let index = 0; index < MEMORY_LIMITS.pages; index += 1) many[`p${index}`] = 'x';
+  const many = Object.fromEntries([
+    ['notebook', ''],
+    ...Array.from({ length: MEMORY_LIMITS.pages }, (_, index) => [`p${index}`, 'x']),
+  ]);
   assert.match(String(validateMemory(many)), /17 pages; the limit is 16/);
-  const heavy: Record<string, string> = { notebook: '' };
-  for (let index = 0; index < 7; index += 1) heavy[`p${index}`] = 'x'.repeat(MEMORY_LIMITS.pageChars);
+  const heavy = Object.fromEntries([
+    ['notebook', ''],
+    ...Array.from({ length: 7 }, (_, index) => [`p${index}`, 'x'.repeat(MEMORY_LIMITS.pageChars)]),
+  ]);
   assert.match(String(validateMemory(heavy)), /totals 56000 characters/);
 });
 

@@ -7,11 +7,10 @@ import type { SlotMenu } from '../src/choices.js';
 import { buildMenus } from '../src/choices.js';
 import { REPO_ROOT } from '../src/paths.js';
 import type { BattleRequest } from '../src/types.js';
+import { asRecords } from '../src/value.js';
 
 function fixture(name: string): BattleRequest {
-  return JSON.parse(
-    fs.readFileSync(path.join(REPO_ROOT, 'tests', 'data', 'showdown_requests', name), 'utf8'),
-  ) as BattleRequest;
+  return JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'tests', 'data', 'showdown_requests', name), 'utf8'));
 }
 
 class LastEngine extends BaseEngine {
@@ -51,7 +50,7 @@ test('forced switches cannot pass while replacements remain', () => {
 test('move targeting follows Showdown target types', () => {
   const request = fixture('turn.json');
   const active = request.active![0]!;
-  const moves = active.moves as Array<Record<string, unknown>>;
+  const moves = asRecords(active.moves);
   moves[0]!.target = 'normal';
   const normal = new Set(
     buildMenus(request)[0]!
@@ -80,7 +79,7 @@ test('move targeting follows Showdown target types', () => {
 
 test('fainted or commanding allies are not offered as targets', () => {
   const request = fixture('turn.json');
-  const moves = request.active![0]!.moves as Array<Record<string, unknown>>;
+  const moves = asRecords(request.active![0]!.moves);
   moves[0]!.target = 'normal';
   const ally = request.side!.pokemon![1]!;
   ally.condition = '0 fnt';
@@ -103,7 +102,7 @@ test('fainted or commanding allies are not offered as targets', () => {
 
 test('target names change labels but not commands', () => {
   const request = fixture('turn.json');
-  (request.active![0]!.moves as Array<Record<string, unknown>>)[0]!.target = 'normal';
+  asRecords(request.active![0]!.moves)[0]!.target = 'normal';
   const plain = buildMenus(request)[0]!;
   const named = buildMenus(request, {
     names: {
@@ -121,7 +120,7 @@ test('target names change labels but not commands', () => {
 
 test('targeted moves surface deterministic state warnings without changing commands', () => {
   const request = fixture('turn.json');
-  const move = (request.active![0]!.moves as Array<Record<string, unknown>>)[0]!;
+  const move = asRecords(request.active![0]!.moves)[0]!;
   move.move = 'Encore';
   move.target = 'normal';
   const menus = buildMenus(request, {
@@ -145,7 +144,7 @@ test('disabled moves offer Struggle and Mega is exclusive', async () => {
     if (!active) continue;
     active.canMegaEvo = true;
   }
-  const moves = request.active![0]!.moves as Array<Record<string, unknown>>;
+  const moves = asRecords(request.active![0]!.moves);
   for (const move of moves) move.disabled = true;
   const first = buildMenus(request)[0]!;
   assert.deepEqual(new Set(first.filter((item) => item.kind === 'move').map((item) => item.part)), new Set(['move 1']));
@@ -175,7 +174,7 @@ test('menus use species names and annotate ally-hitting spreads', () => {
   assert.ok(!picks.some((label) => label.includes('Epidemic')));
 
   const request = fixture('turn.json');
-  const moves = request.active![0]!.moves as Array<Record<string, unknown>>;
+  const moves = asRecords(request.active![0]!.moves);
   moves[0]!.move = 'Earthquake';
   moves[0]!.target = 'allAdjacent';
   const labeled = buildMenus(request, {

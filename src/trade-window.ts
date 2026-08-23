@@ -3,10 +3,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
-import { createBoardSearch } from './board-search.js';
-import { completeWithDexTools } from './dex-lookups.js';
+import { z } from 'zod';
+
+import { type BoardSearch, createBoardSearch } from './board-search.js';
+import { completeWithDexTools, type DexToolRequest } from './dex-lookups.js';
 import type { DraftBoard, DraftBoardMon } from './draft.js';
-import { draftBoardTable } from './draft.js';
+import { draftBoardTable, isRejection } from './draft.js';
 import { type FranchiseMemory, MEMORY_TOOL_NOTICE, memoryPageTool, renderMemory } from './franchise-memory.js';
 import type { DraftTableRow } from './gui/api.js';
 import { type MechanicsToolAvailability, mechanicsToolNotice } from './prompt-capabilities.js';
@@ -15,8 +17,8 @@ import type { ModelReasoningConfig, ReasoningLevel } from './providers.js';
 import { classifyProviderFailure, makeProvider, parseSpec, reasoningForModel } from './providers.js';
 import { ShowdownReference } from './reference.js';
 import { canonicalJson } from './serialization.js';
-import type { JsonObject, Provider, ProviderMessage } from './types.js';
-import { clip } from './value.js';
+import type { JsonObject, JsonValue, Provider, ProviderMessage } from './types.js';
+import { clip, isErrnoCode, text } from './value.js';
 
 export const DEFAULT_TRANSACTION_WEEKS = [1, 2, 3] as const;
 export const DEFAULT_TRADES_ALLOWED = 2;
@@ -174,7 +176,7 @@ export function transactionEpochDir(runDir: string, afterWeek: number): string {
   return path.join(runDir, 'transactions', `after-week-${afterWeek}`);
 }
 
-export interface TradeOffer {
+export interface TradeOffer extends JsonObject {
   from: number;
   to: number | null;
   give: string | null;
@@ -187,7 +189,7 @@ export interface TradeOffer {
   responseReasoning: string;
 }
 
-export interface TradeSwap {
+export interface TradeSwap extends JsonObject {
   drop: string;
   add: string;
 }
@@ -200,7 +202,7 @@ export interface TradeOfferOutcome {
   accepted: boolean;
 }
 
-export interface TradeWindowDecision {
+export interface TradeWindowDecision extends JsonObject {
   entrant: number;
   model: string;
   swaps: TradeSwap[];
@@ -224,7 +226,7 @@ export interface TradeWindowArtifact {
   decisions: TradeWindowDecision[];
   rosters: TradeWindowRoster[];
   /** Season swaps each seat has spent once this window closed. */
-  swaps_used: number[];
+  swaps_used?: number[] | undefined;
 }
 
 export interface TradeWindowResult {
@@ -417,8 +419,8 @@ export function tradeWindowOrder(standings: readonly DraftTableRow[]): number[] 
 }
 
 /** Accepts ids copied from the roster listing, which appends the point cost in parentheses. */
-function boardId(value: unknown): string {
-  return typeof value === 'string' ? slug(value.replace(/\s*\(\d+\)\s*$/, '')) : '';
+function boardId(value: string): string {
+  return slug(value.replace(/\s*\(\d+\)\s*$/, ''));
 }
 
 function slug(value: string): string {
@@ -439,6 +441,16 @@ function ownerMap(state: TradeWindowState): Map<string, number> {
   return owners;
 }
 
+const jsonValueSchema = z.json();
+const replyRecordSchema = z.record(z.string(), jsonValueSchema);
+const swapReplySchema = z.object({ drop: z.string().catch(''), add: z.string().catch('') });
+const offerReplySchema = z.object({
+  to: z.number().catch(Number.NaN),
+  give: z.string().catch(''),
+  get: z.string().catch(''),
+  message: z.string().catch(''),
+});
+
 function freeAgencyRoster(
   state: TradeWindowState,
   entrant: number,
@@ -447,22 +459,9 @@ function freeAgencyRoster(
   if (!Number.isSafeInteger(entrant) || entrant < 0 || entrant >= state.rosters.length) {
     return `unknown entrant ${entrant}`;
   }
-  if (!Array.isArray(swaps)) return '"swaps" must be an array, including when it is empty';
   const remaining = swapsRemaining(state, entrant);
   if (swaps.length > remaining) {
     return `you have ${remaining} of your ${state.swapsAllowed} season swaps left, so this list may hold at most ${remaining}`;
-  }
-  for (const [index, swap] of swaps.entries()) {
-    if (
-      typeof swap !== 'object' ||
-      swap === null ||
-      typeof swap.drop !== 'string' ||
-      !swap.drop ||
-      typeof swap.add !== 'string' ||
-      !swap.add
-    ) {
-      return `swap ${index + 1} must name both "drop" and "add" board ids`;
-    }
   }
 
   const dropIds = new Set(swaps.map((swap) => swap.drop));
@@ -473,6 +472,7 @@ function freeAgencyRoster(
   const roster = state.rosters[entrant]!;
   const byId = new Map(state.board.mons.map((mon) => [mon.id, mon] as const));
   const owners = ownerMap(state);
+  const additions: DraftBoardMon[] = [];
   for (const [index, swap] of swaps.entries()) {
     if (!roster.some((mon) => mon.id === swap.drop)) {
       return `swap ${index + 1} cannot drop ${JSON.stringify(swap.drop)} because it is not on this roster`;
@@ -483,15 +483,17 @@ function freeAgencyRoster(
     if (owner !== undefined) {
       return `swap ${index + 1} cannot add ${added.name} because ${state.models[owner]} owns it`;
     }
+    additions.push(added);
   }
 
   const kept = roster.filter((mon) => !dropIds.has(mon.id));
-  const additions = swaps.map((swap) => byId.get(swap.add)!);
   const next = [...kept, ...additions];
   if (next.length !== state.board.picks) {
     return `the resulting roster must contain exactly ${state.board.picks} entries`;
   }
-  if (new Set(next.map((mon) => mon.id)).size !== next.length) return 'the resulting roster contains a duplicate entry';
+  if (new Set(next.map((mon) => mon.id)).size !== next.length) {
+    return 'the resulting roster contains a duplicate entry';
+  }
   if (new Set(next.map((mon) => mon.base)).size !== next.length) {
     return 'the resulting roster contains two entries from the same base species';
   }
@@ -502,58 +504,45 @@ function freeAgencyRoster(
   return next;
 }
 
+function rationaleOf(value: JsonValue | undefined, limit: number): string {
+  return clip(text(value).trim(), limit);
+}
+
+function parsedReply(response: string): JsonObject | string {
+  const match = /\{[\s\S]*\}/.exec(response);
+  if (!match) return 'the reply contained no JSON object';
+  let parsed: JsonValue;
+  try {
+    parsed = JSON.parse(match[0]);
+  } catch {
+    return 'the JSON object did not parse';
+  }
+  const record = replyRecordSchema.safeParse(parsed);
+  return record.success ? record.data : 'the reply must be one JSON object';
+}
+
 export function parseTradeDecision(
   response: string,
   state: TradeWindowState,
   entrant: number,
 ): ParsedTradeDecision | string {
-  const match = /\{[\s\S]*\}/.exec(response);
-  if (!match) return 'the reply contained no JSON object';
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(match[0]);
-  } catch {
-    return 'the JSON object did not parse';
-  }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed))
-    return 'the reply must be one JSON object';
-  const record = parsed as Record<string, unknown>;
-  if (!Array.isArray(record.swaps)) return '"swaps" must be an array, including when it is empty';
+  const reply = parsedReply(response);
+  if (isRejection(reply)) return reply;
+  if (!Array.isArray(reply.swaps)) return '"swaps" must be an array, including when it is empty';
 
   const swaps: TradeSwap[] = [];
-  for (const [index, value] of record.swaps.entries()) {
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-      return `swap ${index + 1} must be an object with "drop" and "add" board ids`;
-    }
-    const swap = value as Record<string, unknown>;
-    const drop = boardId(swap.drop);
-    const add = boardId(swap.add);
+  for (const [index, value] of reply.swaps.entries()) {
+    const rawSwap = swapReplySchema.safeParse(value);
+    if (!rawSwap.success) return `swap ${index + 1} must be an object with "drop" and "add" board ids`;
+    const drop = boardId(rawSwap.data.drop);
+    const add = boardId(rawSwap.data.add);
     if (!drop || !add) return `swap ${index + 1} must name both "drop" and "add" board ids`;
     swaps.push({ drop, add });
   }
 
   const roster = freeAgencyRoster(state, entrant, swaps);
-  if (typeof roster === 'string') return roster;
-
-  return { swaps, reasoning: rationaleOf(record.reasoning, TRADE_WINDOW_PROMPT_POLICY.rationaleLimit) };
-}
-
-function rationaleOf(value: unknown, limit: number): string {
-  return typeof value === 'string' ? clip(value.trim(), limit) : '';
-}
-
-function parsedRecord(response: string): Record<string, unknown> | string {
-  const match = /\{[\s\S]*\}/.exec(response);
-  if (!match) return 'the reply contained no JSON object';
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(match[0]);
-  } catch {
-    return 'the JSON object did not parse';
-  }
-  return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
-    ? (parsed as Record<string, unknown>)
-    : 'the reply must be one JSON object';
+  if (isRejection(roster)) return roster;
+  return { swaps, reasoning: rationaleOf(reply.reasoning, TRADE_WINDOW_PROMPT_POLICY.rationaleLimit) };
 }
 
 function validateOfferTerms(
@@ -594,21 +583,16 @@ function validateOfferTerms(
 }
 
 export function parseTradeOffer(response: string, state: TradeWindowState, entrant: number): ParsedTradeOffer | string {
-  const record = parsedRecord(response);
-  if (typeof record === 'string') return record;
-  const reasoning = rationaleOf(record.reasoning, TRADE_OFFER_PROMPT_POLICY.rationaleLimit);
-  if (record.offer === null) return { offer: null, reasoning };
-  if (typeof record.offer !== 'object' || Array.isArray(record.offer)) {
-    return '"offer" must be an object or null';
-  }
-  const offered = record.offer as Record<string, unknown>;
-  const to = typeof offered.to === 'number' ? offered.to : Number.NaN;
-  const give = boardId(offered.give);
-  const get = boardId(offered.get);
-  const message =
-    typeof offered.message === 'string'
-      ? clip(offered.message.trim().replace(/\s+/g, ' '), TRADE_OFFER_PROMPT_POLICY.messageLimit)
-      : '';
+  const reply = parsedReply(response);
+  if (isRejection(reply)) return reply;
+  const reasoning = rationaleOf(reply.reasoning, TRADE_OFFER_PROMPT_POLICY.rationaleLimit);
+  if (reply.offer === null) return { offer: null, reasoning };
+  const rawOffer = offerReplySchema.safeParse(reply.offer);
+  if (!rawOffer.success) return '"offer" must be an object or null';
+  const { to } = rawOffer.data;
+  const give = boardId(rawOffer.data.give);
+  const get = boardId(rawOffer.data.get);
+  const message = clip(rawOffer.data.message.trim().replace(/\s+/g, ' '), TRADE_OFFER_PROMPT_POLICY.messageLimit);
   if (!give || !get) return 'the offer must name both "give" and "get" board ids';
   if (!message) return 'the offer "message" must be a non-empty string';
   const offer = { to, give, get, message };
@@ -616,10 +600,11 @@ export function parseTradeOffer(response: string, state: TradeWindowState, entra
 }
 
 export function parseTradeResponse(response: string): ParsedTradeResponse | string {
-  const record = parsedRecord(response);
-  if (typeof record === 'string') return record;
-  if (typeof record.accept !== 'boolean') return '"accept" must be true or false';
-  return { accept: record.accept, reasoning: rationaleOf(record.reasoning, TRADE_OFFER_PROMPT_POLICY.rationaleLimit) };
+  const reply = parsedReply(response);
+  if (isRejection(reply)) return reply;
+  const { accept } = reply;
+  if (accept !== true && accept !== false) return '"accept" must be true or false';
+  return { accept, reasoning: rationaleOf(reply.reasoning, TRADE_OFFER_PROMPT_POLICY.rationaleLimit) };
 }
 
 function rosterStateCopy(state: TradeWindowState): TradeWindowState {
@@ -663,7 +648,7 @@ export function applyFreeAgency(
   swaps: readonly TradeSwap[],
 ): TradeWindowState {
   const roster = freeAgencyRoster(state, entrant, swaps);
-  if (typeof roster === 'string') throw new Error(`invalid free-agency transaction: ${roster}`);
+  if (isRejection(roster)) throw new Error(`invalid free-agency transaction: ${roster}`);
   const next = rosterStateCopy(state);
   next.rosters[entrant] = roster;
   next.budgets[entrant] = state.board.budget - roster.reduce((sum, mon) => sum + mon.cost, 0);
@@ -701,7 +686,7 @@ function userPrompt(state: TradeWindowState, entrant: number, psDir: string): st
   ].join('\n');
 }
 
-function promptValues(state: TradeWindowState, entrant: number, position: TradeWindowPosition): Record<string, string> {
+function promptValues(state: TradeWindowState, entrant: number, position: TradeWindowPosition) {
   return {
     model: state.models[entrant]!,
     format: state.board.format,
@@ -908,19 +893,66 @@ interface WindowReplay {
   offersComplete: boolean;
 }
 
+const physicalWindowValueSchema = z.record(z.string(), jsonValueSchema);
+type PhysicalWindowValue = z.output<typeof physicalWindowValueSchema>;
+
 interface PhysicalWindowRow {
   line: number;
-  value: Record<string, unknown>;
+  value: PhysicalWindowValue;
 }
 
+const noOfferEvidenceSchema = z.object({
+  proposerFallback: z.boolean(),
+  responderFallback: z.null(),
+});
+const completeOfferEvidenceSchema = z.object({
+  proposerFallback: z.boolean(),
+  responderFallback: z.boolean(),
+});
+const completeOfferFieldsSchema = z.object({
+  to: z.number().int().min(Number.MIN_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER),
+  give: z.string(),
+  get: z.string(),
+  message: z.string().min(1),
+  accepted: z.boolean(),
+  responseReasoning: z.string(),
+});
+const freeAgencyFieldsSchema = z.object({
+  swaps: z.array(jsonValueSchema),
+  reasoning: z.string(),
+  fallback: z.boolean(),
+});
+const physicalSwapSchema = z
+  .object({
+    drop: jsonValueSchema.optional(),
+    add: jsonValueSchema.optional(),
+  })
+  .catchall(jsonValueSchema);
+const completeSwapSchema = z.object({ drop: z.string(), add: z.string() });
+
 const TRANSACTION_PATH_ENTRIES = ['window.json', 'window.jsonl', 'window'] as const;
+const OFFER_ROW_KEYS = [
+  'kind',
+  'model',
+  'from',
+  'to',
+  'give',
+  'get',
+  'message',
+  'accepted',
+  'proposerFallback',
+  'responderFallback',
+  'offerReasoning',
+  'responseReasoning',
+  'timestamp',
+] as const;
 
 function requireRegularEntry(file: string): boolean {
   let stats: fs.Stats;
   try {
     stats = fs.lstatSync(file);
   } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    if (isErrnoCode(cause, 'ENOENT')) return false;
     throw cause;
   }
   if (stats.isSymbolicLink()) throw new Error(`${file} must not be a symbolic link`);
@@ -958,7 +990,7 @@ function windowLineError(file: string, line: number, message: string): Error {
 function requireExactKeys(
   file: string,
   line: number,
-  value: Record<string, unknown>,
+  value: PhysicalWindowValue,
   keys: readonly string[],
   context: string,
 ): void {
@@ -976,8 +1008,8 @@ function requireExactKeys(
 }
 
 function requireWindowTimestamp(file: string, row: PhysicalWindowRow): void {
-  const timestamp = row.value.timestamp;
-  if (typeof timestamp !== 'string') throw windowLineError(file, row.line, 'has an invalid timestamp');
+  const timestamp = text(row.value.timestamp);
+  if (!timestamp) throw windowLineError(file, row.line, 'has an invalid timestamp');
   const milliseconds = Date.parse(timestamp);
   if (!Number.isFinite(milliseconds) || new Date(milliseconds).toISOString() !== timestamp) {
     throw windowLineError(file, row.line, 'has a non-canonical timestamp');
@@ -988,13 +1020,12 @@ function validateLoggedRationale(
   file: string,
   line: number,
   context: string,
-  rationale: unknown,
+  rationale: JsonValue | undefined,
   limit: number,
 ): string {
-  if (typeof rationale !== 'string' || rationale !== rationaleOf(rationale, limit)) {
-    throw windowLineError(file, line, `${context} has a non-canonical rationale`);
-  }
-  return rationale;
+  const canonical = rationaleOf(rationale, limit);
+  if (rationale !== canonical) throw windowLineError(file, line, `${context} has a non-canonical rationale`);
+  return canonical;
 }
 
 function replayWindowLog(
@@ -1007,7 +1038,7 @@ function replayWindowLog(
   try {
     raw = fs.readFileSync(file, 'utf8');
   } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === 'ENOENT') {
+    if (isErrnoCode(cause, 'ENOENT')) {
       return { offers: [], offerRows: [], decisions: [], offersComplete: tradesAllowed === 0 };
     }
     throw cause;
@@ -1018,7 +1049,7 @@ function replayWindowLog(
     .split('\n')
     .map((text, index) => {
       if (!text.trim()) throw windowLineError(file, index + 1, 'must be a nonblank JSON object');
-      let parsed: unknown;
+      let parsed: JsonValue;
       try {
         parsed = JSON.parse(text);
       } catch (cause) {
@@ -1031,14 +1062,14 @@ function replayWindowLog(
           'is not canonical JSON; duplicate keys, whitespace, and non-canonical key order are rejected',
         );
       }
-      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      const value = physicalWindowValueSchema.safeParse(parsed);
+      if (!value.success) {
         throw windowLineError(file, index + 1, 'must be one JSON object');
       }
-      const value = parsed as Record<string, unknown>;
-      if (value.kind !== 'offer' && value.kind !== 'free_agency') {
-        throw windowLineError(file, index + 1, `has unknown transaction phase ${JSON.stringify(value.kind)}`);
+      if (value.data.kind !== 'offer' && value.data.kind !== 'free_agency') {
+        throw windowLineError(file, index + 1, `has unknown transaction phase ${JSON.stringify(value.data.kind)}`);
       }
-      return { line: index + 1, value };
+      return { line: index + 1, value: value.data };
     });
   let freeAgencyStarted = false;
   for (const row of rows) {
@@ -1064,52 +1095,28 @@ function replayWindowLog(
       }
       const record = physical.value;
       const noOffer = record.to === null;
-      requireExactKeys(
-        file,
-        physical.line,
-        record,
-        noOffer
-          ? [
-              'kind',
-              'model',
-              'from',
-              'to',
-              'give',
-              'get',
-              'message',
-              'accepted',
-              'proposerFallback',
-              'responderFallback',
-              'offerReasoning',
-              'responseReasoning',
-              'timestamp',
-            ]
-          : [
-              'kind',
-              'model',
-              'from',
-              'to',
-              'give',
-              'get',
-              'message',
-              'accepted',
-              'proposerFallback',
-              'responderFallback',
-              'offerReasoning',
-              'responseReasoning',
-              'timestamp',
-            ],
-        'offer row',
-      );
+      requireExactKeys(file, physical.line, record, OFFER_ROW_KEYS, 'offer row');
       requireWindowTimestamp(file, physical);
-      if (record.kind !== 'offer' || record.from !== entrant || record.model !== state.models[entrant]) {
+      const model = state.models[entrant]!;
+      if (record.kind !== 'offer' || record.from !== entrant || record.model !== model) {
         throw windowLineError(file, physical.line, 'does not match the trade-window order and proposer identity');
       }
-      if (
-        typeof record.proposerFallback !== 'boolean' ||
-        (noOffer ? record.responderFallback !== null : typeof record.responderFallback !== 'boolean')
-      ) {
-        throw windowLineError(file, physical.line, 'has invalid proposer/responder fallback evidence');
+      let proposerFallback: boolean;
+      let responderFallback: boolean | null;
+      if (noOffer) {
+        const evidence = noOfferEvidenceSchema.safeParse(record);
+        if (!evidence.success) {
+          throw windowLineError(file, physical.line, 'has invalid proposer/responder fallback evidence');
+        }
+        proposerFallback = evidence.data.proposerFallback;
+        responderFallback = null;
+      } else {
+        const evidence = completeOfferEvidenceSchema.safeParse(record);
+        if (!evidence.success) {
+          throw windowLineError(file, physical.line, 'has invalid proposer/responder fallback evidence');
+        }
+        proposerFallback = evidence.data.proposerFallback;
+        responderFallback = evidence.data.responderFallback;
       }
       const offerReasoning = validateLoggedRationale(
         file,
@@ -1136,30 +1143,20 @@ function replayWindowLog(
           get: null,
           message: null,
           accepted: null,
-          proposerFallback: record.proposerFallback as boolean,
-          responderFallback: null,
+          proposerFallback,
+          responderFallback,
           offerReasoning,
           responseReasoning: '',
         };
-        offerRows.push({ kind: 'offer', model: record.model as string, ...offer });
+        offerRows.push({ kind: 'offer', model, ...offer });
         cursor += 1;
         continue offerSeats;
       }
-      if (
-        !Number.isSafeInteger(record.to) ||
-        typeof record.give !== 'string' ||
-        typeof record.get !== 'string' ||
-        typeof record.message !== 'string' ||
-        !record.message ||
-        typeof record.accepted !== 'boolean' ||
-        typeof record.responseReasoning !== 'string'
-      ) {
+      const fields = completeOfferFieldsSchema.safeParse(record);
+      if (!fields.success) {
         throw windowLineError(file, physical.line, 'has invalid offer/response field types');
       }
-      const to = record.to as number;
-      const give = record.give;
-      const get = record.get;
-      const message = record.message;
+      const { to, give, get, message, accepted } = fields.data;
       if (message !== clip(message.trim().replace(/\s+/g, ' '), TRADE_OFFER_PROMPT_POLICY.messageLimit)) {
         throw windowLineError(file, physical.line, 'has a non-canonical public message');
       }
@@ -1167,7 +1164,7 @@ function replayWindowLog(
         file,
         physical.line,
         'offer response',
-        record.responseReasoning,
+        fields.data.responseReasoning,
         TRADE_OFFER_PROMPT_POLICY.rationaleLimit,
       );
       const offer: TradeOffer = {
@@ -1176,28 +1173,22 @@ function replayWindowLog(
         give,
         get,
         message,
-        accepted: record.accepted,
-        proposerFallback: record.proposerFallback as boolean,
-        responderFallback: record.responderFallback as boolean,
+        accepted,
+        proposerFallback,
+        responderFallback,
         offerReasoning,
         responseReasoning,
       };
       let nextState: TradeWindowState;
       try {
-        nextState = applyTradeOffer(state, {
-          from: entrant,
-          to,
-          give,
-          get,
-          accepted: record.accepted,
-        });
+        nextState = applyTradeOffer(state, { from: entrant, to, give, get, accepted });
       } catch (cause) {
         const reason = cause instanceof Error ? cause.message : String(cause);
         throw windowLineError(file, physical.line, reason);
       }
       validateLeagueRosterState(nextState, `roster after replayed offer at ${file} line ${physical.line}`);
       commitRosterState(state, nextState);
-      offerRows.push({ kind: 'offer', model: record.model as string, ...offer });
+      offerRows.push({ kind: 'offer', model, ...offer });
       cursor += 1;
       made += 1;
     }
@@ -1234,28 +1225,29 @@ function replayWindowLog(
     ) {
       throw windowLineError(file, physical.line, 'does not match the trade-window free-agency order and identity');
     }
-    if (!Array.isArray(record.swaps) || typeof record.reasoning !== 'string' || typeof record.fallback !== 'boolean') {
+    const fields = freeAgencyFieldsSchema.safeParse(record);
+    if (!fields.success) {
       throw windowLineError(file, physical.line, 'has invalid free-agency field types');
     }
-    for (const [swapIndex, value] of record.swaps.entries()) {
-      if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    for (const [swapIndex, value] of fields.data.swaps.entries()) {
+      const rawSwap = physicalSwapSchema.safeParse(value);
+      if (!rawSwap.success) {
         throw windowLineError(file, physical.line, `has a non-object swap ${swapIndex + 1}`);
       }
-      const swap = value as Record<string, unknown>;
-      requireExactKeys(file, physical.line, swap, ['drop', 'add'], `free-agency swap ${swapIndex + 1}`);
-      if (typeof swap.drop !== 'string' || typeof swap.add !== 'string') {
+      requireExactKeys(file, physical.line, rawSwap.data, ['drop', 'add'], `free-agency swap ${swapIndex + 1}`);
+      if (!completeSwapSchema.safeParse(rawSwap.data).success) {
         throw windowLineError(file, physical.line, `has invalid swap ${swapIndex + 1} field types`);
       }
     }
     const parsed = parseTradeDecision(
-      JSON.stringify({ swaps: record.swaps, reasoning: record.reasoning }),
+      JSON.stringify({ swaps: fields.data.swaps, reasoning: fields.data.reasoning }),
       state,
       entrant,
     );
-    if (typeof parsed === 'string') {
+    if (isRejection(parsed)) {
       throw windowLineError(file, physical.line, `has an invalid free-agency decision: ${parsed}`);
     }
-    if (!isDeepStrictEqual(parsed.swaps, record.swaps) || parsed.reasoning !== record.reasoning) {
+    if (!isDeepStrictEqual(parsed.swaps, fields.data.swaps) || parsed.reasoning !== fields.data.reasoning) {
       throw windowLineError(file, physical.line, 'is not in canonical transaction form');
     }
     const nextState = applyFreeAgency(state, entrant, parsed.swaps);
@@ -1263,10 +1255,10 @@ function replayWindowLog(
     commitRosterState(state, nextState);
     decisions.push({
       entrant,
-      model: record.model as string,
+      model: state.models[entrant]!,
       swaps: parsed.swaps,
       reasoning: parsed.reasoning,
-      fallback: record.fallback,
+      fallback: fields.data.fallback,
     });
   }
   return {
@@ -1277,29 +1269,74 @@ function replayWindowLog(
   };
 }
 
+const safeIntegerSchema = z.number().int().min(Number.MIN_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER);
+const tradeOfferArtifactSchema = z
+  .object({
+    from: safeIntegerSchema,
+    to: safeIntegerSchema.nullable(),
+    give: z.string().nullable(),
+    get: z.string().nullable(),
+    message: z.string().nullable(),
+    accepted: z.boolean().nullable(),
+    proposerFallback: z.boolean(),
+    responderFallback: z.boolean().nullable(),
+    offerReasoning: z.string(),
+    responseReasoning: z.string(),
+  })
+  .catchall(jsonValueSchema);
+const tradeDecisionArtifactSchema = z
+  .object({
+    entrant: safeIntegerSchema,
+    model: z.string(),
+    swaps: z.array(z.object({ drop: z.string(), add: z.string() }).catchall(jsonValueSchema)),
+    reasoning: z.string(),
+    fallback: z.boolean(),
+  })
+  .catchall(jsonValueSchema);
+const tradeWindowRosterSchema = z
+  .object({
+    entrant: safeIntegerSchema,
+    model: z.string(),
+    team_name: z.string(),
+    budget_left: z.number(),
+    spent: z.number(),
+    roster: z.array(
+      z
+        .object({
+          id: z.string(),
+          name: z.string(),
+          cost: z.number(),
+        })
+        .catchall(jsonValueSchema),
+    ),
+  })
+  .catchall(jsonValueSchema);
+export const storedRosterSchema = tradeWindowRosterSchema.extend({ entrant: safeIntegerSchema.optional() });
+const tradeWindowArtifactSchema = z
+  .object({
+    after_week: safeIntegerSchema,
+    order: z.array(safeIntegerSchema),
+    offers: z.array(tradeOfferArtifactSchema),
+    decisions: z.array(tradeDecisionArtifactSchema),
+    rosters: z.array(tradeWindowRosterSchema),
+    swaps_used: z.array(safeIntegerSchema).optional().catch(undefined),
+  })
+  .catchall(jsonValueSchema);
+
 function readTradeWindowFile(epochDir: string): TradeWindowArtifact | undefined {
   const file = path.join(epochDir, 'window.json');
-  let parsed: unknown;
+  let parsed: JsonValue;
   try {
     parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    if (isErrnoCode(cause, 'ENOENT')) return undefined;
     throw new Error(`${file} is not valid JSON`, { cause });
   }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new Error(`${file} must contain one transaction artifact object`);
-  }
-  const record = parsed as TradeWindowArtifact;
-  if (
-    !Number.isSafeInteger(record.after_week) ||
-    !Array.isArray(record.rosters) ||
-    !Array.isArray(record.decisions) ||
-    !Array.isArray(record.offers) ||
-    !Array.isArray(record.order)
-  ) {
+  const artifact = tradeWindowArtifactSchema.safeParse(parsed);
+  if (!artifact.success) {
     throw new Error(`${file} is not a complete transaction artifact`);
   }
-  return record;
+  return artifact.data;
 }
 
 function replayArtifact(
@@ -1350,7 +1387,7 @@ export function readValidatedTradeWindow(
   return artifact;
 }
 
-async function completeTradePhase<T>(request: {
+async function completeTradePhase<T extends object>(request: {
   provider: Provider;
   state: TradeWindowState;
   entrant: number;
@@ -1359,7 +1396,7 @@ async function completeTradePhase<T>(request: {
   phase: 'offer' | 'response';
   seatLog: string;
   reference: ShowdownReference;
-  boardSearch: ReturnType<typeof createBoardSearch>;
+  boardSearch: BoardSearch;
   options: RunTradeWindowOptions;
   parse: (response: string) => T | string;
 }): Promise<T | undefined> {
@@ -1373,7 +1410,7 @@ async function completeTradePhase<T>(request: {
     let terminalError: Error | undefined;
     const lookups: { name: string; arguments: JsonObject; result: string }[] = [];
     try {
-      const completion = await completeWithDexTools({
+      const completionRequest: DexToolRequest = {
         provider: request.provider,
         system: request.system,
         messages,
@@ -1382,13 +1419,14 @@ async function completeTradePhase<T>(request: {
         boardSearch: request.boardSearch,
         extraTools: [memoryPageTool(() => request.state.memories[request.entrant]!)],
         policy: TRADE_OFFER_PROMPT_POLICY,
-        ...(request.options.signal === undefined ? {} : { signal: request.options.signal }),
         onLookup: (call) => lookups.push(call),
-      });
+        signal: request.options.signal,
+      };
+      const completion = await completeWithDexTools(completionRequest);
       response = completion.text;
       usage = completion.usage;
       const candidate = request.parse(response || completion.reasoning || '');
-      if (typeof candidate === 'string') {
+      if (isRejection(candidate)) {
         error =
           completion.finishReason === 'length' ? 'the reply was cut off before completing the trade reply' : candidate;
         messages.push({ role: 'assistant', content: response || '[the reply contained no visible text]' });
@@ -1410,20 +1448,25 @@ async function completeTradePhase<T>(request: {
       error = failure.summary;
       terminalError = new Error(`${failure.summary} The trade window cannot continue.`, { cause });
     }
-    fs.appendFileSync(
-      request.seatLog,
-      `${JSON.stringify({
-        phase: request.phase,
-        attempt,
-        ...(attempt === 1 ? { system: request.system } : {}),
-        user: promptForAttempt,
-        response,
-        ...(usage ? { usage } : {}),
-        ...(lookups.length ? { tool_lookups: lookups } : {}),
-        ...(error ? { error } : {}),
-      } satisfies TradeSeatLog)}\n`,
-      'utf8',
-    );
+    const seatEntry: TradeSeatLog =
+      attempt === 1
+        ? {
+            phase: request.phase,
+            attempt,
+            system: request.system,
+            user: promptForAttempt,
+            response,
+          }
+        : {
+            phase: request.phase,
+            attempt,
+            user: promptForAttempt,
+            response,
+          };
+    if (usage) seatEntry.usage = usage;
+    if (lookups.length) seatEntry.tool_lookups = lookups;
+    if (error) seatEntry.error = error;
+    fs.appendFileSync(request.seatLog, `${JSON.stringify(seatEntry)}\n`, 'utf8');
     if (terminalError) throw terminalError;
   }
   return parsed;
@@ -1456,11 +1499,9 @@ export async function runTradeWindow(
     if (model === 'random') return undefined;
     const make =
       options.makeTradeProvider ??
-      ((spec: string, apiKey: string | undefined, reasoning: ReasoningLevel | undefined) =>
-        makeProvider(parseSpec(spec), {
-          ...(reasoning === undefined ? {} : { reasoning }),
-          ...(apiKey === undefined ? {} : { apiKey }),
-        }));
+      ((spec: string, apiKey: string | undefined, reasoning: ReasoningLevel | undefined) => {
+        return makeProvider(parseSpec(spec), { apiKey, reasoning });
+      });
     return make(model, options.apiKeys?.[model], reasoningForModel(model, options));
   });
   const reference = new ShowdownReference(liveState.board.format, options.psDir);
@@ -1514,7 +1555,7 @@ export async function runTradeWindow(
               reference,
               boardSearch,
               options,
-              parse: (response) => parseTradeResponse(response),
+              parse: parseTradeResponse,
             });
             responderFallback = completed === undefined;
             response = completed ?? { accept: false, reasoning: '' };
@@ -1571,7 +1612,7 @@ export async function runTradeWindow(
         let terminalError: Error | undefined;
         const lookups: { name: string; arguments: JsonObject; result: string }[] = [];
         try {
-          const completion = await completeWithDexTools({
+          const completionRequest: DexToolRequest = {
             provider,
             system,
             messages,
@@ -1580,13 +1621,14 @@ export async function runTradeWindow(
             boardSearch,
             extraTools: [memoryPageTool(() => liveState.memories[entrant]!)],
             policy: TRADE_WINDOW_PROMPT_POLICY,
-            ...(options.signal === undefined ? {} : { signal: options.signal }),
             onLookup: (call) => lookups.push(call),
-          });
+            signal: options.signal,
+          };
+          const completion = await completeWithDexTools(completionRequest);
           response = completion.text;
           usage = completion.usage;
           const candidate = parseTradeDecision(response || completion.reasoning || '', liveState, entrant);
-          if (typeof candidate === 'string') {
+          if (isRejection(candidate)) {
             error =
               completion.finishReason === 'length'
                 ? 'the reply was cut off before completing the transaction list'
@@ -1610,20 +1652,25 @@ export async function runTradeWindow(
           error = failure.summary;
           terminalError = new Error(`${failure.summary} The trade window cannot continue.`, { cause });
         }
-        fs.appendFileSync(
-          seatLog,
-          `${JSON.stringify({
-            phase: 'free_agency',
-            attempt,
-            ...(attempt === 1 ? { system } : {}),
-            user: promptForAttempt,
-            response,
-            ...(usage ? { usage } : {}),
-            ...(lookups.length ? { tool_lookups: lookups } : {}),
-            ...(error ? { error } : {}),
-          } satisfies TradeSeatLog)}\n`,
-          'utf8',
-        );
+        const seatEntry: TradeSeatLog =
+          attempt === 1
+            ? {
+                phase: 'free_agency',
+                attempt,
+                system,
+                user: promptForAttempt,
+                response,
+              }
+            : {
+                phase: 'free_agency',
+                attempt,
+                user: promptForAttempt,
+                response,
+              };
+        if (usage) seatEntry.usage = usage;
+        if (lookups.length) seatEntry.tool_lookups = lookups;
+        if (error) seatEntry.error = error;
+        fs.appendFileSync(seatLog, `${JSON.stringify(seatEntry)}\n`, 'utf8');
         if (terminalError) throw terminalError;
       }
     }
@@ -1677,20 +1724,14 @@ export async function runTradeWindow(
 
 export function readTradeWindow(epochDir: string): TradeWindowArtifact | undefined {
   epochArtifactPaths(epochDir);
-  let parsed: unknown;
+  let parsed: JsonValue;
   try {
     parsed = JSON.parse(fs.readFileSync(path.join(epochDir, 'window.json'), 'utf8'));
   } catch {
     return undefined;
   }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined;
-  const record = parsed as TradeWindowArtifact;
-  return Array.isArray(record.rosters) &&
-    Array.isArray(record.decisions) &&
-    Array.isArray(record.offers) &&
-    Array.isArray(record.order)
-    ? record
-    : undefined;
+  const artifact = tradeWindowArtifactSchema.safeParse(parsed);
+  return artifact.success ? artifact.data : undefined;
 }
 
 export interface TransactionEpochArtifacts {
@@ -1713,12 +1754,17 @@ export function readTransactionEpochs(runDir: string): TransactionEpochArtifacts
   });
 }
 
-export function readCurrentRosterArtifact(runDir: string): unknown {
+export function readCurrentRosterArtifact(runDir: string): TradeWindowRoster[] | undefined {
   const windows = readTransactionEpochs(runDir).flatMap(({ artifact }) => (artifact ? [artifact] : []));
   const latest = windows.at(-1);
   if (latest) return latest.rosters;
   try {
-    return JSON.parse(fs.readFileSync(path.join(runDir, 'rosters.json'), 'utf8')) as unknown;
+    const rosters = z
+      .array(storedRosterSchema)
+      .safeParse(JSON.parse(fs.readFileSync(path.join(runDir, 'rosters.json'), 'utf8')));
+    return rosters.success
+      ? rosters.data.map((roster, entrant) => ({ ...roster, entrant: roster.entrant ?? entrant }))
+      : undefined;
   } catch {
     return undefined;
   }

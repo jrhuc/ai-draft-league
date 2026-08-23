@@ -6,13 +6,13 @@ import { Mark } from '../components/mark';
 import { Sprite } from '../components/sprite';
 import { modelName } from '../lib/labels';
 
-const PHASE_LABELS: Record<DraftView['phase'], string> = {
+const PHASE_LABELS = {
   draft: 'Drafting',
   roundrobin: 'Round robin',
   window: 'Free agency',
   playoffs: 'Playoffs',
   done: 'Complete',
-};
+} as const;
 
 function coachLabel(draft: DraftView, entrant: number): string {
   const model = draft.entrants[entrant];

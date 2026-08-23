@@ -7,7 +7,7 @@ import type { Rng } from './random.js';
 import { resolveSeed, seededRng, seriesEntropy } from './random.js';
 import type { SeriesRecord } from './records.js';
 import { appendRow } from './records.js';
-import type { ExperimentOptions } from './series.js';
+import type { ExperimentOptions, RecordedSeriesContext } from './series.js';
 import { mapLimit, playRecordedSeries } from './series.js';
 import { showdownCommit } from './showdown.js';
 import type { Team } from './teams.js';
@@ -96,7 +96,7 @@ export async function runRotation(
 
   return mapLimit(plans, options.concurrency ?? 2, options.signal, async (plan, signal) => {
     options.onEvent?.({ type: 'series-start', index: plan.index });
-    const { fields } = await playRecordedSeries({
+    const seriesContext: RecordedSeriesContext = {
       players: plan.players,
       teams: plan.teams,
       gameSeeds: plan.gameSeeds,
@@ -105,26 +105,27 @@ export async function runRotation(
       psDir,
       runDir,
       signal,
-      ...(options.reasoning === undefined ? {} : { reasoning: options.reasoning }),
-      ...(options.reasoningByModel === undefined ? {} : { reasoningByModel: options.reasoningByModel }),
       timerScale,
-      ...(options.apiKeys === undefined ? {} : { apiKeys: options.apiKeys }),
       onGameUpdate: (game, lines, publicLines) =>
         options.onEvent?.({ type: 'game-update', index: plan.index, game, lines, publicLines }),
       onGameEnd: (game, winner, turns, score) =>
         options.onEvent?.({ type: 'game-end', index: plan.index, game, winner, turns, score }),
       onDecision: (pid, row) => options.onEvent?.({ type: 'decision', index: plan.index, pid, row }),
-    });
-    const row = {
+      reasoning: options.reasoning,
+      reasoningByModel: options.reasoningByModel,
+      apiKeys: options.apiKeys,
+    };
+    const { fields } = await playRecordedSeries(seriesContext);
+    const row: SeriesRecord = {
       schema_version: 1,
       mode: 'rotation',
       series_index: plan.index,
       pool: pool.id,
-      ...(options.contributor === undefined ? {} : { contributor: options.contributor }),
       run_seed: seed,
       ps_commit: showdownCommit(psDir),
       ...fields,
-    } as SeriesRecord;
+    };
+    if (options.contributor !== undefined) row.contributor = options.contributor;
     appendRow(recordsPath, row);
     options.onEvent?.({ type: 'series-end', index: plan.index, record: row });
     return row;

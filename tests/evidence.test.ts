@@ -3,12 +3,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-
 import { buildTournamentGame, buildTournaments } from '../src/evidence.js';
 import { TEAMS_DIR } from '../src/paths.js';
-import type { SeriesRecord } from '../src/records.js';
+import type { ParsedSeriesRecord } from '../src/records.js';
+import type { JsonObject } from '../src/types.js';
+import { seriesRecordFixture } from './fixtures/records.js';
 
-function decisionLine(latency: number, turn: number, extra: Record<string, unknown> = {}): string {
+function decisionLine(latency: number, turn: number, extra: JsonObject = {}): string {
   return `${JSON.stringify({ kind: 'decision', latency_ms: latency, game_number: 1, turn, phase: 'turn', ...extra })}\n`;
 }
 
@@ -19,8 +20,8 @@ function tournamentMatch(
   p1: string,
   p2: string,
   winnerSide: 'p1' | 'p2',
-): SeriesRecord {
-  return {
+): ParsedSeriesRecord {
+  return seriesRecordFixture({
     mode: 'tournament',
     run_id: 'cup-2',
     timestamp: `2026-07-25T0${seriesIndex}:00:00.000Z`,
@@ -36,10 +37,10 @@ function tournamentMatch(
     score: winnerSide === 'p1' ? { p1: 2, p2: 0 } : { p1: 1, p2: 2 },
     turns: 12,
     advanced: winnerSide === 'p1' ? p1 : p2,
-  } as unknown as SeriesRecord;
+  });
 }
 
-function threeEntrantRows(): SeriesRecord[] {
+function threeEntrantRows(): ParsedSeriesRecord[] {
   return [
     tournamentMatch(0, 1, [1, 2], 'openai:beta', 'openai:gamma', 'p2'),
     tournamentMatch(1, 2, [0, 2], 'openai:alpha', 'openai:gamma', 'p1'),
@@ -93,8 +94,8 @@ test('tournament folds reject contradictory structural facts', () => {
 });
 
 test('tournament archives include open team sheets for the shared match viewer', () => {
-  const rows: SeriesRecord[] = [
-    {
+  const rows = [
+    seriesRecordFixture({
       mode: 'tournament',
       run_id: 'cup-sheets',
       timestamp: '2026-08-06T21:00:00.000Z',
@@ -109,7 +110,7 @@ test('tournament archives include open team sheets for the shared match viewer',
       winner_side: 'p1',
       score: { p1: 2, p2: 0 },
       turns: 8,
-    } as unknown as SeriesRecord,
+    }),
   ];
   const archive = buildTournaments(rows, '/nonexistent', 'test', TEAMS_DIR).tournaments[0]!;
   assert.equal(archive.entrants[0]!.teamSheet?.length, 6);

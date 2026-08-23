@@ -111,7 +111,6 @@ textarea { -webkit-tap-highlight-color: transparent; width: 100%; padding: 10px 
 .stat-value { font: 600 30px/1 var(--body); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .pools-manager > summary { padding: 13px 16px; color: var(--ink); background: var(--slate-soft); border: 1px solid var(--line-strong); font: 800 10px/1 var(--mono); letter-spacing: .07em; text-transform: uppercase; cursor: pointer; }
 .pools-manager[open] > summary { border-bottom-color: var(--yellow); box-shadow: inset 0 -3px var(--yellow); }
-.hidden { display: none !important; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .sprite { flex: none; object-fit: contain; image-rendering: pixelated; }
 .item-icon { flex: none; object-fit: contain; image-rendering: pixelated; display: inline-block; background-repeat: no-repeat; }
@@ -174,7 +173,9 @@ button.game-chip:hover { outline: 2px solid var(--blue-dark); outline-offset: 1p
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* biome-ignore lint/complexity/noImportantStyles: must beat every animation rule regardless of specificity */
   html { scroll-behavior: auto !important; }
+  /* biome-ignore lint/complexity/noImportantStyles: must beat every animation rule regardless of specificity */
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 

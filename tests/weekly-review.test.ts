@@ -11,6 +11,7 @@ import { seriesGameSummaries } from '../src/game-usage.js';
 import { readJsonlObjects } from '../src/jsonl.js';
 import { defaultPsDir } from '../src/paths.js';
 import type { CompleteOptions, Completion, JsonObject, ProviderMessage } from '../src/types.js';
+import { asRecords, text } from '../src/value.js';
 import {
   describeOwnBuild,
   narrateOwnSeries,
@@ -53,7 +54,7 @@ function scripted(steps: Completion[]) {
   };
 }
 
-function writeRun(): { runDir: string; state: WeeklyReviewState } {
+function writeRun() {
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vgc-weekly-review-'));
   const seriesDir = path.join(runDir, 'series', 'abc123');
   fs.mkdirSync(seriesDir, { recursive: true });
@@ -324,11 +325,11 @@ test('a coach keeps named pages, reads them back, and is refused an over-limit p
   ]);
   await runWeeklyReview(week2State, { runDir, psDir: defaultPsDir(), makeReviewProvider: () => week2.provider });
   const seatLog = readJsonlObjects(path.join(runDir, 'reviews', 'week-2', 'seat-0-test-alpha.jsonl'));
-  const lookups = seatLog[0]!.tool_lookups as Array<{ name: string; result: string }>;
+  const lookups = asRecords(seatLog[0]!.tool_lookups);
   assert.equal(lookups[0]!.result, 'Random brings nothing.');
-  assert.match(lookups[1]!.result, /YOUR MEMORY PAGE opp\.random:\nRandom brings nothing\./);
-  assert.match(lookups[2]!.result, /no stored reconciliation for week 1\. Stored barriers: week 1 week\./);
-  assert.match(lookups[3]!.result, /no stored review for week 2/);
+  assert.match(text(lookups[1]!.result), /YOUR MEMORY PAGE opp\.random:\nRandom brings nothing\./);
+  assert.match(text(lookups[2]!.result), /no stored reconciliation for week 1\. Stored barriers: week 1 week\./);
+  assert.match(text(lookups[3]!.result), /no stored review for week 2/);
   assert.deepEqual(
     state.memories[0],
     { notebook: 'Lead Garchomp.', 'opp.random': 'Random brings nothing.' },
@@ -353,16 +354,16 @@ test('set_pages merges, delete_pages removes, and the reconciliation snapshot is
   const reconciled = scripted([toolCall('read_memory_history', { week: 1 }), reply('{"notebook":"Reconciled."}')]);
   await runWeeklyReview(reconcile, { runDir, psDir: defaultPsDir(), makeReviewProvider: () => reconciled.provider });
   const reconcileLog = readJsonlObjects(path.join(runDir, 'reviews', 'week-1-transactions', 'seat-0-test-alpha.jsonl'));
-  const history = (reconcileLog[0]!.tool_lookups as Array<{ result: string }>)[0]!;
-  assert.match(history.result, /YOUR NOTEBOOK:\nStart\./, 'the same-week review precedes its reconciliation');
+  const history = asRecords(reconcileLog[0]!.tool_lookups)[0]!;
+  assert.match(text(history.result), /YOUR NOTEBOOK:\nStart\./, 'the same-week review precedes its reconciliation');
   const week2 = scripted([toolCall('read_memory_history', { week: 1, stage: 'transactions' }), reply('{}')]);
   await runWeeklyReview(
     { ...state, week: 2, period: [], nextWindowWeek: null },
     { runDir, psDir: defaultPsDir(), makeReviewProvider: () => week2.provider },
   );
   const week2Log = readJsonlObjects(path.join(runDir, 'reviews', 'week-2', 'seat-0-test-alpha.jsonl'));
-  const snapshot = (week2Log[0]!.tool_lookups as Array<{ result: string }>)[0]!;
-  assert.match(snapshot.result, /YOUR NOTEBOOK:\nReconciled\./);
+  const snapshot = asRecords(week2Log[0]!.tool_lookups)[0]!;
+  assert.match(text(snapshot.result), /YOUR NOTEBOOK:\nReconciled\./);
 });
 
 test('a coach reads a series through its tools, replaces its notebook, and the row replays without a model', async (t) => {

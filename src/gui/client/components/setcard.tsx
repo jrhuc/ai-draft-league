@@ -2,8 +2,12 @@ import type { PublicTeamSheetSetView, TeambuildSetView } from '../../api';
 import { STAT_ORDER } from './boardbrowser';
 import { ItemIcon, Sprite } from './sprite';
 
+function isTeambuildSet(set: PublicTeamSheetSetView): set is TeambuildSetView {
+  return 'evs' in set;
+}
+
 export function SetCard({ set }: { set: PublicTeamSheetSetView }) {
-  const privateSet = 'evs' in set ? (set as TeambuildSetView) : null;
+  const privateSet = isTeambuildSet(set) ? set : null;
   const evs = privateSet
     ? STAT_ORDER.filter((stat) => privateSet.evs[stat])
         .map((stat) => `${privateSet.evs[stat]}\u00a0${stat}`)

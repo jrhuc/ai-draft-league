@@ -92,7 +92,7 @@ async function fetchItemIcons(format = FORMAT, psDir = defaultPsDir()): Promise<
   const dex = Dex.mod(Dex.formats.get(format).mod || 'base');
   const icons: Record<string, number> = {};
   for (const item of dex.items.all()) {
-    if (!item.exists || item.isNonstandard || typeof item.spritenum !== 'number') continue;
+    if (!item.exists || item.isNonstandard || item.spritenum === undefined) continue;
     icons[item.id] = item.spritenum;
   }
   fs.writeFileSync(

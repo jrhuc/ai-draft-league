@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import type { JsonObject } from './types.js';
-import { isRecord } from './value.js';
+import type { JsonObject, JsonValue } from './types.js';
+import { isErrnoCode, isRecord } from './value.js';
 
 function parseJsonlObjects(file: string, contents: string): JsonObject[] {
   const lines = contents.split('\n');
@@ -14,7 +14,7 @@ function parseJsonlObjects(file: string, contents: string): JsonObject[] {
   const rows: JsonObject[] = [];
   for (const [index, line] of lines.entries()) {
     if (!line.trim()) continue;
-    let parsed: unknown;
+    let parsed: JsonValue;
     try {
       parsed = JSON.parse(line);
     } catch (error) {
@@ -33,7 +33,7 @@ export function readJsonlObjects(file: string): JsonObject[] {
   try {
     contents = fs.readFileSync(file, 'utf8');
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    if (isErrnoCode(error, 'ENOENT')) return [];
     throw error;
   }
   return parseJsonlObjects(file, contents);
@@ -44,7 +44,7 @@ function appendSeparator(file: string): string {
   try {
     contents = fs.readFileSync(file, 'utf8');
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return '';
+    if (isErrnoCode(error, 'ENOENT')) return '';
     throw error;
   }
   if (!contents) return '';
@@ -57,7 +57,7 @@ function appendSeparator(file: string): string {
   if (committedPrefix) parseJsonlObjects(file, committedPrefix);
   const tail = contents.slice(tailStart);
   if (tail.trim()) {
-    let parsed: unknown;
+    let parsed: JsonValue;
     try {
       parsed = JSON.parse(tail);
     } catch {

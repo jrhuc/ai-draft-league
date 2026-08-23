@@ -53,7 +53,7 @@ test('provider-free construction referee rejects malformed and illegal free text
   });
   assert.equal(malformed.status, 'rejected');
 
-  const illegal = JSON.parse(RESPONSE) as { sets: Array<{ item: string }> };
+  const illegal: { sets: Array<{ item: string }> } = JSON.parse(RESPONSE);
   illegal.sets[0]!.item = 'Not An Item';
   const rejected = validateTeamBuildSubmission(task(), JSON.stringify(illegal), {
     psDir: defaultPsDir(),

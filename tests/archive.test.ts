@@ -5,7 +5,9 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { buildLeague, buildLeagueGame } from '../src/archive.js';
-import type { SeriesRecord } from '../src/records.js';
+import type { ParsedSeriesRecord } from '../src/records.js';
+import type { JsonObject } from '../src/types.js';
+import { seriesRecordFixture } from './fixtures/records.js';
 import { LEGAL_TEAM_IDS, leagueTeamBuildJournalRow } from './fixtures/team-build.js';
 
 const RUN_ID = 'league-run-1';
@@ -97,8 +99,8 @@ function writeLeagueFixture(runsDir: string): void {
   }
 }
 
-function leagueRow(overrides: Record<string, unknown>): SeriesRecord {
-  return {
+function leagueRow(overrides: JsonObject): ParsedSeriesRecord {
+  return seriesRecordFixture({
     mode: 'draft',
     run_id: RUN_ID,
     entrants: [0, 1],
@@ -107,10 +109,10 @@ function leagueRow(overrides: Record<string, unknown>): SeriesRecord {
     players: { p1: 'openai:alpha', p2: 'openai:beta' },
     decision_stats: { p1: { decisions: 10, cost: 0.5 }, p2: { decisions: 12 } },
     ...overrides,
-  } as SeriesRecord;
+  });
 }
 
-const LEAGUE_ROWS: SeriesRecord[] = [
+const LEAGUE_ROWS: ParsedSeriesRecord[] = [
   leagueRow({
     series_index: 0,
     series_id: 'aaa111',
@@ -584,7 +586,7 @@ test('archived leagues overlay post-window rosters without rewriting the draft',
   try {
     writeLeagueFixture(runsDir);
     const runDir = path.join(runsDir, RUN_ID);
-    const config = JSON.parse(fs.readFileSync(path.join(runDir, 'config.json'), 'utf8')) as Record<string, unknown>;
+    const config: JsonObject = JSON.parse(fs.readFileSync(path.join(runDir, 'config.json'), 'utf8'));
     config.transactions = [{ after_week: 1, trades_allowed: 0 }];
     fs.writeFileSync(path.join(runDir, 'config.json'), JSON.stringify(config));
     assert.deepEqual(buildLeague(LEAGUE_ROWS, runsDir, RUN_ID)?.transactions, [

@@ -85,7 +85,12 @@ function completedSeries(
   };
 }
 
-function fixture(): { league: LeagueResponse; plans: DraftLeagueSeriesPlan[] } {
+interface SeasonFixture {
+  league: LeagueResponse;
+  plans: DraftLeagueSeriesPlan[];
+}
+
+function fixture(): SeasonFixture {
   const { plans } = buildDraftLeagueSchedule(4, 7);
   const released = plans.slice(0, 2).map((plan) => {
     assert.ok(plan.entrants);

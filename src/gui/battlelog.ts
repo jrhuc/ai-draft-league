@@ -32,20 +32,20 @@ export interface BattleLogEntry {
 
 const MAX_ENTRIES = 400;
 
-const STATUS_TEXT: Record<string, string> = {
-  brn: 'was burned',
-  par: 'was paralyzed',
-  slp: 'fell asleep',
-  frz: 'was frozen',
-  psn: 'was poisoned',
-  tox: 'was badly poisoned',
-};
+const STATUS_TEXT = new Map([
+  ['brn', 'was burned'],
+  ['par', 'was paralyzed'],
+  ['slp', 'fell asleep'],
+  ['frz', 'was frozen'],
+  ['psn', 'was poisoned'],
+  ['tox', 'was badly poisoned'],
+]);
 
-const TIMEOUT_TEXT: Record<string, string> = {
-  autodefault: 'ran out of time. Default action used',
-  forfeit: 'forfeited on time',
-  tie: 'game ended on the timer',
-};
+const TIMEOUT_TEXT = new Map([
+  ['autodefault', 'ran out of time. Default action used'],
+  ['forfeit', 'forfeited on time'],
+  ['tie', 'game ended on the timer'],
+]);
 
 function name(ident: string): string {
   return afterColon(ident) || ident;
@@ -103,18 +103,14 @@ export class BattleLog {
     this.maxEntries = maxEntries;
   }
 
-  feed(lines: unknown): void {
-    if (!Array.isArray(lines)) return;
+  feed(lines: readonly string[]): void {
     for (const line of lines) {
-      if (typeof line === 'string' && line.startsWith('|')) this.feedLine(line);
+      if (line.startsWith('|')) this.feedLine(line);
     }
   }
 
-  private push(kind: BattleLogKind, text: string, extra: Partial<Record<keyof BattleLogEntry, unknown>> = {}): void {
-    const entry: BattleLogEntry = { turn: this.turn, kind, text };
-    for (const [key, value] of Object.entries(extra)) {
-      if (value !== undefined) (entry as unknown as Record<string, unknown>)[key] = value;
-    }
+  private push(kind: BattleLogKind, text: string, extra: Omit<BattleLogEntry, 'turn' | 'kind' | 'text'> = {}): void {
+    const entry: BattleLogEntry = { turn: this.turn, kind, text, ...extra };
     this.entries.push(entry);
     if (this.entries.length > this.maxEntries) this.entries.splice(0, this.entries.length - this.maxEntries);
   }
@@ -177,7 +173,7 @@ export class BattleLog {
         status: statusOf(args[1]!),
       });
     } else if (kind === '-status' && args.length >= 2) {
-      this.push('status', `${name(args[0]!)} ${STATUS_TEXT[args[1]!] ?? args[1]}`, {
+      this.push('status', `${name(args[0]!)} ${STATUS_TEXT.get(args[1]!) ?? args[1]}`, {
         actor: slotRef(args[0]!),
         status: args[1],
       });
@@ -219,8 +215,8 @@ export class BattleLog {
     } else if (kind === '-fail' && args[0]) {
       this.push('detail', `${name(args[0])}'s move failed`);
     } else if (kind === '-vgctimeout' && (args[0] === 'p1' || args[0] === 'p2')) {
-      const pid = args[0] as Pid;
-      this.push('timer', `${pid.toUpperCase()} ${TIMEOUT_TEXT[args[1] ?? ''] ?? 'timer event'}`);
+      const pid: Pid = args[0];
+      this.push('timer', `${pid.toUpperCase()} ${TIMEOUT_TEXT.get(args[1] ?? '') ?? 'timer event'}`);
     } else if (kind === 'win' && args[0]) {
       const match = /^p([12])-(.+)$/.exec(args[0]);
       this.push('win', `${match ? `${match[2]} (P${match[1]})` : args[0]} won the game`);

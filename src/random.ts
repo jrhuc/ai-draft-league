@@ -8,10 +8,12 @@ export function resolveSeed(seed: number | undefined): number {
 
 export function seriesEntropy(random: Rng) {
   return {
-    gameSeeds: Array.from(
-      { length: 3 },
-      () => Array.from({ length: 4 }, () => 1 + Math.floor(random() * 0xffff)) as [number, number, number, number],
-    ),
+    gameSeeds: Array.from({ length: 3 }, (): [number, number, number, number] => [
+      1 + Math.floor(random() * 0xffff),
+      1 + Math.floor(random() * 0xffff),
+      1 + Math.floor(random() * 0xffff),
+      1 + Math.floor(random() * 0xffff),
+    ]),
     engineSeeds: {
       p1: Math.floor(random() * Number.MAX_SAFE_INTEGER),
       p2: Math.floor(random() * Number.MAX_SAFE_INTEGER),

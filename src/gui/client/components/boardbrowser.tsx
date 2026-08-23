@@ -5,7 +5,7 @@ import { api } from '../http';
 import { Sprite } from './sprite';
 
 export const STAT_ORDER = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'] as const;
-export const STAT_LABELS: Record<(typeof STAT_ORDER)[number], string> = {
+export const STAT_LABELS = {
   hp: 'HP',
   atk: 'Atk',
   def: 'Def',
@@ -99,12 +99,15 @@ export function BoardBrowser({
       matched.push(mon);
     }
     if (!byPick) {
-      const bands = COST_BANDS.map((band) => ({
-        key: String(band.min),
-        title: `${band.min}–${band.max} points`,
-        cls: band.cls,
-        mons: [] as DraftBoardMonView[],
-      }));
+      const bands = COST_BANDS.map((band) => {
+        const mons: DraftBoardMonView[] = [];
+        return {
+          key: String(band.min),
+          title: `${band.min}–${band.max} points`,
+          cls: band.cls,
+          mons,
+        };
+      });
       for (const mon of matched) {
         bands.find((group) => group.cls === bandFor(mon.cost))?.mons.push(mon);
       }
@@ -151,7 +154,7 @@ export function BoardBrowser({
             type="search"
             placeholder="Search Pokémon, type or ability"
             value={query}
-            onInput={(event) => setQuery((event.target as HTMLInputElement).value)}
+            onInput={(event) => setQuery(event.currentTarget.value)}
           />
         </label>
         {owners.size > 0 ? (

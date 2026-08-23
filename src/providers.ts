@@ -10,10 +10,10 @@ import {
   type ModelMessage,
   RetryError,
   streamText,
-  type ToolCallPart,
   type ToolSet,
   tool,
 } from 'ai';
+import { z } from 'zod';
 
 import { providerOption } from './provider-registry.js';
 import { redactSecrets } from './sanitize.js';
@@ -21,6 +21,7 @@ import type {
   CompleteOptions,
   Completion,
   JsonObject,
+  JsonValue,
   Provider,
   ProviderFailure,
   ProviderMessage,
@@ -29,9 +30,29 @@ import type {
 
 import { isRecord } from './value.js';
 
+type FetchRequest = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
+const errorStatusSchema = z.object({
+  code: z.number().optional().catch(undefined),
+  status: z.number().optional().catch(undefined),
+});
+const openRouterErrorSchema = z.object({
+  error: z.object({ code: z.union([z.string(), z.number()]) }),
+});
+const gatewayPayloadSchema = z.object({
+  provider: z.string().optional().catch(undefined),
+  usage: z
+    .object({ cost: z.number().optional().catch(undefined) })
+    .optional()
+    .catch(undefined),
+});
+const gatewayMetadataSchema = z.object({
+  provider: z.string().optional().catch(undefined),
+  cost: z.number().optional().catch(undefined),
+});
 export type ReasoningLevel = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
-export function isReasoningLevel(value: unknown): value is ReasoningLevel {
+export function isReasoningLevel(value: JsonValue | undefined): value is ReasoningLevel {
   return value === 'minimal' || value === 'low' || value === 'medium' || value === 'high' || value === 'xhigh';
 }
 
@@ -107,7 +128,7 @@ export function describeProviderRoute(
   };
 }
 
-export function validateReasoning(spec: ProviderSpec, level?: ReasoningLevel): void {
+export function validateReasoning(spec: ProviderSpec, level?: string): void {
   if (!level) return;
   if (!isReasoningLevel(level)) throw new Error(`invalid reasoning level ${JSON.stringify(level)}`);
   if (spec.provider === 'random') return;
@@ -124,19 +145,19 @@ export type OpenCodeApi = 'chat' | 'messages' | 'responses';
  * this harness does not speak. */
 export function opencodeApi(provider: 'opencode-go' | 'opencode-zen', model: string): OpenCodeApi {
   const id = model.toLowerCase();
-  if (/^gemini-/.test(id))
+  if (id.startsWith('gemini-'))
     throw new Error(`${provider}:${model} is served through the Google API, which is not supported`);
   if (/^(?:gpt-|grok-|muse-)/.test(id)) return 'responses';
   if (/^(?:claude-|qwen)/.test(id)) return 'messages';
-  if (provider === 'opencode-go' && /^minimax-/.test(id)) return 'messages';
+  if (provider === 'opencode-go' && id.startsWith('minimax-')) return 'messages';
   return 'chat';
 }
 
-function parseToolArguments(value: unknown): JsonObject {
+function parseToolArguments(value: JsonValue): JsonObject {
   if (isRecord(value)) return value;
-  if (typeof value !== 'string' || !value.trim()) return {};
+  if (String(value) !== value || !value.trim()) return {};
   try {
-    const parsed: unknown = JSON.parse(value);
+    const parsed = JSON.parse(value);
     return isRecord(parsed) ? parsed : {};
   } catch {
     return {};
@@ -156,12 +177,13 @@ export function uniqueToolCalls(calls: ToolCall[]): ToolCall[] {
 }
 
 export function assistantToolMessage(completion: Completion): ProviderMessage {
-  return {
+  const message: ProviderMessage = {
     role: 'assistant',
     content: completion.text || null,
     toolCalls: uniqueToolCalls(completion.toolCalls),
-    ...(completion.responseMessages?.length ? { raw: completion.responseMessages } : {}),
   };
+  if (completion.responseMessages?.length) message.raw = completion.responseMessages;
+  return message;
 }
 
 export function toolResultMessage(callId: string, content: string): ProviderMessage {
@@ -197,20 +219,16 @@ function rateLimited(label: string, message: string): ProviderFailure {
   };
 }
 
-export function classifyProviderFailure(error: unknown, spec = 'provider'): ProviderFailure {
-  const message = error instanceof Error ? error.message : String(error);
-  const status = error instanceof ApiError ? error.status : Number(/\b([45]\d\d)\b/.exec(message)?.[1] ?? 0);
+export function classifyProviderFailure(cause: unknown, spec = 'provider'): ProviderFailure {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  const status = cause instanceof ApiError ? cause.status : Number(/\b([45]\d\d)\b/.exec(message)?.[1] ?? 0);
   const provider = spec.split(':', 1)[0] || 'provider';
-  const label =
-    (
-      {
-        openrouter: 'OpenRouter',
-        prime: 'Prime Inference',
-        gateway: 'Vercel AI Gateway',
-        'opencode-go': 'OpenCode Go',
-        'opencode-zen': 'OpenCode Zen',
-      } as Record<string, string>
-    )[provider] ?? provider.charAt(0).toUpperCase() + provider.slice(1);
+  let label = provider.charAt(0).toUpperCase() + provider.slice(1);
+  if (provider === 'openrouter') label = 'OpenRouter';
+  else if (provider === 'prime') label = 'Prime Inference';
+  else if (provider === 'gateway') label = 'Vercel AI Gateway';
+  else if (provider === 'opencode-go') label = 'OpenCode Go';
+  else if (provider === 'opencode-zen') label = 'OpenCode Zen';
   const suffix = status ? ` (${status})` : '';
   if (
     /Connect error (?:unauthenticated|unavailable|resource[_ -]?exhausted|internal|aborted|deadline[_ -]?exceeded)/i.test(
@@ -269,7 +287,7 @@ export function classifyProviderFailure(error: unknown, spec = 'provider'): Prov
       terminal: true,
     };
   }
-  if (status === 0 && error instanceof ApiError) {
+  if (status === 0 && cause instanceof ApiError) {
     return { kind: 'network', summary: `${label} API could not be reached.`, terminal: false };
   }
   if (status === 200) {
@@ -296,7 +314,7 @@ export function classifyProviderFailure(error: unknown, spec = 'provider'): Prov
       terminal: true,
     };
   }
-  if (error instanceof TypeError) {
+  if (cause instanceof TypeError) {
     return { kind: 'network', summary: `${label} API could not be reached.`, terminal: false };
   }
   if (status >= 500 && status !== 501 && status !== 505) {
@@ -318,16 +336,16 @@ export function classifyProviderFailure(error: unknown, spec = 'provider'): Prov
 function openRouterErrorStatus(responseBody: string | undefined): number | undefined {
   if (!responseBody) return undefined;
   try {
-    const body: unknown = JSON.parse(responseBody);
-    if (!isRecord(body) || !isRecord(body.error)) return undefined;
-    const code = typeof body.error.code === 'string' ? Number(body.error.code) : body.error.code;
-    return Number.isInteger(code) && Number(code) >= 400 && Number(code) <= 599 ? Number(code) : undefined;
+    const body = openRouterErrorSchema.safeParse(JSON.parse(responseBody));
+    if (!body.success) return undefined;
+    const code = Number(body.data.error.code);
+    return Number.isInteger(code) && code >= 400 && code <= 599 ? code : undefined;
   } catch {
     return undefined;
   }
 }
 
-const DEFAULT_TIMEOUT = 120;
+const DEFAULT_TIMEOUT = 1800;
 
 interface GatewayResponseMeta {
   cost?: number;
@@ -341,23 +359,24 @@ export function parseRoutingPreferences(env: NodeJS.ProcessEnv = process.env): J
   if (pinned.includes(',')) throw new Error('VGC_OPENROUTER_PIN accepts exactly one upstream provider');
   return { order: [pinned], allow_fallbacks: false };
 }
-
-function bodyFetch(base: typeof fetch | undefined, amend: (body: JsonObject) => void): typeof fetch {
+function bodyFetch(base: FetchRequest | undefined, amend: (body: JsonObject) => void): FetchRequest {
   const inner = base ?? fetch;
   return async (input, init) => {
     let request = init;
-    if (typeof request?.body === 'string') {
+    const encodedBody = z.string().safeParse(request?.body);
+    if (encodedBody.success) {
       try {
-        const body = JSON.parse(request.body) as JsonObject;
-        amend(body);
-        request = { ...request, body: JSON.stringify(body) };
+        const body = JSON.parse(encodedBody.data);
+        if (isRecord(body)) {
+          amend(body);
+          request = { ...request, body: JSON.stringify(body) };
+        }
       } catch {}
     }
     return inner(input, request);
   };
 }
-
-function openRouterFetch(base: typeof fetch | undefined, routing: JsonObject): typeof fetch {
+function openRouterFetch(base: FetchRequest | undefined, routing: JsonObject): FetchRequest {
   return bodyFetch(base, (body) => {
     body.usage = { include: true };
     body.provider = routing;
@@ -366,16 +385,16 @@ function openRouterFetch(base: typeof fetch | undefined, routing: JsonObject): t
 
 /** The Responses adapter only emits `reasoning.effort` for model ids it knows as OpenAI reasoning
  * models, so the effort a run asked for is written into the request body for every Responses model. */
-function responsesReasoningFetch(base: typeof fetch | undefined, level: ReasoningLevel): typeof fetch {
+function responsesReasoningFetch(base: FetchRequest | undefined, level: ReasoningLevel): FetchRequest {
   return bodyFetch(base, (body) => {
     if (!isRecord(body.reasoning)) body.reasoning = { effort: level };
   });
 }
-
-function collectGatewayMeta(payload: unknown, meta: GatewayResponseMeta): void {
-  if (!isRecord(payload)) return;
-  if (typeof payload.provider === 'string' && payload.provider) meta.provider = payload.provider;
-  if (isRecord(payload.usage) && typeof payload.usage.cost === 'number') meta.cost = payload.usage.cost;
+function collectGatewayMeta<Payload>(payload: Payload, meta: GatewayResponseMeta): void {
+  const parsed = gatewayPayloadSchema.safeParse(payload);
+  if (!parsed.success) return;
+  if (parsed.data.provider) meta.provider = parsed.data.provider;
+  if (parsed.data.usage?.cost !== undefined) meta.cost = parsed.data.usage.cost;
 }
 
 function gatewayMetadata(meta: GatewayResponseMeta) {
@@ -427,24 +446,23 @@ function convertMessages(messages: ProviderMessage[]): ModelMessage[] {
     } else if (message.role === 'assistant' && message.toolCalls?.length) {
       for (const call of message.toolCalls) callNames.set(call.id, call.name);
       if (message.raw?.length) {
-        converted.push(...(message.raw as unknown as ModelMessage[]));
+        converted.push(...message.raw);
         continue;
       }
-      converted.push({
-        role: 'assistant',
-        content: [
-          ...(message.content ? [{ type: 'text' as const, text: message.content }] : []),
-          ...message.toolCalls.map((call) => ({
-            type: 'tool-call' as const,
-            toolCallId: call.id,
-            toolName: call.name,
-            input: call.arguments,
-            ...(call.providerMetadata
-              ? { providerOptions: call.providerMetadata as NonNullable<ToolCallPart['providerOptions']> }
-              : {}),
-          })),
-        ],
-      });
+      const content: Extract<ModelMessage, { role: 'assistant' }>['content'] = [];
+      if (message.content) content.push({ type: 'text', text: message.content });
+      for (const call of message.toolCalls) {
+        const providerOptions = call.providerMetadata;
+        const part: Extract<Extract<ModelMessage, { role: 'assistant' }>['content'][number], { type: 'tool-call' }> = {
+          type: 'tool-call',
+          toolCallId: call.id,
+          toolName: call.name,
+          input: call.arguments,
+        };
+        if (providerOptions) part.providerOptions = providerOptions;
+        content.push(part);
+      }
+      converted.push({ role: 'assistant', content });
     } else {
       converted.push({ role: message.role, content: message.content ?? '' });
     }
@@ -456,12 +474,12 @@ class SdkProvider implements Provider {
   readonly model: string;
   readonly reasoning?: ReasoningLevel | undefined;
   private readonly apiKey: string | undefined;
-  private readonly fetch: typeof fetch | undefined;
+  private readonly fetch: FetchRequest | undefined;
   private readonly api: OpenCodeApi;
 
   constructor(
     private readonly spec: ProviderSpec,
-    options: { apiKey?: string | undefined; reasoning?: ReasoningLevel | undefined; fetch?: typeof fetch | undefined },
+    options: { apiKey?: string | undefined; reasoning?: ReasoningLevel | undefined; fetch?: FetchRequest | undefined },
   ) {
     this.model = spec.model;
     this.reasoning = options.reasoning;
@@ -486,13 +504,14 @@ class SdkProvider implements Provider {
     return apiKey;
   }
 
-  agentModel(): { model: LanguageModel; reasoning: ReasoningLevel | undefined; redact: (error: unknown) => Error } {
+  agentModel() {
     const apiKey = this.key();
     const secrets = this.secrets(apiKey);
+    const redact = (cause: unknown) => this.redactedError(cause, secrets);
     return {
       model: this.languageModel(apiKey),
       reasoning: this.reasoning,
-      redact: (error) => this.redactedError(error, secrets),
+      redact,
     };
   }
 
@@ -508,12 +527,20 @@ class SdkProvider implements Provider {
     if (this.api === 'messages') {
       return createAnthropic({ name: this.spec.provider, baseURL: option.baseUrl, apiKey, ...transport })(this.model);
     }
+    if (this.spec.provider === 'openrouter') {
+      return createOpenAICompatible({
+        name: this.spec.provider,
+        baseURL: option.baseUrl,
+        apiKey,
+        ...transport,
+        metadataExtractor: OPENROUTER_METADATA,
+      })(this.model);
+    }
     return createOpenAICompatible({
       name: this.spec.provider,
       baseURL: option.baseUrl,
       apiKey,
       ...transport,
-      ...(this.spec.provider === 'openrouter' ? { metadataExtractor: OPENROUTER_METADATA } : {}),
     })(this.model);
   }
 
@@ -527,26 +554,23 @@ class SdkProvider implements Provider {
     ];
   }
 
-  private redactedError(error: unknown, secrets: readonly string[]): Error {
+  private redactedError(cause: unknown, secrets: readonly string[]): Error {
     let detail: string;
-    if (error instanceof Error) detail = error.message;
-    else if (isRecord(error)) {
+    if (cause instanceof Error) detail = cause.message;
+    else if (cause instanceof Object) {
       try {
-        detail = JSON.stringify(error);
+        detail = JSON.stringify(cause);
       } catch {
         detail = 'provider transport failed';
       }
-    } else detail = String(error);
+    } else detail = String(cause);
     const message = redactSecrets(detail, secrets) || 'provider transport failed';
-    if (error instanceof ApiError) return new ApiError(error.status, message);
-    if (error instanceof TypeError) return new TypeError(message);
-    if (isRecord(error)) {
-      const status = typeof error.code === 'number' ? error.code : typeof error.status === 'number' ? error.status : 0;
-      return new ApiError(status, message);
-    }
+    if (cause instanceof ApiError) return new ApiError(cause.status, message);
+    if (cause instanceof TypeError) return new TypeError(message);
+    const status = errorStatusSchema.safeParse(cause);
+    if (status.success) return new ApiError(status.data.code ?? status.data.status ?? 0, message);
     return new Error(message);
   }
-
   async complete(system: string, messages: ProviderMessage[], options: CompleteOptions = {}): Promise<Completion> {
     const timeout = AbortSignal.timeout(DEFAULT_TIMEOUT * 1000);
     const abortSignal = options.signal ? AbortSignal.any([timeout, options.signal]) : timeout;
@@ -554,36 +578,35 @@ class SdkProvider implements Provider {
     const secrets = this.secrets(apiKey);
     try {
       const model = this.languageModel(apiKey);
-      const tools: ToolSet | undefined = options.tools?.length
-        ? (Object.fromEntries(
-            options.tools.map((definition) => [
-              definition.name,
-              tool({
-                description: definition.description,
-                inputSchema: jsonSchema(definition.parameters as JSONSchema7),
-              }),
-            ]),
-          ) as ToolSet)
-        : undefined;
+      let tools: ToolSet | undefined;
+      if (options.tools?.length) {
+        tools = {};
+        for (const definition of options.tools) {
+          const parameters =
+            // SAFETY: ToolDefinition parameters are owned JSON Schemas built by this harness.
+            definition.parameters as JSONSchema7;
+          tools[definition.name] = tool({
+            description: definition.description,
+            inputSchema: jsonSchema(parameters),
+          });
+        }
+      }
       /** streamText reports stream failures through onError rather than rejecting, so rethrow the first
        * captured error after consumption and preserve the normal retry/failure evidence path. */
       let streamError: unknown;
+      const toolOptions = tools ? (options.toolChoice ? { tools, toolChoice: options.toolChoice } : { tools }) : {};
+      const reasoningOptions = options.reasoningMaxTokens
+        ? { providerOptions: { [this.spec.provider]: { reasoning: { max_tokens: options.reasoningMaxTokens } } } }
+        : this.reasoning
+          ? { reasoning: this.reasoning }
+          : {};
       const stream = streamText({
         model,
         system,
         messages: convertMessages(messages),
-        ...(tools ? { tools } : {}),
-        ...(tools && options.toolChoice ? { toolChoice: options.toolChoice } : {}),
+        ...toolOptions,
+        ...reasoningOptions,
         maxOutputTokens: options.maxTokens ?? 1200,
-        temperature: options.temperature ?? 0.2,
-        ...(this.reasoning && !options.reasoningMaxTokens ? { reasoning: this.reasoning } : {}),
-        ...(options.reasoningMaxTokens
-          ? {
-              providerOptions: {
-                [this.spec.provider]: { reasoning: { max_tokens: options.reasoningMaxTokens } },
-              },
-            }
-          : {}),
         abortSignal,
         onError: ({ error }) => {
           if (streamError === undefined) streamError = error;
@@ -606,7 +629,7 @@ class SdkProvider implements Provider {
       if (debugTarget && !text.trim() && streamToolCalls.length === 0) {
         let raw = '(unavailable)';
         try {
-          raw = JSON.stringify((response as { body?: unknown }).body ?? null).slice(0, 2000);
+          raw = JSON.stringify(Object.getOwnPropertyDescriptor(response, 'body')?.value ?? null).slice(0, 2000);
         } catch {}
         raw = redactSecrets(raw, secrets);
         const line = redactSecrets(
@@ -619,29 +642,35 @@ class SdkProvider implements Provider {
       }
       const reasoningText = rawReasoningText?.trim() ?? '';
       const reasoningTokens = usage.outputTokenDetails?.reasoningTokens ?? 0;
-      const gateway = isRecord(providerMetadata?.openrouter) ? providerMetadata.openrouter : undefined;
-      return {
-        text,
-        finishReason,
-        usage: {
-          input_tokens: usage.inputTokens ?? 0,
-          output_tokens: usage.outputTokens ?? 0,
-          ...(reasoningTokens > 0 ? { reasoning_tokens: reasoningTokens } : {}),
-          ...((usage.inputTokenDetails?.cacheReadTokens ?? 0) > 0
-            ? { cached_input_tokens: usage.inputTokenDetails?.cacheReadTokens as number }
-            : {}),
-          ...(typeof gateway?.cost === 'number' ? { cost: gateway.cost } : {}),
-        },
-        ...(typeof gateway?.provider === 'string' && gateway.provider ? { provider: gateway.provider } : {}),
-        toolCalls: streamToolCalls.map((call) => ({
+      const gateway = gatewayMetadataSchema.safeParse(providerMetadata?.openrouter);
+      const reportedGateway = gateway.success ? gateway.data : undefined;
+      const completionUsage: Completion['usage'] = {
+        input_tokens: usage.inputTokens ?? 0,
+        output_tokens: usage.outputTokens ?? 0,
+      };
+      if (reasoningTokens > 0) completionUsage.reasoning_tokens = reasoningTokens;
+      const cacheReadTokens = usage.inputTokenDetails?.cacheReadTokens ?? 0;
+      if (cacheReadTokens > 0) completionUsage.cached_input_tokens = cacheReadTokens;
+      if (reportedGateway?.cost !== undefined) completionUsage.cost = reportedGateway.cost;
+      const toolCalls: ToolCall[] = streamToolCalls.map((call) => {
+        const convertedCall: ToolCall = {
           id: call.toolCallId,
           name: call.toolName,
-          arguments: parseToolArguments(call.input),
-          ...(call.providerMetadata ? { providerMetadata: call.providerMetadata as JsonObject } : {}),
-        })),
-        ...(reasoningText ? { reasoning: reasoningText } : {}),
-        ...(response.messages.length ? { responseMessages: response.messages as unknown as JsonObject[] } : {}),
+          arguments: parseToolArguments(z.json().catch(null).parse(call.input)),
+        };
+        if (call.providerMetadata) convertedCall.providerMetadata = call.providerMetadata;
+        return convertedCall;
+      });
+      const completion: Completion = {
+        text,
+        finishReason,
+        usage: completionUsage,
+        toolCalls,
       };
+      if (reportedGateway?.provider) completion.provider = reportedGateway.provider;
+      if (reasoningText) completion.reasoning = reasoningText;
+      if (response.messages.length) completion.responseMessages = response.messages;
+      return completion;
     } catch (error) {
       if (options.signal?.aborted) throw error;
       if (timeout.aborted)
@@ -661,7 +690,10 @@ class SdkProvider implements Provider {
             secrets,
           );
           if (debugTarget === '1') console.error(line);
-          else appendFileSync(debugTarget, `${line}\n`);
+          else {
+            appendFileSync(debugTarget, `${line}\n`);
+            appendFileSync(`${debugTarget}.messages.jsonl`, `${JSON.stringify(convertMessages(messages))}\n`);
+          }
         }
         throw new ApiError(status, `${this.spec.provider}:${this.model} ${status}: ${detail}`);
       }
@@ -675,7 +707,7 @@ export function makeProvider(
   options: {
     apiKey?: string | undefined;
     reasoning?: ReasoningLevel | undefined;
-    fetch?: typeof fetch | undefined;
+    fetch?: FetchRequest | undefined;
   } = {},
 ): Provider {
   validateReasoning(spec, options.reasoning);
@@ -690,7 +722,7 @@ export function makeAgentModel(
   options: {
     apiKey?: string | undefined;
     reasoning?: ReasoningLevel | undefined;
-    fetch?: typeof fetch | undefined;
+    fetch?: FetchRequest | undefined;
   } = {},
 ): AgentModel {
   validateReasoning(spec, options.reasoning);

@@ -6,8 +6,8 @@ import type { Team } from '../teams.js';
 import { parseTimerScale } from '../timer.js';
 import type { ProvenanceMode } from '../tournament.js';
 import { defaultTransactionSchedule, type TransactionSchedule, validateTransactionSchedule } from '../trade-window.js';
-import type { ExperimentMode, TimerScale } from '../types.js';
-import { isRecord } from '../value.js';
+import type { ExperimentMode, JsonObject, TimerScale } from '../types.js';
+import { isRecord, text } from '../value.js';
 
 export interface RunConfig extends ModelReasoningConfig {
   mode: ExperimentMode;
@@ -60,23 +60,18 @@ function invalid(message: string): never {
   throw new RunRequestError(message);
 }
 
-function clampInt(value: unknown, minimum: number, maximum: number, fallback: number): number {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed)) return fallback;
-  return Math.min(maximum, Math.max(minimum, parsed));
+function clampInt(value: number, minimum: number, maximum: number, fallback: number): number {
+  if (!Number.isInteger(value)) return fallback;
+  return Math.min(maximum, Math.max(minimum, value));
 }
 
-export function parseRunRequest(
-  body: Readonly<Record<string, unknown>>,
-  context: Readonly<RunRequestContext>,
-): ParsedRunRequest {
-  const mode = (
+export function parseRunRequest(body: Readonly<JsonObject>, context: Readonly<RunRequestContext>): ParsedRunRequest {
+  const mode =
     body.mode === undefined || body.mode === 'rotation'
       ? 'rotation'
       : body.mode === 'tournament' || body.mode === 'draft'
         ? body.mode
-        : undefined
-  ) as ExperimentMode | undefined;
+        : undefined;
   if (!mode) invalid('unknown run mode');
 
   const rawModels = Array.isArray(body.models) ? body.models.map(String).filter(Boolean) : [];
@@ -87,10 +82,13 @@ export function parseRunRequest(
   if (models.length > 8) invalid('a run supports at most 8 model specs');
 
   const reasoningValue = body.reasoning ? String(body.reasoning) : undefined;
-  if (reasoningValue && !isReasoningLevel(reasoningValue)) {
-    invalid('reasoning must be one of: minimal, low, medium, high, xhigh');
+  let reasoning: ReasoningLevel | undefined;
+  if (reasoningValue) {
+    if (!isReasoningLevel(reasoningValue)) {
+      invalid('reasoning must be one of: minimal, low, medium, high, xhigh');
+    }
+    reasoning = reasoningValue;
   }
-  const reasoning = reasoningValue as ReasoningLevel | undefined;
   if (body.reasoningByModel !== undefined && !isRecord(body.reasoningByModel)) {
     invalid('reasoningByModel must be an object');
   }
@@ -117,7 +115,7 @@ export function parseRunRequest(
       const spec = parseSpec(model);
       validateReasoning(spec, reasoningByModel[model] ?? reasoning);
       const suppliedKey = suppliedKeys[model] ?? suppliedKeys[rawModels[index]!];
-      const apiKey = typeof suppliedKey === 'string' ? suppliedKey.trim() : '';
+      const apiKey = text(suppliedKey).trim();
       const option = providerOption(spec.provider);
       const requiresKey = option?.requiresKey ?? true;
       if (!apiKey && requiresKey) {
@@ -200,26 +198,26 @@ export function parseRunRequest(
     }
   }
 
-  return {
-    config: {
-      mode,
-      models,
-      seriesPerPair: mode === 'rotation' ? clampInt(body.seriesPerPair, 1, 20, 2) : 1,
-      pool,
-      concurrency: clampInt(body.concurrency, 1, 8, 2),
-      ...(teams === undefined ? {} : { teams }),
-      ...(format === undefined ? {} : { format }),
-      ...(board === undefined ? {} : { board }),
-      ...(seed === undefined ? {} : { seed }),
-      ...(reasoning === undefined ? {} : { reasoning }),
-      ...(Object.keys(reasoningByModel).length ? { reasoningByModel } : {}),
-      ...(timerScale === undefined ? {} : { timerScale }),
-      ...(mode === 'draft' && body.closedSheets === true ? { closedSheets: true } : {}),
-      ...(mode === 'draft' && body.sequentialWeeks === true ? { sequentialWeeks: true } : {}),
-      ...(mode === 'draft' ? { transactions: transactions! } : {}),
-      ...(mode === 'draft' && body.draftOnly === true ? { draftOnly: true } : {}),
-      ...(mode === 'tournament' && body.provenance === 'blind' ? { provenance: 'blind' as const } : {}),
-    },
-    apiKeys,
+  const config: RunConfig = {
+    mode,
+    models,
+    seriesPerPair: mode === 'rotation' ? clampInt(Number(body.seriesPerPair), 1, 20, 2) : 1,
+    pool,
+    concurrency: clampInt(Number(body.concurrency), 1, 8, 2),
+    teams,
+    format,
+    board,
+    seed,
+    reasoning,
+    reasoningByModel: Object.keys(reasoningByModel).length ? reasoningByModel : undefined,
+    timerScale,
   };
+  if (mode === 'draft') {
+    config.closedSheets = body.closedSheets === true;
+    config.sequentialWeeks = body.sequentialWeeks === true;
+    config.transactions = transactions!;
+    config.draftOnly = body.draftOnly === true;
+  }
+  if (mode === 'tournament' && body.provenance === 'blind') config.provenance = 'blind';
+  return { config, apiKeys };
 }

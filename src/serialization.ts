@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import type { JsonObject, JsonValue } from './types.js';
+import { isRecord } from './value.js';
 
 export const CANONICAL_JSON_PROTOCOL = {
   version: 1,
@@ -10,39 +12,29 @@ export const CANONICAL_JSON_PROTOCOL = {
   jsonlFinalNewline: true,
 } as const;
 
-function normalize(value: unknown, location: string): unknown {
-  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value)) throw new Error(`${location} contains a non-finite number`);
-    return Object.is(value, -0) ? 0 : value;
-  }
-  if (Array.isArray(value))
-    return value.map((entry, index) => {
-      if (entry === undefined) throw new Error(`${location}[${index}] is undefined`);
-      return normalize(entry, `${location}[${index}]`);
-    });
-  if (typeof value === 'object') {
-    const object = value as Record<string, unknown>;
-    const prototype = Object.getPrototypeOf(object);
-    if (prototype !== Object.prototype && prototype !== null) throw new Error(`${location} is not a plain JSON object`);
-    const normalized: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
-    for (const key of Object.keys(object).sort()) {
-      if (object[key] === undefined) throw new Error(`${location}.${key} is undefined`);
-      normalized[key] = normalize(object[key], `${location}.${key}`);
-    }
+function normalize(value: JsonValue | undefined, location: string): JsonValue {
+  if (value === undefined) throw new Error(`${location} is undefined`);
+  if (Array.isArray(value)) return value.map((entry, index) => normalize(entry, `${location}[${index}]`));
+  if (isRecord(value)) {
+    const normalized: JsonObject = {};
+    for (const key of Object.keys(value).sort()) normalized[key] = normalize(value[key], `${location}.${key}`);
     return normalized;
   }
-  throw new Error(`${location} contains unsupported ${typeof value}`);
+  if (Object.is(value, -0)) return 0;
+  if (Number.isNaN(value) || value === Number.POSITIVE_INFINITY || value === Number.NEGATIVE_INFINITY) {
+    throw new Error(`${location} contains a non-finite number`);
+  }
+  return value;
 }
 
-export function canonicalJson(value: unknown): string {
+export function canonicalJson(value: JsonValue): string {
   return JSON.stringify(normalize(value, '$'));
 }
 
-export function canonicalJsonl(rows: readonly unknown[]): string {
+export function canonicalJsonl(rows: readonly JsonValue[]): string {
   return rows.length ? `${rows.map(canonicalJson).join('\n')}\n` : '';
 }
 
-export function canonicalJsonDigest(value: unknown): string {
+export function canonicalJsonDigest(value: JsonValue): string {
   return crypto.createHash('sha256').update(canonicalJson(value)).digest('hex');
 }

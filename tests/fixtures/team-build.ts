@@ -70,7 +70,7 @@ export function leagueTeamBuildJournalRow(options: {
   notebook: string;
   attempts: number;
   sheetPolicy?: 'open' | 'closed';
-}): { artifact: TeamBuildArtifact } {
+}) {
   const cacheKey = JSON.stringify(options);
   let artifact = artifactCache.get(cacheKey);
   if (!artifact) {

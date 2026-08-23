@@ -1,15 +1,33 @@
 import type { BattleStream } from 'pokemon-showdown';
-import type { RoomBattleTimer, TimerPlayer } from './showdown.js';
+import type { RoomBattleBridge, RoomBattleTimer, TimerPlayer } from './showdown.js';
 import { loadRoomBattleTimer } from './showdown.js';
-import type { Pid, TimerScale } from './types.js';
+import type { JsonValue, Pid, TimerScale } from './types.js';
 
 export type TimerEvent = 'autodefault' | 'forfeit' | 'tie';
 
 const TIMER_SCALE_MIN = 0.5;
 const TIMER_SCALE_MAX = 4;
 export const DEFAULT_TIMER_SCALE: TimerScale = 'off';
+interface TimerRequestStart {
+  seconds?: number;
+  turnSeconds?: number;
+}
 
-export function parseTimerScale(value: unknown): TimerScale | undefined {
+interface TimerRequestStarts {
+  p1: TimerRequestStart | undefined;
+  p2: TimerRequestStart | undefined;
+}
+
+interface TimerRequestPayload {
+  wait?: boolean;
+  update?: boolean;
+  timer?: {
+    turnSeconds: number | undefined;
+    seconds: number | undefined;
+  };
+}
+
+export function parseTimerScale(value: JsonValue | undefined): TimerScale | undefined {
   if (value === undefined || value === null || value === '') return undefined;
   if (value === 'off' || value === 'untimed') return 'off';
   const scale = Number(value);
@@ -24,23 +42,11 @@ export class TimerAdapter {
   private readonly bySlot: Record<Pid, TimerPlayer>;
   private readonly timer: RoomBattleTimer;
   private readonly enabled: boolean;
-  private readonly requestStart: Record<Pid, { seconds?: number; turnSeconds?: number } | undefined> = {
+  private readonly requestStart: TimerRequestStarts = {
     p1: undefined,
     p2: undefined,
   };
-  private readonly battle: {
-    format: string;
-    challengeType: string;
-    ended: boolean;
-    players: TimerPlayer[];
-    playerTable: Record<string, never>;
-    room: { add(): unknown; update(): unknown };
-    turn: number;
-    requestCount: number;
-    stream: { write(command: string): void | Promise<void> };
-    tie(): void | Promise<void>;
-    forfeitPlayer(player: TimerPlayer): void | Promise<void>;
-  };
+  private readonly battle: RoomBattleBridge;
 
   constructor(
     format: string,
@@ -74,7 +80,7 @@ export class TimerAdapter {
         write: (command) => {
           const match = /^>(p[12]) default$/.exec(command);
           if (match) {
-            const pid = match[1] as Pid;
+            const pid: Pid = match[1] === 'p1' ? 'p1' : 'p2';
             this.bySlot[pid].request.isWait = true;
             this.onEvent(pid, 'autodefault');
           }
@@ -94,7 +100,7 @@ export class TimerAdapter {
     };
     const Timer = loadRoomBattleTimer(psDir);
     this.timer = new Timer(this.battle);
-    if (typeof scale === 'number' && scale !== 1) this.scaleSettings(scale);
+    if (scale !== 'off' && scale !== 1) this.scaleSettings(scale);
     if (this.enabled) this.timer.start();
   }
 
@@ -121,19 +127,16 @@ export class TimerAdapter {
         if (line.startsWith('|turn|')) this.battle.turn = Number(line.slice(6));
       }
     } else if (lines[0] === 'sideupdate') {
-      const pid = lines[1] as Pid;
-      const player = this.bySlot[pid];
+      const pid = lines[1] === 'p1' || lines[1] === 'p2' ? lines[1] : undefined;
+      const player = pid === undefined ? undefined : this.bySlot[pid];
       const line = lines[2] ?? '';
-      if (player && line.startsWith('|request|')) {
-        const request = JSON.parse(line.slice(9)) as Record<string, unknown>;
+      if (player && pid && line.startsWith('|request|')) {
+        const request: TimerRequestPayload = JSON.parse(line.slice(9));
         player.request = { isWait: request.wait ? 'cantUndo' : false };
         this.battle.requestCount += 1;
         if (this.enabled) {
           if (!request.update) this.timer.nextRequest(player);
-          this.requestStart[pid] = {
-            ...(player.secondsLeft === undefined ? {} : { seconds: player.secondsLeft }),
-            ...(player.turnSecondsLeft === undefined ? {} : { turnSeconds: player.turnSecondsLeft }),
-          };
+          this.requestStart[pid] = { seconds: player.secondsLeft, turnSeconds: player.turnSecondsLeft };
           if (!request.wait) {
             request.timer = { turnSeconds: player.turnSecondsLeft, seconds: player.secondsLeft };
             lines[2] = `|request|${JSON.stringify(request)}`;

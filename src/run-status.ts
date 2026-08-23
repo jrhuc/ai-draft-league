@@ -2,19 +2,37 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-export interface RunStatus {
-  state: 'running' | 'done' | 'failed' | 'stopped';
+import { z } from 'zod';
+
+export const runStatusSchema = z.looseObject({
+  state: z.enum(['running', 'done', 'failed', 'stopped']),
+  error: z.string().nullable().optional(),
+  notices: z.array(z.string()).optional(),
+  start_time: z.string().optional(),
+  end_time: z.string().nullable().optional(),
+  pid: z.number().optional(),
+});
+export type StoredRunStatus = z.infer<typeof runStatusSchema>;
+export interface RunStatus extends StoredRunStatus {
   error: string | null;
   notices: string[];
   start_time: string;
   end_time: string | null;
-  pid?: number;
 }
 
 interface LeaseOwner {
   id: string;
   pid: number;
-  acquired_at: string;
+  acquired_at?: string;
+}
+
+const leaseOwnerSchema = z.object({
+  id: z.string(),
+  pid: z.number().int().safe().positive(),
+  acquired_at: z.string().optional(),
+});
+function errorCode(cause: unknown): string | undefined {
+  return cause instanceof Error && 'code' in cause && String(cause.code) === cause.code ? cause.code : undefined;
 }
 
 export class LeaseBusyError extends Error {
@@ -28,10 +46,9 @@ export class LeaseBusyError extends Error {
 
 function ownerAt(file: string): LeaseOwner | null {
   try {
-    const value = JSON.parse(fs.readFileSync(file, 'utf8')) as Partial<LeaseOwner>;
-    return typeof value.id === 'string' && Number.isSafeInteger(value.pid) && Number(value.pid) > 0
-      ? (value as LeaseOwner)
-      : null;
+    const parsed = leaseOwnerSchema.safeParse(JSON.parse(fs.readFileSync(file, 'utf8')));
+    if (!parsed.success) return null;
+    return parsed.data;
   } catch {
     return null;
   }
@@ -42,7 +59,7 @@ function isLive(pid: number): boolean {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
+    return errorCode(error) === 'EPERM';
   }
 }
 
@@ -63,7 +80,7 @@ export function acquireLease(leasePath: string): () => void {
         fs.linkSync(stage, leasePath);
         break;
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+        if (errorCode(error) !== 'EEXIST') throw error;
         const current = ownerAt(leasePath);
         if (current && isLive(current.pid)) throw new LeaseBusyError(leasePath, current.pid);
         const stale = `${leasePath}.stale-${randomUUID()}`;
@@ -71,7 +88,7 @@ export function acquireLease(leasePath: string): () => void {
           fs.renameSync(leasePath, stale);
           fs.rmSync(stale, { force: true });
         } catch (takeoverError) {
-          const code = (takeoverError as NodeJS.ErrnoException).code;
+          const code = errorCode(takeoverError);
           if (code !== 'ENOENT' && code !== 'EEXIST') throw takeoverError;
         }
       }
@@ -121,6 +138,7 @@ export async function withRunStatus<T>(runDir: string, task: () => Promise<T>): 
       notices: [],
       start_time: startTime,
       end_time: state === 'running' ? null : new Date().toISOString(),
+      pid: process.pid,
     });
   const signals = ['SIGINT', 'SIGTERM'] as const;
   const onSignal = (signal: string) => {

@@ -4,7 +4,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-
 import type { Bo3Context, RecordedSeriesContext } from '../src/series.js';
 import {
   chanceEventCounts,
@@ -15,6 +14,8 @@ import {
   seriesSeedSchedule,
 } from '../src/series.js';
 import { showdownCommit } from '../src/showdown.js';
+import type { JsonObject } from '../src/types.js';
+import { asRecords } from '../src/value.js';
 
 test('chance-event counts retain uninterpreted protocol facts per side', () => {
   const counts = chanceEventCounts([
@@ -32,14 +33,17 @@ test('chance-event counts retain uninterpreted protocol facts per side', () => {
 });
 
 function fakeEngines(): Bo3Context['engines'] {
-  const engine = () =>
-    ({
+  const engine = () => {
+    const fake: Pick<Bo3Context['engines']['p1'], 'beginGame' | 'endGame' | 'decisionStats'> = {
       beginGame() {},
       endGame() {},
       decisionStats() {
         return { fallbacks: 0 };
       },
-    }) as unknown as Bo3Context['engines']['p1'];
+    };
+    // SAFETY: the folded-series path calls only these three engine methods.
+    return fake as Bo3Context['engines']['p1'];
+  };
   return { p1: engine(), p2: engine() };
 }
 
@@ -156,7 +160,7 @@ test('foldSeriesGames derives deterministic terminal playoff tiebreaks for games
     [9, 10, 11, 12],
   ];
   for (let terminalGame = 4; terminalGame <= SINGLE_ELIMINATION_GAME_LIMIT; terminalGame += 1) {
-    const games: Array<Record<string, unknown>> = [];
+    const games: Array<JsonObject> = [];
     const playedSeeds: Array<[number, number, number, number]> = [];
     while (games.length < terminalGame) {
       const folded = foldSeriesGames(regulation, games, { requireWinner: true });
@@ -326,7 +330,7 @@ test('a tied playoff resumes with its deterministic non-null tiebreak seed', asy
   }
 
   const { fields } = await playRecordedSeries(options);
-  const games = fields.games as Array<Record<string, unknown>>;
+  const games = asRecords(fields.games);
   assert.equal(games.length, 4);
   assert.equal(games[3]!.resumed, undefined);
   assert.deepEqual(games[3]!.seed, expectedTiebreak);
@@ -478,7 +482,7 @@ test('a live restart has no lineage link and keeps prior rows append-only', asyn
 
   const { fields } = await playRecordedSeries(options);
   assert.equal(fields.series_id, 'priorattempt1', 'the prior directory is adopted, not replaced');
-  const games = fields.games as Array<Record<string, unknown>>;
+  const games = asRecords(fields.games);
   assert.equal(games[0]!.resumed, undefined);
   assert.equal(games[0]!.winner_side, 'p1');
   assert.equal(games[0]!.turns, 7);
@@ -525,7 +529,7 @@ test('a live restart has no lineage link and keeps prior rows append-only', asyn
     .map((line) => JSON.parse(line))
     .filter((row) => row.kind === 'attempt_started');
   assert.equal(retriedStarts.at(-1)!.resumed_from, undefined);
-  const score = fields.score as Record<string, number>;
+  const { score } = fields;
   assert.ok(score.p1 === 2 || score.p2 === 2, 'the series still finishes with a winner');
   assert.ok(score.p1! >= 1, 'the adopted game one win persists in the score');
 });
@@ -534,7 +538,7 @@ function attemptFixture(
   kind: 'attempt_started' | 'attempt_completed' | 'attempt_aborted',
   attemptId: string,
   seriesId: string,
-  extra: Record<string, unknown> = {},
+  extra: JsonObject = {},
 ) {
   const head = { context_id: null, sequence: 0, byte_length: 0, sha256: createHash('sha256').update('').digest('hex') };
   return {

@@ -2,11 +2,21 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { z } from 'zod';
 
 import { defaultPsDir } from '../src/paths.js';
 import { packTeam, validateTeam } from '../src/teams.js';
-import { asRecords, text } from '../src/value.js';
-import { publishPool } from './pool-output.js';
+import type { JsonObject } from '../src/types.js';
+import { text } from '../src/value.js';
+import { jsonObjectSchema, publishPool } from './pool-output.js';
+
+const sourceListSchema = z.array(jsonObjectSchema).catch([]);
+
+interface BuiltTeam {
+  id: string;
+  packed: string;
+  source: JsonObject;
+}
 
 async function fetchPaste(url: string): Promise<string> {
   const response = await fetch(`${url.replace(/^http:/, 'https:').replace(/\/$/, '')}/raw`, {
@@ -20,17 +30,16 @@ async function fetchPaste(url: string): Promise<string> {
 async function buildPool(manifestFile: string): Promise<string> {
   const manifestPath = path.resolve(manifestFile);
   const poolDir = path.dirname(manifestPath);
-  const manifest: unknown = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest))
-    throw new Error(`invalid manifest ${manifestPath}`);
-  const data = manifest as Record<string, unknown>;
+  const manifest = jsonObjectSchema.safeParse(JSON.parse(fs.readFileSync(manifestPath, 'utf8')));
+  if (!manifest.success) throw new Error(`invalid manifest ${manifestPath}`);
+  const data = manifest.data;
   const poolId = text(data.id);
   const format = text(data.format);
-  const sources = asRecords(data.teams);
+  const sources = sourceListSchema.parse(data.teams);
   if (!poolId || !format || !sources.length) throw new Error(`invalid manifest ${manifestPath}`);
   const psDir = defaultPsDir();
   const seen = new Map<string, string>();
-  const teams: Array<{ id: string; packed: string; source: Record<string, unknown> }> = [];
+  const teams: BuiltTeam[] = [];
   for (const source of sources) {
     const id = text(source.id);
     if (!id) throw new Error('every source team needs an id');

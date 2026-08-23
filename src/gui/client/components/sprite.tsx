@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 
+import { api } from '../http';
+
 export function Sprite({ id, size = 40 }: { id: string; size?: number }) {
   if (!id) return null;
   return (
@@ -19,8 +21,7 @@ let itemIconSheet: ItemIconSheet | null = null;
 let itemIconRequest: Promise<ItemIconSheet | null> | null = null;
 
 function loadItemIcons(): Promise<ItemIconSheet | null> {
-  itemIconRequest ??= fetch('/itemicons.json')
-    .then((response) => (response.ok ? (response.json() as Promise<ItemIconSheet>) : null))
+  itemIconRequest ??= api<ItemIconSheet>('/itemicons.json')
     .then((data) => {
       itemIconSheet = data;
       return data;

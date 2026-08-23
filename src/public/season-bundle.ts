@@ -105,13 +105,7 @@ function replayReleasedRosters(
 }
 
 function publicEvent(entry: BattleLogEntry): PublicBattleEvent {
-  const event: PublicBattleEvent = { turn: entry.turn, kind: entry.kind, text: entry.text };
-  if (entry.actor) event.actor = entry.actor;
-  if (entry.target) event.target = entry.target;
-  if (entry.species !== undefined) event.species = entry.species;
-  if (entry.hp !== undefined) event.hp = entry.hp;
-  if (entry.status !== undefined) event.status = entry.status;
-  return event;
+  return { ...entry };
 }
 
 function publicBuild(build: LeagueTeambuildView, revealSets: boolean): PublicBuild {

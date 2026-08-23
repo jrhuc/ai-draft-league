@@ -3,12 +3,20 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-
 import type { BracketView } from '../src/gui/api.js';
 import { loadSeriesRecords } from '../src/records.js';
 import { loadPool } from '../src/teams.js';
 import type { TournamentEvent } from '../src/tournament.js';
-import { applyBracketOutcome, briefEvent, buildBracket, runTournament, seedPositions } from '../src/tournament.js';
+import {
+  applyBracketOutcome,
+  briefEvent,
+  buildBracket,
+  runTournament,
+  seedPositions,
+  tournamentConfigSchema,
+} from '../src/tournament.js';
+import type { JsonObject } from '../src/types.js';
+import { asRecord, asRecords } from '../src/value.js';
 
 test('seed order spreads byes across distinct first-round matches', () => {
   assert.deepEqual(seedPositions(4), [0, 3, 1, 2]);
@@ -91,9 +99,9 @@ test('a tournament crowns a champion and records rounds coherently', async (t) =
     rows.map((row) => row.series_index),
     [0, 1, 2, 3],
   );
-  const config = JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8')) as Record<string, unknown>;
+  const config = tournamentConfigSchema.parse(JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8')));
   assert.equal(config.mode, 'tournament');
-  assert.equal((config.entrants as unknown[]).length, 5);
+  assert.equal(config.entrants.length, 5);
 
   const planned = events[0];
   assert.equal(planned?.type, 'plans');
@@ -128,7 +136,7 @@ test('a tournament crowns a champion and records rounds coherently', async (t) =
     assert.equal(record.mode, 'tournament');
     assert.equal(record.pool, 'test');
     assert.deepEqual(
-      (record as { teams?: Record<string, string> }).teams,
+      record.teams,
       { p1: final.entrants[match.slots[0]!]!.team, p2: final.entrants[match.slots[1]!]!.team },
       'recorded teams follow the entrants through the bracket',
     );
@@ -172,7 +180,7 @@ test('inline teams pair to models by index and record no pool', async (t) => {
   assert.equal(record.mode, 'tournament');
   assert.equal(record.pool, undefined);
   assert.equal(record.format, pool.format);
-  assert.deepEqual(Object.values((record as { teams?: Record<string, string> }).teams ?? {}).sort(), ['alpha', 'beta']);
+  assert.deepEqual(Object.values(record.teams ?? {}).sort(), ['alpha', 'beta']);
   assert.ok(fs.existsSync(path.join(directory, 'teams.json')), 'inline teams are captured for provenance');
 });
 
@@ -228,7 +236,7 @@ test('a seeded pool keeps the real bracket order and briefs both sides on it', a
     'the quarterfinals pair the standard seeding',
   );
 
-  const config = JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8')) as Record<string, unknown>;
+  const config: JsonObject = JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8'));
   assert.equal(config.provenance, 'disclosed');
   assert.equal(config.event, pool.event!.name);
 });
@@ -271,7 +279,7 @@ test('a stopped bracket resumes on its records and replays the interrupted serie
   assert.ok(played.includes(interrupted[0]!), 'and keeps the one it already opened');
   const first = resumed.find((row) => row.series_index === 0)!;
   assert.equal(
-    (first.games as Array<Record<string, unknown>>)[0]?.resumed,
+    asRecords(first.games)[0]?.resumed,
     undefined,
     'adoption preserves the exact completed game result instead of adding resume metadata',
   );
@@ -288,10 +296,10 @@ test('a resume refuses a tournament result whose defaults diverge from canonical
     .readFileSync(recordsPath, 'utf8')
     .trim()
     .split('\n')
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
-  const game = (rows[0]!.games as Array<Record<string, unknown>>)[0]!;
-  const defaults = game.timer_autodefaults as Record<'p1' | 'p2', number>;
-  defaults.p1 += 1;
+    .map((line): JsonObject => JSON.parse(line));
+  const game = asRecords(rows[0]!.games)[0]!;
+  const defaults = asRecord(game.timer_autodefaults);
+  defaults.p1 = Number(defaults.p1) + 1;
   fs.writeFileSync(recordsPath, `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`, 'utf8');
 
   await assert.rejects(

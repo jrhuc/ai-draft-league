@@ -16,6 +16,7 @@ import { BattleState } from '../src/state.js';
 import { loadPool } from '../src/teams.js';
 import { parseTimerScale, TimerAdapter } from '../src/timer.js';
 import type { ActionSubmission, BattleRequest, JsonObject, SubmissionContext, TimerScale } from '../src/types.js';
+import { routeState } from './fixtures/fork.js';
 
 test('forced-switch menus retain the neutral forfeit option', () => {
   const menus = buildMenus({
@@ -223,13 +224,16 @@ test('Showdown timer defaults a slow decision', { timeout: 25_000 }, async () =>
 
 test('timer scale multiplies Showdown timer settings and reseeds the banks', () => {
   const pool = loadPool();
-  const stream = { write: () => {} } as unknown as BattleStream;
+  const sink: Pick<BattleStream, 'write'> = { write: () => {} };
+  // SAFETY: TimerAdapter only writes to the stream, and this test never triggers a write.
+  const stream = sink as BattleStream;
   const events = () => {};
-  const adapter = (scale: TimerScale) =>
-    new TimerAdapter(pool.format, stream, events, defaultPsDir(), scale) as unknown as {
-      timer: { settings: RoomBattleTimerSettings };
-      players: Array<{ secondsLeft?: number; turnSecondsLeft?: number }>;
-    };
+  const adapter = (
+    scale: TimerScale,
+  ): {
+    timer: { settings: RoomBattleTimerSettings };
+    players: Array<{ secondsLeft?: number; turnSecondsLeft?: number }>;
+  } => Object(new TimerAdapter(pool.format, stream, events, defaultPsDir(), scale));
   const base = adapter(1);
   const scaled = adapter(1.5);
   for (const key of ['starting', 'grace', 'maxPerTurn', 'maxFirstTurn'] as const) {
@@ -315,26 +319,12 @@ test('players can decide concurrently', async () => {
 });
 
 test('split messages route secrets and buffer incomplete triples', () => {
-  const state = {
-    pov: { p1: [] as string[], p2: [] as string[] },
-    log: [] as string[],
-    publicLog: [] as string[],
-    pendingSplit: [] as string[],
-    winner: null,
-    turns: 0,
-  };
+  const state = routeState();
   routeUpdateLines(['|foo', '|split|p1', '|secret', '', '|bar'], state);
   assert.deepEqual(state.pov.p1, ['|foo', '|secret', '|bar']);
   assert.deepEqual(state.pov.p2, ['|foo', '|bar']);
   assert.deepEqual(state.publicLog, ['|foo', '|bar']);
-  const buffered = {
-    pov: { p1: [] as string[], p2: [] as string[] },
-    log: [] as string[],
-    publicLog: [] as string[],
-    pendingSplit: [] as string[],
-    winner: null,
-    turns: 0,
-  };
+  const buffered = routeState();
   routeUpdateLines(['|split|p1', '|secret'], buffered);
   assert.deepEqual(buffered.pendingSplit, ['|split|p1', '|secret']);
   routeUpdateLines(['|public', '|after'], buffered);
@@ -345,14 +335,7 @@ test('split messages route secrets and buffer incomplete triples', () => {
 });
 
 test('split messages reject an unknown owner without routing either payload', () => {
-  const state = {
-    pov: { p1: [] as string[], p2: [] as string[] },
-    log: [] as string[],
-    publicLog: [] as string[],
-    pendingSplit: [] as string[],
-    winner: null,
-    turns: 0,
-  };
+  const state = routeState();
   assert.throws(() => routeUpdateLines(['|split|p3', '|secret', '|public'], state), /unknown split owner: p3/);
   assert.deepEqual(state.pov, { p1: [], p2: [] });
   assert.deepEqual(state.log, []);
@@ -360,14 +343,7 @@ test('split messages reject an unknown owner without routing either payload', ()
 });
 
 test('stream termination rejects an incomplete split triple', () => {
-  const state = {
-    pov: { p1: [] as string[], p2: [] as string[] },
-    log: [] as string[],
-    publicLog: [] as string[],
-    pendingSplit: [] as string[],
-    winner: null,
-    turns: 0,
-  };
+  const state = routeState();
   routeUpdateLines(['|split|p2', '|secret'], state);
   assert.throws(() => finishUpdateRouting(state), /incomplete split triple \(2 of 3 lines\)/);
   assert.deepEqual(state.pov, { p1: [], p2: [] });
@@ -387,7 +363,8 @@ test('Rotation writes one completed best-of-three record', async (t) => {
   assert.equal(rows.length, 1);
   assert.equal(rows[0]!.run_seed, 1);
   assert.equal(rows[0]!.mode, 'rotation');
-  assert.ok(Array.isArray(rows[0]!.games));
-  assert.ok((rows[0]!.games as unknown[]).length >= 2);
+  const games = rows[0]!.games;
+  assert.ok(Array.isArray(games));
+  assert.ok(games.length >= 2);
   assert.equal(fs.readFileSync(records, 'utf8').trim().split('\n').length, 1);
 });

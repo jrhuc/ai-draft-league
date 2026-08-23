@@ -22,7 +22,6 @@ export type AgentContextSink = (event: AgentContextEvent) => void;
 
 function sequenceOf(cursor: string | undefined, fallback: number): number {
   if (cursor === undefined) return fallback;
-  if (typeof cursor !== 'string') throw new Error(`invalid context cursor ${JSON.stringify(cursor)}`);
   const match = /^ctx-(\d{8})$/.exec(cursor);
   if (!match) throw new Error(`invalid context cursor ${JSON.stringify(cursor)}`);
   return Number(match[1]);
@@ -70,12 +69,7 @@ export class AgentContextStream {
     return this.events.at(-1)?.id ?? null;
   }
 
-  read(query: AgentContextQuery = {}): {
-    events: AgentContextEvent[];
-    nextCursor: string | null;
-    headCursor: string | null;
-    more: boolean;
-  } {
+  read(query: AgentContextQuery = {}) {
     const after = sequenceOf(query.after, 0);
     const before = sequenceOf(query.before, Number.POSITIVE_INFINITY);
     if (query.kind !== undefined && !['episode', 'observation', 'decision', 'reflection'].includes(query.kind))

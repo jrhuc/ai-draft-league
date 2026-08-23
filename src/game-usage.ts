@@ -1,6 +1,7 @@
 import type { DraftBoardMon } from './draft.js';
 import type { TeambuildView } from './gui/api.js';
 import { readCompletedSeriesGameLogs } from './series.js';
+import { isErrnoCode } from './value.js';
 
 /** What a completed game proves about each side, with every species named by drafted board id.
  * This is the only place battle-log species names are joined to draft ids; consumers select
@@ -18,6 +19,7 @@ type Side = 0 | 1;
 
 /** The six each side registered, in entrant order; an absent build leaves that side unresolved. */
 type RegisteredBuilds = readonly [TeambuildView | undefined, TeambuildView | undefined];
+type DraftMon = Pick<DraftBoardMon, 'id' | 'species' | 'forme'>;
 
 interface Entry {
   name: string;
@@ -48,14 +50,14 @@ export function gameSummaries(
   mons: readonly Pick<DraftBoardMon, 'id' | 'species' | 'forme'>[],
   builds: RegisteredBuilds,
 ): GameSummary[] {
-  const byName = new Map<string, DraftBoardMon[]>();
+  const byName = new Map<string, DraftMon[]>();
   const byId = new Map(mons.map((mon) => [mon.id, mon] as const));
-  const registered = builds.map((build) =>
+  const registeredMons = (build: TeambuildView | undefined): DraftMon[] =>
     (build?.brought ?? []).flatMap((id) => {
       const mon = byId.get(id);
       return mon ? [mon] : [];
-    }),
-  ) as [DraftBoardMon[], DraftBoardMon[]];
+    });
+  const registered: [DraftMon[], DraftMon[]] = [registeredMons(builds[0]), registeredMons(builds[1])];
   for (const sideMons of new Set([...registered[0], ...registered[1]])) {
     for (const name of sideMons.forme && sideMons.forme !== sideMons.species
       ? [sideMons.species, sideMons.forme]
@@ -102,14 +104,14 @@ export function gameSummaries(
         const slotId = ident.slice(0, 3);
         const resolved = resolve(side, logSpecies(args[1]));
         const entry = slot.get(slotId);
-        if (typeof resolved !== 'string') continue;
+        if (resolved === null || resolved === undefined) continue;
         if (pendingMega[side].delete(slotId)) megaEvolved[side] = resolved;
         if (entry) entry.id = resolved;
       } else if (kind === '-mega' && args[1]) {
         const slotId = ident.slice(0, 3);
         const resolved = resolve(side, logSpecies(args[1]));
         const entry = slot.get(slotId);
-        if (typeof resolved === 'string') {
+        if (resolved !== null && resolved !== undefined) {
           megaEvolved[side] = resolved;
           if (entry) entry.id = resolved;
         } else {
@@ -155,8 +157,7 @@ export function seriesGameSummaries(
   try {
     return readCompletedSeriesGameLogs(seriesDir, seriesId).map((lines) => gameSummaries([lines], mons, builds)[0]!);
   } catch (cause) {
-    const error = cause as NodeJS.ErrnoException;
-    if (error.code === 'ENOENT' && error.path === seriesDir) return [];
+    if (isErrnoCode(cause, 'ENOENT') && 'path' in cause && cause.path === seriesDir) return [];
     throw cause;
   }
 }

@@ -1,23 +1,31 @@
-import type { JsonObject } from './types.js';
+import type { JsonObject, JsonValue } from './types.js';
 
-export function isRecord(value: unknown): value is JsonObject {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+export function isRecord(value: JsonValue | undefined): value is JsonObject {
+  return value instanceof Object && !Array.isArray(value);
 }
 
-export function asRecord(value: unknown): JsonObject {
+export function asRecord(value: JsonValue | undefined): JsonObject {
   return isRecord(value) ? value : {};
 }
 
-export function asRecords(value: unknown): JsonObject[] {
+export function asRecords(value: JsonValue | undefined): JsonObject[] {
   return Array.isArray(value) ? value.filter(isRecord) : [];
 }
 
-export function asStrings(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+export function isText(value: JsonValue | undefined): value is string {
+  return String(value) === value;
 }
 
-export function text(value: unknown, fallback = ''): string {
-  return typeof value === 'string' ? value : fallback;
+export function asStrings(value: JsonValue | undefined): string[] {
+  return Array.isArray(value) ? value.filter(isText) : [];
+}
+
+export function text(value: JsonValue | undefined, fallback = ''): string {
+  return isText(value) ? value : fallback;
+}
+
+export function isErrnoCode(cause: unknown, code: string): cause is Error & { code: string } {
+  return cause instanceof Error && 'code' in cause && cause.code === code;
 }
 
 export function afterColon(value: string): string {

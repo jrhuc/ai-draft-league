@@ -1,16 +1,25 @@
 import type { ClientCapabilities } from './capability-contract.js';
 
+export type ViewId = 'arena' | 'tournaments' | 'fixtures';
+
+interface RouteDefinition {
+  readonly id: ViewId;
+  readonly hash: string;
+  readonly label: string;
+  readonly section: 'Operator';
+  readonly capability?: keyof ClientCapabilities;
+}
+
 const ROUTES = [
   { id: 'arena', hash: 'live', label: 'Live', section: 'Operator', capability: 'monitorRuns' },
   { id: 'tournaments', hash: 'tournaments', label: 'Tournaments', section: 'Operator' },
   { id: 'fixtures', hash: 'new-run', label: 'New run', section: 'Operator', capability: 'startRuns' },
-] as const;
+] as const satisfies readonly RouteDefinition[];
 
-export type ViewId = (typeof ROUTES)[number]['id'];
 export type Route = { view: Exclude<ViewId, 'tournaments'> } | { view: 'tournaments'; run?: string };
 
 export interface NavigationSet {
-  label: (typeof ROUTES)[number]['section'];
+  label: 'Operator';
   items: ReadonlyArray<{ id: ViewId; label: string }>;
 }
 
@@ -22,8 +31,8 @@ function decodeHashSegment(segment: string): string {
   }
 }
 
-function routeEnabled(route: (typeof ROUTES)[number], capabilities: Readonly<ClientCapabilities>): boolean {
-  return !('capability' in route) || capabilities[route.capability];
+function routeEnabled(route: RouteDefinition, capabilities: Readonly<ClientCapabilities>): boolean {
+  return route.capability === undefined || capabilities[route.capability];
 }
 
 export function navigationFor(capabilities: Readonly<ClientCapabilities>): NavigationSet[] {
@@ -43,7 +52,11 @@ export function routeFromHash(hash: string, capabilities: Readonly<ClientCapabil
   const [head = '', run = ''] = segments;
   const definition = ROUTES.find((route) => route.hash === head && routeEnabled(route, capabilities));
   if (!definition) return { view: 'arena' };
-  if (definition.id === 'tournaments') return { view: definition.id, ...(run ? { run } : {}) };
+  if (definition.id === 'tournaments') {
+    const route: Route = { view: definition.id };
+    if (run) route.run = run;
+    return route;
+  }
   return { view: definition.id };
 }
 

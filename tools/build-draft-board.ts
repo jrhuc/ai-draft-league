@@ -2,7 +2,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { z } from 'zod';
 
+import { type DraftBoardMon, draftBoardSchema } from '../src/draft.js';
 import { BOARDS_DIR, defaultPsDir } from '../src/paths.js';
 import { loadShowdown } from '../src/showdown.js';
 
@@ -121,20 +123,20 @@ const USAGE_ADJUSTMENTS: Array<{ name: string; cost: number; usage: string }> = 
   { name: 'Medicham-Mega', cost: 8, usage: '#209 at 0.06%' },
 ];
 
-const BOARD_ALIASES: Record<string, string> = {
-  'Mega Charizard X': 'Charizard-Mega-X',
-  'Mega Charizard Y': 'Charizard-Mega-Y',
-  'Basculegion-Male': 'Basculegion',
-  'Basculegion-Female': 'Basculegion-F',
-  'Meowstic-Male': 'Meowstic',
-  'Meowstic-Female': 'Meowstic-F',
-  'Paldean Tauros': 'Tauros-Paldea-Combat',
-  'Paldean Tauros Aqua': 'Tauros-Paldea-Aqua',
-  'Paldean Tauros Blaze': 'Tauros-Paldea-Blaze',
-};
+const BOARD_ALIASES = new Map([
+  ['Mega Charizard X', 'Charizard-Mega-X'],
+  ['Mega Charizard Y', 'Charizard-Mega-Y'],
+  ['Basculegion-Male', 'Basculegion'],
+  ['Basculegion-Female', 'Basculegion-F'],
+  ['Meowstic-Male', 'Meowstic'],
+  ['Meowstic-Female', 'Meowstic-F'],
+  ['Paldean Tauros', 'Tauros-Paldea-Combat'],
+  ['Paldean Tauros Aqua', 'Tauros-Paldea-Aqua'],
+  ['Paldean Tauros Blaze', 'Tauros-Paldea-Blaze'],
+]);
 
 function dexNameFor(boardName: string): string {
-  const alias = BOARD_ALIASES[boardName];
+  const alias = BOARD_ALIASES.get(boardName);
   if (alias) return alias;
   const name = boardName.startsWith('Mega ') ? `${boardName.slice(5)}-Mega` : boardName;
   return name
@@ -149,6 +151,8 @@ interface BoardEntrySource {
   origin: 'base' | 'regmb';
   anchor?: string;
 }
+
+const baseCostsSchema = z.array(z.object({ name: z.string(), cost: z.number() }));
 
 function displayName(dexName: string): string {
   const mega = /^(.+?)-Mega(?:-([XY]))?$/.exec(dexName);
@@ -166,11 +170,11 @@ function buildBoard(boardId = 'regmb-202607', format = 'gen9championsvgc2026regm
   const stoneFor = new Map<string, { item: string; from: string }>();
   for (const item of dex.items.all()) {
     const map = item.megaStone;
-    if (!map || typeof map === 'string') continue;
+    if (!map) continue;
     for (const [from, to] of Object.entries(map)) stoneFor.set(to, { item: item.name, from });
   }
 
-  const baseCosts = JSON.parse(fs.readFileSync(SOURCE_COSTS, 'utf8')) as Array<{ name: string; cost: number }>;
+  const baseCosts = baseCostsSchema.parse(JSON.parse(fs.readFileSync(SOURCE_COSTS, 'utf8')));
   const sources: BoardEntrySource[] = [
     ...baseCosts.map((entry): BoardEntrySource => ({ name: entry.name, cost: entry.cost, origin: 'base' })),
     ...REGMB_ADDITIONS.map((entry): BoardEntrySource => ({ ...entry, origin: 'regmb' })),
@@ -183,7 +187,7 @@ function buildBoard(boardId = 'regmb-202607', format = 'gen9championsvgc2026regm
   }
 
   const seen = new Set<string>();
-  const mons = [];
+  const mons: DraftBoardMon[] = [];
   for (const source of sources) {
     const species = dex.species.get(dexNameFor(source.name));
     if (!species.exists) throw new Error(`board entry ${JSON.stringify(source.name)} is not in the format dex`);
@@ -195,18 +199,25 @@ function buildBoard(boardId = 'regmb-202607', format = 'gen9championsvgc2026regm
     const registered = stone ? dex.species.get(stone.from) : species;
     const adjusted = adjustments.get(species.name);
     if (adjusted) adjustments.delete(species.name);
-    mons.push({
+    const mon: DraftBoardMon = {
       id: species.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
       name: source.origin === 'base' ? source.name : displayName(species.name),
       species: registered.name,
-      ...(stone ? { forme: species.name, item: stone.item } : {}),
       base: registered.baseSpecies,
       types: species.types,
       cost: adjusted ? adjusted.cost : source.cost,
       origin: source.origin,
-      ...(source.anchor ? { anchor: source.anchor } : {}),
-      ...(adjusted ? { listed: source.cost, usage: adjusted.usage } : {}),
-    });
+    };
+    if (stone) {
+      mon.forme = species.name;
+      mon.item = stone.item;
+    }
+    if (source.anchor) mon.anchor = source.anchor;
+    if (adjusted) {
+      mon.listed = source.cost;
+      mon.usage = adjusted.usage;
+    }
+    mons.push(mon);
   }
   if (adjustments.size) throw new Error(`unused usage adjustments: ${[...adjustments.keys()].join(', ')}`);
   mons.sort((a, b) => b.cost - a.cost || a.name.localeCompare(b.name));
@@ -228,9 +239,7 @@ function buildBoard(boardId = 'regmb-202607', format = 'gen9championsvgc2026regm
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const file = buildBoard();
-  const board = JSON.parse(fs.readFileSync(file, 'utf8')) as {
-    mons: Array<{ cost: number; origin: string; item?: string }>;
-  };
+  const board = draftBoardSchema.parse(JSON.parse(fs.readFileSync(file, 'utf8')));
   const added = board.mons.filter((mon) => mon.origin === 'regmb').length;
   const megas = board.mons.filter((mon) => mon.item).length;
   console.log(

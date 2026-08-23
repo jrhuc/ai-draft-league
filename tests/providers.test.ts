@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-
 import {
   ApiError,
   assistantToolMessage,
@@ -15,6 +14,7 @@ import {
   validateModelExecution,
   validateReasoning,
 } from '../src/providers.js';
+import type { JsonObject } from '../src/types.js';
 
 function sseResponse(events: unknown[]): Response {
   return new Response(`${events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join('')}data: [DONE]\n\n`, {
@@ -23,7 +23,7 @@ function sseResponse(events: unknown[]): Response {
   });
 }
 
-function chatStream(text: string, final: Record<string, unknown> = {}): Response {
+function chatStream(text: string, final: JsonObject = {}): Response {
   const base = { id: 'gen_1', object: 'chat.completion.chunk', created: 1, model: 'stub' };
   return sseResponse([
     { ...base, choices: [{ index: 0, delta: { role: 'assistant', content: text }, finish_reason: null }] },
@@ -57,6 +57,7 @@ test('provider specs are exactly OpenRouter, Prime Inference, the Vercel AI Gate
   assert.doesNotThrow(() => validateReasoning(parseSpec('opencode-go:kimi-k3'), 'high'));
   assert.throws(() => validateReasoning(parseSpec('gateway:model'), 'high'), /no advertised configurable reasoning/);
   assert.doesNotThrow(() => validateReasoning(parseSpec('openrouter:model'), 'high'));
+  // SAFETY: exercises the runtime guard against a level the type forbids.
   assert.throws(() => validateReasoning(parseSpec('openrouter:model'), 'off' as never), /invalid reasoning level/);
 
   for (const value of [
@@ -105,13 +106,13 @@ test('run-scoped credentials are isolated by exact model spec', async () => {
 });
 
 test('OpenRouter disables fallback and optionally pins exactly one upstream', () => {
-  assert.deepEqual(parseRoutingPreferences({} as NodeJS.ProcessEnv), { allow_fallbacks: false });
-  assert.deepEqual(parseRoutingPreferences({ VGC_OPENROUTER_PIN: 'deepinfra' } as NodeJS.ProcessEnv), {
+  assert.deepEqual(parseRoutingPreferences({}), { allow_fallbacks: false });
+  assert.deepEqual(parseRoutingPreferences({ VGC_OPENROUTER_PIN: 'deepinfra' }), {
     order: ['deepinfra'],
     allow_fallbacks: false,
   });
   assert.throws(
-    () => parseRoutingPreferences({ VGC_OPENROUTER_PIN: 'deepinfra,together' } as NodeJS.ProcessEnv),
+    () => parseRoutingPreferences({ VGC_OPENROUTER_PIN: 'deepinfra,together' }),
     /exactly one upstream provider/,
   );
 });
@@ -121,8 +122,8 @@ test('OpenRouter executes the model spec while recording its pinned upstream as 
   process.env.VGC_OPENROUTER_PIN = 'deepinfra';
   let url = '';
   let authorization = '';
-  let body: Record<string, unknown> = {};
-  const fetch = (async (input, init) => {
+  let body: JsonObject = {};
+  const fetch: typeof globalThis.fetch = async (input, init) => {
     url = String(input);
     authorization = new Headers(init?.headers).get('authorization') ?? '';
     body = JSON.parse(String(init?.body));
@@ -130,7 +131,7 @@ test('OpenRouter executes the model spec while recording its pinned upstream as 
       provider: 'DeepInfra',
       usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6, cost: 0.00123 },
     });
-  }) as typeof globalThis.fetch;
+  };
   try {
     const completion = await makeProvider(parseSpec('openrouter:z-ai/glm-5:nitro'), {
       apiKey: 'openrouter-key',
@@ -156,8 +157,8 @@ test('OpenRouter executes the model spec while recording its pinned upstream as 
 test('Prime uses only its fixed OpenAI-compatible chat endpoint and plain response metadata', async () => {
   let url = '';
   let authorization = '';
-  let body: Record<string, unknown> = {};
-  const fetch = (async (input, init) => {
+  let body: JsonObject = {};
+  const fetch: typeof globalThis.fetch = async (input, init) => {
     url = String(input);
     authorization = new Headers(init?.headers).get('authorization') ?? '';
     body = JSON.parse(String(init?.body));
@@ -165,7 +166,7 @@ test('Prime uses only its fixed OpenAI-compatible chat endpoint and plain respon
       provider: 'must-not-surface',
       usage: { prompt_tokens: 7, completion_tokens: 3, total_tokens: 10, cost: 99 },
     });
-  }) as typeof globalThis.fetch;
+  };
 
   const completion = await makeProvider(parseSpec('prime:test-model'), {
     apiKey: 'prime-key',
@@ -186,15 +187,15 @@ test('Prime uses only its fixed OpenAI-compatible chat endpoint and plain respon
 test('the Vercel AI Gateway uses only its fixed OpenAI-compatible chat endpoint', async () => {
   let url = '';
   let authorization = '';
-  let body: Record<string, unknown> = {};
-  const fetch = (async (input, init) => {
+  let body: JsonObject = {};
+  const fetch: typeof globalThis.fetch = async (input, init) => {
     url = String(input);
     authorization = new Headers(init?.headers).get('authorization') ?? '';
     body = JSON.parse(String(init?.body));
     return chatStream('gateway reply', {
       usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 },
     });
-  }) as typeof globalThis.fetch;
+  };
 
   const completion = await makeProvider(parseSpec('gateway:anthropic/claude-sonnet-4.5'), {
     apiKey: 'gateway-key',
@@ -210,8 +211,8 @@ test('the Vercel AI Gateway uses only its fixed OpenAI-compatible chat endpoint'
 });
 
 test('the common compatible stream preserves tools, structured finish reason, and replay messages', async () => {
-  let body: Record<string, unknown> = {};
-  const fetch = (async (_input, init) => {
+  let body: JsonObject = {};
+  const fetch: typeof globalThis.fetch = async (_input, init) => {
     body = JSON.parse(String(init?.body));
     const base = { id: 'gen_tool', object: 'chat.completion.chunk', created: 1, model: 'stub' };
     return sseResponse([
@@ -251,7 +252,7 @@ test('the common compatible stream preserves tools, structured finish reason, an
         usage: { prompt_tokens: 9, completion_tokens: 4, total_tokens: 13 },
       },
     ]);
-  }) as typeof globalThis.fetch;
+  };
 
   const completion = await makeProvider(parseSpec('prime:tool-model'), { apiKey: 'prime-key', fetch }).complete(
     'system',
@@ -292,11 +293,11 @@ test('the common compatible stream preserves tools, structured finish reason, an
 test('compatible HTTP and in-band stream failures preserve retry classification without leaking keys', async () => {
   const failed = makeProvider(parseSpec('prime:failed-model'), {
     apiKey: 'prime-secret',
-    fetch: (async () =>
+    fetch: async () =>
       new Response(JSON.stringify({ error: { message: 'service unavailable prime-secret' } }), {
         status: 503,
         headers: { 'content-type': 'application/json' },
-      })) as typeof globalThis.fetch,
+      }),
   });
   await assert.rejects(failed.complete('system', [{ role: 'user', content: 'hello' }]), (error: unknown) => {
     assert.ok(error instanceof ApiError);
@@ -313,8 +314,7 @@ test('compatible HTTP and in-band stream failures preserve retry classification 
 
   const inBand = makeProvider(parseSpec('openrouter:failed-model'), {
     apiKey: 'openrouter-key',
-    fetch: (async () =>
-      sseResponse([{ error: { code: 502, message: 'upstream worker failed' } }])) as typeof globalThis.fetch,
+    fetch: async () => sseResponse([{ error: { code: 502, message: 'upstream worker failed' } }]),
   });
   await assert.rejects(inBand.complete('system', [{ role: 'user', content: 'hello' }]), (error: unknown) => {
     assert.ok(error instanceof ApiError);
@@ -331,19 +331,19 @@ test('adapter redacts thrown transport and malformed stream failures', async () 
   const failures: Array<{ label: string; fetch: typeof globalThis.fetch }> = [
     {
       label: 'Error transport',
-      fetch: (async () => {
+      fetch: async () => {
         throw new Error(`transport exposed ${suppliedKey} and ${environmentKey}`);
-      }) as typeof globalThis.fetch,
+      },
     },
     {
       label: 'primitive transport',
-      fetch: (async () => {
+      fetch: async () => {
         throw suppliedKey;
-      }) as typeof globalThis.fetch,
+      },
     },
     {
       label: 'malformed stream',
-      fetch: (async () =>
+      fetch: async () =>
         new Response(
           `data: {"secret":"${suppliedKey}"
 
@@ -352,7 +352,7 @@ test('adapter redacts thrown transport and malformed stream failures', async () 
             status: 200,
             headers: { 'content-type': 'text/event-stream' },
           },
-        )) as typeof globalThis.fetch,
+        ),
     },
   ];
   try {
@@ -378,11 +378,11 @@ test('nitro routing changes only OpenRouter specs', () => {
 });
 
 test('OpenRouter forwards an explicit reasoning token budget with text headroom', async () => {
-  let body: Record<string, unknown> = {};
-  const fetch = (async (_input, init) => {
+  let body: JsonObject = {};
+  const fetch: typeof globalThis.fetch = async (_input, init) => {
     body = JSON.parse(String(init?.body));
     return chatStream('ok', { usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 } });
-  }) as typeof globalThis.fetch;
+  };
   await makeProvider(parseSpec('openrouter:test/model'), { apiKey: 'k', reasoning: 'high', fetch }).complete(
     'system',
     [{ role: 'user', content: 'hello' }],
@@ -406,11 +406,11 @@ test('OpenCode models are routed to the one API shape that serves them', async (
   assert.equal(opencodeApi('opencode-zen', 'claude-fable-5'), 'messages');
   assert.throws(() => opencodeApi('opencode-zen', 'gemini-3.5-flash'), /Google API/);
 
-  const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
-  const fetch = (async (input, init) => {
+  const requests: Array<{ url: string; body: JsonObject }> = [];
+  const fetch: typeof globalThis.fetch = async (input, init) => {
     requests.push({ url: String(input), body: JSON.parse(String(init?.body)) });
     return new Response('{"error":"stub"}', { status: 500 });
-  }) as typeof globalThis.fetch;
+  };
   for (const model of ['kimi-k3', 'muse-spark-1.2-contributor', 'minimax-m3']) {
     await assert.rejects(
       makeProvider(parseSpec(`opencode-go:${model}`), { apiKey: 'opencode-key', reasoning: 'high', fetch }).complete(

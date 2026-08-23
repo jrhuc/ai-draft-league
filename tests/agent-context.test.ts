@@ -123,6 +123,7 @@ test('context cursors are validated and bounded', () => {
   const stream = new AgentContextStream();
   stream.append('episode', {});
   assert.throws(() => stream.read({ after: 'bad' }), /invalid context cursor/);
+  // SAFETY: exercises the runtime guard against a kind the type forbids.
   assert.throws(() => stream.read({ kind: 'private' as never }), /invalid context kind/);
   assert.throws(() => stream.read({ limit: Number.NaN }), /invalid context limit/);
   assert.equal(stream.read({ limit: 0 }).events.length, 1);

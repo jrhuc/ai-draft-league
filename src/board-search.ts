@@ -1,9 +1,14 @@
+import { z } from 'zod';
+
 import type { DraftBoard, DraftBoardMon } from './draft.js';
-import { loadShowdown } from './showdown.js';
+import { loadShowdown, type ShowdownApi } from './showdown.js';
 import type { JsonObject, ToolDefinition } from './types.js';
+import { asStrings, text } from './value.js';
 
 const SORTS = ['cost', 'bst', 'name'] as const;
-type Sort = (typeof SORTS)[number];
+type Sort = 'cost' | 'bst' | 'name';
+const sortSchema = z.enum(SORTS);
+const finiteNumberSchema = z.number().finite();
 
 export const BOARD_SEARCH_TOOL: ToolDefinition = {
   name: 'search_board',
@@ -45,11 +50,7 @@ export function baseCostsBySpecies(mons: readonly DraftBoardMon[]): Map<string, 
   return new Map(mons.filter((mon) => !mon.item).map((mon) => [mon.species, mon.cost]));
 }
 
-export function boardRow(
-  mon: DraftBoardMon,
-  dex: ReturnType<ReturnType<typeof loadShowdown>['Dex']['mod']>,
-  baseCosts?: ReadonlyMap<string, number>,
-): string {
+export function boardRow(mon: DraftBoardMon, dex: ShowdownApi['Dex'], baseCosts?: ReadonlyMap<string, number>): string {
   const baseCost = mon.item ? baseCosts?.get(mon.species) : undefined;
   const species = dex.species.get(mon.forme ?? mon.species);
   const stats = species.baseStats;
@@ -71,13 +72,12 @@ function baseStatTotal(stats: { hp: number; atk: number; def: number; spa: numbe
 const normalize = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, '');
 
 function readString(args: JsonObject, key: string): string {
-  const value = args[key];
-  return typeof value === 'string' ? value.trim() : '';
+  return text(args[key]).trim();
 }
 
 function readInteger(args: JsonObject, key: string): number | undefined {
-  const value = args[key];
-  return typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : undefined;
+  const result = finiteNumberSchema.safeParse(args[key]);
+  return result.success ? Math.trunc(result.data) : undefined;
 }
 
 export function createBoardSearch(board: DraftBoard, psDir: string): BoardSearch {
@@ -98,18 +98,15 @@ export function createBoardSearch(board: DraftBoard, psDir: string): BoardSearch
   return {
     definition: BOARD_SEARCH_TOOL,
     run(args: JsonObject): string {
-      const rawTypes = Array.isArray(args.types) ? args.types : [];
-      const types = rawTypes
-        .filter((value): value is string => typeof value === 'string')
-        .map((value) => normalize(value));
+      const types = asStrings(args.types).map(normalize);
       const maxCost = readInteger(args, 'max_cost');
       const minCost = readInteger(args, 'min_cost');
       const minBst = readInteger(args, 'min_bst');
       const learns = readString(args, 'learns');
       const ability = readString(args, 'ability');
-      const sortValue = readString(args, 'sort');
-      if (sortValue && !SORTS.includes(sortValue as Sort)) return `sort must be one of ${SORTS.join(', ')}.`;
-      const sort = (sortValue || 'cost') as Sort;
+      const sortResult = sortSchema.safeParse(readString(args, 'sort') || 'cost');
+      if (!sortResult.success) return `sort must be one of ${SORTS.join(', ')}.`;
+      const sort: Sort = sortResult.data;
       const limit = Math.min(Math.max(readInteger(args, 'limit') ?? 40, 1), 100);
 
       let move = '';

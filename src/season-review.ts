@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { z } from 'zod';
+
 import { completeWithDexTools } from './dex-lookups.js';
 import type { DraftBoard, DraftBoardMon } from './draft.js';
 import type { DraftPickView, DraftTableRow } from './gui/api.js';
@@ -11,8 +13,8 @@ import { classifyProviderFailure, makeProvider, parseSpec, reasoningForModel } f
 import { ShowdownReference } from './reference.js';
 import { mapLimit } from './series.js';
 import type { TradeWindowArtifact } from './trade-window.js';
-import type { JsonObject, Provider, ProviderMessage } from './types.js';
-import { clip } from './value.js';
+import type { JsonObject, JsonValue, Provider, ProviderMessage } from './types.js';
+import { clip, isRecord } from './value.js';
 
 const SEASON_REVIEW_PROMPT_POLICY = {
   systemTemplate: [
@@ -89,6 +91,8 @@ interface ParsedSeasonReview {
   would_change: string;
 }
 
+type ParsedSeasonReviewResult = { value: ParsedSeasonReview } | { error: string };
+
 interface SeasonSeatLog {
   attempt: number;
   system?: string;
@@ -109,46 +113,51 @@ function slug(value: string): string {
   );
 }
 
-export function parseSeasonReview(response: string): ParsedSeasonReview | string {
+const reviewField = z
+  .string()
+  .trim()
+  .min(1)
+  .transform((value) => clip(value, SEASON_REVIEW_PROMPT_POLICY.fieldLimit));
+const seasonReviewReplySchema = z.looseObject({
+  summary: reviewField,
+  did_well: reviewField,
+  did_poorly: reviewField,
+  would_change: reviewField,
+});
+
+function parseSeasonReviewResult(response: string): ParsedSeasonReviewResult {
   const match = /\{[\s\S]*\}/.exec(response);
-  if (!match) return 'the reply contained no JSON object';
-  let parsed: unknown;
+  if (!match) return { error: 'the reply contained no JSON object' };
+  let object: JsonValue;
   try {
-    parsed = JSON.parse(match[0]);
+    object = JSON.parse(match[0]);
   } catch {
-    return 'the JSON object did not parse';
+    return { error: 'the JSON object did not parse' };
   }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    return 'the reply must be one JSON object';
-  }
-  const record = parsed as Record<string, unknown>;
-  const fields = ['summary', 'did_well', 'did_poorly', 'would_change'] as const;
-  const values: Record<string, string> = {};
-  for (const field of fields) {
-    const value = record[field];
-    if (typeof value !== 'string' || !value.trim()) return `"${field}" must be a non-empty string`;
-    values[field] = clip(value.trim(), SEASON_REVIEW_PROMPT_POLICY.fieldLimit);
-  }
-  return {
-    summary: values.summary!,
-    did_well: values.did_well!,
-    did_poorly: values.did_poorly!,
-    would_change: values.would_change!,
-  };
+  if (!isRecord(object)) return { error: 'the reply must be one JSON object' };
+  const parsed = seasonReviewReplySchema.safeParse(object);
+  if (!parsed.success) return { error: `"${String(parsed.error.issues[0]?.path[0])}" must be a non-empty string` };
+  return { value: parsed.data };
+}
+
+export function parseSeasonReview(response: string): ParsedSeasonReview | string {
+  const result = parseSeasonReviewResult(response);
+  return 'error' in result ? result.error : result.value;
 }
 
 function systemPrompt(state: SeasonReviewState, entrant: number): string {
-  const values: Record<string, string> = {
+  const values = {
     model: state.models[entrant]!,
     format: state.board.format,
   };
   return SEASON_REVIEW_PROMPT_POLICY.systemTemplate
-    .map((line) =>
-      Object.entries(values).reduce(
-        (rendered, [name, value]) => rendered.replaceAll(`{{${name}}}`, value),
-        line as string,
-      ),
-    )
+    .map((line) => {
+      let rendered = String(line);
+      for (const [name, value] of Object.entries(values)) {
+        rendered = rendered.replaceAll(`{{${name}}}`, value);
+      }
+      return rendered;
+    })
     .join('\n');
 }
 
@@ -247,22 +256,26 @@ function userPrompt(state: SeasonReviewState, entrant: number, outcome: string):
 
 /** Reviews already written are replayed rather than re-bought, so a resumed league never pays twice for a
  * retrospective whose season is already closed. */
+const seasonReviewRowSchema = z
+  .object({
+    timestamp: z.string().optional(),
+    entrant: z.number().int().nonnegative(),
+    model: z.string(),
+    outcome: z.string(),
+    summary: z.string(),
+    did_well: z.string(),
+    did_poorly: z.string(),
+    would_change: z.string(),
+    fallback: z.boolean(),
+  })
+  .passthrough();
+
 function replayReviews(file: string): SeasonReview[] {
   return readJsonlObjects(file).map((row, index) => {
-    const { timestamp, ...review } = row;
-    const valid =
-      Number.isSafeInteger(review.entrant) &&
-      Number(review.entrant) >= 0 &&
-      typeof review.model === 'string' &&
-      typeof review.outcome === 'string' &&
-      typeof review.summary === 'string' &&
-      typeof review.did_well === 'string' &&
-      typeof review.did_poorly === 'string' &&
-      typeof review.would_change === 'string' &&
-      typeof review.fallback === 'boolean' &&
-      (timestamp === undefined || typeof timestamp === 'string');
-    if (!valid) throw new Error(`invalid season review row ${index + 1} in ${file}`);
-    return review as unknown as SeasonReview;
+    const parsed = seasonReviewRowSchema.safeParse(row);
+    if (!parsed.success) throw new Error(`invalid season review row ${index + 1} in ${file}`);
+    const { timestamp: _timestamp, ...review } = parsed.data;
+    return review;
   });
 }
 
@@ -290,10 +303,7 @@ export async function runSeasonReview(
       const make =
         options.makeReviewProvider ??
         ((spec: string, apiKey: string | undefined, reasoning: ReasoningLevel | undefined) =>
-          makeProvider(parseSpec(spec), {
-            ...(reasoning === undefined ? {} : { reasoning }),
-            ...(apiKey === undefined ? {} : { apiKey }),
-          }));
+          makeProvider(parseSpec(spec), { apiKey, reasoning }));
       const provider =
         model === 'random' ? undefined : make(model, options.apiKeys?.[model], reasoningForModel(model, options));
       let parsed: ParsedSeasonReview | undefined;
@@ -323,10 +333,12 @@ export async function runSeasonReview(
             });
             response = completion.text;
             usage = completion.usage;
-            const candidate = parseSeasonReview(response || completion.reasoning || '');
-            if (typeof candidate === 'string') {
+            const candidate = parseSeasonReviewResult(response || completion.reasoning || '');
+            if ('error' in candidate) {
               error =
-                completion.finishReason === 'length' ? 'the reply was cut off before completing the review' : candidate;
+                completion.finishReason === 'length'
+                  ? 'the reply was cut off before completing the review'
+                  : candidate.error;
               lastError = error;
               messages.push({ role: 'assistant', content: response || '[the reply contained no visible text]' });
               messages.push({
@@ -337,10 +349,10 @@ export async function runSeasonReview(
                         '{{budget}}',
                         String(SEASON_REVIEW_PROMPT_POLICY.maxTokens),
                       )
-                    : SEASON_REVIEW_PROMPT_POLICY.rejectionTemplate.replace('{{error}}', candidate),
+                    : SEASON_REVIEW_PROMPT_POLICY.rejectionTemplate.replace('{{error}}', candidate.error),
               });
             } else {
-              parsed = candidate;
+              parsed = candidate.value;
             }
           } catch (cause) {
             const failure = classifyProviderFailure(cause, model);
@@ -348,19 +360,16 @@ export async function runSeasonReview(
             lastError = error;
             terminalError = new Error(`${failure.summary} The season review cannot continue.`, { cause });
           }
-          fs.appendFileSync(
-            seatLog,
-            `${JSON.stringify({
-              attempt,
-              ...(attempt === 1 ? { system } : {}),
-              user: promptForAttempt,
-              response,
-              ...(usage ? { usage } : {}),
-              ...(lookups.length ? { tool_lookups: lookups } : {}),
-              ...(error ? { error } : {}),
-            } satisfies SeasonSeatLog)}\n`,
-            'utf8',
-          );
+          const completeLogRow = {
+            attempt,
+            system: attempt === 1 ? system : undefined,
+            user: promptForAttempt,
+            response,
+            usage,
+            tool_lookups: lookups.length ? lookups : undefined,
+            error: error || undefined,
+          } satisfies SeasonSeatLog;
+          fs.appendFileSync(seatLog, `${JSON.stringify(completeLogRow)}\n`, 'utf8');
           if (terminalError) throw terminalError;
         }
       }

@@ -15,6 +15,10 @@ artifacts/public/seasons/
 .env.*
 .claude/settings.local.json
 
+# Local toolchain policy
+.npmrc
+.node-version
+
 .DS_Store
 .idea/
 .vscode/
@@ -25,3 +29,4 @@ artifacts/public/seasons/
 .venv/
 __pycache__/
 *.py[cod]
+presets/*.log

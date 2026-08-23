@@ -95,7 +95,7 @@ function timerInfo(
 ): { text: string; urgent: boolean; running: boolean } | null {
   const drained = timer?.running ? Math.max(0, (Date.now() - receivedAt) / 1000) : 0;
   if (!timer || timer.seconds === null) {
-    const thinking = timer?.running && typeof timer.elapsedSeconds === 'number' ? timer.elapsedSeconds + drained : null;
+    const thinking = timer?.running && timer.elapsedSeconds !== null ? timer.elapsedSeconds + drained : null;
     const total = (spend?.seconds ?? 0) + (thinking ?? 0);
     if (!spend && thinking === null && !total) return null;
     const parts = [

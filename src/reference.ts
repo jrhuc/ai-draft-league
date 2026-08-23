@@ -2,20 +2,34 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { Battle, Dex } from 'pokemon-showdown';
+import { z } from 'zod';
 import { defaultPsDir } from './paths.js';
 import { loadShowdown, type ShowdownApi, showdownCommit } from './showdown.js';
-import type { ToolDefinition } from './types.js';
+import type { JsonObject, ToolDefinition } from './types.js';
 
 const REFERENCE_RENDER_DIGEST_PROTOCOL = 'showdown-reference-render-v1';
 
 type FormatDataKind = 'move' | 'item';
 
-function tool(
-  name: string,
-  description: string,
-  properties: Record<string, unknown>,
-  required: string[],
-): ToolDefinition {
+type SchemaType = 'array' | 'boolean' | 'integer' | 'null' | 'number' | 'object' | 'string';
+
+interface ToolProperties extends JsonObject {
+  [name: string]: ToolPropertySchema;
+}
+
+interface ToolPropertySchema extends JsonObject {
+  type: SchemaType | SchemaType[];
+  description?: string;
+  properties?: ToolProperties;
+  items?: ToolPropertySchema;
+  enum?: string[];
+  minimum?: number;
+  maximum?: number;
+  exclusiveMinimum?: number;
+  additionalProperties?: false;
+}
+
+function tool(name: string, description: string, properties: ToolProperties, required: string[]): ToolDefinition {
   return {
     name,
     description,
@@ -278,18 +292,20 @@ function uniqueNames(values: Array<string | null | undefined>): string[] {
   return [...names.values()].sort((a, b) => id(a).localeCompare(id(b)));
 }
 
-const TYPE_BLOCKING_ABILITIES: Readonly<Record<string, readonly string[]>> = {
-  ground: ['levitate', 'eartheater'],
-  fire: ['flashfire', 'wellbakedbody'],
-  water: ['waterabsorb', 'stormdrain', 'dryskin'],
-  electric: ['voltabsorb', 'lightningrod', 'motordrive'],
-  grass: ['sapsipper'],
-};
+const TYPE_BLOCKING_ABILITIES = new Map(
+  Object.entries({
+    ground: ['levitate', 'eartheater'],
+    fire: ['flashfire', 'wellbakedbody'],
+    water: ['waterabsorb', 'stormdrain', 'dryskin'],
+    electric: ['voltabsorb', 'lightningrod', 'motordrive'],
+    grass: ['sapsipper'],
+  }),
+);
 
 function visibleDamageBlock(
   attacker: MatchupMon,
   defender: MatchupMon,
-  move: { flags: { sound?: unknown; bullet?: unknown; wind?: unknown }; ignoreAbility?: boolean | undefined },
+  move: { flags: { sound?: 1; bullet?: 1; wind?: 1 }; ignoreAbility?: boolean | undefined },
   moveType: string,
   modifier: number,
 ): string | undefined {
@@ -300,7 +316,7 @@ function visibleDamageBlock(
   const ignoresAbility = move.ignoreAbility || ['moldbreaker', 'teravolt', 'turboblaze'].includes(attackerAbility);
   if (ignoresAbility) return undefined;
   const ability = id(defender.ability ?? '');
-  if ((TYPE_BLOCKING_ABILITIES[id(moveType)] ?? []).includes(ability)) return defender.ability;
+  if ((TYPE_BLOCKING_ABILITIES.get(id(moveType)) ?? []).includes(ability)) return defender.ability;
   if (ability === 'soundproof' && move.flags.sound) return defender.ability;
   if (ability === 'bulletproof' && move.flags.bullet) return defender.ability;
   if (ability === 'windrider' && move.flags.wind) return defender.ability;
@@ -308,20 +324,34 @@ function visibleDamageBlock(
   return undefined;
 }
 
-function cleanDescription(value: unknown): string {
-  return typeof value === 'string' ? value.split(/\s+/).filter(Boolean).join(' ') : '';
+function cleanDescription(value: string): string {
+  return value.split(/\s+/).filter(Boolean).join(' ');
 }
 
 function baseStats(stats: Dex.StatsTable): string {
   return `base stats HP ${stats.hp}, Attack ${stats.atk}, Defense ${stats.def}, Special Attack ${stats.spa}, Special Defense ${stats.spd}, Speed ${stats.spe}`;
 }
-
 const STAT_IDS = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'] as const;
-type StatId = (typeof STAT_IDS)[number];
+const BOOST_IDS = ['atk', 'def', 'spa', 'spd', 'spe', 'accuracy', 'evasion'] as const;
+type StatId = 'hp' | 'atk' | 'def' | 'spa' | 'spd' | 'spe';
 type BattleStatCalculator = Pick<Battle, 'dex' | 'ruleTable' | 'statModify'>;
 type PokemonSet = Parameters<Battle['statModify']>[1];
+function filledStats(value: number): Dex.StatsTable {
+  return { hp: value, atk: value, def: value, spa: value, spd: value, spe: value };
+}
 
-function investmentLimits(battle: BattleStatCalculator): { perStat: number; total: number | null; fixedIvs: boolean } {
+function investedStats(stat: StatId, value: number): Dex.StatsTable {
+  return {
+    hp: stat === 'hp' ? value : 0,
+    atk: stat === 'atk' ? value : 0,
+    def: stat === 'def' ? value : 0,
+    spa: stat === 'spa' ? value : 0,
+    spd: stat === 'spd' ? value : 0,
+    spe: stat === 'spe' ? value : 0,
+  };
+}
+
+function investmentLimits(battle: BattleStatCalculator) {
   const champions = battle.dex.currentMod.startsWith('champions');
   const total = battle.ruleTable.evLimit;
   return {
@@ -357,12 +387,10 @@ function statRange(
     nature?.name ??
     natures.find((entry: { plus?: string; name: string }) => entry.plus === statName)?.name ??
     'Serious';
-  const lowEvs = Object.fromEntries(STAT_IDS.map((stat) => [stat, 0])) as Dex.StatsTable;
-  const highEvs = Object.fromEntries(
-    STAT_IDS.map((stat) => [stat, stat === statName ? limits.perStat : 0]),
-  ) as Dex.StatsTable;
-  const lowIvs = Object.fromEntries(STAT_IDS.map((stat) => [stat, limits.fixedIvs ? 31 : 0])) as Dex.StatsTable;
-  const highIvs = Object.fromEntries(STAT_IDS.map((stat) => [stat, 31])) as Dex.StatsTable;
+  const lowEvs = filledStats(0);
+  const highEvs = investedStats(statName, limits.perStat);
+  const lowIvs = filledStats(limits.fixedIvs ? 31 : 0);
+  const highIvs = filledStats(31);
   return [
     battle.statModify(baseStats, statSet(battle, lowNature, lowEvs, lowIvs), statName),
     battle.statModify(baseStats, statSet(battle, highNature, highEvs, highIvs), statName),
@@ -371,12 +399,10 @@ function statRange(
 
 function hpRange(battle: BattleStatCalculator, baseStats: Dex.StatsTable): [number, number] {
   const limits = investmentLimits(battle);
-  const lowEvs = Object.fromEntries(STAT_IDS.map((stat) => [stat, 0])) as Dex.StatsTable;
-  const highEvs = Object.fromEntries(
-    STAT_IDS.map((stat) => [stat, stat === 'hp' ? limits.perStat : 0]),
-  ) as Dex.StatsTable;
-  const lowIvs = Object.fromEntries(STAT_IDS.map((stat) => [stat, limits.fixedIvs ? 31 : 0])) as Dex.StatsTable;
-  const highIvs = Object.fromEntries(STAT_IDS.map((stat) => [stat, 31])) as Dex.StatsTable;
+  const lowEvs = filledStats(0);
+  const highEvs = investedStats('hp', limits.perStat);
+  const lowIvs = filledStats(limits.fixedIvs ? 31 : 0);
+  const highIvs = filledStats(31);
   return [
     battle.statModify(baseStats, statSet(battle, 'Serious', lowEvs, lowIvs), 'hp'),
     battle.statModify(baseStats, statSet(battle, 'Serious', highEvs, highIvs), 'hp'),
@@ -420,41 +446,43 @@ function typeModifier(
   return 2 ** dex.getEffectiveness(attackType, defenderTypes);
 }
 
-function asFinite(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
-}
-
-const WEATHER_BALL_TYPE: Record<string, string> = {
-  sun: 'Fire',
-  sunnyday: 'Fire',
-  desolateland: 'Fire',
-  rain: 'Water',
-  raindance: 'Water',
-  primordialsea: 'Water',
-  sand: 'Rock',
-  sandstorm: 'Rock',
-  snow: 'Ice',
-  snowscape: 'Ice',
-  hail: 'Ice',
-};
+const WEATHER_BALL_TYPE = new Map(
+  Object.entries({
+    sun: 'Fire',
+    sunnyday: 'Fire',
+    desolateland: 'Fire',
+    rain: 'Water',
+    raindance: 'Water',
+    primordialsea: 'Water',
+    sand: 'Rock',
+    sandstorm: 'Rock',
+    snow: 'Ice',
+    snowscape: 'Ice',
+    hail: 'Ice',
+  }),
+);
 
 function weatherBallOverride(moveId: string, weather: string): { type: string; power: number } | null {
-  const type = WEATHER_BALL_TYPE[weather];
+  const type = WEATHER_BALL_TYPE.get(weather);
   return moveId === 'weatherball' && type ? { type, power: 100 } : null;
 }
 
-const RAGING_BULL_TYPE: Record<string, string> = {
-  taurospaldeacombat: 'Fighting',
-  taurospaldeablaze: 'Fire',
-  taurospaldeaaqua: 'Water',
-};
+const RAGING_BULL_TYPE = new Map(
+  Object.entries({
+    taurospaldeacombat: 'Fighting',
+    taurospaldeablaze: 'Fire',
+    taurospaldeaaqua: 'Water',
+  }),
+);
 
-const ATE_ABILITY_TYPE: Record<string, string> = {
-  pixilate: 'Fairy',
-  aerilate: 'Flying',
-  refrigerate: 'Ice',
-  galvanize: 'Electric',
-};
+const ATE_ABILITY_TYPE = new Map(
+  Object.entries({
+    pixilate: 'Fairy',
+    aerilate: 'Flying',
+    refrigerate: 'Ice',
+    galvanize: 'Electric',
+  }),
+);
 
 function speciesMoveType(
   moveId: string,
@@ -463,10 +491,13 @@ function speciesMoveType(
   ability = '',
   soundMove = false,
 ): string {
-  if (moveId === 'ragingbull') return RAGING_BULL_TYPE[id(speciesName)] ?? defaultType;
+  if (moveId === 'ragingbull') return RAGING_BULL_TYPE.get(id(speciesName)) ?? defaultType;
   const abilityId = id(ability);
   if (abilityId === 'normalize') return 'Normal';
-  if (defaultType === 'Normal' && ATE_ABILITY_TYPE[abilityId]) return ATE_ABILITY_TYPE[abilityId]!;
+  if (defaultType === 'Normal') {
+    const convertedType = ATE_ABILITY_TYPE.get(abilityId);
+    if (convertedType) return convertedType;
+  }
   if (abilityId === 'liquidvoice' && soundMove) return 'Water';
   return defaultType;
 }
@@ -503,109 +534,206 @@ function modifyRange(range: [number, number], numerator: number, denominator = 1
   ];
 }
 
-const WEATHER_IDS: Record<string, string> = {
-  sun: 'sunnyday',
-  sunnyday: 'sunnyday',
-  harshsunlight: 'sunnyday',
-  rain: 'raindance',
-  raindance: 'raindance',
-  sand: 'sandstorm',
-  sandstorm: 'sandstorm',
-  snow: 'snowscape',
-  snowscape: 'snowscape',
-  hail: 'snowscape',
-  desolateland: 'desolateland',
-  extremelyharshsunlight: 'desolateland',
-  primordialsea: 'primordialsea',
-  heavyrain: 'primordialsea',
-  deltastream: 'deltastream',
-  strongwinds: 'deltastream',
-};
+const WEATHER_IDS = new Map(
+  Object.entries({
+    sun: 'sunnyday',
+    sunnyday: 'sunnyday',
+    harshsunlight: 'sunnyday',
+    rain: 'raindance',
+    raindance: 'raindance',
+    sand: 'sandstorm',
+    sandstorm: 'sandstorm',
+    snow: 'snowscape',
+    snowscape: 'snowscape',
+    hail: 'snowscape',
+    desolateland: 'desolateland',
+    extremelyharshsunlight: 'desolateland',
+    primordialsea: 'primordialsea',
+    heavyrain: 'primordialsea',
+    deltastream: 'deltastream',
+    strongwinds: 'deltastream',
+  }),
+);
 
-const TERRAIN_IDS: Record<string, string> = {
-  electric: 'electricterrain',
-  electricterrain: 'electricterrain',
-  grassy: 'grassyterrain',
-  grassyterrain: 'grassyterrain',
-  misty: 'mistyterrain',
-  mistyterrain: 'mistyterrain',
-  psychic: 'psychicterrain',
-  psychicterrain: 'psychicterrain',
-};
+const TERRAIN_IDS = new Map(
+  Object.entries({
+    electric: 'electricterrain',
+    electricterrain: 'electricterrain',
+    grassy: 'grassyterrain',
+    grassyterrain: 'grassyterrain',
+    misty: 'mistyterrain',
+    mistyterrain: 'mistyterrain',
+    psychic: 'psychicterrain',
+    psychicterrain: 'psychicterrain',
+  }),
+);
 
-const STATUS_IDS: Record<string, string> = {
-  brn: 'brn',
-  burn: 'brn',
-  burned: 'brn',
-  par: 'par',
-  paralysis: 'par',
-  paralyzed: 'par',
-  psn: 'psn',
-  poison: 'psn',
-  poisoned: 'psn',
-  tox: 'tox',
-  toxic: 'tox',
-  badlypoisoned: 'tox',
-  slp: 'slp',
-  sleep: 'slp',
-  asleep: 'slp',
-  frz: 'frz',
-  freeze: 'frz',
-  frozen: 'frz',
-};
+const STATUS_IDS = new Map(
+  Object.entries({
+    brn: 'brn',
+    burn: 'brn',
+    burned: 'brn',
+    par: 'par',
+    paralysis: 'par',
+    paralyzed: 'par',
+    psn: 'psn',
+    poison: 'psn',
+    poisoned: 'psn',
+    tox: 'tox',
+    toxic: 'tox',
+    badlypoisoned: 'tox',
+    slp: 'slp',
+    sleep: 'slp',
+    asleep: 'slp',
+    frz: 'frz',
+    freeze: 'frz',
+    frozen: 'frz',
+  }),
+);
 
-const STATUS_WORDS: Record<string, string> = {
-  brn: 'burned',
-  par: 'paralyzed',
-  psn: 'poisoned',
-  tox: 'badly poisoned',
-  slp: 'asleep',
-  frz: 'frozen',
-};
+const STATUS_WORDS = new Map(
+  Object.entries({
+    brn: 'burned',
+    par: 'paralyzed',
+    psn: 'poisoned',
+    tox: 'badly poisoned',
+    slp: 'asleep',
+    frz: 'frozen',
+  }),
+);
 
-const SCREEN_IDS: Record<string, string> = {
-  reflect: 'reflect',
-  lightscreen: 'lightscreen',
-  auroraveil: 'auroraveil',
-};
+const SCREEN_IDS = new Map(
+  Object.entries({
+    reflect: 'reflect',
+    lightscreen: 'lightscreen',
+    auroraveil: 'auroraveil',
+  }),
+);
 
-const SCREEN_WORDS: Record<string, string> = {
-  reflect: 'Reflect',
-  lightscreen: 'Light Screen',
-  auroraveil: 'Aurora Veil',
-};
+const SCREEN_WORDS = new Map(
+  Object.entries({
+    reflect: 'Reflect',
+    lightscreen: 'Light Screen',
+    auroraveil: 'Aurora Veil',
+  }),
+);
 
-const WEATHER_WORDS: Record<string, string> = {
-  sunnyday: 'sun',
-  raindance: 'rain',
-  sandstorm: 'sand',
-  snowscape: 'snow',
-  desolateland: 'Desolate Land',
-  primordialsea: 'Primordial Sea',
-  deltastream: 'Delta Stream',
-};
+const WEATHER_WORDS = new Map(
+  Object.entries({
+    sunnyday: 'sun',
+    raindance: 'rain',
+    sandstorm: 'sand',
+    snowscape: 'snow',
+    desolateland: 'Desolate Land',
+    primordialsea: 'Primordial Sea',
+    deltastream: 'Delta Stream',
+  }),
+);
 
-const TERRAIN_WORDS: Record<string, string> = {
-  electricterrain: 'Electric Terrain',
-  grassyterrain: 'Grassy Terrain',
-  mistyterrain: 'Misty Terrain',
-  psychicterrain: 'Psychic Terrain',
-};
+const TERRAIN_WORDS = new Map(
+  Object.entries({
+    electricterrain: 'Electric Terrain',
+    grassyterrain: 'Grassy Terrain',
+    mistyterrain: 'Misty Terrain',
+    psychicterrain: 'Psychic Terrain',
+  }),
+);
 
-const TARGET_TAGS: Record<string, string> = {
-  allAdjacentFoes: 'spread',
-  allAdjacent: 'spread+ally',
-  self: 'self',
-  adjacentAlly: 'ally',
-  adjacentAllyOrSelf: 'ally/self',
-  allySide: 'ally-side',
-  allyTeam: 'ally-side',
-  allies: 'ally-side',
-  foeSide: 'foe-side',
-  all: 'field',
-  any: 'any-range',
-  randomNormal: 'random-foe',
-};
+const TARGET_TAGS = new Map(
+  Object.entries({
+    allAdjacentFoes: 'spread',
+    allAdjacent: 'spread+ally',
+    self: 'self',
+    adjacentAlly: 'ally',
+    adjacentAllyOrSelf: 'ally/self',
+    allySide: 'ally-side',
+    allyTeam: 'ally-side',
+    allies: 'ally-side',
+    foeSide: 'foe-side',
+    all: 'field',
+    any: 'any-range',
+    randomNormal: 'random-foe',
+  }),
+);
+const optionalStringSchema = z.string().optional().catch(undefined);
+const optionalNumberSchema = z.number().finite().optional().catch(undefined);
+const optionalBooleanSchema = z.boolean().optional().catch(undefined);
+const optionalJsonSchema = z.json().optional();
+const stageSchema = z.number().int().min(-6).max(6);
+const statInputSchema = z
+  .object({
+    hp: optionalNumberSchema,
+    atk: optionalNumberSchema,
+    def: optionalNumberSchema,
+    spa: optionalNumberSchema,
+    spd: optionalNumberSchema,
+    spe: optionalNumberSchema,
+  })
+  .optional()
+  .catch(undefined);
+const boostInputSchema = z.object({
+  atk: stageSchema.optional(),
+  def: stageSchema.optional(),
+  spa: stageSchema.optional(),
+  spd: stageSchema.optional(),
+  spe: stageSchema.optional(),
+});
+const screenInputSchema = z.array(z.string());
+const lookupSpeciesArgumentsSchema = z.object({
+  name: z.string().catch(''),
+  item: optionalStringSchema,
+  nature: optionalStringSchema,
+});
+const matchupArgumentsSchema = z.object({
+  attacker: z.string().catch(''),
+  attacker_type: z.string().catch(''),
+  move: z.string().catch(''),
+  defender: z.string().catch(''),
+});
+const calculateStatsArgumentsSchema = z.object({
+  species: z.string().catch(''),
+  nature: z.string().catch(''),
+  evs: statInputSchema,
+});
+const estimateDamageArgumentsSchema = z.object({
+  attacker: z.string().catch(''),
+  defender: z.string().catch(''),
+  move: z.string().catch(''),
+  attacker_item: optionalStringSchema,
+  defender_item: optionalStringSchema,
+  attacker_ability: optionalStringSchema,
+  defender_ability: optionalStringSchema,
+  attacker_status: optionalStringSchema,
+  defender_status: optionalStringSchema,
+  attacker_nature: optionalStringSchema,
+  defender_nature: optionalStringSchema,
+  attacker_boosts: optionalJsonSchema,
+  defender_boosts: optionalJsonSchema,
+  attacker_stats: statInputSchema,
+  defender_stats: statInputSchema,
+  defender_screens: optionalJsonSchema,
+  weather: optionalStringSchema,
+  terrain: optionalStringSchema,
+  is_spread_hit: optionalBooleanSchema,
+  is_critical_hit: optionalBooleanSchema,
+  helping_hand: optionalBooleanSchema,
+  attacker_hp_percent: optionalNumberSchema,
+  defender_hp_percent: optionalNumberSchema,
+  attacker_fainted_allies: optionalNumberSchema,
+  attacker_ally: optionalStringSchema,
+  defender_ally: optionalStringSchema,
+  attacker_ally_ability: optionalStringSchema,
+  defender_ally_ability: optionalStringSchema,
+  attacker_ally_item: optionalStringSchema,
+  defender_ally_item: optionalStringSchema,
+});
+type StatBoosts = z.infer<typeof boostInputSchema>;
+function emptyBoosts(): StatBoosts {
+  return {};
+}
+type CalculateStatsArguments = z.infer<typeof calculateStatsArgumentsSchema>;
+type MatchupArguments = z.infer<typeof matchupArgumentsSchema>;
+export type EstimateDamageArguments = z.infer<typeof estimateDamageArgumentsSchema>;
 
 export class ShowdownReference {
   private readonly dex;
@@ -686,7 +814,7 @@ export class ShowdownReference {
         const power = move.basePower ? String(move.basePower) : 'no power';
         const moveType = speciesMoveType(move.id, move.type, species.name);
         const details = [`${moveType}/${move.category}/${power}`];
-        if (move.target !== 'normal') details.push(TARGET_TAGS[move.target] ?? move.target);
+        if (move.target !== 'normal') details.push(TARGET_TAGS.get(move.target) ?? move.target);
         if (move.priority) details.push(`priority ${move.priority > 0 ? '+' : ''}${move.priority}`);
         if (move.accuracy !== true && move.accuracy < 100) details.push(`accuracy ${move.accuracy}%`);
         if (move.flags.powder)
@@ -700,7 +828,7 @@ export class ShowdownReference {
       for (const formeName of species.otherFormes ?? []) {
         const forme = this.dex.species.get(formeName);
         if (!forme.exists || !/^Mega(?:-|$)/.test(forme.forme)) continue;
-        const target = typeof item.megaStone === 'string' ? item.megaStone : item.megaStone[species.name];
+        const target = item.megaStone[species.name];
         if (id(target ?? '') !== id(forme.name)) continue;
         const [megaLow, megaHigh] = statRange(this.battle, forme.baseStats, knownNature, 'spe');
         mega.push(
@@ -708,19 +836,20 @@ export class ShowdownReference {
         );
       }
     }
-    return {
+    const reference: CompactMonReference = {
       types: species.types.join('/'),
       speed: `${low}-${high}`,
       moves,
-      ...(mega.length ? { mega: mega.join('; ') } : {}),
     };
+    if (mega.length) reference.mega = mega.join('; ');
+    return reference;
   }
 
   speedProfile(input: SpeedProfileInput): SpeedProfile | undefined {
     const species = this.dex.species.get(input.species);
     if (!species.exists) return undefined;
     const nature = input.nature ? this.dex.natures.get(input.nature) : undefined;
-    const exact = Number.isInteger(input.exact) && input.exact! > 0 ? input.exact : undefined;
+    const exact = Number.isInteger(input.exact) && (input.exact ?? 0) > 0 ? input.exact : undefined;
     const raw: [number, number] =
       exact === undefined
         ? statRange(this.battle, species.baseStats, nature?.exists ? nature : undefined, 'spe')
@@ -802,7 +931,8 @@ export class ShowdownReference {
     const item = context.itemConsumed ? '' : id(context.item ?? '');
     if (item === 'quickclaw') notes.push('Quick Claw: 20% chance to act first within its bracket');
     if (item === 'laggingtail' || item === 'fullincense') notes.push(`${context.item}: acts last within its bracket`);
-    return { priority, notes, ...(unresolved === undefined ? {} : { unresolved }) };
+    if (unresolved === undefined) return { priority, notes };
+    return { priority, notes, unresolved };
   }
 
   renderActiveMatchups(attackers: MatchupMon[], defenders: MatchupMon[], weather = ''): string[] {
@@ -887,7 +1017,7 @@ export class ShowdownReference {
         for (const formeName of species.otherFormes ?? []) {
           const mega = this.dex.species.get(formeName);
           if (!mega.exists || !/^Mega(?:-|$)/.test(mega.forme)) continue;
-          const target = typeof item.megaStone === 'string' ? item.megaStone : item.megaStone[species.name];
+          const target = item.megaStone[species.name];
           if (id(target ?? '') !== id(mega.name)) continue;
           const ranges = sets.flatMap(([, visibleItem, natureName]) => {
             if (id(visibleItem ?? '') !== id(itemName)) return [];
@@ -949,9 +1079,12 @@ export class ShowdownReference {
     return lines.length ? [`Showdown reference (${this.format}, commit ${this.revision}):`, ...lines] : [];
   }
 
-  lookup(name: string, args: Record<string, unknown> = {}): string {
-    const value = typeof args.name === 'string' ? args.name : '';
-    if (name === 'lookup_species') return this.lookupSpecies(value, args.item, args.nature);
+  lookup(name: string, args: JsonObject = {}): string {
+    const speciesArguments = lookupSpeciesArgumentsSchema.parse(args);
+    const value = speciesArguments.name;
+    if (name === 'lookup_species') {
+      return this.lookupSpecies(value, speciesArguments.item, speciesArguments.nature);
+    }
     if (name === 'lookup_move') {
       return this.formatLegalityError('move', value) ?? this.lookupOne('Move', value, { moves: [value] });
     }
@@ -960,9 +1093,9 @@ export class ShowdownReference {
     }
     if (name === 'lookup_learnset') return this.lookupLearnset(value);
     if (name === 'lookup_ability') return this.lookupOne('Ability', value, { abilities: [value] });
-    if (name === 'calculate_stats') return this.calculateStats(args);
-    if (name === 'lookup_matchup') return this.lookupMatchup(args);
-    if (name === 'estimate_damage') return this.estimateDamage(args);
+    if (name === 'calculate_stats') return this.calculateStats(calculateStatsArgumentsSchema.parse(args));
+    if (name === 'lookup_matchup') return this.lookupMatchup(matchupArgumentsSchema.parse(args));
+    if (name === 'estimate_damage') return this.estimateDamage(estimateDamageArgumentsSchema.parse(args));
     return `Unknown tool: ${name}`;
   }
 
@@ -993,20 +1126,14 @@ export class ShowdownReference {
     return direct;
   }
 
-  private lookupSpecies(name: string, item?: unknown, nature?: unknown): string {
+  private lookupSpecies(name: string, item?: string, nature?: string): string {
     if (!name.trim()) return 'Species name is required.';
-    if (typeof item === 'string') {
+    if (item) {
       const error = this.formatLegalityError('item', item);
       if (error) return error;
     }
     const lines = this.render({
-      speciesSets: [
-        [
-          name,
-          typeof item === 'string' && item.trim() ? item : null,
-          typeof nature === 'string' && nature.trim() ? nature : null,
-        ],
-      ],
+      speciesSets: [[name, item?.trim() ? item : null, nature?.trim() ? nature : null]],
     });
     return (
       lines.find((line) => line.startsWith('- Species ')) ??
@@ -1027,15 +1154,15 @@ export class ShowdownReference {
     return `- Learnset ${species.name} (${moves.length} legal moves): ${moves.join(', ')}`;
   }
 
-  private lookupMatchup(args: Record<string, unknown>): string {
-    const defenderName = typeof args.defender === 'string' ? args.defender : '';
+  private lookupMatchup(args: MatchupArguments): string {
+    const defenderName = args.defender;
     if (!defenderName.trim()) return 'defender is required.';
     const defender = this.getSpecies(defenderName);
     if (!defender.exists) return `No species data for ${JSON.stringify(defenderName)} in ${this.format}.`;
-    const attackerName = typeof args.attacker === 'string' ? args.attacker : '';
+    const attackerName = args.attacker;
     const attacker = attackerName ? this.getSpecies(attackerName) : undefined;
-    let attackType = typeof args.attacker_type === 'string' ? args.attacker_type : '';
-    let moveName = typeof args.move === 'string' ? args.move : '';
+    let attackType = args.attacker_type;
+    let moveName = args.move;
     let typeNote = '';
     if (moveName.trim()) {
       const move = this.dex.moves.get(moveName);
@@ -1045,14 +1172,15 @@ export class ShowdownReference {
       if (move.id === 'ragingbull' && !attacker?.exists) return 'attacker is required to resolve Raging Bull typing.';
       attackType = speciesMoveType(move.id, move.type, attacker?.name ?? '');
       if (attacker?.exists) {
-        const abilities = [...new Set(Object.values(attacker.abilities).filter((entry) => typeof entry === 'string'))];
+        const abilities = [...new Set(Object.values(attacker.abilities).flatMap((entry) => (entry ? [entry] : [])))];
         const conversions = abilities.flatMap((abilityName) => {
           const converted = speciesMoveType(move.id, move.type, attacker.name, abilityName, !!move.flags.sound);
           return converted === attackType ? [] : [{ abilityName, converted }];
         });
-        if (conversions.length && abilities.length === 1) {
-          attackType = conversions[0]!.converted;
-          typeNote = ` via ${conversions[0]!.abilityName}`;
+        const onlyConversion = conversions.length === 1 ? conversions[0] : undefined;
+        if (onlyConversion && abilities.length === 1) {
+          attackType = onlyConversion.converted;
+          typeNote = ` via ${onlyConversion.abilityName}`;
         } else if (conversions.length) {
           typeNote = ` (${conversions
             .map((entry) => `${entry.abilityName} would make it ${entry.converted}`)
@@ -1074,21 +1202,18 @@ export class ShowdownReference {
     return `${source} into ${defender.name} (${defender.types.join('/')}): ${effectivenessDetail(this.dex, type.name, defender.types)}.`;
   }
 
-  private calculateStats(args: Record<string, unknown>): string {
-    const speciesName = typeof args.species === 'string' ? args.species : '';
-    const natureName = typeof args.nature === 'string' ? args.nature : '';
-    if (!speciesName.trim() || !natureName.trim() || !args.evs || typeof args.evs !== 'object') {
+  private calculateStats(args: CalculateStatsArguments): string {
+    const speciesName = args.species;
+    const natureName = args.nature;
+    if (!speciesName.trim() || !natureName.trim() || !args.evs) {
       return 'species, nature, and evs are required.';
     }
     const species = this.getSpecies(speciesName);
     if (!species.exists) return `No species data for ${JSON.stringify(speciesName)} in ${this.format}.`;
     const nature = this.dex.natures.get(natureName);
     if (!nature.exists) return `No nature data for ${JSON.stringify(natureName)} in ${this.format}.`;
-    const raw = args.evs as Record<string, unknown>;
     const limits = investmentLimits(this.battle);
-    const evs = Object.fromEntries(
-      STAT_IDS.map((stat) => [stat, raw[stat] === undefined ? 0 : Number(raw[stat])]),
-    ) as Dex.StatsTable;
+    const evs = { ...filledStats(0), ...args.evs };
     for (const stat of STAT_IDS) {
       if (!Number.isInteger(evs[stat]) || evs[stat] < 0 || evs[stat] > limits.perStat) {
         return `${stat} investment must be an integer from 0 to ${limits.perStat}.`;
@@ -1098,8 +1223,7 @@ export class ShowdownReference {
     if (limits.total !== null && total > limits.total) {
       return `Total investment ${total} exceeds this format's limit of ${limits.total}.`;
     }
-    const ivs = Object.fromEntries(STAT_IDS.map((stat) => [stat, 31])) as Dex.StatsTable;
-    const stats = this.battle.spreadModify(species.baseStats, statSet(this.battle, nature.name, evs, ivs));
+    const stats = this.battle.spreadModify(species.baseStats, statSet(this.battle, nature.name, evs, filledStats(31)));
     const label = limits.fixedIvs ? 'Stat Points' : 'EVs';
     return `${species.name} (${nature.name}; ${label} ${total}${limits.total === null ? '' : `/${limits.total}`}): HP ${stats.hp}, Attack ${stats.atk}, Defense ${stats.def}, Special Attack ${stats.spa}, Special Defense ${stats.spd}, Speed ${stats.spe}.`;
   }
@@ -1116,10 +1240,10 @@ export class ShowdownReference {
       : null;
   }
 
-  private estimateDamage(args: Record<string, unknown>): string {
-    const attackerName = typeof args.attacker === 'string' ? args.attacker : '';
-    const defenderName = typeof args.defender === 'string' ? args.defender : '';
-    const moveName = typeof args.move === 'string' ? args.move : '';
+  private estimateDamage(args: EstimateDamageArguments): string {
+    const attackerName = args.attacker;
+    const defenderName = args.defender;
+    const moveName = args.move;
     if (!attackerName.trim() || !defenderName.trim() || !moveName.trim())
       return 'attacker, defender, and move are required.';
     const attacker = this.getSpecies(attackerName);
@@ -1139,13 +1263,10 @@ export class ShowdownReference {
     const abilities: Partial<Record<'attacker' | 'defender', string>> = {};
     const statuses: Partial<Record<'attacker' | 'defender', string>> = {};
     const natures: Partial<Record<'attacker' | 'defender', { name: string }>> = {};
-    const boosts: Record<'attacker' | 'defender', Partial<Record<Exclude<StatId, 'hp'>, number>>> = {
-      attacker: {},
-      defender: {},
-    };
+    const boosts = { attacker: emptyBoosts(), defender: emptyBoosts() };
     for (const side of ['attacker', 'defender'] as const) {
       const itemRaw = args[`${side}_item`];
-      if (typeof itemRaw === 'string' && itemRaw.trim()) {
+      if (itemRaw?.trim()) {
         const item = this.dex.items.get(itemRaw);
         if (!item.exists) return `No item data for ${JSON.stringify(itemRaw)}.`;
         const itemError = this.formatLegalityError('item', itemRaw);
@@ -1153,7 +1274,7 @@ export class ShowdownReference {
         items[side] = item.name;
       }
       const abilityRaw = args[`${side}_ability`];
-      if (typeof abilityRaw === 'string' && abilityRaw.trim()) {
+      if (abilityRaw?.trim()) {
         const ability = this.dex.abilities.get(abilityRaw);
         if (!ability.exists) return `No ability data for ${JSON.stringify(abilityRaw)}.`;
         abilities[side] = ability.name;
@@ -1162,69 +1283,58 @@ export class ShowdownReference {
           notes.push(`${ability.name} is not a listed ${species.name} ability`);
       }
       const statusRaw = args[`${side}_status`];
-      if (typeof statusRaw === 'string' && statusRaw.trim()) {
-        const status = STATUS_IDS[id(statusRaw)];
+      if (statusRaw?.trim()) {
+        const status = STATUS_IDS.get(id(statusRaw));
         if (!status)
           return `Unknown ${side}_status ${JSON.stringify(statusRaw)}; accepted: brn, par, psn, tox, slp, frz.`;
         statuses[side] = status;
       }
       const natureRaw = args[`${side}_nature`];
-      if (typeof natureRaw === 'string' && natureRaw.trim()) {
+      if (natureRaw?.trim()) {
         const nature = this.dex.natures.get(natureRaw);
         if (!nature.exists) return `No nature data for ${JSON.stringify(natureRaw)}.`;
         natures[side] = nature;
       }
       const boostsRaw = args[`${side}_boosts`];
       if (boostsRaw !== undefined && boostsRaw !== null) {
-        if (typeof boostsRaw !== 'object') return `${side}_boosts must be an object of stat stages.`;
-        for (const stat of STAT_IDS) {
-          if (stat === 'hp') continue;
-          const stage = (boostsRaw as Record<string, unknown>)[stat];
-          if (stage === undefined) continue;
-          if (typeof stage !== 'number' || !Number.isInteger(stage) || stage < -6 || stage > 6)
-            return `${side}_boosts.${stat} must be an integer stage from -6 to 6.`;
-          boosts[side][stat] = stage;
-        }
+        const parsedBoosts = boostInputSchema.safeParse(boostsRaw);
+        if (!parsedBoosts.success) return `${side}_boosts must be an object of integer stat stages from -6 to 6.`;
+        boosts[side] = parsedBoosts.data;
       }
     }
     const screens: string[] = [];
     if (args.defender_screens !== undefined && args.defender_screens !== null) {
-      if (!Array.isArray(args.defender_screens)) return 'defender_screens must be an array.';
-      for (const raw of args.defender_screens) {
-        const screen = typeof raw === 'string' ? SCREEN_IDS[id(raw)] : undefined;
+      const parsedScreens = screenInputSchema.safeParse(args.defender_screens);
+      if (!parsedScreens.success) return 'defender_screens must be an array of screen names.';
+      for (const raw of parsedScreens.data) {
+        const screen = SCREEN_IDS.get(id(raw));
         if (!screen) return `Unknown screen ${JSON.stringify(raw)}; accepted: reflect, lightscreen, auroraveil.`;
         if (!screens.includes(screen)) screens.push(screen);
       }
     }
     let weatherId: string | undefined;
-    if (typeof args.weather === 'string' && args.weather.trim()) {
-      weatherId = WEATHER_IDS[canonicalWeather(args.weather)];
+    if (args.weather?.trim()) {
+      weatherId = WEATHER_IDS.get(canonicalWeather(args.weather));
       if (!weatherId)
         return `Unknown weather ${JSON.stringify(args.weather)}; accepted: sun, rain, sand, snow, desolateland, primordialsea, deltastream.`;
     }
     let terrainId: string | undefined;
-    if (typeof args.terrain === 'string' && args.terrain.trim()) {
-      terrainId = TERRAIN_IDS[id(args.terrain.replace(/\s*terrain\s*$/i, ''))];
+    if (args.terrain?.trim()) {
+      terrainId = TERRAIN_IDS.get(id(args.terrain.replace(/\s*terrain\s*$/i, '')));
       if (!terrainId)
         return `Unknown terrain ${JSON.stringify(args.terrain)}; accepted: electric, grassy, misty, psychic.`;
     }
 
     const offFromDefender = move.overrideOffensivePokemon === 'target';
-    const offStat = (move.overrideOffensiveStat ?? (move.category === 'Physical' ? 'atk' : 'spa')) as Exclude<
-      StatId,
-      'hp'
-    >;
-    const defStat = (move.overrideDefensiveStat ?? (move.category === 'Special' ? 'spd' : 'def')) as Exclude<
-      StatId,
-      'hp'
-    >;
-    const offSide = offFromDefender ? ('defender' as const) : ('attacker' as const);
+    const offStat = move.overrideOffensiveStat ?? (move.category === 'Physical' ? 'atk' : 'spa');
+    const defStat = move.overrideDefensiveStat ?? (move.category === 'Special' ? 'spd' : 'def');
+    const offSide = offFromDefender ? 'defender' : 'attacker';
     const offSpecies = offFromDefender ? defender : attacker;
 
     const exactStat = (side: 'attacker' | 'defender', stat: StatId, species: Dex.Species): number | undefined => {
       const source = args[`${side}_stats`];
-      if (!source || typeof source !== 'object') return undefined;
-      const value = asFinite((source as Record<string, unknown>)[stat]);
+      if (!source) return undefined;
+      const value = source[stat];
       if (value === undefined || value <= 0) return undefined;
       if (stat === 'hp') {
         const [legalLow, legalHigh] = hpRange(this.battle, species.baseStats);
@@ -1257,29 +1367,28 @@ export class ShowdownReference {
         : statRange(this.battle, defender.baseStats, natures.defender, defStat);
     const [hpLow, hpHigh] = exactHp !== undefined ? [exactHp, exactHp] : hpRange(this.battle, defender.baseStats);
 
-    const suppliedAttackerHp = asFinite(args.attacker_hp_percent);
+    const suppliedAttackerHp = args.attacker_hp_percent;
     const attackerHpPercent =
       suppliedAttackerHp === undefined ? undefined : Math.max(0, Math.min(100, suppliedAttackerHp));
-    const suppliedHpPercent = asFinite(args.defender_hp_percent);
+    const suppliedHpPercent = args.defender_hp_percent;
     const hpPercent = suppliedHpPercent === undefined ? undefined : Math.max(0, Math.min(100, suppliedHpPercent));
 
     const isSpread = args.is_spread_hit === true;
     const crit = args.is_critical_hit === true;
     const helpingHand = args.helping_hand === true;
-    const faintedAllies = Math.max(0, Math.trunc(asFinite(args.attacker_fainted_allies) ?? 0));
+    const faintedAllies = Math.max(0, Math.trunc(args.attacker_fainted_allies ?? 0));
     const allies: Partial<Record<'attacker' | 'defender', ScratchAlly>> = {};
     for (const side of ['attacker', 'defender'] as const) {
       const raw = args[`${side}_ally`];
-      if (typeof raw !== 'string' || !raw.trim()) continue;
+      if (!raw?.trim()) continue;
       const species = this.dex.species.get(raw);
       if (!species.exists) return `No species data for ${JSON.stringify(raw)}.`;
       const abilityRaw = args[`${side}_ally_ability`];
       const itemRaw = args[`${side}_ally_item`];
       allies[side] = {
         name: species.name,
-        ability:
-          typeof abilityRaw === 'string' && abilityRaw.trim() ? this.dex.abilities.get(abilityRaw).name : undefined,
-        item: typeof itemRaw === 'string' && itemRaw.trim() ? this.dex.items.get(itemRaw).name : undefined,
+        ability: abilityRaw?.trim() ? this.dex.abilities.get(abilityRaw).name : undefined,
+        item: itemRaw?.trim() ? this.dex.items.get(itemRaw).name : undefined,
       };
     }
 
@@ -1378,11 +1487,14 @@ export class ShowdownReference {
       for (const [stat, stage] of Object.entries(boosts[side]))
         if (stage) applied.push(`${side} ${stage > 0 ? '+' : ''}${stage} ${stat}`);
       const status = statuses[side];
-      if (status) applied.push(`${side} ${STATUS_WORDS[status]}`);
+      if (status) applied.push(`${side} ${STATUS_WORDS.get(status)}`);
     }
-    for (const screen of screens) applied.push(SCREEN_WORDS[screen]!);
-    if (weatherId) applied.push(WEATHER_WORDS[weatherId] ?? weatherId);
-    if (terrainId) applied.push(TERRAIN_WORDS[terrainId] ?? terrainId);
+    for (const screen of screens) {
+      const screenName = SCREEN_WORDS.get(screen);
+      if (screenName) applied.push(screenName);
+    }
+    if (weatherId) applied.push(WEATHER_WORDS.get(weatherId) ?? weatherId);
+    if (terrainId) applied.push(TERRAIN_WORDS.get(terrainId) ?? terrainId);
     if (helpingHand) applied.push('Helping Hand');
     if (crit) applied.push('critical hit');
     if (isSpread) applied.push('spread (0.75x)');
@@ -1416,8 +1528,8 @@ export class ShowdownReference {
       defStat: Exclude<StatId, 'hp'>;
       defValue: number;
     };
-    attackerBoosts: Partial<Record<Exclude<StatId, 'hp'>, number>>;
-    defenderBoosts: Partial<Record<Exclude<StatId, 'hp'>, number>>;
+    attackerBoosts: StatBoosts;
+    defenderBoosts: StatBoosts;
     defenderMaxHp?: number | undefined;
     attackerStatus?: string | undefined;
     defenderStatus?: string | undefined;
@@ -1442,8 +1554,8 @@ export class ShowdownReference {
       moves,
       nature: 'Serious',
       gender: '',
-      evs: Object.fromEntries(STAT_IDS.map((stat) => [stat, 0])) as Dex.StatsTable,
-      ivs: Object.fromEntries(STAT_IDS.map((stat) => [stat, 31])) as Dex.StatsTable,
+      evs: filledStats(0),
+      ivs: filledStats(31),
       level: 50,
     });
     const filler = () => scratchSet('Magikarp', 'Honey Gather', '', ['Splash']);
@@ -1477,16 +1589,16 @@ export class ShowdownReference {
       def.storedStats[cfg.pins.defStat] = cfg.pins.defValue;
       /** An ally fielded for its Friend Guard also brings its Drought, which the caller never asked
        * for; weather the attacker or defender itself creates still stands, as it does on a real field. */
-      const fromAlly = (state: unknown): boolean => {
-        const source = (state as { source?: unknown } | null | undefined)?.source;
+      const fromAlly = (state: Battle['field']['weatherState']): boolean => {
+        const source = state.source;
         return Boolean(source) && source !== att && source !== def;
       };
       if (cfg.weather) battle.field.setWeather(cfg.weather, 'debug');
       else if (fromAlly(battle.field.weatherState)) battle.field.clearWeather();
       if (cfg.terrain) battle.field.setTerrain(cfg.terrain, 'debug');
       else if (fromAlly(battle.field.terrainState)) battle.field.clearTerrain();
-      for (const stat of Object.keys(att.boosts) as Array<keyof typeof att.boosts>) att.boosts[stat] = 0;
-      for (const stat of Object.keys(def.boosts) as Array<keyof typeof def.boosts>) def.boosts[stat] = 0;
+      for (const stat of BOOST_IDS) att.boosts[stat] = 0;
+      for (const stat of BOOST_IDS) def.boosts[stat] = 0;
       Object.assign(att.boosts, cfg.attackerBoosts);
       Object.assign(def.boosts, cfg.defenderBoosts);
       if (cfg.defenderMaxHp !== undefined) {
@@ -1494,12 +1606,12 @@ export class ShowdownReference {
         def.hp = cfg.defenderMaxHp;
       }
       for (const screen of cfg.screens) def.side.addSideCondition(screen, 'debug');
-      if (cfg.attackerStatus) (att as unknown as { status: string }).status = cfg.attackerStatus;
-      if (cfg.defenderStatus) (def as unknown as { status: string }).status = cfg.defenderStatus;
+      if (cfg.attackerStatus) att.status = battle.dex.toID(cfg.attackerStatus);
+      if (cfg.defenderStatus) def.status = battle.dex.toID(cfg.defenderStatus);
       if (cfg.helpingHand) att.addVolatile('helpinghand');
       /** Last Respects reads the attacker's side fainted count off the battle it runs in, and the
        * scratch battle starts empty; without this every fainted ally is worth 50 lost base power. */
-      (att.side as unknown as { totalFainted: number }).totalFainted = cfg.faintedAllies;
+      att.side.totalFainted = cfg.faintedAllies;
       if (cfg.attackerHpPercent !== undefined)
         att.hp = Math.max(1, Math.round((att.maxhp * cfg.attackerHpPercent) / 100));
       if (cfg.defenderHpPercent !== undefined)
@@ -1509,34 +1621,35 @@ export class ShowdownReference {
       active.willCrit = cfg.crit;
       /** Handlers like Unaware's onAnyModifyBoost read battle.activePokemon/activeTarget,
        * which only real move execution sets; without them the scratch call silently no-ops. */
-      const context = battle as unknown as { activePokemon: unknown; activeTarget: unknown; activeMove: unknown };
-      context.activePokemon = att;
-      context.activeTarget = def;
-      context.activeMove = active;
+      battle.activePokemon = att;
+      battle.activeTarget = def;
+      battle.activeMove = active;
       battle.singleEvent('ModifyType', active, null, att, def, active, active);
       battle.singleEvent('ModifyMove', active, null, att, def, active, active);
       active = battle.runEvent('ModifyType', att, def, active, active);
       active = battle.runEvent('ModifyMove', att, def, active, active);
       if (cfg.spread) active.spreadHit = true;
 
-      const hits: [number, number] = Array.isArray(active.multihit)
-        ? [active.multihit[0]!, active.multihit[active.multihit.length - 1]!]
-        : [active.multihit ?? 1, active.multihit ?? 1];
+      const hits = (
+        Array.isArray(active.multihit)
+          ? [active.multihit[0] ?? 1, active.multihit[active.multihit.length - 1] ?? 1]
+          : [active.multihit ?? 1, active.multihit ?? 1]
+      ) satisfies [number, number];
       let basePower = active.basePower;
       /** A move can carry both a static basePower and a callback that overrides it, so the callback
        * decides whenever it exists; reading the static field first reports the unscaled floor. */
       if (active.basePowerCallback) {
         const computed = active.basePowerCallback.call(battle, att, def, active);
-        if (typeof computed === 'number') basePower = computed;
+        if (computed !== false && computed !== null && computed !== undefined) basePower = computed;
       }
       const tryHit = battle.runEvent('TryHit', def, att, active);
       if (!tryHit && tryHit !== 0) return { outcome: 'immune', damage: 0, moveType: active.type, basePower, hits };
 
-      (battle as unknown as { randomizer(value: number): number }).randomizer = (value: number) =>
-        battle.trunc((value * cfg.rollPercent) / 100);
+      battle.randomizer = (value: number) => battle.trunc((value * cfg.rollPercent) / 100);
       const damage = battle.actions.getDamage(att, def, active, true);
       if (damage === false) return { outcome: 'immune', damage: 0, moveType: active.type, basePower, hits };
-      if (typeof damage !== 'number') return { outcome: 'none', damage: 0, moveType: active.type, basePower, hits };
+      if (damage === undefined || damage === null)
+        return { outcome: 'none', damage: 0, moveType: active.type, basePower, hits };
       return { outcome: 'damage', damage, moveType: active.type, basePower, hits };
     } finally {
       battle.destroy();

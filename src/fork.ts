@@ -62,14 +62,29 @@ export const ACTION_PROTOCOL = {
 } as const;
 
 const CHOICE_LIMIT = 500;
+interface ReplayRouteState {
+  pov: { p1: string[]; p2: string[] };
+  log: string[];
+  publicLog: string[];
+  pendingSplit: string[];
+  winner: string | null;
+  turns: number;
+}
 
-function routeState() {
+type SnapshotValue = null | string | number | boolean | SnapshotValue[] | { [key: string]: SnapshotValue };
+
+interface SerializedBattleSnapshot {
+  [key: string]: SnapshotValue | undefined;
+  log?: string[];
+}
+
+function routeState(): ReplayRouteState {
   return {
-    pov: { p1: [] as string[], p2: [] as string[] },
-    log: [] as string[],
-    publicLog: [] as string[],
-    pendingSplit: [] as string[],
-    winner: null as string | null,
+    pov: { p1: [], p2: [] },
+    log: [],
+    publicLog: [],
+    pendingSplit: [],
+    winner: null,
     turns: 0,
   };
 }
@@ -123,6 +138,26 @@ export function requestActionCandidateEntries(request: BattleRequest): LegalActi
 type NativeBattleConstructor = {
   fromJSON(serialized: ReturnType<Battle['toJSON']>): Battle;
 };
+function nativeBattleConstructor(battle: Battle): NativeBattleConstructor {
+  const battleClass = battle.constructor;
+  const fromJSON = Object.getOwnPropertyDescriptor(battleClass, 'fromJSON')?.value;
+  if (!(fromJSON instanceof Function)) throw new Error('Showdown Battle.fromJSON is unavailable');
+  return {
+    fromJSON(serialized) {
+      return fromJSON.call(battleClass, serialized);
+    },
+  };
+}
+interface ShowdownRequestBridge {
+  side: { pokemon: readonly { ident: string }[] };
+}
+
+function battleRequest(request: ShowdownRequestBridge): BattleRequest {
+  return (
+    // SAFETY: BattleRequest mirrors the fields consumed from the pinned Showdown ChoiceRequest.
+    request as BattleRequest
+  );
+}
 
 /** Filters the declared request-derived candidates through the authoritative Showdown side-choice
  * oracle. Each candidate gets an independent restarted serialization clone, and accepted candidates
@@ -132,7 +167,7 @@ export function acceptedLegalActionEntries(
   pid: Pid,
   candidates: readonly LegalActionEntry[],
 ): LegalActionEntry[] {
-  const BattleClass = battle.constructor as unknown as NativeBattleConstructor;
+  const BattleClass = nativeBattleConstructor(battle);
   const serialized = battle.toJSON();
   const accepted: LegalActionEntry[] = [];
   for (const candidate of candidates) {
@@ -154,7 +189,7 @@ export function acceptedLegalActions(battle: Battle, pid: Pid, candidates: reado
 export function acceptedBattleActionEntries(battle: Battle, pid: Pid): LegalActionEntry[] {
   const request = battle.getSide(pid).activeRequest;
   if (!request || request.wait) return [];
-  return acceptedLegalActionEntries(battle, pid, requestActionCandidateEntries(request as unknown as BattleRequest));
+  return acceptedLegalActionEntries(battle, pid, requestActionCandidateEntries(battleRequest(request)));
 }
 
 export function acceptedBattleActions(battle: Battle, pid: Pid): string[] {
@@ -164,11 +199,9 @@ export function acceptedBattleActions(battle: Battle, pid: Pid): string[] {
 /** Removes exact Showdown wall-clock messages without treating lookalike text as time. Recursive
  * canonical serialization defines new snapshot bytes; older noncanonical snapshots remain restorable. */
 export function deterministicBattleSnapshot(battle: Battle): string {
-  const serialized = JSON.parse(JSON.stringify(battle.toJSON())) as ReturnType<Battle['toJSON']> & { log?: unknown };
-  if (Array.isArray(serialized.log)) {
-    serialized.log = serialized.log.map((line: unknown) =>
-      typeof line === 'string' && /^\|t:\|\d+$/u.test(line) ? '|t:|' : line,
-    );
+  const serialized: SerializedBattleSnapshot = JSON.parse(JSON.stringify(battle.toJSON()));
+  if (serialized.log) {
+    serialized.log = serialized.log.map((line) => (/^\|t:\|\d+$/u.test(line) ? '|t:|' : line));
   }
   return canonicalJson(serialized);
 }
@@ -181,7 +214,8 @@ export function requestPhase(request: BattleRequest): 'team_preview' | 'forced_s
 
 export function newBattle(source: GameSource): Battle {
   const { Battle: BattleClass } = loadShowdown(source.psDir ?? defaultPsDir());
-  const battle = new BattleClass({ formatid: source.format, seed: source.seed.join(',') as `${number},${string}` });
+  const [a, b, c, d] = source.seed;
+  const battle = new BattleClass({ formatid: source.format, seed: `${a},${b},${c},${d}` });
   for (const pid of ['p1', 'p2'] as const) {
     battle.setPlayer(pid, { name: source.names[pid], team: source.packed[pid] });
   }
@@ -197,7 +231,7 @@ export function pendingSides(battle: Battle): Pid[] {
 
 export function replayGame(source: GameSource, recordedLog?: string[]): Replay {
   const battle = newBattle(source);
-  const cursor: Record<Pid, number> = { p1: 0, p2: 0 };
+  const cursor = { p1: 0, p2: 0 };
   const positions: Position[] = [];
   const state = routeState();
   let consumed = 0;
@@ -214,7 +248,7 @@ export function replayGame(source: GameSource, recordedLog?: string[]): Replay {
   while (!battle.ended && steps++ < CHOICE_LIMIT) {
     const pending = pendingSides(battle);
     if (!pending.length) break;
-    const taken: Partial<Record<Pid, string>> = {};
+    const decisions: Array<[Pid, string]> = [];
     for (const pid of pending) {
       const choice = source.choices[pid][cursor[pid]];
       if (choice === undefined) {
@@ -222,7 +256,7 @@ export function replayGame(source: GameSource, recordedLog?: string[]): Replay {
         break;
       }
       cursor[pid] += 1;
-      taken[pid] = choice;
+      decisions.push([pid, choice]);
     }
     if (ranOutOfChoices) break;
     drain();
@@ -231,20 +265,20 @@ export function replayGame(source: GameSource, recordedLog?: string[]): Replay {
       turn: battle.turn,
       pending,
       requests: {
-        p1: battle.getSide('p1').activeRequest as unknown as BattleRequest,
-        p2: battle.getSide('p2').activeRequest as unknown as BattleRequest,
+        p1: battleRequest(battle.getSide('p1').activeRequest!),
+        p2: battleRequest(battle.getSide('p2').activeRequest!),
       },
-      actual: taken,
+      actual: Object.fromEntries(decisions),
       choiceIndex: Object.fromEntries(pending.map((pid) => [pid, cursor[pid] - 1])),
       seen: { p1: state.pov.p1.length, p2: state.pov.p2.length },
       snapshot: deterministicBattleSnapshot(battle),
     });
-    for (const pid of pending) {
-      if ((taken[pid] as string).split(', ').includes('forfeit')) {
+    for (const [pid, choice] of decisions) {
+      if (choice.split(', ').includes('forfeit')) {
         battle.lose(pid);
         break;
       }
-      if (!battle.choose(pid, taken[pid] as string)) {
+      if (!battle.choose(pid, choice)) {
         rejectedChoice = true;
         break;
       }

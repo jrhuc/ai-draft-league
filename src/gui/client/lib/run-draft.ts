@@ -28,56 +28,75 @@ export interface RunDraft {
   board: string;
 }
 
-export type StartRunRequest = Record<string, unknown> & { models: string[]; apiKeys: Record<string, string> };
+export interface StartRunRequest {
+  models: string[];
+  apiKeys: Record<string, string>;
+  seed: string;
+  timerScale: 'off' | number;
+  reasoning?: string;
+  reasoningByModel?: Record<string, string>;
+  nitro?: true;
+  mode?: 'tournament' | 'draft';
+  teams?: string[];
+  format?: string;
+  concurrency?: number;
+  pool?: string;
+  board?: string;
+  closedSheets?: true;
+  sequentialWeeks?: true;
+  draftOnly?: true;
+  transactions?: null | number[];
+  seriesPerPair?: number;
+}
 
 export function buildStartRunRequest(draft: RunDraft): StartRunRequest {
   const selectedReasoning = Object.fromEntries(
     Object.entries(draft.reasoningByModel).filter(([model, level]) => draft.models.includes(model) && level),
   );
-  const reasoningRequest = draft.sharedReasoning
-    ? { ...(draft.reasoning ? { reasoning: draft.reasoning } : {}) }
-    : { ...(Object.keys(selectedReasoning).length ? { reasoningByModel: selectedReasoning } : {}) };
-  return {
+  const request: StartRunRequest = {
     models: draft.models,
     apiKeys: draft.apiKeys,
     seed: draft.seed.trim(),
-    ...reasoningRequest,
-    ...(draft.nitro ? { nitro: true } : {}),
     timerScale: draft.timerScale === 'off' ? 'off' : Number(draft.timerScale),
-    ...(draft.mode === 'match'
-      ? {
-          mode: 'tournament',
-          teams: draft.models.map((_, index) => draft.teamBySlot[index]?.paste ?? ''),
-          format: draft.assignFormat,
-          concurrency: 1,
-        }
-      : draft.mode === 'tournament'
-        ? draft.teamSource === 'custom'
-          ? {
-              mode: 'tournament',
-              teams: draft.models.map((_, index) => draft.teamBySlot[index]?.paste ?? ''),
-              format: draft.assignFormat,
-              concurrency: Number(draft.concurrency),
-            }
-          : { mode: 'tournament', pool: draft.pool, concurrency: Number(draft.concurrency) }
-        : draft.mode === 'draft'
-          ? {
-              mode: 'draft',
-              board: draft.board,
-              concurrency: Number(draft.concurrency),
-              ...(draft.closedSheets ? { closedSheets: true } : {}),
-              ...(draft.sequentialWeeks ? { sequentialWeeks: true } : {}),
-              ...(draft.draftOnly ? { draftOnly: true } : {}),
-              ...(draft.transactions === 'default'
-                ? {}
-                : { transactions: draft.transactions === 'off' ? null : draft.transactions.split(',').map(Number) }),
-            }
-          : {
-              pool: draft.pool,
-              seriesPerPair: Number(draft.series),
-              concurrency: Number(draft.concurrency),
-            }),
   };
+  if (draft.sharedReasoning) {
+    if (draft.reasoning) request.reasoning = draft.reasoning;
+  } else if (Object.keys(selectedReasoning).length > 0) {
+    request.reasoningByModel = selectedReasoning;
+  }
+  if (draft.nitro) request.nitro = true;
+
+  if (draft.mode === 'match') {
+    request.mode = 'tournament';
+    request.teams = draft.models.map((_, index) => draft.teamBySlot[index]?.paste ?? '');
+    request.format = draft.assignFormat;
+    request.concurrency = 1;
+  } else if (draft.mode === 'tournament') {
+    request.mode = 'tournament';
+    request.concurrency = Number(draft.concurrency);
+    if (draft.teamSource === 'custom') {
+      request.teams = draft.models.map((_, index) => draft.teamBySlot[index]?.paste ?? '');
+      request.format = draft.assignFormat;
+    } else {
+      request.pool = draft.pool;
+    }
+  } else if (draft.mode === 'draft') {
+    request.mode = 'draft';
+    request.board = draft.board;
+    request.concurrency = Number(draft.concurrency);
+    if (draft.closedSheets) request.closedSheets = true;
+    if (draft.sequentialWeeks) request.sequentialWeeks = true;
+    if (draft.draftOnly) request.draftOnly = true;
+    if (draft.transactions !== 'default') {
+      request.transactions =
+        draft.transactions === 'off' ? null : draft.transactions.split(',').map((week) => Number(week));
+    }
+  } else {
+    request.pool = draft.pool;
+    request.seriesPerPair = Number(draft.series);
+    request.concurrency = Number(draft.concurrency);
+  }
+  return request;
 }
 
 export function needsProviderKey(providers: ProviderInfo[], spec: string): boolean {

@@ -7,17 +7,18 @@ import { REPO_ROOT } from '../src/paths.js';
 import { ShowdownReference } from '../src/reference.js';
 import { BattleState } from '../src/state.js';
 import type { BattleRequest } from '../src/types.js';
+import { asRecord } from '../src/value.js';
 
 test('own requests render known sets and stats', () => {
-  const request = JSON.parse(
+  const request: BattleRequest = JSON.parse(
     fs.readFileSync(path.join(REPO_ROOT, 'tests/data/showdown_requests/turn.json'), 'utf8'),
-  ) as BattleRequest;
+  );
   const rendered = new BattleState('p1').render(request);
   const first = request.side!.pokemon![0]!;
   assert.match(rendered, new RegExp(`item ${first.item}`));
   assert.match(rendered, new RegExp(`ability ${first.ability}`));
-  assert.match(rendered, new RegExp(String((first.moves as string[])[0])));
-  assert.match(rendered, new RegExp(`Attack ${(first.stats as Record<string, number>).atk}`));
+  assert.match(rendered, new RegExp(String(first.moves![0])));
+  assert.match(rendered, new RegExp(`Attack ${asRecord(first.stats).atk}`));
   assert.doesNotMatch(rendered, /\bL50\b/);
   assert.match(rendered, /HP \d+%/);
   assert.doesNotMatch(rendered, /HP \d+\/\d+/);

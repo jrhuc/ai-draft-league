@@ -25,8 +25,8 @@ import type { ModelReasoningConfig, ReasoningLevel } from './providers.js';
 import { classifyProviderFailure, makeProvider, parseSpec, reasoningForModel } from './providers.js';
 import { ShowdownReference } from './reference.js';
 import { mapLimit, readCompletedSeriesDecisionRows, readCompletedSeriesGameLogs } from './series.js';
-import type { JsonObject, Provider, ProviderMessage } from './types.js';
-import { clip, isRecord } from './value.js';
+import type { JsonObject, JsonValue, Provider, ProviderMessage } from './types.js';
+import { clip, isRecord, isText } from './value.js';
 
 const MEMORY_NOTICE = `- Your memory is yours to organise: a notebook page that every later prompt of yours shows in full, plus up to ${MEMORY_LIMITS.pages - 1} named pages that later prompts list by name and that you or your later selves fetch with read_memory_page. Each page holds at most ${MEMORY_LIMITS.pageChars} characters, ${MEMORY_LIMITS.totalChars} in all. It is the only state that carries from week to week; nothing else you write here is kept.`;
 
@@ -158,11 +158,7 @@ function slug(value: string): string {
   );
 }
 
-export function reviewArtifactPaths(
-  runDir: string,
-  week: number,
-  stage: ReviewStage = 'week',
-): { transcript: string; logDir: string } {
+export function reviewArtifactPaths(runDir: string, week: number, stage: ReviewStage = 'week') {
   const name = stage === 'week' ? `week-${week}` : `week-${week}-transactions`;
   return {
     transcript: path.join(runDir, 'reviews', `${name}.jsonl`),
@@ -175,26 +171,33 @@ export interface ParsedWeeklyReview {
   reasoning: string;
 }
 
-export function parseWeeklyReview(response: string, current: FranchiseMemory): ParsedWeeklyReview | string {
+type ParsedWeeklyReviewResult = { value: ParsedWeeklyReview } | { error: string };
+
+function parseWeeklyReviewResult(response: string, current: FranchiseMemory): ParsedWeeklyReviewResult {
   const match = /\{[\s\S]*\}/.exec(response);
-  if (!match) return 'the reply contained no JSON object';
-  let parsed: unknown;
+  if (!match) return { error: 'the reply contained no JSON object' };
+  let object: JsonValue;
   try {
-    parsed = JSON.parse(match[0]);
+    object = JSON.parse(match[0]);
   } catch {
-    return 'the JSON object did not parse';
+    return { error: 'the JSON object did not parse' };
   }
-  if (!isRecord(parsed)) return 'the reply must be one JSON object';
-  if (parsed.reasoning !== undefined && typeof parsed.reasoning !== 'string') return '"reasoning" must be a string';
-  const reply = parseMemoryReply(parsed, current);
-  if (typeof reply === 'string') return reply;
+  if (!isRecord(object)) return { error: 'the reply must be one JSON object' };
+  const reasoning = object.reasoning;
+  if (reasoning !== undefined && !isText(reasoning)) return { error: '"reasoning" must be a string' };
+  const reply = parseMemoryReply(object, current);
+  if (!(reply instanceof Object)) return { error: reply };
   return {
-    memory: reply.memory,
-    reasoning:
-      typeof parsed.reasoning === 'string'
-        ? clip(parsed.reasoning.trim(), WEEKLY_REVIEW_PROMPT_POLICY.rationaleLimit)
-        : '',
+    value: {
+      memory: reply.memory,
+      reasoning: clip((reasoning ?? '').trim(), WEEKLY_REVIEW_PROMPT_POLICY.rationaleLimit),
+    },
   };
+}
+
+export function parseWeeklyReview(response: string, current: FranchiseMemory): ParsedWeeklyReview | string {
+  const result = parseWeeklyReviewResult(response, current);
+  return 'error' in result ? result.error : result.value;
 }
 
 function renderTemplate(lines: readonly string[], values: Readonly<Record<string, string>>): string {
@@ -303,7 +306,7 @@ function boundedToolOutput(text: string): string {
 
 export function narratePublicSeries(runDir: string, series: WeeklyReviewSeries, models: readonly string[]): string {
   const [a, b] = series.entrants;
-  const names: Record<string, string> = { P1: models[a]!, P2: models[b]! };
+  const names = { P1: models[a]!, P2: models[b]! } satisfies Record<'P1' | 'P2', string>;
   const lines: string[] = [`Series ${series.index}, week ${series.week}: ${resultLine(series, models)}.`];
   for (const [gameIndex, gameLines] of readCompletedSeriesGameLogs(
     path.join(runDir, 'series', series.seriesId),
@@ -314,7 +317,9 @@ export function narratePublicSeries(runDir: string, series: WeeklyReviewSeries, 
     lines.push('', `Game ${gameIndex + 1}:`);
     for (const entry of log.entries) {
       lines.push(
-        `${entry.turn ? `T${entry.turn} ` : ''}${entry.text.replace(/\bP([12])\b/g, (_, side) => names[`P${side}`]!)}`,
+        `${entry.turn ? `T${entry.turn} ` : ''}${entry.text.replace(/\bP[12]\b/g, (seatName: string) =>
+          seatName === 'P1' ? names.P1 : names.P2,
+        )}`,
       );
     }
   }
@@ -333,7 +338,8 @@ export function narrateOwnSeries(runDir: string, series: WeeklyReviewSeries, ent
       lines.push('', `Game ${game}:`);
     }
     if (row.kind === 'decision') {
-      const why = typeof row.rationale === 'string' && row.rationale ? ` — ${row.rationale}` : '';
+      const rationale = z.string().safeParse(row.rationale);
+      const why = rationale.success && rationale.data ? ` — ${rationale.data}` : '';
       lines.push(`${row.phase === 'team_preview' ? 'Preview' : `T${String(row.turn)}`}: ${String(row.action)}${why}`);
     } else if (row.kind === 'game_reflection') {
       lines.push(
@@ -406,7 +412,7 @@ function reviewTools(state: WeeklyReviewState, entrant: number, options: RunWeek
       'Your own choices in one of your completed series, with the reasons you gave at the time and your end-of-game notes.',
       (index) => {
         const series = completed.get(index);
-        return series && series.entrants.includes(entrant)
+        return series?.entrants.includes(entrant)
           ? narrateOwnSeries(options.runDir, series, entrant)
           : `Series ${index} is not one of your completed series.`;
       },
@@ -416,7 +422,7 @@ function reviewTools(state: WeeklyReviewState, entrant: number, options: RunWeek
       'The six you registered for one of your completed series and the plan you wrote for it.',
       (index) => {
         const series = completed.get(index);
-        if (!series || !series.entrants.includes(entrant)) {
+        if (!series?.entrants.includes(entrant)) {
           return `Series ${index} is not one of your completed series.`;
         }
         const first = series.builds[series.entrants[0]];
@@ -492,28 +498,31 @@ function storedBarriers(runDir: string, state: WeeklyReviewState, entrant: numbe
   return barriers;
 }
 
+const weeklyReviewRowSchema = z
+  .object({
+    timestamp: z.string().optional(),
+    entrant: z.number().int().nonnegative(),
+    model: z.string(),
+    stage: z.enum(['week', 'transactions']),
+    week: z.number().int(),
+    roster_version: z.number().int(),
+    memory: z.record(z.string(), z.string()),
+    reasoning: z.string(),
+    fallback: z.boolean(),
+  })
+  .passthrough();
+
 function replayReviews(file: string): WeeklyReview[] {
   const seen = new Set<number>();
   return readJsonlObjects(file).map((row, index) => {
-    const { timestamp, ...review } = row;
-    const valid =
-      Number.isSafeInteger(review.entrant) &&
-      Number(review.entrant) >= 0 &&
-      typeof review.model === 'string' &&
-      (review.stage === 'week' || review.stage === 'transactions') &&
-      Number.isSafeInteger(review.week) &&
-      Number.isSafeInteger(review.roster_version) &&
-      isRecord(review.memory) &&
-      Object.values(review.memory).every((page) => typeof page === 'string') &&
-      typeof review.reasoning === 'string' &&
-      typeof review.fallback === 'boolean' &&
-      (timestamp === undefined || typeof timestamp === 'string');
-    if (!valid) throw new Error(`invalid weekly review row ${index + 1} in ${file}`);
-    if (seen.has(Number(review.entrant))) {
+    const parsed = weeklyReviewRowSchema.safeParse(row);
+    if (!parsed.success) throw new Error(`invalid weekly review row ${index + 1} in ${file}`);
+    const { timestamp: _timestamp, ...review } = parsed.data;
+    if (seen.has(review.entrant)) {
       throw new Error(`${file} holds a second review for entrant ${String(review.entrant)}`);
     }
-    seen.add(Number(review.entrant));
-    return review as unknown as WeeklyReview;
+    seen.add(review.entrant);
+    return review;
   });
 }
 
@@ -563,10 +572,7 @@ export async function runWeeklyReview(
       const make =
         options.makeReviewProvider ??
         ((spec: string, apiKey: string | undefined, reasoning: ReasoningLevel | undefined) =>
-          makeProvider(parseSpec(spec), {
-            ...(reasoning === undefined ? {} : { reasoning }),
-            ...(apiKey === undefined ? {} : { apiKey }),
-          }));
+          makeProvider(parseSpec(spec), { apiKey, reasoning }));
       const provider =
         model === 'random' ? undefined : make(model, options.apiKeys?.[model], reasoningForModel(model, options));
       let parsedReview: ParsedWeeklyReview | undefined;
@@ -602,10 +608,10 @@ export async function runWeeklyReview(
             usage = completion.usage;
             const truncated = completion.outputLimitReached || completion.finishReason === 'length';
             const candidate = truncated
-              ? 'the reply was cut off before completing the JSON object'
-              : parseWeeklyReview(response, current);
-            if (typeof candidate === 'string') {
-              error = candidate;
+              ? { error: 'the reply was cut off before completing the JSON object' }
+              : parseWeeklyReviewResult(response, current);
+            if ('error' in candidate) {
+              error = candidate.error;
               messages.push({ role: 'assistant', content: response || '[the reply contained no visible text]' });
               messages.push({
                 role: 'user',
@@ -614,29 +620,26 @@ export async function runWeeklyReview(
                       '{{budget}}',
                       String(WEEKLY_REVIEW_PROMPT_POLICY.maxTokens),
                     )
-                  : WEEKLY_REVIEW_PROMPT_POLICY.rejectionTemplate.replace('{{error}}', candidate),
+                  : WEEKLY_REVIEW_PROMPT_POLICY.rejectionTemplate.replace('{{error}}', candidate.error),
               });
             } else {
-              parsedReview = candidate;
+              parsedReview = candidate.value;
             }
           } catch (cause) {
             const failure = classifyProviderFailure(cause, model);
             error = failure.summary;
             terminalError = new Error(`${failure.summary} The weekly review cannot continue.`, { cause });
           }
-          fs.appendFileSync(
-            seatLog,
-            `${JSON.stringify({
-              attempt,
-              ...(attempt === 1 ? { system } : {}),
-              user: promptForAttempt,
-              response,
-              ...(usage ? { usage } : {}),
-              ...(lookups.length ? { tool_lookups: lookups } : {}),
-              ...(error ? { error } : {}),
-            } satisfies ReviewSeatLog)}\n`,
-            'utf8',
-          );
+          const completeLogRow = {
+            attempt,
+            system: attempt === 1 ? system : undefined,
+            user: promptForAttempt,
+            response,
+            usage,
+            tool_lookups: lookups.length ? lookups : undefined,
+            error: error || undefined,
+          } satisfies ReviewSeatLog;
+          fs.appendFileSync(seatLog, `${JSON.stringify(completeLogRow)}\n`, 'utf8');
           if (terminalError) throw terminalError;
         }
         fallback = parsedReview === undefined;

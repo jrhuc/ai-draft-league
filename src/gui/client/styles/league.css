@@ -1,5 +1,4 @@
 /* biome-ignore-all format: one maintained selector per line */
-.lineup-side .teambuild-sets { display: contents; }
 .draft-table th { text-align: left; padding: 6px 8px; color: var(--muted); font: 800 9px/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; border-bottom: 1px solid var(--line-strong); }
 .draft-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); font: 500 11px/1.4 var(--mono); }
 .draft-feed { margin-top: 16px; max-height: 260px; overflow-y: auto; border: 1px solid var(--line); padding: 10px 14px; background: var(--surface-raised); }
@@ -48,11 +47,9 @@
 .board-cost small { font: 800 7px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
 .board-types { display: flex; flex-wrap: wrap; gap: 4px; }
 .board-stats { display: grid; grid-template-columns: repeat(6, 1fr); border-block: 1px solid var(--line); padding: 7px 0; color: var(--ink); font: 700 10px/1 var(--mono); text-align: center; }
-.board-stats span + span { border-left: 1px solid var(--line); }
 .board-stats small { display: block; margin-bottom: 4px; color: var(--muted); font: 700 7px/1 var(--mono); text-transform: uppercase; }
 .board-abilities { color: var(--muted); font: 500 10px/1.35 var(--mono); }
 .board-locked { font: 500 10px/1.35 var(--mono); margin-top: auto; color: var(--blue-dark); }
-.board-locked ~ .board-owner { margin-top: 0; }
 .board-empty { margin: 0; padding: 40px 20px; color: var(--muted); text-align: center; }
 .teambuild-list { display: flex; flex-direction: column; gap: 8px; padding: 18px 24px 24px; }
 .teambuild-card > summary { cursor: pointer; padding: 10px 13px; font: 500 12px/1.3 var(--mono); }
@@ -60,6 +57,7 @@
 .teambuild-card > summary:hover { background: var(--slate-soft); }
 .teambuild-plan { margin: 11px 13px; color: var(--muted); font: 500 12px/1.5 var(--body); }
 .teambuild-sets { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 9px; padding: 0 13px 13px; }
+.lineup-side .teambuild-sets { display: contents; }
 .teambuild-set-head .sprite { flex: 0 0 auto; }
 .teambuild-set-identity { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
 .teambuild-set-identity b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 11px/1.2 var(--mono); }
@@ -83,6 +81,7 @@
 .board-card { min-width: 0; display: flex; min-height: 180px; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--line); background: var(--surface-raised); box-shadow: none; transition: background-color .16s ease, border-color .16s ease; }
 .board-card.taken { background: var(--slate-soft); box-shadow: none; }
 .board-owner { margin-top: auto; padding: 6px 8px; color: var(--yellow); background: var(--slate-soft); border-left: 3px solid var(--yellow); font: 800 10px/1.35 var(--mono); text-transform: uppercase; }
+.board-locked ~ .board-owner { margin-top: 0; }
 .board-cost { width: 43px; height: 43px; flex: 0 0 auto; display: grid; place-content: center; gap: 2px; color: var(--navy); background: var(--cost-band, var(--yellow)); border: 1px solid rgba(16, 33, 63, .35); font: 900 17px/1 var(--display); text-align: center; }
 .type-chip { padding: 2px 5px; border: 1px solid var(--line); color: var(--muted); font: 700 8px/1.2 var(--mono); letter-spacing: 0.05em; text-transform: uppercase; background: var(--slate-soft); }
 .teambuild-card { border: 1px solid var(--line); background: var(--surface-raised); transition: background-color .16s ease, border-color .16s ease, box-shadow .16s ease; }
@@ -91,6 +90,7 @@
 .teambuild-set-head { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 9px; border-bottom: 1px solid var(--line); background: var(--slate-soft); }
 .teambuild-set.repaired { border-style: dashed; border-color: var(--blue-dark); }
 .teambuild-evs { margin-top: auto; padding: 6px 9px; color: var(--yellow); background: var(--slate-soft); border-top: 1px solid var(--line); font: 700 9px/1.35 var(--mono); letter-spacing: 0.01em; }
+.board-stats span + span { border-left: 1px solid var(--line); }
 
 
 @media (max-width: 700px) {

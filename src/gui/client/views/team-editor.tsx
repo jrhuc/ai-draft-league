@@ -44,7 +44,8 @@ export function TeamEditor({
     if (selPool) onLoadPool(selPool);
   }, [selPool]);
   const loaded = poolTeams[selPool];
-  const teams = loaded && typeof loaded === 'object' && 'teams' in loaded ? loaded : null;
+  const teams = loaded !== undefined && loaded !== 'loading' && 'teams' in loaded ? loaded : null;
+  const loadError = loaded !== undefined && loaded !== 'loading' && 'error' in loaded ? loaded : null;
   const teamOptions = teams ? teams.teams.map((entry) => ({ value: entry.name, label: entry.name })) : [];
   const insert = () => {
     if (!teams) return;
@@ -117,23 +118,17 @@ export function TeamEditor({
             options={teamOptions}
             value={selTeam}
             onChange={setSelTeam}
-            placeholder={
-              loaded === 'loading'
-                ? 'Loading teams…'
-                : loaded && typeof loaded === 'object' && 'error' in loaded
-                  ? 'Pool teams unavailable'
-                  : 'Pick a team'
-            }
-            disabled={loaded === 'loading' || (loaded !== undefined && typeof loaded === 'object' && 'error' in loaded)}
+            placeholder={loaded === 'loading' ? 'Loading teams…' : loadError ? 'Pool teams unavailable' : 'Pick a team'}
+            disabled={loaded === 'loading' || loadError !== null}
           />
           <button type="button" class="button" disabled={!selTeam || !teams} onClick={insert}>
             Use this team
           </button>
         </div>
       )}
-      {loaded && typeof loaded === 'object' && 'error' in loaded && (
+      {loadError && (
         <div class="message error" role="alert">
-          {loaded.error}{' '}
+          {loadError.error}{' '}
           <button type="button" class="button" onClick={() => onLoadPool(selPool, true)}>
             Retry
           </button>

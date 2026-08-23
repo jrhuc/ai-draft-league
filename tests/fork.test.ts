@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import type { Battle } from 'pokemon-showdown';
+import type { Position } from '../src/fork.js';
 
 import {
   acceptedLegalActionEntries,
@@ -13,8 +15,8 @@ import {
   requestActionCandidateEntries,
 } from '../src/fork.js';
 import { loadPool } from '../src/teams.js';
-import type { BattleRequest, Pid } from '../src/types.js';
-import { omniscientLog, requestActionCandidates } from './fixtures/fork.js';
+import type { BattleRequest, JsonObject, Pid } from '../src/types.js';
+import { activeRequest, omniscientLog, requestActionCandidates, sideLists } from './fixtures/fork.js';
 
 const SEED: [number, number, number, number] = [11, 22, 33, 44];
 
@@ -33,22 +35,22 @@ function source(): GameSource {
 
 /** Plays the first legal action at every request, which makes the game a fixed function of the
  * seed and the two teams and gives the replay something recorded to be checked against. */
-function scripted(base: GameSource): { choices: Record<Pid, string[]>; log: string[] } {
+function scripted(base: GameSource) {
   const battle = newBattle(base);
-  const choices: Record<Pid, string[]> = { p1: [], p2: [] };
+  const choices = sideLists();
   let steps = 0;
   while (!battle.ended && steps++ < 400) {
     const pending = pendingSides(battle);
     if (!pending.length) break;
     const taken: Partial<Record<Pid, string>> = {};
     for (const pid of pending) {
-      const request = battle.getSide(pid).activeRequest as unknown as BattleRequest;
+      const request = activeRequest(battle, pid);
       const action = requestActionCandidates(request)[0];
       if (action === undefined) throw new Error(`no legal action for ${pid}`);
       taken[pid] = action;
       choices[pid].push(action);
     }
-    for (const pid of pending) battle.choose(pid, taken[pid] as string);
+    for (const pid of pending) battle.choose(pid, taken[pid]!);
   }
   return { choices, log: omniscientLog(battle.log) };
 }
@@ -97,16 +99,17 @@ test('snapshot bytes normalize only exact top-level Showdown timestamp messages 
       request: { timestampText: '|t:|123', wait: false },
     },
   };
-  const snapshotOf = (state: unknown) =>
-    deterministicBattleSnapshot({ toJSON: () => state } as unknown as Parameters<
-      typeof deterministicBattleSnapshot
-    >[0]);
+  const snapshotOf = (state: JsonObject) => {
+    const battle: Pick<Battle, 'toJSON'> = { toJSON: () => state };
+    // SAFETY: deterministicBattleSnapshot reads only toJSON.
+    return deterministicBattleSnapshot(battle as Battle);
+  };
 
   const first = snapshotOf(firstState);
   const second = snapshotOf(secondState);
   assert.equal(second, first);
 
-  const normalized = JSON.parse(first) as typeof firstState;
+  const normalized: typeof firstState = JSON.parse(first);
   const expected = structuredClone(firstState);
   expected.log[0] = '|t:|';
   expected.log[1] = '|t:|';
@@ -114,7 +117,7 @@ test('snapshot bytes normalize only exact top-level Showdown timestamp messages 
   assert.deepEqual(Object.keys(normalized), ['actions', 'log', 'pov', 'prng', 'z']);
   assert.deepEqual(Object.keys(normalized.pov), ['p1', 'p2']);
   assert.deepEqual(Object.keys(normalized.z), ['queue', 'request']);
-  assert.deepEqual(Object.keys(normalized.z.queue[0] as object), ['a', 'z']);
+  assert.deepEqual(Object.keys(normalized.z.queue[0]!), ['a', 'z']);
   assert.deepEqual(Object.keys(normalized.z.request), ['timestampText', 'wait']);
 });
 
@@ -128,12 +131,7 @@ test('a canonical snapshot restores byte-for-byte and continues through the same
     return {
       pending,
       requests: Object.fromEntries(pending.map((pid) => [pid, structuredClone(battle.getSide(pid).activeRequest)])),
-      actions: Object.fromEntries(
-        pending.map((pid) => [
-          pid,
-          requestActionCandidates(battle.getSide(pid).activeRequest as unknown as BattleRequest),
-        ]),
-      ),
+      actions: Object.fromEntries(pending.map((pid) => [pid, requestActionCandidates(activeRequest(battle, pid))])),
     };
   };
   const beforeSurface = surface(live);
@@ -143,11 +141,13 @@ test('a canonical snapshot restores byte-for-byte and continues through the same
   assert.deepEqual(live.log, beforeLog);
   assert.deepEqual(surface(live), beforeSurface);
 
-  const restored = openPosition({ snapshot: initialSnapshot } as Parameters<typeof openPosition>[0]);
+  const initialPosition: Pick<Position, 'snapshot'> = { snapshot: initialSnapshot };
+  // SAFETY: openPosition reads only the snapshot.
+  const restored = openPosition(initialPosition as Position);
   assert.equal(deterministicBattleSnapshot(restored), initialSnapshot);
   assert.deepEqual(surface(restored), beforeSurface);
 
-  const choices: Record<Pid, string[]> = { p1: [], p2: [] };
+  const choices = sideLists();
   const snapshots: string[] = [];
   let steps = 0;
   while (!live.ended && steps++ < 400) {
@@ -160,11 +160,11 @@ test('a canonical snapshot restores byte-for-byte and continues through the same
     assert.ok(pending.length > 0);
     const joint: Partial<Record<Pid, string>> = {};
     for (const pid of pending) {
-      const request = live.getSide(pid).activeRequest as unknown as BattleRequest;
-      const action = requestActionCandidates(request)[0];
+      const request = activeRequest(live, pid);
+      const action = requestActionCandidates(request)[0]!;
       assert.notEqual(action, undefined);
-      joint[pid] = action as string;
-      choices[pid].push(action as string);
+      joint[pid] = action;
+      choices[pid].push(action);
     }
     assert.equal(playJoint(live, joint), true);
     assert.equal(playJoint(restored, joint), true);
@@ -222,7 +222,7 @@ test('every recorded position carries each requested side action and choice inde
     for (const pid of position.pending) {
       const choiceIndex = position.choiceIndex[pid];
       assert.notEqual(choiceIndex, undefined);
-      assert.equal(choices[pid][choiceIndex as number], position.actual[pid]);
+      assert.equal(choices[pid][choiceIndex!], position.actual[pid]);
     }
   }
 });
@@ -233,9 +233,9 @@ test('one-sided replacement requests remain decision positions', () => {
   const { positions } = replayGame({ ...base, choices }, log);
   const replacement = positions.find((position) => position.pending.length === 1);
   assert.ok(replacement, 'the scripted game reached a one-sided replacement');
-  const pid = replacement.pending[0] as Pid;
-  assert.equal(replacement.actual[pid], choices[pid][replacement.choiceIndex[pid] as number]);
-  assert.ok(requestActionCandidates(replacement.requests[pid]).includes(replacement.actual[pid] as string));
+  const pid = replacement.pending[0]!;
+  assert.equal(replacement.actual[pid], choices[pid][replacement.choiceIndex[pid]!]);
+  assert.ok(requestActionCandidates(replacement.requests[pid]).includes(replacement.actual[pid]!));
 });
 
 test('the counterfactual action set contains each offered legal command once', () => {
@@ -247,7 +247,7 @@ test('the counterfactual action set contains each offered legal command once', (
 
   const actions = requestActionCandidates(turn.requests.p1);
   assert.ok(actions.length > 1);
-  assert.ok(actions.includes(turn.actual.p1 as string));
+  assert.ok(actions.includes(turn.actual.p1!));
   assert.equal(new Set(actions).size, actions.length);
   assert.ok(!actions.includes('forfeit'));
   assert.ok(actions.every((action) => (action.match(/ mega/g) ?? []).length <= 1));
@@ -268,7 +268,7 @@ test('the counterfactual action set contains each offered legal command once', (
 });
 
 test('a forced replacement cannot pass every fainted slot while a reserve remains', () => {
-  const request = {
+  const request: BattleRequest = {
     forceSwitch: [true, true],
     side: {
       name: 'Player 1',
@@ -278,7 +278,7 @@ test('a forced replacement cannot pass every fainted slot while a reserve remain
         { active: false, condition: '100/100', details: 'Reserve' },
       ],
     },
-  } as unknown as BattleRequest;
+  };
   assert.deepEqual(requestActionCandidates(request).toSorted(), ['pass, switch 3', 'switch 3, pass']);
 });
 
@@ -317,7 +317,7 @@ test('a position reopens as a live battle that alternative actions can be played
   const outcomes = new Set<string>();
   for (const action of alternatives.slice(0, 12)) {
     const forked = openPosition(position);
-    if (!playJoint(forked, { p1: action, p2: position.actual.p2 as string })) continue;
+    if (!playJoint(forked, { p1: action, p2: position.actual.p2! })) continue;
     outcomes.add(`${hp('p1', forked)}/${hp('p2', forked)}`);
   }
   assert.ok(outcomes.size > 1, 'alternative actions lead somewhere other than the same state');
@@ -336,7 +336,7 @@ test('an illegal action is rejected instead of silently doing something else', (
   assert.ok(position);
 
   const battle = openPosition(position);
-  assert.equal(playJoint(battle, { p1: 'move 9', p2: position.actual.p2 as string }), false);
+  assert.equal(playJoint(battle, { p1: 'move 9', p2: position.actual.p2! }), false);
 });
 
 test('a position records what each side had actually been shown by then', () => {

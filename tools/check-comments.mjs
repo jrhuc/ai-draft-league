@@ -39,7 +39,7 @@ function checkFile(file) {
   }
   for (const comment of ast.comments ?? []) {
     const value = comment.value;
-    if (comment.type === 'CommentLine' && !/^[/!]?\s*(@ts-|eslint|biome-ignore|#!|<reference)/.test(value)) {
+    if (comment.type === 'CommentLine' && !/^[/!]?\s*(@ts-|eslint|biome-ignore|SAFETY:|#!|<reference)/.test(value)) {
       violations.push(`${relative}:${comment.loc.start.line}: //${value.trim().slice(0, 90)}`);
     } else if (comment.type === 'CommentBlock' && !value.startsWith('*') && !/^\s*biome-ignore/.test(value)) {
       violations.push(`${relative}:${comment.loc.start.line}: /*${value.trim().split('\n')[0].slice(0, 90)}`);

@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { z } from 'zod';
 import {
   type AgentContextEvent,
   type AgentContextKind,
   type AgentContextQuery,
   AgentContextStream,
 } from './agent-context.js';
-import type { ChoiceSubstitution, DecisionLog, GameEnd, GameStart } from './battle-agent.js';
+import type { ChoiceSubstitution, DecisionLog, DecisionStats, GameEnd, GameStart } from './battle-agent.js';
 import { BaseEngine } from './battle-agent.js';
 import { summarizeBattleEvents } from './battle-transcript.js';
 import type { MenuHints, SlotMenu, TargetNames } from './choices.js';
@@ -28,12 +29,7 @@ import {
   uniqueToolCalls,
 } from './providers.js';
 import { DEX_TOOLS, ShowdownReference } from './reference.js';
-import {
-  evidenceSuppliedRecord,
-  normalizeStageEvidence,
-  noStageEvidence,
-  type StageEvidence,
-} from './stage-evidence.js';
+import { normalizeStageEvidence, noStageEvidence, type StageEvidence } from './stage-evidence.js';
 import { BattleState } from './state.js';
 import type {
   ActionSubmission,
@@ -42,6 +38,7 @@ import type {
   CompleteOptions,
   Completion,
   JsonObject,
+  JsonValue,
   Pid,
   Provider,
   ProviderMessage,
@@ -58,6 +55,35 @@ interface ParsedDecision {
   evidence: StageEvidence;
 }
 
+interface Reflection {
+  summary: string;
+  adjustment: string;
+  notebook: string;
+}
+
+const decisionToolParametersSchema = z.object({ properties: z.record(z.string(), z.json()) }).passthrough();
+const replayDecisionSchema = z.object({
+  request_digest: z.string(),
+  pid: z.enum(['p1', 'p2']),
+  series_id: z.string().nullable(),
+  game_id: z.string(),
+  game_number: z.number(),
+  turn: z.number(),
+  phase: z.enum(['team_preview', 'forced_switch', 'turn']),
+  action: z.string(),
+  submission_id: z.string(),
+  submission_source: z.enum(['model', 'automatic', 'model-default']),
+  outcome: z.enum(['accepted', 'rejected']),
+  notebook: z.string().optional().catch(undefined),
+  rationale: z.string().optional().catch(undefined),
+});
+const reflectionSchema = z.object({
+  summary: z.string(),
+  adjustment: z.string(),
+  notebook: z.string(),
+});
+const suppliedDecisionEvidenceSchema = z.object({ rationale: z.string(), notebook: z.string() });
+
 interface ToolTrace extends JsonObject {
   name: string;
   arguments: JsonObject;
@@ -72,7 +98,7 @@ class DecisionAbandonedError extends Error {
   }
 }
 
-interface PendingDecision extends JsonObject {
+interface PendingDecision {
   prompt?: string;
   rawResponse?: string;
   evidence?: StageEvidence;
@@ -117,10 +143,6 @@ const FORCE_COMMIT_TURN_FRACTION = 0.5;
 const BANK_HEALTHY_SECONDS = 300;
 const BANK_LOW_SECONDS = 120;
 const DECISION_MIN_TOKENS = 1024;
-const DECISION_MAX_TOKENS_DEEP: Partial<Record<ReasoningLevel, number>> = {
-  high: 8192,
-  xhigh: 16_384,
-};
 /** Timed budgets follow generation pace so replies arrive before the gameplay timer expires. The untimed
  * ceiling sits above observed traffic while still bounding runaway reasoning loops. */
 export const DECISION_MAX_TOKENS_CEILING = 65_536;
@@ -146,7 +168,6 @@ const UNTIMED_EMPTY_RESPONSE_RETRIES = 2;
  * amputating the newest plans mid-sentence. Anything these do clip carries a visible marker. */
 const DECISION_NOTE_LIMIT = 8000;
 const DECISION_RATIONALE_LIMIT = 2000;
-const DECISION_TEMPERATURE = 0.2;
 export const REFLECTION_MAX_TOKENS = 32_768;
 const TRANSCRIPT_CHARACTER_LIMIT = 24000;
 const TRANSCRIPT_CLIP_MARKER = '[Earlier turns are omitted from this timeline.]';
@@ -177,15 +198,18 @@ const ACTION_ORDER_TOOL: ToolDefinition = {
 const DECISION_TOOLS = [
   ...DEX_TOOLS.map((tool) => {
     if (tool.name !== 'estimate_damage') return tool;
-    const properties = tool.parameters.properties as Record<string, unknown>;
+    const parameters = decisionToolParametersSchema.parse(tool.parameters);
     return {
       ...tool,
       description:
         'Estimate damage using the current battle request and open team sheets. Supply only the two visible Pokémon and move; the harness applies known abilities, items, exact own stats, opposing nature ranges, boosts, status, HP, screens, weather, terrain, both active allies with their abilities, and the fainted count that scales Last Respects. Helping Hand and critical-hit flags are optional hypothetical modifiers.',
       parameters: {
-        ...tool.parameters,
+        ...parameters,
         properties: Object.fromEntries(
-          ['attacker', 'defender', 'move', 'helping_hand', 'is_critical_hit'].map((name) => [name, properties[name]]),
+          ['attacker', 'defender', 'move', 'helping_hand', 'is_critical_hit'].map((name) => [
+            name,
+            parameters.properties[name] ?? null,
+          ]),
         ),
       },
     };
@@ -216,11 +240,7 @@ export function updatedPace(previous: number | undefined, outputTokens: number, 
   return previous === undefined ? rate : (previous + rate) / 2;
 }
 
-function boundedToolCalls(
-  calls: ToolCall[],
-  standardMax: number,
-  orderMax: number,
-): { kept: ToolCall[]; dropped: ToolCall[] } {
+function boundedToolCalls(calls: ToolCall[], standardMax: number, orderMax: number) {
   const order = calls.filter((call) => call.name === ACTION_ORDER_TOOL.name).slice(0, orderMax);
   const standard = calls.filter((call) => call.name !== ACTION_ORDER_TOOL.name).slice(0, standardMax);
   const selectedIds = new Set([...standard, ...order].map((call) => call.id));
@@ -297,7 +317,7 @@ export class LLMEngine extends BaseEngine {
   private gameId: string;
   private seriesId?: string;
   private gameNumber = 1;
-  private seriesScore: Record<Pid, number> = { p1: 0, p2: 0 };
+  private seriesScore = { p1: 0, p2: 0 };
   private decisions = 0;
   private fallbacks = 0;
   private reflections = 0;
@@ -337,12 +357,10 @@ export class LLMEngine extends BaseEngine {
     private readonly options: LLMEngineOptions = {},
   ) {
     super(pid, options.decisionLog);
-    this.provider =
-      options.provider ??
-      makeProvider(parseSpec(spec), {
-        ...(options.reasoning === undefined ? {} : { reasoning: options.reasoning }),
-        ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
-      });
+    if (options.provider) this.provider = options.provider;
+    else {
+      this.provider = makeProvider(parseSpec(spec), { apiKey: options.apiKey, reasoning: options.reasoning });
+    }
     this.reference =
       options.reference ?? new ShowdownReference(options.format ?? 'gen9championsvgc2026regmbbo3', options.psDir);
     this.state = new BattleState(pid);
@@ -438,11 +456,17 @@ export class LLMEngine extends BaseEngine {
   }
 
   private replayAction(request: BattleRequest): string | undefined {
-    const row = this.replayQueue.shift();
-    if (!row) return undefined;
+    const rawRow = this.replayQueue.shift();
+    if (!rawRow) return undefined;
+    const parsedRow = replayDecisionSchema.safeParse(rawRow);
     const phase = decisionPhase(request);
     const menus = buildMenus(request, this.menuHints(request));
     const requestDigest = this.requestDigest(request, menus, phase);
+    if (!parsedRow.success) {
+      this.replayQueue = [];
+      return undefined;
+    }
+    const row = parsedRow.data;
     if (
       row.request_digest !== requestDigest ||
       row.pid !== this.pid ||
@@ -450,18 +474,14 @@ export class LLMEngine extends BaseEngine {
       row.game_id !== this.gameId ||
       row.game_number !== this.gameNumber ||
       row.turn !== this.state.turn ||
-      row.phase !== phase ||
-      typeof row.action !== 'string' ||
-      typeof row.submission_id !== 'string' ||
-      !['model', 'automatic', 'model-default'].includes(String(row.submission_source)) ||
-      (row.outcome !== 'accepted' && row.outcome !== 'rejected')
+      row.phase !== phase
     ) {
       /** The live battle diverged from the recording, so the recording is no longer the truth;
        * the rest of the game is decided live. */
       this.replayQueue = [];
       return undefined;
     }
-    if (typeof row.notebook === 'string') {
+    if (row.notebook !== undefined) {
       this.notebook = row.notebook;
       this.loggedNotebook = row.notebook;
     }
@@ -473,7 +493,7 @@ export class LLMEngine extends BaseEngine {
       turn: this.state.turn,
       phase,
       action: row.action,
-      rationale: typeof row.rationale === 'string' ? row.rationale : '',
+      rationale: row.rationale ?? '',
       notebook: this.notebook,
       menus: this.contextMenus(menus),
       replayed: true,
@@ -481,7 +501,7 @@ export class LLMEngine extends BaseEngine {
     this.restoreSubmission({
       submissionId: row.submission_id,
       choice: row.action,
-      source: row.submission_source as SubmissionSource,
+      source: row.submission_source,
     });
     return row.action;
   }
@@ -491,7 +511,7 @@ export class LLMEngine extends BaseEngine {
   }
 
   decisionToolDefinitions(): ToolDefinition[] {
-    return structuredClone(DECISION_TOOLS) as ToolDefinition[];
+    return structuredClone(DECISION_TOOLS);
   }
 
   lookupDecisionTool(name: string, args: JsonObject): string {
@@ -516,11 +536,8 @@ export class LLMEngine extends BaseEngine {
     const controller = new AbortController();
     this.decisionController?.abort(new Error('new decision started'));
     this.decisionController = controller;
-    this.pending = {
-      rawResponse: '',
-      generation,
-      ...(request.timer ? { timer: request.timer } : {}),
-    };
+    this.pending = { rawResponse: '', generation };
+    if (request.timer) this.pending.timer = request.timer;
     try {
       const choice = await super.act(request, context);
       return generation === this.generation ? choice : '';
@@ -546,7 +563,7 @@ export class LLMEngine extends BaseEngine {
         ? FORCE_COMMIT_MS
         : Math.max(FORCE_COMMIT_MS, turnSeconds * 1000 * FORCE_COMMIT_TURN_FRACTION);
     const remainingMs = () => (deadline === undefined ? Number.POSITIVE_INFINITY : deadline - performance.now());
-    const tokenFloor = (this.options.reasoning && DECISION_MAX_TOKENS_DEEP[this.options.reasoning]) || 0;
+    const tokenFloor = this.options.reasoning === 'high' ? 8192 : this.options.reasoning === 'xhigh' ? 16_384 : 0;
     const pace = () => this.observedTokensPerSecond ?? ASSUMED_TOKENS_PER_SECOND;
     let maxTokens = Math.max(tokenFloor, decisionTokenBudget(remainingMs(), pace()));
     let truncatedBudget = 0;
@@ -600,9 +617,9 @@ export class LLMEngine extends BaseEngine {
     const reasoningParts: string[] = [];
     const upstreamProviders = new Set<string>();
     const messages: ProviderMessage[] = [{ role: 'user', content: prompt }];
-    const failDecision = (caught: unknown): Promise<number[]> => {
-      const message = caught instanceof Error ? caught.message : String(caught);
-      const failure = classifyProviderFailure(caught, this.spec);
+    const failDecision = (cause: unknown): Promise<number[]> => {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      const failure = classifyProviderFailure(cause, this.spec);
       this.abandonedDecisions += 1;
       this.consecutiveDecisionFailures += 1;
       const repeated = this.consecutiveDecisionFailures >= CONSECUTIVE_DECISION_FAILURE_LIMIT;
@@ -623,7 +640,7 @@ export class LLMEngine extends BaseEngine {
         pid: this.pid,
         phase,
       };
-      this.writeLog(this.options.traceLog, {
+      const trace = {
         kind: 'decision_trace',
         ...base,
         prompt,
@@ -633,7 +650,6 @@ export class LLMEngine extends BaseEngine {
         raw_response: rawResponse,
         reasoning: reasoningParts.join('\n\n').trim() || null,
         usage,
-        ...(upstreamProviders.size ? { upstream_providers: [...upstreamProviders] } : {}),
         latency_ms: performance.now() - started,
         timer,
         parse_failures: parseFailures,
@@ -641,17 +657,19 @@ export class LLMEngine extends BaseEngine {
         max_tokens: maxTokens,
         tokens_per_second: this.observedTokensPerSecond ? Math.round(this.observedTokensPerSecond) : null,
         tool_calls: toolCalls,
-        ...(failedAttempts.length ? { failed_attempts: failedAttempts } : {}),
         fallback: true,
         failure_kind: failure.kind,
         error_summary: failure.summary,
         error: message,
-      });
+        upstream_providers: upstreamProviders.size ? [...upstreamProviders] : undefined,
+        failed_attempts: failedAttempts.length ? failedAttempts : undefined,
+      };
+      this.writeLog(this.options.traceLog, trace);
       if (stop) {
         const reason = repeated
           ? `${this.spec} failed to submit ${this.consecutiveDecisionFailures} consecutive decisions. ${failure.summary}`
           : `${failure.summary} The run cannot continue.`;
-        throw new Error(reason, { cause: caught });
+        throw new Error(reason, { cause: cause });
       }
       return new Promise<number[]>((_resolve, reject) => {
         const abort = () => reject(new DecisionAbandonedError());
@@ -704,7 +722,6 @@ export class LLMEngine extends BaseEngine {
             messages,
             {
               maxTokens,
-              temperature: DECISION_TEMPERATURE,
               tools: DECISION_TOOLS,
               toolChoice: finalRound ? 'none' : 'auto',
             },
@@ -823,28 +840,29 @@ export class LLMEngine extends BaseEngine {
           rationale: `No valid decision (${error}); defaulted to the first legal option for each slot.`,
         },
       } satisfies ParsedDecision);
-    if (generation === this.generation && this.pending)
-      Object.assign(this.pending, {
+    if (generation === this.generation && this.pending) {
+      const update: PendingDecision = {
         prompt,
         rawResponse,
         evidence: decision.evidence,
-        reasoning: reasoningParts.join('\n\n').trim() || undefined,
         usage,
-        ...(upstreamProviders.size ? { upstreamProviders: [...upstreamProviders] } : {}),
         fallback,
-        error: fallback ? error : undefined,
-        errorSummary:
-          fallback && (truncatedBudget || earlyLengthStop)
-            ? classifyProviderFailure(new Error(error), this.spec).summary
-            : undefined,
         latencyMs: performance.now() - started,
         toolCalls,
-        ...(failedAttempts.length ? { failedAttempts } : {}),
         parseFailures,
         toolRounds,
         maxTokens,
         generation,
-      });
+      };
+      const reasoning = reasoningParts.join('\n\n').trim();
+      if (reasoning) update.reasoning = reasoning;
+      if (fallback) update.error = error;
+      if (fallback && (truncatedBudget || earlyLengthStop))
+        update.errorSummary = classifyProviderFailure(new Error(error), this.spec).summary;
+      if (upstreamProviders.size) update.upstreamProviders = [...upstreamProviders];
+      if (failedAttempts.length) update.failedAttempts = failedAttempts;
+      Object.assign(this.pending, update);
+    }
     return decision.choices;
   }
 
@@ -892,7 +910,10 @@ export class LLMEngine extends BaseEngine {
     const rationale = automatic
       ? 'Automatic: only one legal joint action.'
       : evidence.rationale || 'No rationale supplied.';
-    const evidenceSupplied = evidenceSuppliedRecord(evidence);
+    const evidenceSupplied = {
+      rationale: evidence.supplied.rationale,
+      notebook_update: evidence.supplied.notebookUpdate,
+    };
     if (!automatic) {
       if (!pending.fallback) this.consecutiveDecisionFailures = 0;
       this.notebook = evidence.notebook;
@@ -929,7 +950,7 @@ export class LLMEngine extends BaseEngine {
       automatic,
       fallback: pending.fallback ?? false,
     });
-    this.holdSubmissionEvidence(submission, {
+    const submissionEvidence = {
       kind: 'decision',
       game_id: this.gameId,
       series_id: this.seriesId ?? null,
@@ -946,19 +967,20 @@ export class LLMEngine extends BaseEngine {
       automatic,
       fallback: pending.fallback ?? false,
       error: pending.error ?? null,
-      ...(pending.errorSummary ? { error_summary: pending.errorSummary } : {}),
       ...substituted,
       parse_failures: pending.parseFailures ?? 0,
       latency_ms: Math.round(pending.latencyMs ?? 0),
       total_tokens: totalTokens(pending.usage),
       ...reasoningField(pending.usage),
-      ...(pending.usage?.cost !== undefined ? { cost: pending.usage.cost } : {}),
-      ...(pending.upstreamProviders?.length ? { upstream_providers: pending.upstreamProviders } : {}),
       timer,
       tool_lookups: (pending.toolCalls ?? []).map((call) => call.name),
-    });
+      error_summary: pending.errorSummary || undefined,
+      cost: pending.usage?.cost,
+      upstream_providers: pending.upstreamProviders?.length ? pending.upstreamProviders : undefined,
+    };
+    this.holdSubmissionEvidence(submission, submissionEvidence);
     if (automatic) return;
-    this.writeLog(this.options.traceLog, {
+    const trace = {
       kind: 'decision_trace',
       game_id: this.gameId,
       series_id: this.seriesId ?? null,
@@ -974,7 +996,6 @@ export class LLMEngine extends BaseEngine {
       raw_response: pending.rawResponse ?? '',
       reasoning: pending.reasoning ?? null,
       usage: pending.usage ?? {},
-      ...(pending.upstreamProviders?.length ? { upstream_providers: pending.upstreamProviders } : {}),
       latency_ms: pending.latencyMs ?? 0,
       timer,
       parse_failures: pending.parseFailures ?? 0,
@@ -982,15 +1003,17 @@ export class LLMEngine extends BaseEngine {
       max_tokens: pending.maxTokens ?? null,
       tokens_per_second: this.observedTokensPerSecond ? Math.round(this.observedTokensPerSecond) : null,
       tool_calls: pending.toolCalls ?? [],
-      ...(pending.failedAttempts?.length ? { failed_attempts: pending.failedAttempts } : {}),
       fallback: pending.fallback ?? false,
       error: pending.error ?? null,
-      ...(pending.errorSummary ? { error_summary: pending.errorSummary } : {}),
-    });
+      upstream_providers: pending.upstreamProviders?.length ? pending.upstreamProviders : undefined,
+      failed_attempts: pending.failedAttempts?.length ? pending.failedAttempts : undefined,
+      error_summary: pending.errorSummary || undefined,
+    };
+    this.writeLog(this.options.traceLog, trace);
   }
 
-  override decisionStats(): Record<string, number> {
-    return {
+  override decisionStats() {
+    const stats: DecisionStats = {
       decisions: this.decisions,
       fallbacks: this.fallbacks,
       reflections: this.reflections,
@@ -1010,9 +1033,10 @@ export class LLMEngine extends BaseEngine {
       substituted_actions: this.substitutedActions,
       abandoned_decisions: this.abandonedDecisions,
       parse_failures: this.parseFailureCount,
-      ...(this.reasoningTotal > 0 ? { reasoning_tokens: this.reasoningTotal } : {}),
-      ...(this.costTotal > 0 ? { cost: Math.round(this.costTotal * 1e6) / 1e6 } : {}),
     };
+    if (this.reasoningTotal > 0) stats.reasoning_tokens = this.reasoningTotal;
+    if (this.costTotal > 0) stats.cost = Math.round(this.costTotal * 1e6) / 1e6;
+    return stats;
   }
 
   private recordTendencies(
@@ -1122,8 +1146,9 @@ export class LLMEngine extends BaseEngine {
     if (!Array.isArray(rawChoices) || rawChoices.length !== menus.length)
       throw new Error(`choices must be an array of exactly ${menus.length} integers`);
     const choices = rawChoices.map((choice, slot) => {
-      if (!Number.isInteger(choice)) throw new Error(`choice for slot ${slot + 1} must be an integer`);
-      const index = choice as number;
+      const parsedChoice = z.number().int().safeParse(choice);
+      if (!parsedChoice.success) throw new Error(`choice for slot ${slot + 1} must be an integer`);
+      const index = parsedChoice.data;
       if (index < 0 || index >= menus[slot]!.length)
         throw new Error(`choice for slot ${slot + 1} must be between 0 and ${menus[slot]!.length - 1}`);
       return index;
@@ -1133,12 +1158,10 @@ export class LLMEngine extends BaseEngine {
       rationaleLimit: DECISION_RATIONALE_LIMIT,
       notebookLimit: DECISION_NOTE_LIMIT,
     });
-    return {
-      choices,
-      ...(evidence.supplied.rationale ? { rationale: evidence.rationale } : {}),
-      ...(evidence.supplied.notebookUpdate ? { notebook: evidence.notebook } : {}),
-      evidence,
-    };
+    const decision: ParsedDecision = { choices, evidence };
+    if (evidence.supplied.rationale) decision.rationale = evidence.rationale;
+    if (evidence.supplied.notebookUpdate) decision.notebook = evidence.notebook;
+    return decision;
   }
 
   private async reflect(context: GameEnd, result: string): Promise<void> {
@@ -1170,12 +1193,11 @@ export class LLMEngine extends BaseEngine {
     let error: string | undefined;
     let failureSummary: string | undefined;
     let failureKind: string | undefined;
-    let terminalError: Error | undefined;
     try {
       for (let attempt = 0; attempt < 2 && !parsed; attempt += 1) {
         const completion = await this.completeOnce(
           messages,
-          { maxTokens: REFLECTION_MAX_TOKENS, temperature: DECISION_TEMPERATURE },
+          { maxTokens: REFLECTION_MAX_TOKENS },
           this.briefed(
             draftRoster ? DRAFT_SERIES_REFLECTION_SYSTEM : seriesOver ? SERIES_REFLECTION_SYSTEM : REFLECTION_SYSTEM,
           ),
@@ -1209,7 +1231,6 @@ export class LLMEngine extends BaseEngine {
       const failure = classifyProviderFailure(caught, this.spec);
       failureSummary = failure.summary;
       failureKind = failure.kind;
-      terminalError = new Error(`${failure.summary} The run cannot continue.`, { cause: caught });
     }
     const fallback = !parsed;
     const review =
@@ -1236,7 +1257,7 @@ export class LLMEngine extends BaseEngine {
       notebook: this.notebook,
       fallback,
     });
-    this.writeLog(this.options.decisionLog, {
+    const reflectionLog = {
       kind: 'game_reflection',
       game_id: this.gameId,
       series_id: this.seriesId ?? null,
@@ -1251,9 +1272,10 @@ export class LLMEngine extends BaseEngine {
       ...reasoningField(usage),
       fallback,
       error: error ?? null,
-      ...(failureSummary ? { error_summary: failureSummary, failure_kind: failureKind } : {}),
-    });
-    this.writeLog(this.options.traceLog, {
+      error_summary: failureSummary || undefined,
+      failure_kind: failureKind || undefined,
+    };
+    const reflectionTrace = {
       kind: 'reflection_trace',
       game_id: this.gameId,
       series_id: this.seriesId ?? null,
@@ -1265,26 +1287,24 @@ export class LLMEngine extends BaseEngine {
       usage,
       fallback,
       error: error ?? null,
-      ...(failureSummary ? { error_summary: failureSummary, failure_kind: failureKind } : {}),
-    });
-    if (terminalError) throw terminalError;
+      error_summary: failureSummary || undefined,
+      failure_kind: failureKind || undefined,
+    };
+    this.writeLog(this.options.decisionLog, reflectionLog);
+    this.writeLog(this.options.traceLog, reflectionTrace);
   }
 
-  private static extractReflection(response: string): { summary: string; adjustment: string; notebook: string } {
+  private static extractReflection(response: string): Reflection {
     const object = jsonObjects(response)
       .filter((value) => 'summary' in value || 'adjustment' in value)
       .at(-1);
     if (!object) throw new Error('no JSON game review found');
-    if (
-      typeof object.summary !== 'string' ||
-      typeof object.adjustment !== 'string' ||
-      typeof object.notebook !== 'string'
-    )
-      throw new Error('review must contain string summary, adjustment, and notebook fields');
+    const parsed = reflectionSchema.safeParse(object);
+    if (!parsed.success) throw new Error('review must contain string summary, adjustment, and notebook fields');
     return {
-      summary: clip(object.summary, DECISION_RATIONALE_LIMIT),
-      adjustment: clip(object.adjustment, DECISION_RATIONALE_LIMIT),
-      notebook: clip(object.notebook, DECISION_NOTE_LIMIT),
+      summary: clip(parsed.data.summary, DECISION_RATIONALE_LIMIT),
+      adjustment: clip(parsed.data.adjustment, DECISION_RATIONALE_LIMIT),
+      notebook: clip(parsed.data.notebook, DECISION_NOTE_LIMIT),
     };
   }
 
@@ -1387,7 +1407,7 @@ function jsonObjects(input: string, preferOuterDecision = false): JsonObject[] {
       else if (character === '{') depth += 1;
       else if (character === '}' && --depth === 0) {
         try {
-          const value: unknown = JSON.parse(input.slice(start, index + 1));
+          const value: JsonValue = JSON.parse(input.slice(start, index + 1));
           if (isRecord(value)) matches.push({ value, start, end: index });
         } catch {}
         break;
@@ -1403,8 +1423,7 @@ function jsonObjects(input: string, preferOuterDecision = false): JsonObject[] {
             parent.start < match.start &&
             parent.end >= match.end &&
             ('choices' in parent.value || 'choice' in parent.value) &&
-            typeof parent.value.rationale === 'string' &&
-            typeof parent.value.notebook === 'string',
+            suppliedDecisionEvidenceSchema.safeParse(parent.value).success,
         ),
     )
     .map(({ value }) => value);

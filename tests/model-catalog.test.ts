@@ -65,7 +65,7 @@ test('provider registry is exactly OpenRouter, Prime Inference, the Vercel AI Ga
 test('OpenRouter discovery uses only its fixed list endpoint and filters non-text models', async () => {
   let calls = 0;
   const models = await discoverModels(providerOption('openrouter')!, 'openrouter-secret', {
-    fetch: (async (input, init) => {
+    fetch: async (input, init) => {
       calls += 1;
       assert.equal(String(input), 'https://openrouter.ai/api/v1/models');
       assert.equal(new Headers(init?.headers).get('authorization'), 'Bearer openrouter-secret');
@@ -91,7 +91,7 @@ test('OpenRouter discovery uses only its fixed list endpoint and filters non-tex
         }),
         { status: 200, headers: { 'content-type': 'application/json' } },
       );
-    }) as typeof globalThis.fetch,
+    },
   });
 
   assert.equal(calls, 1, 'discovery performs no separate key or credit lookup');
@@ -104,10 +104,10 @@ test('OpenRouter discovery uses only its fixed list endpoint and filters non-tex
 
 test('model discovery requires the OpenRouter key and Prime remains manual without a request', async () => {
   let fetched = false;
-  const fakeFetch = (async () => {
+  const fakeFetch: typeof globalThis.fetch = async () => {
     fetched = true;
     throw new Error('must not fetch');
-  }) as typeof globalThis.fetch;
+  };
   await assert.rejects(discoverModels(providerOption('openrouter')!, undefined, { fetch: fakeFetch }), /OPENROUTER/);
   await assert.rejects(discoverModels(providerOption('opencode-go')!, undefined, { fetch: fakeFetch }), /OPENCODE/);
   await assert.rejects(discoverModels(providerOption('prime')!, 'prime-key', { fetch: fakeFetch }), /manual model IDs/);
@@ -116,7 +116,7 @@ test('model discovery requires the OpenRouter key and Prime remains manual witho
 
 test('OpenCode discovery reads its plain OpenAI-style catalog and filters non-generative ids', async () => {
   const models = await discoverModels(providerOption('opencode-zen')!, 'opencode-secret', {
-    fetch: (async (input, init) => {
+    fetch: async (input, init) => {
       assert.equal(String(input), 'https://opencode.ai/zen/v1/models');
       assert.equal(new Headers(init?.headers).get('authorization'), 'Bearer opencode-secret');
       return new Response(
@@ -129,7 +129,7 @@ test('OpenCode discovery reads its plain OpenAI-style catalog and filters non-ge
         }),
         { status: 200, headers: { 'content-type': 'application/json' } },
       );
-    }) as typeof globalThis.fetch,
+    },
   });
   assert.deepEqual(models, [{ id: 'claude-fable-5' }, { id: 'grok-code' }]);
 });
@@ -138,11 +138,11 @@ test('catalog failures redact the request key', async () => {
   const key = 'openrouter-secret';
   await assert.rejects(
     discoverModels(providerOption('openrouter')!, key, {
-      fetch: (async () =>
+      fetch: async () =>
         new Response(JSON.stringify({ error: { message: `invalid ${key}` } }), {
           status: 401,
           headers: { 'content-type': 'application/json' },
-        })) as typeof globalThis.fetch,
+        }),
     }),
     (error: unknown) => {
       assert.ok(error instanceof Error);

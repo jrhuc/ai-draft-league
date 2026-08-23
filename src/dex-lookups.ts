@@ -2,24 +2,33 @@ import type { BoardSearch } from './board-search.js';
 import { assistantToolMessage, toolResultMessage, uniqueToolCalls } from './providers.js';
 import type { ShowdownReference } from './reference.js';
 import { DEX_TOOLS } from './reference.js';
-import type { Completion, JsonObject, Provider, ProviderMessage, ToolDefinition } from './types.js';
-import { isRecord } from './value.js';
+import type {
+  CompleteOptions,
+  Completion,
+  JsonObject,
+  JsonValue,
+  Provider,
+  ProviderMessage,
+  ToolDefinition,
+} from './types.js';
+import { isRecord, text } from './value.js';
 
 export const TOOL_BUDGET_NOTICE =
   'Tool budget for this reply is exhausted; further tool calls will not be executed. Reply now with only the final JSON object.';
 
-function textToolCall(text: string): { name: string; arguments: JsonObject } | undefined {
-  const trimmed = text.trim();
+function textToolCall(reply: string): { name: string; arguments: JsonObject } | undefined {
+  const trimmed = reply.trim();
   if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return undefined;
-  let parsed: unknown;
+  let parsed: JsonValue;
   try {
     parsed = JSON.parse(trimmed);
   } catch {
     return undefined;
   }
-  if (!isRecord(parsed) || typeof parsed.name !== 'string') return undefined;
+  if (!isRecord(parsed)) return undefined;
+  const name = text(parsed.name);
   const args = parsed.args ?? parsed.arguments ?? parsed.parameters;
-  return isRecord(args) ? { name: parsed.name, arguments: args } : undefined;
+  return name && isRecord(args) ? { name, arguments: args } : undefined;
 }
 
 export interface DexToolPolicy {
@@ -55,16 +64,12 @@ function offeredTools(request: DexToolRequest): ToolDefinition[] {
 }
 
 async function completeOnce(request: DexToolRequest, options: { tools: boolean; final: boolean }): Promise<Completion> {
-  return request.provider.complete(request.system, request.messages, {
-    maxTokens: request.policy.maxTokens,
-    ...(options.tools
-      ? {
-          tools: offeredTools(request),
-          toolChoice: options.final ? 'none' : 'auto',
-        }
-      : {}),
-    ...(request.signal === undefined ? {} : { signal: request.signal }),
-  });
+  const completeOptions: CompleteOptions = { maxTokens: request.policy.maxTokens, signal: request.signal };
+  if (options.tools) {
+    completeOptions.tools = offeredTools(request);
+    completeOptions.toolChoice = options.final ? 'none' : 'auto';
+  }
+  return request.provider.complete(request.system, request.messages, completeOptions);
 }
 
 export interface DexToolCompletion extends Completion {
@@ -113,12 +118,13 @@ export async function completeWithDexTools(request: DexToolRequest): Promise<Dex
       }
       /** Some providers omit finishReason, so reported output reaching the requested cap is authoritative. */
       const outputLimitReached = (completion.usage.output_tokens ?? 0) >= request.policy.maxTokens;
-      return {
+      const result: DexToolCompletion = {
         ...completion,
         usage,
         outputLimitReached,
-        ...(outputLimitReached ? { finishReason: 'length' as const } : {}),
       };
+      if (outputLimitReached) result.finishReason = 'length';
+      return result;
     }
 
     const requested = uniqueToolCalls(completion.toolCalls);

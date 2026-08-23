@@ -20,8 +20,8 @@ tr.winner-a td.a, tr.winner-b td.b { font-weight: 700; color: var(--accent); }
 .wrap { overflow-x: auto; }
 `;
 
-function escapeHtml(value: unknown): string {
-  return String(value ?? '').replace(
+function escapeHtml(value: string): string {
+  return value.replace(
     /[&<>"']/g,
     (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!,
   );
@@ -55,7 +55,7 @@ function gamesTable(rows: SeriesRecord[], limit = 80): string {
     .reverse()
     .map(({ series, game }) => {
       const side = game.winner_side;
-      return `<tr class='${side === 'p1' ? 'winner-a' : side === 'p2' ? 'winner-b' : ''}'><td class=meta>${escapeHtml(series.series_id)}</td><td class=num>${escapeHtml(game.number ?? '?')}</td><td class=a>${escapeHtml(series.players.p1)}</td><td class=b>${escapeHtml(series.players.p2)}</td><td>${escapeHtml(game.winner ?? 'tie')}</td><td class=num>${escapeHtml(game.turns ?? '?')}</td><td class=meta>${escapeHtml(game.log)}</td></tr>`;
+      return `<tr class='${side === 'p1' ? 'winner-a' : side === 'p2' ? 'winner-b' : ''}'><td class=meta>${escapeHtml(String(series.series_id ?? ''))}</td><td class=num>${escapeHtml(String(game.number ?? '?'))}</td><td class=a>${escapeHtml(series.players.p1)}</td><td class=b>${escapeHtml(series.players.p2)}</td><td>${escapeHtml(String(game.winner ?? 'tie'))}</td><td class=num>${escapeHtml(String(game.turns ?? '?'))}</td><td class=meta>${escapeHtml(String(game.log ?? ''))}</td></tr>`;
     })
     .join('');
   return `<h3>Games</h3><div class=wrap><table>${head}${body}</table></div>`;

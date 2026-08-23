@@ -1,7 +1,7 @@
 import { PROTECT_MOVES } from './state.js';
-import type { BattleRequest, JsonObject } from './types.js';
+import type { BattleMoveRequest, BattlePokemonRequest, BattleRequest } from './types.js';
 
-import { afterColon, asRecords, text } from './value.js';
+import { afterColon } from './value.js';
 
 type MenuKind = 'move' | 'switch' | 'team' | 'pass' | 'forfeit';
 interface MenuItem {
@@ -22,16 +22,16 @@ export interface MenuHints {
 const SELECTED_TARGETS = new Set(['normal', 'any', 'adjacentFoe']);
 const SPREAD_TARGETS = new Set(['allySide', 'foeSide', 'all', 'allAdjacent', 'allAdjacentFoes', 'allies']);
 
-function pokemonSpecies(pokemon: JsonObject): string {
-  const fromDetails = text(pokemon.details).split(',', 1)[0]?.trim();
+function pokemonSpecies(pokemon: BattlePokemonRequest): string {
+  const fromDetails = pokemon.details?.split(',', 1)[0]?.trim();
   if (fromDetails) return fromDetails;
-  return afterColon(text(pokemon.ident)) || 'Pokémon';
+  return afterColon(pokemon.ident ?? '') || 'Pokémon';
 }
 
 function switches(request: BattleRequest, reviving = false): SlotMenu {
   const menu: SlotMenu = [];
   for (const [index, pokemon] of (request.side?.pokemon ?? []).entries()) {
-    const fainted = text(pokemon.condition).endsWith(' fnt');
+    const fainted = pokemon.condition?.endsWith(' fnt') ?? false;
     if ((!reviving && pokemon.active) || fainted !== reviving) continue;
     menu.push({ label: `Switch to ${pokemonSpecies(pokemon)}`, part: `switch ${index + 1}`, kind: 'switch' });
   }
@@ -54,7 +54,7 @@ function spreadLabel(target: string, slot: number, names?: TargetNames): string 
 }
 
 function moveItems(
-  move: JsonObject,
+  move: BattleMoveRequest,
   moveSlot: number,
   slot: number,
   activeCount: number,
@@ -62,7 +62,7 @@ function moveItems(
   mega: boolean,
   hints?: MenuHints,
 ): SlotMenu {
-  const target = text(move.target);
+  const target = move.target ?? '';
   const names = hints?.names;
   const targetLabel = (side: 'foe' | 'ally', number: number) => {
     const species = names?.[side][number];
@@ -84,7 +84,7 @@ function moveItems(
     if (hasAlly) targets.push([` -${ally}`, targetLabel('ally', ally)]);
   }
 
-  const name = text(move.move, `Move ${moveSlot}`);
+  const name = move.move || `Move ${moveSlot}`;
   const protectHint =
     PROTECT_MOVES.has(name.toLowerCase().replace(/[^a-z0-9]+/g, '')) && hints?.protectReduced?.[slot]
       ? ' [success rate reduced: Protected last turn]'
@@ -133,27 +133,28 @@ export function buildMenus(request: BattleRequest, hints?: MenuHints): SlotMenu[
       menus[0]!.push({ label: 'Forfeit the game (concede the loss)', part: 'forfeit', kind: 'forfeit' });
     return menus;
   }
-  if (request.active) {
+  const activeRequests = request.active;
+  if (activeRequests) {
     const activePokemon = pokemon.filter((mon) => mon.active);
-    const menus = request.active.map((active, slotIndex): SlotMenu => {
+    const menus = activeRequests.map((active, slotIndex): SlotMenu => {
       const slot = slotIndex + 1;
-      const current = activePokemon[slotIndex] ?? {};
-      if (!active || current.commanding || text(current.condition).endsWith(' fnt')) {
+      const current = activePokemon[slotIndex];
+      if (!active || current?.commanding || current?.condition?.endsWith(' fnt')) {
         return [{ label: 'Pass', part: 'pass', kind: 'pass' }];
       }
-      const moves = asRecords(active.moves);
+      const moves = active.moves;
       const allyIndex = slot === 1 ? 1 : 0;
       const ally = activePokemon[allyIndex];
       const hasAlly =
-        request.active!.length > 1 &&
-        request.active![allyIndex] !== null &&
+        activeRequests.length > 1 &&
+        activeRequests[allyIndex] !== null &&
         ally !== undefined &&
         !ally.commanding &&
-        !text(ally.condition).endsWith(' fnt');
+        !ally.condition?.endsWith(' fnt');
       const menu = moves.flatMap((move, index) =>
         move.disabled
           ? []
-          : moveItems(move, index + 1, slot, request.active!.length, hasAlly, Boolean(active.canMegaEvo), hints),
+          : moveItems(move, index + 1, slot, activeRequests.length, hasAlly, Boolean(active.canMegaEvo), hints),
       );
       if (moves.length && moves.every((move) => move.disabled))
         menu.push({ label: 'Struggle', part: 'move 1', kind: 'move' });

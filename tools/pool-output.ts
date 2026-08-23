@@ -1,27 +1,40 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { z } from 'zod';
+import type { JsonObject } from '../src/types.js';
+
+export const jsonObjectSchema = z.record(z.string(), z.json());
+
 export interface PoolOutput {
   id: string;
   format: string;
-  event?: Record<string, unknown> | null;
-  spreads?: Record<string, unknown>;
-  teams: Array<Record<string, unknown>>;
+  event?: JsonObject | null;
+  spreads?: JsonObject;
+  teams: JsonObject[];
   files: Record<string, string>;
   extra?: Record<string, string>;
 }
 
+interface PoolManifest {
+  id: string;
+  format: string;
+  event?: JsonObject;
+  spreads?: JsonObject;
+  teams?: JsonObject[];
+}
+
 export function publishPool(poolDir: string, output: PoolOutput): string {
-  const manifest = {
+  const manifest: PoolManifest = {
     id: output.id,
     format: output.format,
-    ...(output.event ? { event: output.event } : {}),
-    ...(output.spreads ? { spreads: output.spreads } : {}),
-    teams: output.teams,
   };
-  const contents: Record<string, string> = {
+  if (output.event) manifest.event = output.event;
+  if (output.spreads) manifest.spreads = output.spreads;
+  manifest.teams = output.teams;
+  const contents = {
     ...output.files,
-    ...(output.extra ?? {}),
+    ...output.extra,
     'pool.json': `${JSON.stringify(manifest, null, 2)}\n`,
   };
   const names = Object.keys(contents);

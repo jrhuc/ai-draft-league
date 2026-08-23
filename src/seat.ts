@@ -1,12 +1,12 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import { createServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { z } from 'zod';
 
 import type { AgentContextQuery } from './agent-context.js';
 import { DRAFT_SERIES_REFLECTION_SYSTEM, REFLECTION_SYSTEM, SERIES_REFLECTION_SYSTEM } from './prompts.js';
 import { DEX_TOOLS } from './reference.js';
-import type { Completion, JsonObject, Provider, ProviderMessage, ToolDefinition } from './types.js';
+import type { Completion, JsonObject, JsonValue, Provider, ProviderMessage, ToolDefinition } from './types.js';
 import { isRecord, text } from './value.js';
 
 type SeatPhase = 'decision' | 'reflection';
@@ -38,6 +38,7 @@ export interface SeatBridgeOptions {
 
 const POLL_LIMIT_MS = 55_000;
 const BODY_LIMIT_BYTES = 1_000_000;
+const TCP_ADDRESS_SCHEMA = z.object({ port: z.number() });
 
 /** Localhost agent bridge that exposes only one seat's prompts and menus. */
 export class SeatBridge {
@@ -62,8 +63,12 @@ export class SeatBridge {
     return new Promise((resolve, reject) => {
       this.server.once('error', reject);
       this.server.listen(port, '127.0.0.1', () => {
-        const address = this.server.address() as AddressInfo;
-        resolve(`http://127.0.0.1:${address.port}`);
+        const address = TCP_ADDRESS_SCHEMA.safeParse(this.server.address());
+        if (!address.success) {
+          reject(new Error('seat bridge did not bind a TCP port'));
+          return;
+        }
+        resolve(`http://127.0.0.1:${address.data.port}`);
       });
     });
   }
@@ -109,7 +114,7 @@ export class SeatBridge {
       id: this.exchange.id,
       phase: this.exchange.phase,
       system: this.exchange.system,
-      prompt: typeof last?.content === 'string' ? last.content : '',
+      prompt: text(last?.content),
       messageCount: this.exchange.messages.length,
     };
   }
@@ -146,7 +151,7 @@ export class SeatBridge {
   }
 
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    const send = (statusCode: number, body: JsonObject) => {
+    const send = <Body extends object>(statusCode: number, body: Body) => {
       response.writeHead(statusCode, { 'content-type': 'application/json; charset=utf-8' });
       response.end(JSON.stringify(body));
     };
@@ -170,7 +175,10 @@ export class SeatBridge {
     }
 
     if (route === '/status') return send(200, { status: this.status, exchange: this.exchange?.id ?? null });
-    if (route === '/tools') return send(200, { tools: this.availableTools() });
+    if (route === '/tools') {
+      const tools = this.availableTools().map((definition) => ({ ...definition }));
+      return send(200, { tools });
+    }
     if (route === '/poll') {
       const waitMs = Math.max(0, Math.min(Number(body.waitMs) || 0, POLL_LIMIT_MS));
       if (!this.exchange && waitMs && !this.closed) await this.waitForExchange(waitMs);
@@ -183,7 +191,24 @@ export class SeatBridge {
     if (route === '/context') {
       if (!this.options.context) return send(404, { error: 'context stream is not available' });
       try {
-        return send(200, this.options.context(body as AgentContextQuery));
+        const query: AgentContextQuery = {};
+        for (const field of ['after', 'before'] as const) {
+          if (body[field] === undefined) continue;
+          const cursor = z.string().safeParse(body[field]);
+          if (!cursor.success) throw new Error(`invalid context cursor ${JSON.stringify(body[field])}`);
+          query[field] = cursor.data;
+        }
+        if (body.kind !== undefined) {
+          const kind = z.enum(['episode', 'observation', 'decision', 'reflection']).safeParse(body.kind);
+          if (!kind.success) throw new Error(`invalid context kind ${JSON.stringify(body.kind)}`);
+          query.kind = kind.data;
+        }
+        if (body.limit !== undefined && body.limit !== null) {
+          const limit = z.number().finite().safeParse(body.limit);
+          if (!limit.success) throw new Error(`invalid context limit ${JSON.stringify(body.limit)}`);
+          query.limit = limit.data;
+        }
+        return send(200, this.options.context(query));
       } catch (error) {
         return send(400, { error: error instanceof Error ? error.message : 'invalid context query' });
       }
@@ -200,15 +225,14 @@ export class SeatBridge {
     if (route === '/submit') {
       const exchange = this.exchange;
       if (!exchange) return send(409, { error: 'no pending exchange' });
-      if (typeof body.id !== 'number' || !Number.isSafeInteger(body.id))
-        return send(400, { error: 'id must be a safe integer' });
-      if (body.id !== exchange.id)
+      const id = z.number().safe().int().safeParse(body.id);
+      if (!id.success) return send(400, { error: 'id must be a safe integer' });
+      if (id.data !== exchange.id)
         return send(409, { error: `stale exchange; the pending exchange is ${exchange.id}` });
-      const submitted = body.text;
-      if (typeof submitted !== 'string' || !submitted.trim())
-        return send(400, { error: 'text must be a non-empty string' });
+      const submitted = z.string().safeParse(body.text);
+      if (!submitted.success || !submitted.data.trim()) return send(400, { error: 'text must be a non-empty string' });
       this.exchange = undefined;
-      exchange.resolve({ text: submitted, usage: {}, toolCalls: [] });
+      exchange.resolve({ text: submitted.data, usage: {}, toolCalls: [] });
       return send(200, { ok: true, id: exchange.id });
     }
     send(404, { error: 'unknown route' });
@@ -227,17 +251,18 @@ class SeatHttpError extends Error {
 async function readJson(request: IncomingMessage): Promise<JsonObject> {
   const chunks: Buffer[] = [];
   let size = 0;
-  for await (const chunk of request as AsyncIterable<Buffer>) {
-    size += chunk.length;
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buffer.length;
     if (size > BODY_LIMIT_BYTES) throw new SeatHttpError(413, 'request body too large');
-    chunks.push(chunk);
+    chunks.push(buffer);
   }
-  let value: unknown;
+  let parsed: JsonValue;
   try {
-    value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
   } catch {
     throw new SeatHttpError(400, 'request body must be JSON');
   }
-  if (!isRecord(value)) throw new SeatHttpError(400, 'request body must be a JSON object');
-  return value;
+  if (!isRecord(parsed)) throw new SeatHttpError(400, 'request body must be a JSON object');
+  return parsed;
 }

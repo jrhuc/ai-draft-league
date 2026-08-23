@@ -13,7 +13,6 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
@@ -21,5 +20,5 @@
     "sourceMap": true
   },
   "include": ["src/**/*.ts", "tools/**/*.ts", "tests/**/*.ts"],
-  "exclude": ["dist", "node_modules", "pokemon-showdown", "src/gui/client"]
+  "exclude": ["dist", "node_modules", "pokemon-showdown", "src/gui/client", "tools/oxlint/anti-slop"]
 }

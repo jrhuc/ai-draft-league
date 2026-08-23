@@ -1,11 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { z } from 'zod';
 import type { PoolInfo } from './gui/api.js';
 import { defaultPsDir, TEAMS_DIR } from './paths.js';
-import { loadShowdown } from './showdown.js';
-import type { JsonObject } from './types.js';
-import { asRecords, text } from './value.js';
+import { loadShowdown, type ShowdownApi } from './showdown.js';
+import type { JsonObject, JsonValue } from './types.js';
+import { asRecords, isRecord, text } from './value.js';
 
 const POOL_SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
@@ -55,11 +56,14 @@ export function listPools(teamsDir = TEAMS_DIR): PoolInfo[] {
         .sort()
     : []) {
     try {
-      const manifest = JSON.parse(fs.readFileSync(path.join(teamsDir, name, 'pool.json'), 'utf8')) as {
-        id?: string;
-        format?: string;
-        teams?: unknown[];
-      };
+      const manifest = z
+        .object({
+          id: z.string().optional(),
+          format: z.string().optional(),
+          teams: z.array(z.json()).optional(),
+        })
+        .passthrough()
+        .parse(JSON.parse(fs.readFileSync(path.join(teamsDir, name, 'pool.json'), 'utf8')));
       pools.push({
         name,
         id: manifest.id ?? name,
@@ -85,39 +89,64 @@ export interface TeamPool {
   metadata: PoolMetadata;
 }
 
-function block(value: unknown): JsonObject | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as JsonObject) : undefined;
+const poolNumberSchema = z.number();
+
+interface PoolManifestTeam {
+  id: string;
+  file: string;
+  seed?: number;
+  source?: JsonObject;
 }
 
-function readMetadata(manifest: Record<string, unknown>): PoolMetadata {
+interface PoolManifestHeader extends PoolMetadata {
+  id: string;
+  format: string;
+}
+
+interface PoolManifest extends PoolMetadata {
+  id: string;
+  format: string;
+  teams: PoolManifestTeam[];
+}
+
+function block(value: JsonValue | undefined): JsonObject | undefined {
+  return isRecord(value) ? value : undefined;
+}
+function readMetadata(manifest: JsonObject): PoolMetadata {
+  const metadata: PoolMetadata = {};
   const event = block(manifest.event);
   const spreads = block(manifest.spreads);
-  return { ...(event ? { event } : {}), ...(spreads ? { spreads } : {}) };
+  if (event) metadata.event = event;
+  if (spreads) metadata.spreads = spreads;
+  return metadata;
 }
 
-function readEvent(manifest: Record<string, unknown>): PoolEvent | null {
+function readEvent(manifest: JsonObject): PoolEvent | null {
   const event = block(manifest.event);
   if (!event) return null;
   const spreads = block(manifest.spreads) ?? {};
+  const players = poolNumberSchema.safeParse(event.players);
+  const cut = poolNumberSchema.safeParse(event.cut);
   return {
     name: text(event.name),
     game: text(event.game),
     regulation: text(event.regulation),
     location: text(event.location),
     dates: text(event.dates),
-    players: typeof event.players === 'number' ? event.players : null,
+    players: players.success ? players.data : null,
     structure: text(event.structure),
     url: text(event.url),
-    cut: typeof event.cut === 'number' ? event.cut : null,
+    cut: cut.success ? cut.data : null,
     reconstructedSpreads: spreads.reconstructed === true,
   };
 }
 
-function readProvenance(entry: Record<string, unknown>): TeamProvenance | undefined {
+function readProvenance(entry: JsonObject): TeamProvenance | undefined {
   const record = block(entry.source);
   if (!record) return undefined;
+  const placement = poolNumberSchema.safeParse(record.placement);
   return {
-    placement: typeof record.placement === 'number' ? record.placement : null,
+    placement: placement.success ? placement.data : null,
     player: text(record.player),
     handle: text(record.handle),
     swiss: text(record.swiss),
@@ -129,11 +158,8 @@ export function loadPool(name = 'test', teamsDir = TEAMS_DIR): TeamPool {
   if (!POOL_SLUG.test(name)) throw new Error('pool name must be lowercase letters, digits, and dashes');
   const poolDir = path.resolve(teamsDir, name);
   const manifestPath = path.join(poolDir, 'pool.json');
-  const data: unknown = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
-    throw new Error(`invalid pool manifest ${manifestPath}`);
-  }
-  const manifest = data as Record<string, unknown>;
+  const manifest = block(JSON.parse(fs.readFileSync(manifestPath, 'utf8')));
+  if (!manifest) throw new Error(`invalid pool manifest ${manifestPath}`);
   const id = text(manifest.id);
   const format = text(manifest.format);
   const entries = asRecords(manifest.teams);
@@ -161,13 +187,12 @@ export function loadPool(name = 'test', teamsDir = TEAMS_DIR): TeamPool {
     if (!packed) throw new Error(`team ${JSON.stringify(teamId)} is empty`);
     const provenance = readProvenance(entry);
     const source = block(entry.source);
-    return {
-      id: teamId,
-      packed,
-      ...(typeof entry.seed === 'number' ? { seed: entry.seed } : {}),
-      ...(provenance ? { provenance } : {}),
-      ...(source ? { source } : {}),
-    };
+    const seed = poolNumberSchema.safeParse(entry.seed);
+    const team: Team = { id: teamId, packed };
+    if (seed.success) team.seed = seed.data;
+    if (provenance) team.provenance = provenance;
+    if (source) team.source = source;
+    return team;
   });
   const seeded = teams.filter((team) => team.seed !== undefined);
   if (seeded.length && seeded.length !== teams.length)
@@ -177,7 +202,7 @@ export function loadPool(name = 'test', teamsDir = TEAMS_DIR): TeamPool {
   return { id, format, teams, event: readEvent(manifest), metadata: readMetadata(manifest) };
 }
 
-type ShowdownSets = NonNullable<ReturnType<ReturnType<typeof loadShowdown>['Teams']['unpack']>>;
+type ShowdownSets = NonNullable<ReturnType<ShowdownApi['Teams']['unpack']>>;
 
 function removeUnsupportedMetadata(sets: ShowdownSets, format: string | undefined, psDir: string): void {
   if (!format) return;
@@ -286,7 +311,7 @@ interface TeamInspection {
   members: TeamMember[];
 }
 
-function unpackTeam(packed: string, psDir: string): { species: string[]; members: TeamMember[] } {
+function unpackTeam(packed: string, psDir: string) {
   const { Teams } = loadShowdown(psDir);
   const sets = Teams.unpack(packed) ?? [];
   const species: string[] = [];
@@ -357,17 +382,16 @@ export function createPool(
   });
   fs.mkdirSync(poolDir, { recursive: true });
   for (const team of teams) fs.writeFileSync(path.join(poolDir, `${team.id}.team`), `${team.packed}\n`, 'utf8');
-  const manifest = {
-    id: name,
-    format,
-    ...(contents.event ? { event: contents.event } : {}),
-    ...(contents.spreads ? { spreads: contents.spreads } : {}),
-    teams: teams.map((team) => ({
-      id: team.id,
-      file: `${team.id}.team`,
-      ...(typeof team.draft.seed === 'number' ? { seed: team.draft.seed } : {}),
-      ...(team.draft.source ? { source: team.draft.source } : {}),
-    })),
+  const header: PoolManifestHeader = { id: name, format };
+  if (contents.event) header.event = contents.event;
+  if (contents.spreads) header.spreads = contents.spreads;
+  const manifest: PoolManifest = {
+    ...header,
+    teams: teams.map((team) => {
+      const entry: PoolManifestTeam = { id: team.id, file: `${team.id}.team`, seed: team.draft.seed };
+      if (team.draft.source) entry.source = team.draft.source;
+      return entry;
+    }),
   };
   fs.writeFileSync(path.join(poolDir, 'pool.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
   return poolDir;

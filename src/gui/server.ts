@@ -2,24 +2,21 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import type http from 'node:http';
 import { createServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findLiveCliRun } from '../archive.js';
 import { describeBoardMon, listBoards, loadBoard } from '../draft.js';
-import type { runDraftLeague } from '../draftleague.js';
 import { buildTournamentGame, buildTournaments } from '../evidence.js';
+import { externalDraftSnapshot } from '../external-run.js';
 import { discoverModels } from '../model-catalog.js';
 import { DATA_DIR, defaultPsDir, prepareDataDirectories, RESULTS_PATH, RUNS_DIR, TEAMS_DIR } from '../paths.js';
 import type { DiscoveredModel } from '../provider-registry.js';
 import { PROVIDER_OPTIONS, providerOption } from '../provider-registry.js';
 import { loadSeriesRecords } from '../records.js';
-import type { runRotation } from '../rotation.js';
 import { redactSecrets } from '../sanitize.js';
 import { loadShowdown } from '../showdown.js';
 import type { TeamDraft } from '../teams.js';
 import { createPool, exportTeam, inspectTeam, listPools, loadPool, packTeam, validateTeam } from '../teams.js';
-import type { runTournament } from '../tournament.js';
 import type { JsonObject } from '../types.js';
 import { isRecord } from '../value.js';
 import type {
@@ -33,34 +30,58 @@ import type {
   ServerEvent,
 } from './api.js';
 import { parseRunRequest, RunRequestError } from './run-request.js';
+import type { RunFinishedLogEntry, RunSupervisorOptions, StartedRun } from './run-supervisor.js';
 import { RunSupervisor } from './run-supervisor.js';
 
 const ASSETS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'gui');
-const ASSET_TYPES: Record<string, string> = {
-  '.png': 'image/png',
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.map': 'application/json; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon',
-};
+const ASSET_TYPES = new Map([
+  ['.png', 'image/png'],
+  ['.html', 'text/html; charset=utf-8'],
+  ['.js', 'text/javascript; charset=utf-8'],
+  ['.css', 'text/css; charset=utf-8'],
+  ['.map', 'application/json; charset=utf-8'],
+  ['.json', 'application/json; charset=utf-8'],
+  ['.svg', 'image/svg+xml'],
+  ['.ico', 'image/x-icon'],
+]);
 
-const LOCAL_HOSTNAMES: Record<string, true> = { '127.0.0.1': true, localhost: true, '[::1]': true, '::1': true };
-const MUTATING_METHODS: Record<string, true> = { POST: true, PUT: true, PATCH: true, DELETE: true };
+function isLocalHostname(hostname: string): boolean {
+  return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '[::1]' || hostname === '::1';
+}
+
 const MAX_SSE_CLIENTS = 16;
 const SSE_HEARTBEAT_MS = 25_000;
+
+interface HttpRequestLogEntry {
+  timestamp: string;
+  level: 'info';
+  event: 'http_request';
+  requestId: string;
+  method: string;
+  path: string;
+  status: number;
+  durationMs: number;
+}
+
+interface RequestErrorLogEntry {
+  timestamp: string;
+  level: 'error';
+  event: 'request_error' | 'readiness_check_failed';
+  requestId?: string;
+  error: string;
+}
+
+type GuiLogEntry = HttpRequestLogEntry | RequestErrorLogEntry | RunFinishedLogEntry;
 
 interface GuiServerOptions {
   teamsDir?: string;
   recordsPath?: string;
   runsDir?: string;
-  runner?: typeof runRotation;
-  tournamentRunner?: typeof runTournament;
-  draftRunner?: typeof runDraftLeague;
+  runner?: RunSupervisorOptions['runner'];
+  tournamentRunner?: RunSupervisorOptions['tournamentRunner'];
+  draftRunner?: RunSupervisorOptions['draftRunner'];
   host?: string;
-  logger?: (entry: Record<string, unknown>) => void;
+  logger?: (entry: GuiLogEntry) => void;
 }
 
 function hostnameFromHost(host: string | undefined): string {
@@ -117,18 +138,18 @@ export class GuiServer {
   constructor(options: GuiServerOptions = {}) {
     this.options = options;
     this.bindHost = options.host?.trim() || '127.0.0.1';
-    if (!LOCAL_HOSTNAMES[hostnameFromHost(this.bindHost)]) {
+    if (!isLocalHostname(hostnameFromHost(this.bindHost))) {
       throw new Error('the GUI server binds loopback only; front it with a local proxy for remote access');
     }
     this.runs = new RunSupervisor({
       onRunChange: () => this.queueRun(),
       onBattleChange: (index) => this.queueBattle(index),
-      ...(options.recordsPath === undefined ? {} : { recordsPath: options.recordsPath }),
-      ...(options.runsDir === undefined ? {} : { runsDir: options.runsDir }),
-      ...(options.runner === undefined ? {} : { runner: options.runner }),
-      ...(options.tournamentRunner === undefined ? {} : { tournamentRunner: options.tournamentRunner }),
-      ...(options.draftRunner === undefined ? {} : { draftRunner: options.draftRunner }),
-      ...(options.logger === undefined ? {} : { logger: options.logger }),
+      recordsPath: options.recordsPath,
+      runsDir: options.runsDir,
+      runner: options.runner,
+      tournamentRunner: options.tournamentRunner,
+      draftRunner: options.draftRunner,
+      logger: options.logger,
     });
     prepareDataDirectories();
     this.server = createServer((request, response) => {
@@ -154,7 +175,7 @@ export class GuiServer {
           durationMs: Date.now() - started,
         });
       });
-      void this.route(request, response).catch((error: unknown) => {
+      void this.route(request, response).catch((error) => {
         const expected = error instanceof HttpError;
         const status = expected ? error.status : 500;
         const detail = redactSecrets(error instanceof Error ? error.message : String(error), this.runs.apiKeySecrets());
@@ -185,9 +206,13 @@ export class GuiServer {
     const { promise, resolve, reject } = Promise.withResolvers<string>();
     this.server.once('error', reject);
     this.server.listen(port, this.bindHost, () => {
-      const address = this.server.address() as AddressInfo;
+      const address = this.server.address();
+      if (!(address instanceof Object)) {
+        reject(new Error('server did not bind a TCP address'));
+        return;
+      }
       const localHost = hostnameFromHost(this.bindHost) === '::1' ? '[::1]' : '127.0.0.1';
-      resolve(`http://${localHost}:${address.port}/`);
+      resolve(`http://${localHost}:${Number(address.port)}/`);
     });
     return promise;
   }
@@ -226,9 +251,9 @@ export class GuiServer {
     }
 
     const host = request.headers.host;
-    if (!LOCAL_HOSTNAMES[hostnameFromHost(host)]) throw new HttpError(403, 'request host is not allowed');
+    if (!isLocalHostname(hostnameFromHost(host))) throw new HttpError(403, 'request host is not allowed');
 
-    if (MUTATING_METHODS[method]) {
+    if (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE') {
       const origin = request.headers.origin;
       if (origin !== undefined && origin !== `http://${host}`) {
         throw new HttpError(403, 'cross-origin requests are not allowed');
@@ -244,7 +269,14 @@ export class GuiServer {
 
     if (method === 'GET' && !url.pathname.startsWith('/api/') && this.serveStatic(url.pathname, response)) return;
     if (key === 'GET /api/state') this.json(response, 200, this.stateBody());
-    else if (key === 'GET /api/tournaments')
+    else if (key === 'GET /api/external') {
+      const live = this.externalRunBody();
+      this.json(
+        response,
+        200,
+        live?.mode === 'draft' ? externalDraftSnapshot(this.options.runsDir ?? RUNS_DIR, live.runId) : null,
+      );
+    } else if (key === 'GET /api/tournaments')
       this.json(response, 200, this.tournamentsBody(url.searchParams.get('pool')));
     else if (key === 'GET /api/tournament/game')
       this.json(
@@ -283,7 +315,7 @@ export class GuiServer {
     } else this.json(response, 404, { error: `no route for ${key}` });
   }
 
-  private json(response: http.ServerResponse, status: number, body: unknown): void {
+  private json<Body extends object>(response: http.ServerResponse, status: number, body: Body | null): void {
     response.writeHead(status, {
       'cache-control': 'no-store',
       'content-type': 'application/json; charset=utf-8',
@@ -314,7 +346,7 @@ export class GuiServer {
   private serveStatic(pathname: string, response: http.ServerResponse): boolean {
     const file = path.normalize(path.join(ASSETS_DIR, pathname === '/' ? '/index.html' : pathname));
     if (!file.startsWith(ASSETS_DIR + path.sep)) return false;
-    const type = ASSET_TYPES[path.extname(file)];
+    const type = ASSET_TYPES.get(path.extname(file));
     if (!type || !fs.existsSync(file) || !fs.statSync(file).isFile()) return false;
     const immutable = pathname.startsWith('/sprites/');
     response.writeHead(200, {
@@ -325,24 +357,24 @@ export class GuiServer {
     return true;
   }
 
-  private async readJson(request: http.IncomingMessage): Promise<Record<string, unknown>> {
+  private async readJson(request: http.IncomingMessage): Promise<JsonObject> {
     const chunks: Buffer[] = [];
     let size = 0;
     for await (const chunk of request) {
-      size += (chunk as Buffer).length;
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buffer.length;
       if (size > 2_000_000) throw new HttpError(413, 'request body too large');
-      chunks.push(chunk as Buffer);
+      chunks.push(buffer);
     }
-    let data: unknown;
+    let data: JsonObject | undefined;
     try {
-      data = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      if (isRecord(parsed)) data = parsed;
     } catch {
       throw new HttpError(400, 'request body must be JSON');
     }
-    if (typeof data !== 'object' || data === null || Array.isArray(data)) {
-      throw new HttpError(400, 'request body must be a JSON object');
-    }
-    return data as Record<string, unknown>;
+    if (data === undefined) throw new HttpError(400, 'request body must be a JSON object');
+    return data;
   }
 
   private sampleTeamsBody(pools: { name: string }[]): SampleTeam[] {
@@ -425,7 +457,7 @@ export class GuiServer {
     };
   }
 
-  private tournamentsBody(poolParam: string | null): JsonObject {
+  private tournamentsBody(poolParam: string | null) {
     const all = loadSeriesRecords(this.options.recordsPath ?? RESULTS_PATH);
     const pool = poolParam?.trim() || null;
     const view = buildTournaments(all, this.options.runsDir ?? RUNS_DIR, pool, this.options.teamsDir ?? TEAMS_DIR);
@@ -440,10 +472,10 @@ export class GuiServer {
         tournaments: view.tournaments.filter((archive) => archive.rounds.flat().some((match) => match.score)).length,
         matches,
       },
-    } as unknown as JsonObject;
+    };
   }
 
-  private tournamentGameBody(run: string, series: string, game: string): JsonObject {
+  private tournamentGameBody(run: string, series: string, game: string) {
     const seriesIndex = Number(series);
     const gameNumber = Number(game);
     if (!Number.isInteger(seriesIndex) || seriesIndex < 0 || !Number.isInteger(gameNumber) || gameNumber < 1) {
@@ -458,7 +490,7 @@ export class GuiServer {
       this.options.teamsDir ?? TEAMS_DIR,
     );
     if (!view) throw new HttpError(404, `no stored game ${game} for series ${series} of ${JSON.stringify(run)}`);
-    return view as unknown as JsonObject;
+    return view;
   }
 
   private runBody() {
@@ -482,7 +514,7 @@ export class GuiServer {
     }
   }
 
-  private startRun(body: Record<string, unknown>): JsonObject {
+  private startRun(body: JsonObject): StartedRun {
     if (!this.runs.canStart()) throw new HttpError(409, 'a run is already in progress');
     const teamsDir = this.options.teamsDir ?? TEAMS_DIR;
     try {
@@ -588,7 +620,7 @@ export class GuiServer {
     }
   }
 
-  private makePool(body: Record<string, unknown>): JsonObject {
+  private makePool(body: JsonObject) {
     const format = String(body.format ?? '');
     if (!championsFormats().some((option) => option.id === format)) {
       throw new HttpError(400, `unsupported Champions BO3 format ${JSON.stringify(format)}`);
@@ -596,7 +628,7 @@ export class GuiServer {
     const entries = Array.isArray(body.teams) ? body.teams : [];
     if (entries.length > 32) throw new HttpError(400, 'a pool supports at most 32 teams');
     const drafts: TeamDraft[] = entries.map((entry) => {
-      const record = (typeof entry === 'object' && entry !== null ? entry : {}) as Record<string, unknown>;
+      const record = isRecord(entry) ? entry : {};
       const paste = String(record.paste ?? '');
       if (paste.length > 64_000) throw new HttpError(400, 'a team paste must be at most 64 KB');
       return { id: String(record.id ?? ''), paste };
@@ -610,7 +642,7 @@ export class GuiServer {
     try {
       dir = createPool(name, format, { teams: drafts }, teamsDir);
     } catch (error) {
-      if (isRecord(error) && typeof error.code === 'string') {
+      if (error instanceof Error && 'code' in error) {
         if (canCleanCandidate) fs.rmSync(candidateDir, { recursive: true, force: true });
         throw error;
       }
@@ -620,7 +652,7 @@ export class GuiServer {
   }
 
   /** The fixed upstream host prevents SSRF. */
-  private async importPokepaste(body: Record<string, unknown>): Promise<JsonObject> {
+  private async importPokepaste(body: JsonObject) {
     const raw = String(body.url ?? '').trim();
     const id = /^(?:https?:\/\/pokepast\.es\/)?([0-9a-f]{8,16})(?:\/(?:raw\/?)?)?$/i.exec(raw)?.[1];
     if (!id) {
@@ -646,11 +678,11 @@ export class GuiServer {
     return { paste };
   }
 
-  private validateDraft(body: Record<string, unknown>): JsonObject {
+  private validateDraft(body: JsonObject) {
     const format = String(body.format ?? '');
     if (!format) throw new HttpError(400, 'format is required');
     const paste = String(body.paste ?? '');
     if (paste.length > 64_000) throw new HttpError(400, 'a team paste must be at most 64 KB');
-    return inspectTeam(paste, format) as unknown as JsonObject;
+    return inspectTeam(paste, format);
   }
 }

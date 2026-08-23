@@ -4,7 +4,7 @@ import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
 import { z } from 'zod';
-import { completeWithDexTools } from './dex-lookups.js';
+import { completeWithDexTools, type DexToolRequest } from './dex-lookups.js';
 import { type FranchiseMemory, MEMORY_TOOL_NOTICE, memoryPageTool, renderMemory } from './franchise-memory.js';
 import type { TeambuildSetView, TeambuildView } from './gui/api.js';
 import { defaultPsDir } from './paths.js';
@@ -18,7 +18,7 @@ import type { ShowdownApi } from './showdown.js';
 import { loadShowdown, showdownCommit } from './showdown.js';
 import { normalizeStageEvidence, noStageEvidence, type StageEvidence } from './stage-evidence.js';
 import { normalizePackedTeam, validateTeam } from './teams.js';
-import type { JsonObject, Provider, ProviderMessage } from './types.js';
+import type { JsonObject, JsonValue, Provider, ProviderMessage } from './types.js';
 
 const MATCHUP_AVAILABLE_MECHANICS_TOOLS = [
   'You have the Showdown dex tools. Use them while you build: check what an item or ability actually does here,',
@@ -119,9 +119,11 @@ const GENERAL_TEAMBUILD_PROMPT_POLICY = {
 const TEAMBUILD_RATIONALE_LIMIT = 2_000;
 const TEAMBUILD_NOTEBOOK_LIMIT = 4_000;
 
+const TEAMBUILD_RESPONSE_PROTOCOL_FIELD = 'responseShape';
+
 const TEAMBUILD_RENDERER_PROTOCOL = {
   version: 2,
-  responseShape: 'strict-json-v1',
+  [TEAMBUILD_RESPONSE_PROTOCOL_FIELD]: 'strict-json-v1',
   candidateIdentity: 'frozen-id',
   setPacking: 'showdown-teams-pack',
   setNotes: true,
@@ -142,19 +144,39 @@ const TEAMBUILD_RENDERER_PROTOCOL = {
 export type TeamBuildSheetPolicy = 'open' | 'closed';
 export type TeamBuildExecutionPolicy = 'league-resilient' | 'strict';
 
-interface RawSet {
-  id: string;
-  item: string;
-  ability: string;
-  nature: string;
-  moves: string[];
-  evs: Record<string, number>;
-  note: string;
-}
-
+const evSchema = z
+  .number({ error: 'must be a finite, safe, non-negative integer' })
+  .refine((value) => Number.isSafeInteger(value) && value >= 0, 'must be a finite, safe, non-negative integer');
+const statSpreadSchema = z.object(
+  { hp: evSchema, atk: evSchema, def: evSchema, spa: evSchema, spd: evSchema, spe: evSchema },
+  { error: 'must be an object' },
+);
+type StatSpread = z.infer<typeof statSpreadSchema>;
 const STATS = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'] as const;
-type Stat = (typeof STATS)[number];
-
+const trimmedString = z
+  .string({ error: 'must be a string' })
+  .refine((value) => value === value.trim(), 'must not have surrounding whitespace');
+const rawSetSchema = z.object(
+  {
+    id: trimmedString,
+    item: trimmedString,
+    ability: trimmedString,
+    nature: trimmedString,
+    moves: z.array(trimmedString.min(1, 'must contain only non-empty strings'), { error: 'must be an array' }),
+    evs: statSpreadSchema,
+    note: z.string({ error: 'must be a string when supplied' }).default(''),
+  },
+  { error: 'must be an object' },
+);
+type RawSet = z.infer<typeof rawSetSchema>;
+const teamBuildReplySchema = z.object(
+  {
+    team_plan: z.string({ error: 'must be a string when supplied' }).optional(),
+    notebook: z.string({ error: 'must be a string when supplied' }).optional(),
+    sets: z.array(rawSetSchema, { error: 'must be an array' }),
+  },
+  { error: 'the reply must be one JSON object' },
+);
 export interface TeamBuildCandidate {
   id: string;
   name: string;
@@ -264,6 +286,25 @@ export interface TeamBuildOptions extends ModelReasoningConfig {
   memory?: FranchiseMemory;
 }
 
+interface TeamBuildAttemptTraceHeader {
+  series?: number;
+  entrant?: number;
+  opponent?: string;
+  task_id?: string;
+  objective?: TeamBuildObjective['kind'];
+  constraint?: string;
+  attempt: number;
+  system?: string;
+}
+
+interface TeamBuildAttemptTrace extends TeamBuildAttemptTraceHeader {
+  user: string;
+  response: string;
+  usage?: Record<string, number>;
+  tool_lookups?: { name: string; arguments: JsonObject; result: string }[];
+  error?: string;
+}
+
 export type TeambuildOptions = TeamBuildOptions;
 
 export interface TeambuildRequest {
@@ -282,23 +323,17 @@ export interface TeambuildRequest {
   sheetPolicy?: TeamBuildSheetPolicy;
 }
 
-const statSpreadSchema = z.strictObject({
-  hp: z.number(),
-  atk: z.number(),
-  def: z.number(),
-  spa: z.number(),
-  spd: z.number(),
-  spe: z.number(),
-});
-const candidateSchema = z.strictObject({
-  id: z.string(),
-  name: z.string(),
-  species: z.string(),
-  forme: z.string().optional(),
-  item: z.string().optional(),
-  base: z.string(),
-  types: z.array(z.string()),
-});
+const candidateSchema = z
+  .strictObject({
+    id: z.string(),
+    name: z.string(),
+    species: z.string(),
+    forme: z.string().optional(),
+    item: z.string().optional(),
+    base: z.string(),
+    types: z.array(z.string()),
+  })
+  .transform((candidate): TeamBuildCandidate => candidate);
 const constraintBaseSchema = {
   id: z.string(),
   teamSize: z.number(),
@@ -308,23 +343,27 @@ const constraintSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('draft-picks'), ...constraintBaseSchema }),
   z.strictObject({ kind: z.literal('frozen-candidate-pool'), ...constraintBaseSchema }),
 ]);
-const objectiveSchema = z.discriminatedUnion('kind', [
-  z.strictObject({
-    kind: z.literal('matchup'),
-    stage: z.union([z.literal('roundrobin'), z.literal('playoff')]),
-    opponent: z.strictObject({ model: z.string(), candidates: z.array(candidateSchema) }),
-    priorContext: z.array(z.string()),
-  }),
-  z.strictObject({ kind: z.literal('general'), brief: z.string().optional() }),
-]);
-const provenanceSchema = z.object({
-  source: z.string(),
-  seed: z.union([z.string(), z.number()]).optional(),
-  parentRunId: z.string().optional(),
-  seriesIndex: z.number().optional(),
-  entrant: z.number().optional(),
-  opponent: z.number().optional(),
-});
+const objectiveSchema = z
+  .discriminatedUnion('kind', [
+    z.strictObject({
+      kind: z.literal('matchup'),
+      stage: z.union([z.literal('roundrobin'), z.literal('playoff')]),
+      opponent: z.strictObject({ model: z.string(), candidates: z.array(candidateSchema) }),
+      priorContext: z.array(z.string()),
+    }),
+    z.strictObject({ kind: z.literal('general'), brief: z.string().optional() }),
+  ])
+  .transform((objective): TeamBuildObjective => objective);
+const provenanceSchema = z
+  .object({
+    source: z.string(),
+    seed: z.union([z.string(), z.number()]).optional(),
+    parentRunId: z.string().optional(),
+    seriesIndex: z.number().optional(),
+    entrant: z.number().optional(),
+    opponent: z.number().optional(),
+  })
+  .transform((provenance): TeamBuildTaskProvenance => provenance);
 const taskSchema = z.strictObject({
   id: z.string(),
   model: z.string(),
@@ -385,11 +424,11 @@ export interface TeamBuildJournalEntry {
   notebook: string;
 }
 
-export function decodeTeamBuildJournalRow(value: unknown, label = 'team-build journal row'): TeamBuildJournalEntry {
+export function decodeTeamBuildJournalRow(value: JsonValue, label = 'team-build journal row'): TeamBuildJournalEntry {
   const parsed = teamBuildJournalRowSchema.safeParse(value);
   if (!parsed.success)
     throw new Error(`${label} is not a current team-build journal row: ${z.prettifyError(parsed.error)}`);
-  const artifact = parsed.data.artifact as TeamBuildArtifact;
+  const artifact: TeamBuildArtifact = parsed.data.artifact;
   const provenance = artifact.task.provenance;
   if (
     provenance.source !== 'draft-league' ||
@@ -420,25 +459,22 @@ export function decodeTeamBuildJournalRow(value: unknown, label = 'team-build jo
 }
 
 function canonicalCandidate(candidate: TeamBuildCandidate): TeamBuildCandidate {
-  return {
-    id: candidate.id,
-    name: candidate.name,
-    species: candidate.species,
-    ...(candidate.forme === undefined ? {} : { forme: candidate.forme }),
-    ...(candidate.item === undefined ? {} : { item: candidate.item }),
-    base: candidate.base,
-    types: [...candidate.types],
-  };
+  const { id, name, species, base, types } = candidate;
+  const canonical: TeamBuildCandidate = { id, name, species, base, types: [...types] };
+  if (candidate.forme !== undefined) canonical.forme = candidate.forme;
+  if (candidate.item !== undefined) canonical.item = candidate.item;
+  return canonical;
 }
 
 function canonicalTask(task: TeamBuildTask, executionPolicy: TeamBuildExecutionPolicy): TeamBuildTask {
-  const constraint = {
-    ...task.constraint,
-    candidates: task.constraint.candidates.map(canonicalCandidate),
-  } as TeamBuildConstraint;
+  const candidates = task.constraint.candidates.map(canonicalCandidate);
+  const constraint: TeamBuildConstraint =
+    task.constraint.kind === 'draft-picks'
+      ? { kind: 'draft-picks', id: task.constraint.id, teamSize: task.constraint.teamSize, candidates }
+      : { kind: 'frozen-candidate-pool', id: task.constraint.id, teamSize: task.constraint.teamSize, candidates };
   const objective: TeamBuildObjective =
     task.objective.kind === 'general'
-      ? { kind: 'general', ...(task.objective.brief === undefined ? {} : { brief: task.objective.brief }) }
+      ? { ...task.objective }
       : {
           kind: 'matchup',
           stage: task.objective.stage,
@@ -519,14 +555,10 @@ function rosterBlock(dex: DexLike, roster: TeamBuildCandidate[], detailed: boole
   return lines;
 }
 
-function isMegaStone(item: { megaStone?: unknown }): boolean {
-  return Boolean(item.megaStone);
-}
-
 function legalItems(dex: DexLike): string[] {
   const names: string[] = [];
   for (const item of dex.items.all()) {
-    if (item.isNonstandard || isMegaStone(item)) continue;
+    if (item.isNonstandard || item.megaStone) continue;
     names.push(item.name);
   }
   return names.sort();
@@ -551,7 +583,7 @@ function systemPrompt(
   evMax: number,
   mechanicsTools: MechanicsToolAvailability = 'available',
 ): string {
-  const values: Record<string, string> = {
+  const values = {
     model: task.model,
     format: task.format,
     picks: String(task.constraint.candidates.length),
@@ -622,7 +654,7 @@ export function renderStrictTeamBuildPrompt(
   const psDir = options.psDir ?? defaultPsDir();
   const { Dex } = loadShowdown(psDir);
   const format = Dex.formats.get(canonical.format);
-  const dex = Dex.mod(format.mod || 'base') as unknown as DexLike;
+  const dex = Dex.mod(format.mod || 'base');
   const rules = Dex.formats.getRuleTable(format);
   return [
     systemPrompt(canonical, dex, rules.evLimit ?? 508, 32, options.mechanicsTools ?? 'available'),
@@ -636,97 +668,70 @@ interface ParsedTeamBuild {
   evidence: StageEvidence;
 }
 
-function parseSets(response: string, task: TeamBuildTask): ParsedTeamBuild | string {
+type ParsedTeamBuildResult = { status: 'accepted'; data: ParsedTeamBuild } | { status: 'rejected'; error: string };
+
+function statSpread(value: number): StatSpread {
+  return { hp: value, atk: value, def: value, spa: value, spd: value, spe: value };
+}
+
+function replyIssueMessage(issue: z.core.$ZodIssue): string {
+  const [head, index, ...rest] = issue.path;
+  if (head === 'sets' && Number.isInteger(index)) {
+    const field = rest.length ? ` "${rest.join('.')}"` : '';
+    return `set ${Number(index) + 1}${field} ${issue.message}`;
+  }
+  return issue.path.length ? `"${issue.path.join('.')}" ${issue.message}` : issue.message;
+}
+
+function parseSets(response: string, task: TeamBuildTask): ParsedTeamBuildResult {
   const match = /\{[\s\S]*\}/.exec(response);
-  if (!match) return 'the reply contained no JSON object';
-  let parsed: unknown;
+  if (!match) return { status: 'rejected', error: 'the reply contained no JSON object' };
+  let json: JsonValue;
   try {
-    parsed = JSON.parse(match[0]);
+    json = JSON.parse(match[0]);
   } catch {
-    return 'the JSON object did not parse';
+    return { status: 'rejected', error: 'the JSON object did not parse' };
   }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    return 'the reply must be one JSON object';
-  }
-  const record = parsed as Record<string, unknown>;
-  if (record.team_plan !== undefined && typeof record.team_plan !== 'string') {
-    return '"team_plan" must be a string when supplied';
-  }
-  if (record.notebook !== undefined && typeof record.notebook !== 'string') {
-    return '"notebook" must be a string when supplied';
-  }
-  if (!Array.isArray(record.sets)) return '"sets" must be an array';
-  const raw = record.sets;
+  const reply = teamBuildReplySchema.safeParse(json);
+  if (!reply.success) return { status: 'rejected', error: replyIssueMessage(reply.error.issues[0]!) };
+  const { sets, team_plan, notebook } = reply.data;
   const teamSize = task.constraint.teamSize;
-  if (raw.length !== teamSize) return `"sets" must hold exactly ${teamSize} entries, not ${raw.length}`;
+  if (sets.length !== teamSize)
+    return { status: 'rejected', error: `"sets" must hold exactly ${teamSize} entries, not ${sets.length}` };
   const owned = new Map(task.constraint.candidates.map((mon) => [mon.id, mon]));
-  const sets: RawSet[] = [];
   const used = new Set<string>();
-  for (const [index, entry] of raw.entries()) {
-    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
-      return `set ${index + 1} must be an object`;
-    }
-    const item = entry as Record<string, unknown>;
-    if (typeof item.id !== 'string') return `set ${index + 1} "id" must be a string`;
-    if (typeof item.item !== 'string') return `set ${index + 1} "item" must be a string`;
-    if (typeof item.ability !== 'string') return `set ${index + 1} "ability" must be a string`;
-    if (typeof item.nature !== 'string') return `set ${index + 1} "nature" must be a string`;
-    if (!Array.isArray(item.moves)) return `set ${index + 1} "moves" must be an array`;
-    if (item.moves.some((move) => typeof move !== 'string' || !move.trim())) {
-      return `set ${index + 1} "moves" must contain only non-empty strings`;
-    }
-    if (item.note !== undefined && typeof item.note !== 'string') {
-      return `set ${index + 1} "note" must be a string when supplied`;
-    }
-    for (const [field, value] of [
-      ['id', item.id],
-      ['item', item.item],
-      ['ability', item.ability],
-      ['nature', item.nature],
-      ...item.moves.map((move, moveIndex) => [`moves[${moveIndex}]`, move]),
-    ] as Array<[string, string]>) {
-      if (value !== value.trim()) return `set ${index + 1} "${field}" must not have surrounding whitespace`;
-    }
-    if (typeof item.evs !== 'object' || item.evs === null || Array.isArray(item.evs)) {
-      return `set ${index + 1} "evs" must be an object`;
-    }
-    const id = item.id;
+  for (const { id } of sets) {
     if (!owned.has(id)) {
-      return task.constraint.kind === 'draft-picks'
-        ? `"${id}" is not a board id on your roster`
-        : `"${id}" is not an id in the frozen candidate pool`;
+      return {
+        status: 'rejected',
+        error:
+          task.constraint.kind === 'draft-picks'
+            ? `"${id}" is not a board id on your roster`
+            : `"${id}" is not an id in the frozen candidate pool`,
+      };
     }
     if (used.has(id)) {
-      return teamSize === 6
-        ? `"${id}" appears twice; bring six different Pokémon`
-        : `"${id}" appears twice; choose ${teamSize} different Pokémon`;
+      return {
+        status: 'rejected',
+        error:
+          teamSize === 6
+            ? `"${id}" appears twice; bring six different Pokémon`
+            : `"${id}" appears twice; choose ${teamSize} different Pokémon`,
+      };
     }
     used.add(id);
-    const rawEvs = item.evs as Record<string, unknown>;
-    const evs: Record<string, number> = {};
-    for (const stat of STATS) {
-      const value = rawEvs[stat];
-      if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isSafeInteger(value) || value < 0) {
-        return `set ${index + 1} "evs.${stat}" must be a finite, safe, non-negative integer`;
-      }
-      evs[stat] = value;
-    }
-    sets.push({
-      id,
-      item: item.item,
-      ability: item.ability,
-      nature: item.nature,
-      moves: item.moves as string[],
-      evs,
-      note: typeof item.note === 'string' ? item.note : '',
-    });
   }
-  const evidence = normalizeStageEvidence(record.team_plan, record.notebook, {
+  const evidence = normalizeStageEvidence(team_plan, notebook, {
     currentNotebook: task.notebook,
     rationaleLimit: TEAMBUILD_RATIONALE_LIMIT,
     notebookLimit: TEAMBUILD_NOTEBOOK_LIMIT,
   });
-  return { sets, evidence };
+  return { status: 'accepted', data: { sets, evidence } };
+}
+
+interface RepairedSet {
+  set: RawSet;
+  repairs: string[];
 }
 
 function repairSet(
@@ -737,7 +742,7 @@ function repairSet(
   evMax: number,
   taken: Set<string>,
   rng: Rng,
-): { set: RawSet; repairs: string[] } {
+): RepairedSet {
   const repairs: string[] = [];
   const base = dex.species.get(mon.species);
 
@@ -751,7 +756,7 @@ function repairSet(
     }
   } else if (!itemName && set.item) {
     repairs.push(`unknown item ${JSON.stringify(set.item)} removed`);
-  } else if (isMegaStone(candidate)) {
+  } else if (candidate.megaStone) {
     repairs.push(`${itemName} removed: this entry was drafted as the base forme`);
     itemName = '';
   } else if (itemName && taken.has(itemName)) {
@@ -763,7 +768,7 @@ function repairSet(
   }
   if (itemName) taken.add(itemName);
 
-  const abilities = Object.values(base.abilities ?? {}).filter(Boolean) as string[];
+  const abilities = Object.values(base.abilities ?? {}).flatMap((name) => (name ? [name] : []));
   let ability = abilities.find((name) => dex.abilities.get(name).name === dex.abilities.get(set.ability).name);
   if (!ability) {
     ability = abilities[0]!;
@@ -802,22 +807,22 @@ function repairSet(
     repairs.push(`filled an empty move slot with ${candidate}`);
   }
 
-  const evs: Record<string, number> = { ...set.evs };
+  const evs: StatSpread = { ...set.evs };
   for (const stat of STATS) {
-    if (evs[stat]! > evMax) {
+    if (evs[stat] > evMax) {
       repairs.push(`${stat} EVs clamped from ${evs[stat]} to ${evMax}`);
       evs[stat] = evMax;
     }
   }
-  let total = STATS.reduce((sum, stat) => sum + evs[stat]!, 0);
+  let total = STATS.reduce((sum, stat) => sum + evs[stat], 0);
   if (total > evLimit) {
     const scale = evLimit / total;
-    for (const stat of STATS) evs[stat] = Math.floor(evs[stat]! * scale);
-    total = STATS.reduce((sum, stat) => sum + evs[stat]!, 0);
+    for (const stat of STATS) evs[stat] = Math.floor(evs[stat] * scale);
+    total = STATS.reduce((sum, stat) => sum + evs[stat], 0);
     for (const stat of STATS) {
       if (total >= evLimit) break;
-      const room = Math.min(evMax - evs[stat]!, evLimit - total);
-      evs[stat] = evs[stat]! + room;
+      const room = Math.min(evMax - evs[stat], evLimit - total);
+      evs[stat] += room;
       total += room;
     }
     repairs.push(`EVs scaled to the ${evLimit}-point limit`);
@@ -854,8 +859,8 @@ function packCandidateTeam(
       moves: set.moves,
       nature: set.nature,
       gender: '',
-      evs: Object.fromEntries(STATS.map((stat) => [stat, set.evs[stat] ?? 0])) as ShowdownSet['evs'],
-      ivs: Object.fromEntries(STATS.map((stat) => [stat, 31])) as ShowdownSet['ivs'],
+      evs: { ...set.evs },
+      ivs: statSpread(31),
       level: 50,
     };
   });
@@ -952,16 +957,22 @@ function actionForCandidateTeam(
   };
 }
 
+export interface ReplayedTeamBuildArtifact {
+  artifact: TeamBuildArtifact;
+  packed: string;
+}
+
 /** Replays a serialized valid construction through the current artifact schema and Showdown authority. */
 export function replayTeamBuildArtifact(
-  value: unknown,
+  value: JsonValue | TeamBuildArtifact,
   options: Pick<TeamBuildRefereeOptions, 'psDir'> = {},
-): { artifact: TeamBuildArtifact; packed: string } {
+): ReplayedTeamBuildArtifact {
   const parsed = teamBuildArtifactSchema.safeParse(value);
   if (!parsed.success) throw new Error(`construction artifact is malformed: ${z.prettifyError(parsed.error)}`);
-  const artifact = parsed.data as TeamBuildArtifact;
-  const task = artifact.task;
-  const action = artifact.action!;
+  const parsedArtifact = parsed.data;
+  const artifact: TeamBuildArtifact = parsedArtifact;
+  const task = parsedArtifact.task;
+  const action = parsedArtifact.action;
   const psDir = options.psDir ?? defaultPsDir();
   validateTeamBuildTask(task);
   if (artifact.executionPolicy !== task.executionPolicy || artifact.showdownCommit !== showdownCommit(psDir)) {
@@ -1002,7 +1013,7 @@ export function replayTeamBuildArtifact(
   const candidates = new Map(task.constraint.candidates.map((candidate) => [candidate.id, candidate]));
   const { Dex, Teams } = loadShowdown(psDir);
   const format = Dex.formats.get(task.format);
-  const dex = Dex.mod(format.mod || 'base') as unknown as DexLike;
+  const dex = Dex.mod(format.mod || 'base');
   const entries: Array<{ mon: TeamBuildCandidate; set: RawSet }> = [];
   for (const [index, id] of action.selected.entries()) {
     const mon = candidates.get(id);
@@ -1109,40 +1120,41 @@ export function validateTeamBuildSubmission(
   }
   const psDir = options.psDir ?? defaultPsDir();
   const parsed = parseSets(response, canonicalTask);
-  if (typeof parsed === 'string') {
+  if (parsed.status === 'rejected') {
     const evidence = noStageEvidence(canonicalTask.notebook);
     return {
       status: 'rejected',
-      problems: [parsed],
+      problems: [parsed.error],
       evidence,
-      artifact: refereeArtifact(canonicalTask, psDir, null, evidence, [parsed], options),
+      artifact: refereeArtifact(canonicalTask, psDir, null, evidence, [parsed.error], options),
     };
   }
+  const submission = parsed.data;
   const { Dex } = loadShowdown(psDir);
   const format = Dex.formats.get(canonicalTask.format);
-  const dex = Dex.mod(format.mod || 'base') as unknown as DexLike;
+  const dex = Dex.mod(format.mod || 'base');
   const owned = new Map(canonicalTask.constraint.candidates.map((mon) => [mon.id, mon]));
-  const problems = validateCandidate(dex, canonicalTask.format, parsed.sets, owned, psDir);
+  const problems = validateCandidate(dex, canonicalTask.format, submission.sets, owned, psDir);
   if (problems.length) {
     return {
       status: 'rejected',
       problems,
-      evidence: parsed.evidence,
-      artifact: refereeArtifact(canonicalTask, psDir, null, parsed.evidence, problems, options),
+      evidence: submission.evidence,
+      artifact: refereeArtifact(canonicalTask, psDir, null, submission.evidence, problems, options),
     };
   }
   try {
-    const entries = parsed.sets.map((set) => ({ mon: owned.get(set.id)!, set }));
+    const entries = submission.sets.map((set) => ({ mon: owned.get(set.id)!, set }));
     const action = actionForCandidateTeam(dex, canonicalTask, entries, psDir);
-    const artifact = refereeArtifact(canonicalTask, psDir, action, parsed.evidence, [], options);
+    const artifact = refereeArtifact(canonicalTask, psDir, action, submission.evidence, [], options);
     return { status: 'accepted', packed: action.packed, artifact };
   } catch (cause) {
     const problems = [cause instanceof Error ? cause.message : String(cause)];
     return {
       status: 'rejected',
       problems,
-      evidence: parsed.evidence,
-      artifact: refereeArtifact(canonicalTask, psDir, null, parsed.evidence, problems, options),
+      evidence: submission.evidence,
+      artifact: refereeArtifact(canonicalTask, psDir, null, submission.evidence, problems, options),
     };
   }
 }
@@ -1162,7 +1174,7 @@ export function deterministicTeamBuildFallback(
   const psDir = options.psDir ?? defaultPsDir();
   const { Dex } = loadShowdown(psDir);
   const format = Dex.formats.get(canonical.format);
-  const dex = Dex.mod(format.mod || 'base') as unknown as DexLike;
+  const dex = Dex.mod(format.mod || 'base');
   const rules = Dex.formats.getRuleTable(format);
   const random = seededRng(seed);
   const selected = fallbackSets(
@@ -1224,12 +1236,12 @@ async function runLeagueTeamBuild(task: TeamBuildTask, options: TeamBuildOptions
   if (task.executionPolicy !== 'league-resilient') {
     throw new Error('provider orchestration is reserved for league-resilient team building');
   }
-  const executionPolicy = 'league-resilient' as const;
+  const executionPolicy: TeamBuildExecutionPolicy = 'league-resilient';
   const normalizedTask = canonicalTask(task, executionPolicy);
   const psDir = options.psDir ?? defaultPsDir();
   const { Dex } = loadShowdown(psDir);
   const format = Dex.formats.get(task.format);
-  const dex = Dex.mod(format.mod || 'base') as unknown as DexLike;
+  const dex = Dex.mod(format.mod || 'base');
   const ruleTable = Dex.formats.getRuleTable(format);
   const evLimit = ruleTable.evLimit ?? 508;
   const evMax = 32;
@@ -1240,14 +1252,12 @@ async function runLeagueTeamBuild(task: TeamBuildTask, options: TeamBuildOptions
   const system = systemPrompt(normalizedTask, dex, evLimit, evMax);
   const messages: ProviderMessage[] = [{ role: 'user', content: userPrompt(normalizedTask, dex) }];
   const reasoning = reasoningForModel(task.model, options);
+  const apiKey = options.apiKeys?.[task.model];
   const provider =
     task.model === 'random'
       ? undefined
-      : (options.makeTeambuildProvider?.(task.model, options.apiKeys?.[task.model], reasoning) ??
-        makeProvider(parseSpec(task.model), {
-          ...(reasoning === undefined ? {} : { reasoning }),
-          ...(options.apiKeys?.[task.model] === undefined ? {} : { apiKey: options.apiKeys[task.model] }),
-        }));
+      : (options.makeTeambuildProvider?.(task.model, apiKey, reasoning) ??
+        makeProvider(parseSpec(task.model), { apiKey, reasoning }));
 
   const owned = new Map(task.constraint.candidates.map((mon) => [mon.id, mon]));
   const runCreatedAt = options.createdAt ?? new Date().toISOString();
@@ -1266,36 +1276,39 @@ async function runLeagueTeamBuild(task: TeamBuildTask, options: TeamBuildOptions
     let terminalError: Error | undefined;
     const lookups: { name: string; arguments: JsonObject; result: string }[] = [];
     try {
-      const completion = await completeWithDexTools({
+      const completionRequest: DexToolRequest = {
         provider,
         system,
         messages,
         spec: task.model,
         reference,
-        ...(options.memory ? { extraTools: [memoryPageTool(() => options.memory!)] } : {}),
         policy: TEAMBUILD_PROMPT_POLICY,
-        ...(options.signal === undefined ? {} : { signal: options.signal }),
         onLookup: (call) => lookups.push(call),
-      });
+      };
+      const memory = options.memory;
+      if (memory) completionRequest.extraTools = [memoryPageTool(() => memory)];
+      if (options.signal !== undefined) completionRequest.signal = options.signal;
+      const completion = await completeWithDexTools(completionRequest);
       response = completion.text;
       usage = completion.usage;
       const truncated = completion.finishReason === 'length';
       if (!response.trim() && !truncated && completion.reasoning) {
         const salvaged = parseSets(completion.reasoning, task);
-        if (typeof salvaged !== 'string') response = completion.reasoning;
+        if (salvaged.status === 'accepted') response = completion.reasoning;
       }
       const parsed = parseSets(response, normalizedTask);
-      if (typeof parsed === 'string') {
-        error = truncated ? 'the reply used its whole token budget before finishing the team' : parsed;
+      if (parsed.status === 'rejected') {
+        error = truncated ? 'the reply used its whole token budget before finishing the team' : parsed.error;
         lastError = error;
       } else {
-        const problems = validateCandidate(dex, normalizedTask.format, parsed.sets, owned, psDir);
+        const submission = parsed.data;
+        const problems = validateCandidate(dex, normalizedTask.format, submission.sets, owned, psDir);
         if (problems.length) {
           error = problems.join('\n');
           lastError = error;
-          lastParsed = parsed;
+          lastParsed = submission;
         } else {
-          accepted = parsed;
+          accepted = submission;
         }
       }
       if (error) {
@@ -1328,20 +1341,13 @@ async function runLeagueTeamBuild(task: TeamBuildTask, options: TeamBuildOptions
             opponent: task.objective.opponent.model,
           }
         : { task_id: task.id, objective: task.objective.kind, constraint: task.constraint.id };
-    fs.appendFileSync(
-      logFile,
-      `${JSON.stringify({
-        ...traceContext,
-        attempt,
-        ...(attempt === 1 ? { system } : {}),
-        user: promptForAttempt,
-        response,
-        ...(usage ? { usage } : {}),
-        ...(lookups.length ? { tool_lookups: lookups } : {}),
-        ...(error ? { error } : {}),
-      })}\n`,
-      'utf8',
-    );
+    const traceHeader: TeamBuildAttemptTraceHeader = { ...traceContext, attempt };
+    if (attempt === 1) traceHeader.system = system;
+    const trace: TeamBuildAttemptTrace = { ...traceHeader, user: promptForAttempt, response };
+    if (usage) trace.usage = usage;
+    if (lookups.length) trace.tool_lookups = lookups;
+    if (error) trace.error = error;
+    fs.appendFileSync(logFile, `${JSON.stringify(trace)}\n`, 'utf8');
     if (terminalError) throw terminalError;
   }
 
@@ -1479,9 +1485,9 @@ export async function runTeambuild(request: TeambuildRequest, options: Teambuild
     rationale: result.artifact.evidence.rationale,
     attempts: result.artifact.attempts,
   };
-  const journalRow = { artifact: result.artifact };
-  decodeTeamBuildJournalRow(journalRow);
-  fs.appendFileSync(path.join(options.logDir, 'teambuild.jsonl'), `${JSON.stringify(journalRow)}\n`, 'utf8');
+  const journalRow = JSON.stringify({ artifact: result.artifact });
+  decodeTeamBuildJournalRow(JSON.parse(journalRow));
+  fs.appendFileSync(path.join(options.logDir, 'teambuild.jsonl'), `${journalRow}\n`, 'utf8');
   return { packed: result.packed, artifact: result.artifact, view };
 }
 
@@ -1540,7 +1546,7 @@ function validateCandidate(
 }
 
 function minimalSet(mon: TeamBuildCandidate, evLimit: number, evMax: number): RawSet {
-  const evs = Object.fromEntries(STATS.map((stat) => [stat, 0])) as Record<Stat, number>;
+  const evs = statSpread(0);
   let spent = 0;
   for (const stat of STATS) {
     const share = Math.min(evMax, Math.floor(evLimit / STATS.length), evLimit - spent);

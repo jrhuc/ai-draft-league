@@ -1,12 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
+import { z } from 'zod';
+
 import type { BracketView } from './gui/api.js';
 import { defaultPsDir, RESULTS_PATH } from './paths.js';
 import type { ModelReasoningConfig } from './providers.js';
 import { validateModelExecution } from './providers.js';
 import { resolveSeed, seededRng, seriesEntropy, shuffle } from './random.js';
-import type { SeriesRecord } from './records.js';
+import type { ParsedSeriesRecord, SeriesRecord } from './records.js';
 import { appendRow, loadSeriesRecords } from './records.js';
 import type { RotationEvent } from './rotation.js';
 import type { ExperimentOptions, RecordedSeriesContext } from './series.js';
@@ -15,7 +17,7 @@ import { showdownCommit } from './showdown.js';
 import type { PoolEvent, Team } from './teams.js';
 import { loadPool, validatePool, validateTeam } from './teams.js';
 import { DEFAULT_TIMER_SCALE } from './timer.js';
-import type { ContributorAttribution, Pid, TimerScale } from './types.js';
+import type { ContributorAttribution, JsonObject, Pid, TimerScale } from './types.js';
 
 export type TournamentEvent =
   | RotationEvent
@@ -44,24 +46,47 @@ interface StoredTournament {
   entrants: Array<{ model: string; team: string }>;
 }
 
+interface PlayMatchContext extends ModelReasoningConfig {
+  runDir: string;
+  format: string;
+  poolId: string | null;
+  runSeed: number;
+  psDir: string;
+  seriesSeeds: { gameSeeds: Array<[number, number, number, number]>; engineSeeds: Record<Pid, number> };
+  briefing?: string;
+  provenance: ProvenanceMode;
+  apiKeys?: Readonly<Record<string, string>>;
+  onEvent?: (event: TournamentEvent) => void;
+  signal?: AbortSignal;
+  contributor?: ContributorAttribution;
+  timerScale: TimerScale;
+}
+
+interface PlayMatchResult {
+  row: SeriesRecord;
+  winnerSide: Pid;
+}
+
+export const tournamentConfigSchema = z.looseObject({
+  mode: z.literal('tournament'),
+  models: z.array(z.string()),
+  seed: z.number(),
+  concurrency: z.number().optional(),
+  reasoning: z.string().nullable().optional(),
+  reasoning_by_model: z.record(z.string(), z.string()).nullable().optional(),
+  timer_scale: z.union([z.number(), z.literal('off')]).optional(),
+  pool: z.string().nullable().optional(),
+  format: z.string().optional(),
+  provenance: z.enum(['disclosed', 'blind']).optional(),
+  entrants: z.array(z.looseObject({ model: z.string().min(1), team: z.string().min(1) })).min(2),
+});
+
 function loadStoredTournament(runDir: string): StoredTournament {
   const configPath = path.join(runDir, 'config.json');
   if (!fs.existsSync(configPath)) throw new Error(`${runDir} holds no tournament config to resume`);
-  const config = JSON.parse(fs.readFileSync(configPath, 'utf8')) as {
-    mode?: string;
-    entrants?: Array<{ model?: unknown; team?: unknown }>;
-  };
-  if (config.mode !== 'tournament') throw new Error(`${runDir} is not a tournament run`);
-  const entrants = config.entrants ?? [];
-  if (entrants.length < 2) throw new Error(`${runDir} holds no bracket to resume`);
-  return {
-    entrants: entrants.map((entrant) => {
-      if (typeof entrant.model !== 'string' || !entrant.model || typeof entrant.team !== 'string' || !entrant.team) {
-        throw new Error(`${runDir} holds an entrant without a model and team; it cannot resume`);
-      }
-      return { model: entrant.model, team: entrant.team };
-    }),
-  };
+  const config = tournamentConfigSchema.safeParse(JSON.parse(fs.readFileSync(configPath, 'utf8')));
+  if (!config.success) throw new Error(`${runDir} is not a resumable tournament run`);
+  return { entrants: config.data.entrants.map(({ model, team }) => ({ model, team })) };
 }
 
 export function briefEvent(event: PoolEvent, count: number): string {
@@ -116,7 +141,7 @@ export function buildBracket(count: number): BracketMatch[][] {
       Array.from({ length: width }, () => ({
         round: rounds.length,
         seriesIndex: series++,
-        slots: [null, null] as [number | null, number | null],
+        slots: [null, null] satisfies [number | null, number | null],
         winner: null,
       })),
     );
@@ -157,7 +182,7 @@ export function applyBracketOutcome(
     throw new Error(`bracket series ${scheduled.seriesIndex} dependent slot already has an entrant`);
   }
 
-  const updated = [...rounds] as BracketMatch[][];
+  const updated = rounds.map((round) => [...round]);
   const resolvedRound = [...round!];
   resolvedRound[position] = { ...current, winner };
   updated[scheduled.round] = resolvedRound;
@@ -289,7 +314,7 @@ export async function runTournament(
       'utf8',
     );
 
-  const playersFor = (match: BracketMatch): Record<Pid, string> => ({
+  const playersFor = (match: BracketMatch) => ({
     p1: match.slots[0] === null ? 'TBD' : entrants[match.slots[0]]!.model,
     p2: match.slots[1] === null ? 'TBD' : entrants[match.slots[1]]!.model,
   });
@@ -305,9 +330,9 @@ export async function runTournament(
     seed,
   });
 
-  const validateStoredMatch = (match: BracketMatch, row: SeriesRecord): Pid => {
+  const validateStoredMatch = (match: BracketMatch, row: ParsedSeriesRecord): Pid => {
     const index = match.seriesIndex!;
-    const sides: Record<Pid, Entrant> = { p1: entrants[match.slots[0]!]!, p2: entrants[match.slots[1]!]! };
+    const sides = { p1: entrants[match.slots[0]!]!, p2: entrants[match.slots[1]!]! };
     const evidenceContext: RecordedSeriesContext = {
       players: { p1: sides.p1.model, p2: sides.p2.model },
       teams: { p1: sides.p1.team, p2: sides.p2.team },
@@ -318,16 +343,16 @@ export async function runTournament(
       psDir,
       runDir,
       requireWinner: true,
-      ...(briefing === undefined ? {} : { briefings: { p1: briefing, p2: briefing } }),
-      ...(options.reasoningByModel === undefined ? {} : { reasoningByModel: options.reasoningByModel }),
-      ...(options.reasoning === undefined ? {} : { reasoning: options.reasoning }),
       timerScale,
+      briefings: briefing === undefined ? undefined : { p1: briefing, p2: briefing },
+      reasoningByModel: options.reasoningByModel,
+      reasoning: options.reasoning,
     };
     const canonical = readCompletedSeriesEvidence(evidenceContext);
     if (!canonical.winnerSide) {
       throw new Error(`run ${runId} tournament series ${index} has no canonical winner`);
     }
-    const storedFields = {
+    const storedFields: JsonObject = {
       series_id: row.series_id,
       attempt_id: row.attempt_id,
       format: row.format,
@@ -340,10 +365,11 @@ export async function runTournament(
       games: row.games,
       engine_seeds: row.engine_seeds,
       timer_scale: row.timer_scale,
-      ...(row.closed_sheets === undefined ? {} : { closed_sheets: row.closed_sheets }),
       reasoning: row.reasoning,
-      ...(row.reasoning_by_player === undefined ? {} : { reasoning_by_player: row.reasoning_by_player }),
+      sampling: 'provider-default',
     };
+    if (row.closed_sheets !== undefined) storedFields.closed_sheets = row.closed_sheets;
+    if (row.reasoning_by_player !== undefined) storedFields.reasoning_by_player = row.reasoning_by_player;
     const winner = match.slots[canonical.winnerSide === 'p1' ? 0 : 1]!;
     if (
       row.schema_version !== 1 ||
@@ -367,10 +393,10 @@ export async function runTournament(
   const results: SeriesRecord[] = [];
   const started = new Set<number>();
   if (stored) {
-    const recorded = new Map<number, SeriesRecord>();
+    const recorded = new Map<number, ParsedSeriesRecord>();
     for (const row of loadSeriesRecords(recordsPath)) {
       if (row.run_id !== runId || row.mode !== 'tournament') continue;
-      const index = row.series_index as number;
+      const index = row.series_index;
       if (recorded.has(index)) throw new Error(`run ${runId} repeats tournament series ${index}; it cannot resume`);
       recorded.set(index, row);
     }
@@ -403,7 +429,7 @@ export async function runTournament(
 
   const runMatch = async (match: BracketMatch): Promise<void> => {
     try {
-      const row = await playMatch(match, entrants, {
+      const matchContext: PlayMatchContext = {
         runDir,
         format,
         poolId,
@@ -412,15 +438,16 @@ export async function runTournament(
         signal: controller.signal,
         seriesSeeds: seriesSeeds[match.seriesIndex!]!,
         provenance,
-        ...(briefing === undefined ? {} : { briefing }),
-        ...(options.reasoning === undefined ? {} : { reasoning: options.reasoning }),
-        ...(options.apiKeys === undefined ? {} : { apiKeys: options.apiKeys }),
-        ...(options.reasoningByModel === undefined ? {} : { reasoningByModel: options.reasoningByModel }),
         timerScale,
-        ...(options.onEvent === undefined ? {} : { onEvent: options.onEvent }),
-        ...(options.contributor === undefined ? {} : { contributor: options.contributor }),
-      });
-      rounds = applyBracketOutcome(rounds, match, row.winner_side as Pid);
+        briefing,
+        reasoning: options.reasoning,
+        apiKeys: options.apiKeys,
+        reasoningByModel: options.reasoningByModel,
+        onEvent: options.onEvent,
+        contributor: options.contributor,
+      };
+      const { row, winnerSide } = await playMatch(match, entrants, matchContext);
+      rounds = applyBracketOutcome(rounds, match, winnerSide);
       appendRow(recordsPath, row);
       results.push(row);
       options.onEvent?.({ type: 'series-end', index: match.seriesIndex!, record: row });
@@ -462,33 +489,18 @@ export async function runTournament(
   results.sort((a, b) => a.series_index! - b.series_index!);
   return results;
 }
-
 async function playMatch(
   match: BracketMatch,
   entrants: Entrant[],
-  context: {
-    runDir: string;
-    format: string;
-    poolId: string | null;
-    runSeed: number;
-    psDir: string;
-    seriesSeeds: { gameSeeds: Array<[number, number, number, number]>; engineSeeds: Record<Pid, number> };
-    briefing?: string;
-    provenance: ProvenanceMode;
-    apiKeys?: Readonly<Record<string, string>>;
-    onEvent?: (event: TournamentEvent) => void;
-    signal?: AbortSignal;
-    contributor?: ContributorAttribution;
-    timerScale: TimerScale;
-  } & ModelReasoningConfig,
-): Promise<SeriesRecord> {
+  context: PlayMatchContext,
+): Promise<PlayMatchResult> {
   context.signal?.throwIfAborted();
   const index = match.seriesIndex!;
-  const sides: Record<Pid, Entrant> = { p1: entrants[match.slots[0]!]!, p2: entrants[match.slots[1]!]! };
-  const players: Record<Pid, string> = { p1: sides.p1.model, p2: sides.p2.model };
+  const sides = { p1: entrants[match.slots[0]!]!, p2: entrants[match.slots[1]!]! };
+  const players = { p1: sides.p1.model, p2: sides.p2.model };
   context.onEvent?.({ type: 'series-players', index, players });
   context.onEvent?.({ type: 'series-start', index });
-  const { winnerSide, fields } = await playRecordedSeries({
+  const seriesContext: RecordedSeriesContext = {
     players,
     teams: { p1: sides.p1.team, p2: sides.p2.team },
     seriesIndex: index,
@@ -498,23 +510,23 @@ async function playMatch(
     psDir: context.psDir,
     runDir: context.runDir,
     requireWinner: true,
-    ...(context.briefing === undefined ? {} : { briefings: { p1: context.briefing, p2: context.briefing } }),
-    ...(context.reasoningByModel === undefined ? {} : { reasoningByModel: context.reasoningByModel }),
-    ...(context.reasoning === undefined ? {} : { reasoning: context.reasoning }),
     timerScale: context.timerScale,
-    ...(context.apiKeys === undefined ? {} : { apiKeys: context.apiKeys }),
-    ...(context.signal === undefined ? {} : { signal: context.signal }),
     onGameUpdate: (game, lines, publicLines) =>
       context.onEvent?.({ type: 'game-update', index, game, lines, publicLines }),
     onGameEnd: (game, winner, turns, score) =>
       context.onEvent?.({ type: 'game-end', index, game, winner, turns, score }),
     onDecision: (pid, row) => context.onEvent?.({ type: 'decision', index, pid, row }),
-  });
+    briefings: context.briefing === undefined ? undefined : { p1: context.briefing, p2: context.briefing },
+    reasoningByModel: context.reasoningByModel,
+    reasoning: context.reasoning,
+    apiKeys: context.apiKeys,
+    signal: context.signal,
+  };
+  const { winnerSide, fields } = await playRecordedSeries(seriesContext);
 
   if (!winnerSide) throw new Error(`single-elimination series ${index + 1} ended without a winner`);
   const winner = match.slots[winnerSide === 'p1' ? 0 : 1]!;
-
-  return {
+  const row: SeriesRecord = {
     schema_version: 1,
     mode: 'tournament',
     series_index: index,
@@ -522,11 +534,12 @@ async function playMatch(
     entrant_count: entrants.length,
     seeds: { p1: match.slots[0], p2: match.slots[1] },
     provenance: context.provenance,
-    ...(context.poolId === null ? {} : { pool: context.poolId }),
-    ...(context.contributor === undefined ? {} : { contributor: context.contributor }),
     advanced: entrants[winner]!.model,
     run_seed: context.runSeed,
     ps_commit: showdownCommit(context.psDir),
     ...fields,
-  } as SeriesRecord;
+  };
+  if (context.poolId !== null) row.pool = context.poolId;
+  if (context.contributor !== undefined) row.contributor = context.contributor;
+  return { row, winnerSide };
 }

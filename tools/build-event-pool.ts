@@ -2,25 +2,39 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { z } from 'zod';
 
 import { defaultPsDir } from '../src/paths.js';
 import { loadShowdown } from '../src/showdown.js';
 import { packTeam, validateTeam } from '../src/teams.js';
-import { asRecords, text } from '../src/value.js';
-import { publishPool } from './pool-output.js';
+import type { JsonObject } from '../src/types.js';
+import { text } from '../src/value.js';
+import { jsonObjectSchema, publishPool } from './pool-output.js';
 
-const STATS = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'] as const;
-const STAT_LABELS: Record<(typeof STATS)[number], string> = {
+type Stat = 'hp' | 'atk' | 'def' | 'spa' | 'spd' | 'spe';
+
+const STATS = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'] as const satisfies readonly Stat[];
+const STAT_LABELS = {
   hp: 'HP',
   atk: 'Atk',
   def: 'Def',
   spa: 'SpA',
   spd: 'SpD',
   spe: 'Spe',
-};
+} as const satisfies Record<Stat, string>;
 
-type Stat = (typeof STATS)[number];
-type Spread = Record<Stat, number>;
+interface Spread {
+  hp: number;
+  atk: number;
+  def: number;
+  spa: number;
+  spd: number;
+  spe: number;
+}
+
+const jsonObjectListSchema = z.array(jsonObjectSchema).catch([]);
+const jsonListSchema = z.array(z.json()).catch([]);
+const levelSchema = z.number().catch(50);
 
 interface OpenSet {
   species: string;
@@ -64,7 +78,7 @@ function checkSpread(evs: Spread, label: string): void {
   }
 }
 
-function parseSpread(value: string, label: string): Spread {
+function parseSpread(value: string, label: string) {
   const evs = { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 };
   for (const part of value.split('/')) {
     const match = /^\s*(\d+)\s+([A-Za-z]+)\s*$/.exec(part);
@@ -89,19 +103,22 @@ async function fetchText(url: string, accept: string): Promise<string> {
 async function fetchOpenList(url: string): Promise<OpenSet[]> {
   const id = url.replace(/\/$/, '').split('/').pop() ?? '';
   if (!/^[A-Za-z0-9_-]+$/.test(id)) throw new Error(`could not read a paste id from ${url}`);
-  const body: unknown = JSON.parse(
-    await fetchText(`https://vrpaste-backend.vercel.app/api/paste/${id}?lang=english`, 'application/json'),
-  );
-  const record = body as Record<string, unknown>;
-  const sets = asRecords(record.teams);
+  const record = jsonObjectSchema
+    .catch({})
+    .parse(
+      JSON.parse(
+        await fetchText(`https://vrpaste-backend.vercel.app/api/paste/${id}?lang=english`, 'application/json'),
+      ),
+    );
+  const sets = jsonObjectListSchema.parse(record.teams);
   if (!sets.length) throw new Error(`${url} returned no team`);
   return sets.map((set) => ({
     species: text(set.species),
     item: text(set.item),
     ability: text(set.ability),
     nature: text(set.nature),
-    level: typeof set.level === 'number' ? set.level : 50,
-    moves: Array.isArray(set.moves) ? set.moves.map(String) : [],
+    level: levelSchema.parse(set.level),
+    moves: jsonListSchema.parse(set.moves).map(String),
   }));
 }
 
@@ -161,8 +178,9 @@ function chooseSpread(target: OpenSet, corpus: CorpusSet[]): ResolvedSpread | nu
     if (seen) seen.count += 1;
     else counts.set(key, { count: 1, entry });
   }
-  const ranked = [...counts.entries()].sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0]));
-  const [spread, winner] = ranked[0]!;
+  const winnerPair = [...counts.entries()].sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0]))[0];
+  if (!winnerPair) return null;
+  const [spread, winner] = winnerPair;
   const itemMatched = slug(winner.entry.item) === slug(target.item);
   const shared = overlapOf(winner.entry);
   return {
@@ -189,28 +207,30 @@ function exportSet(set: OpenSet, evs: Spread): string {
 async function buildEventPool(manifestFile: string): Promise<string> {
   const manifestPath = path.resolve(manifestFile);
   const poolDir = path.dirname(manifestPath);
-  const data: unknown = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error(`invalid manifest ${manifestPath}`);
-  const manifest = data as Record<string, unknown>;
+  const data = jsonObjectSchema.safeParse(JSON.parse(fs.readFileSync(manifestPath, 'utf8')));
+  if (!data.success) throw new Error(`invalid manifest ${manifestPath}`);
+  const manifest = data.data;
   const poolId = text(manifest.id);
   const format = text(manifest.format);
-  const event = (manifest.event ?? null) as Record<string, unknown> | null;
-  const spreads = (manifest.spreads ?? {}) as Record<string, unknown>;
-  const sources = asRecords(manifest.teams);
+  const eventResult = jsonObjectSchema.safeParse(manifest.event);
+  const event = eventResult.success ? eventResult.data : null;
+  const spreads = jsonObjectSchema.catch({}).parse(manifest.spreads);
+  const sources = jsonObjectListSchema.parse(manifest.teams);
   if (!poolId || !format || !event || !sources.length) throw new Error(`invalid manifest ${manifestPath}`);
 
   const psDir = defaultPsDir();
   const corpus = await fetchCorpus(text(spreads.corpus), psDir);
-  const teams: Array<{ id: string; packed: string; entry: Record<string, unknown> }> = [];
-  const audit: Array<Record<string, unknown>> = [];
+  const teams: Array<{ id: string; packed: string; entry: JsonObject }> = [];
+  const audit: JsonObject[] = [];
   const flagged: string[] = [];
 
   for (const source of sources) {
     const id = text(source.id);
     if (!id) throw new Error('every source team needs an id');
-    const overrides = new Map(
-      asRecords(source.overrides).map((override) => [slug(text(override.species)), override] as const),
-    );
+    const overrides = new Map<string, JsonObject>();
+    for (const override of jsonObjectListSchema.parse(source.overrides)) {
+      overrides.set(slug(text(override.species)), override);
+    }
     const open = await fetchOpenList(text(source.paste));
     const resolved = open.map((set) => {
       const label = `${id} ${set.species}`;
@@ -233,7 +253,10 @@ async function buildEventPool(manifestFile: string): Promise<string> {
     const packed = packTeam(resolved.map((entry) => exportSet(entry.set, entry.evs)).join('\n\n'), psDir, format);
     validateTeam(packed, format, psDir);
     const { id: _id, overrides: _overrides, ...metadata } = source;
-    teams.push({ id, packed, entry: { id, file: `${id}.team`, seed: metadata.placement, source: metadata } });
+    let entry: JsonObject;
+    if (metadata.placement === undefined) entry = { id, file: `${id}.team`, source: metadata };
+    else entry = { id, file: `${id}.team`, seed: metadata.placement, source: metadata };
+    teams.push({ id, packed, entry });
     audit.push({
       team: id,
       sets: resolved.map((entry) => ({

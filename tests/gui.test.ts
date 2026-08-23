@@ -4,12 +4,14 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import test, { after } from 'node:test';
-
+import type { AppState, BattleMessage, RunSnapshot, ValidateResponse } from '../src/gui/api.js';
 import { BattleLog } from '../src/gui/battlelog.js';
+import type { RunFinishedLogEntry } from '../src/gui/run-supervisor.js';
 import { GuiServer } from '../src/gui/server.js';
 import { REPO_ROOT, TEAMS_DIR } from '../src/paths.js';
 import { loadShowdown } from '../src/showdown.js';
 import { loadPool } from '../src/teams.js';
+import type { JsonObject, TimerScale } from '../src/types.js';
 
 const RUNS_SCRATCH = fs.mkdtempSync(path.join(os.tmpdir(), 'vgc-gui-runs-'));
 after(() => fs.rmSync(RUNS_SCRATCH, { recursive: true, force: true }));
@@ -24,14 +26,15 @@ function pasteFromPool(file: string): string {
   return Teams.export(team);
 }
 
-async function apiJson(url: string, body?: unknown): Promise<{ status: number; data: Record<string, unknown> }> {
+async function apiJson<T = JsonObject>(url: string, body?: object): Promise<{ status: number; data: T }> {
   const response = await fetch(
     url,
     body === undefined
       ? {}
       : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) },
   );
-  return { status: response.status, data: (await response.json()) as Record<string, unknown> };
+  const data: T = await response.json();
+  return { status: response.status, data };
 }
 
 function rawRequest(
@@ -96,19 +99,19 @@ test('gui serves the built app shell and setup state', async () => {
     const bundle = await fetch(new URL(asset, base));
     assert.equal(bundle.status, 200);
     assert.match(bundle.headers.get('content-type') ?? '', /text\/javascript/);
-    const { status, data } = await apiJson(`${base}api/state`);
+    const { status, data } = await apiJson<AppState>(`${base}api/state`);
     assert.equal(status, 200);
-    const pools = data.pools as Array<{ name: string; teamCount: number }>;
+    const pools = data.pools;
     assert.ok(pools.some((pool) => pool.name === 'test' && pool.teamCount >= 2));
     assert.equal('reasoningLevels' in data, false);
-    const providers = data.providers as Array<Record<string, unknown>>;
+    const providers = data.providers;
     assert.deepEqual(
       providers.map((provider) => provider.id),
       ['openrouter', 'prime', 'gateway', 'opencode-go', 'opencode-zen', 'random'],
     );
     assert.ok(providers.every((provider) => !('envKey' in provider) && !('keyPresent' in provider)));
     assert.ok(providers.every((provider) => !('models' in provider)));
-    const formats = data.formats as Array<{ id: string; label: string }>;
+    const formats = data.formats;
     assert.ok(formats.some((format) => format.id === FORMAT));
     assert.ok(formats.every((format) => format.id.startsWith('gen9champions') && format.id.endsWith('bo3')));
     assert.equal('auth' in data, false);
@@ -210,16 +213,14 @@ test('gui validates teambuilder pastes and creates immutable pools', async () =>
     const pasteAWithTera = pasteA.replace(/\nAbility:/g, '\nTera Type: Fire\nAbility:');
     const pasteB = pasteFromPool('wolfe-mega-raichu-y.team');
 
-    const legal = await apiJson(`${base}api/team/validate`, { paste: pasteAWithTera, format: FORMAT });
+    const legal = await apiJson<ValidateResponse>(`${base}api/team/validate`, {
+      paste: pasteAWithTera,
+      format: FORMAT,
+    });
     assert.equal(legal.status, 200);
     assert.deepEqual(legal.data.problems, []);
-    assert.equal((legal.data.species as string[]).length, 6);
-    const members = legal.data.members as Array<{
-      species: string;
-      item: string;
-      ability: string;
-      moves: string[];
-    }>;
+    assert.equal(legal.data.species.length, 6);
+    const members = legal.data.members;
     assert.equal(members.length, 6);
     assert.deepEqual(
       members.map((member) => member.species),
@@ -233,15 +234,15 @@ test('gui validates teambuilder pastes and creates immutable pools', async () =>
       assert.equal('teraType' in member, false);
     }
 
-    const illegal = await apiJson(`${base}api/team/validate`, {
+    const illegal = await apiJson<ValidateResponse>(`${base}api/team/validate`, {
       paste: 'Mewtwo @ Leftovers\nAbility: Pressure\n- Psystrike',
       format: FORMAT,
     });
-    assert.ok((illegal.data.problems as string[]).length > 0);
-    assert.equal((illegal.data.members as unknown[]).length, 1);
+    assert.ok(illegal.data.problems.length > 0);
+    assert.equal(illegal.data.members.length, 1);
 
-    const unparseable = await apiJson(`${base}api/team/validate`, { paste: '', format: FORMAT });
-    assert.ok((unparseable.data.problems as string[]).length > 0);
+    const unparseable = await apiJson<ValidateResponse>(`${base}api/team/validate`, { paste: '', format: FORMAT });
+    assert.ok(unparseable.data.problems.length > 0);
     assert.deepEqual(unparseable.data.members, []);
 
     const created = await apiJson(`${base}api/pool`, {
@@ -313,7 +314,7 @@ test('gui validates teambuilder pastes and creates immutable pools', async () =>
 
 test('gui exposes OpenRouter reasoning controls only from catalog capability data', async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async (input, init) => {
+  globalThis.fetch = async (input, init) => {
     if (String(input) === 'https://openrouter.ai/api/v1/models') {
       return new Response(
         JSON.stringify({
@@ -326,7 +327,7 @@ test('gui exposes OpenRouter reasoning controls only from catalog capability dat
       );
     }
     return originalFetch(input, init);
-  }) as typeof globalThis.fetch;
+  };
   const gui = new GuiServer({ runsDir: RUNS_SCRATCH });
   const base = await gui.listen(0);
   try {
@@ -503,7 +504,7 @@ test('gui accepts only explicit OpenRouter reasoning levels', async () => {
 });
 
 test('gui validates the timer scale and forwards it to the runner', async () => {
-  let received: unknown = 'unset';
+  let received: TimerScale | 'unset' | undefined = 'unset';
   const gui = new GuiServer({
     runsDir: RUNS_SCRATCH,
     runner: async (_models, _seriesPerPair, _runDir, options = {}) => {
@@ -520,10 +521,10 @@ test('gui validates the timer scale and forwards it to the runner', async () => 
     const scaled = await apiJson(`${base}api/run`, { models: ['random', 'random'], pool: 'test', timerScale: 1.5 });
     assert.equal(scaled.status, 200, JSON.stringify(scaled.data));
     assert.equal(received, 1.5);
-    let run = (await apiJson(`${base}api/state`)).data.run as Record<string, unknown>;
+    let run = (await apiJson<AppState>(`${base}api/state`)).data.run!;
     for (let attempt = 0; attempt < 40 && run.state === 'running'; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 50));
-      run = (await apiJson(`${base}api/state`)).data.run as Record<string, unknown>;
+      run = (await apiJson<AppState>(`${base}api/state`)).data.run!;
     }
 
     const untimed = await apiJson(`${base}api/run`, { models: ['random', 'random'], pool: 'test', timerScale: 'off' });
@@ -557,16 +558,16 @@ test('gui rejects a second run while one is active and stops on request', async 
     const rejected = await apiJson(`${base}api/run`, { models: ['random', 'random'], pool: 'test' });
     assert.equal(rejected.status, 409);
 
-    let run = (await apiJson(`${base}api/state`)).data.run as Record<string, unknown>;
+    let run = (await apiJson<AppState>(`${base}api/state`)).data.run!;
     assert.equal(run.state, 'running');
     assert.equal(run.seed, 7);
     assert.equal(run.mode, 'rotation');
-    assert.equal((run.rows as unknown[]).length, 1);
+    assert.equal(run.rows.length, 1);
 
     await apiJson(`${base}api/run/stop`, {});
     for (let attempt = 0; attempt < 40 && run.state === 'running'; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 50));
-      run = (await apiJson(`${base}api/state`)).data.run as Record<string, unknown>;
+      run = (await apiJson<AppState>(`${base}api/state`)).data.run!;
     }
     assert.equal(run.state, 'stopped');
   } finally {
@@ -579,12 +580,12 @@ test('pokepaste import fetches the raw paste and rejects non-pokepaste links', a
   const base = await gui.listen(0);
   const realFetch = globalThis.fetch;
   const requested: string[] = [];
-  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+  globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input instanceof Request ? input.url : input);
     if (!url.startsWith('https://pokepast.es/')) return realFetch(input, init);
     requested.push(url);
     return new Response('Gengar @ Gengarite\nAbility: Cursed Body\n', { status: 200 });
-  }) as typeof fetch;
+  };
   try {
     const imported = await apiJson(`${base}api/team/pokepaste`, { url: 'https://pokepast.es/af47b5292e00a94d' });
     assert.equal(imported.status, 200);
@@ -604,7 +605,7 @@ test('pokepaste import fetches the raw paste and rejects non-pokepaste links', a
 });
 
 test('server shutdown marks an active run as failed', async () => {
-  const settled = Promise.withResolvers<Record<string, unknown>>();
+  const settled = Promise.withResolvers<RunFinishedLogEntry>();
   const gui = new GuiServer({
     runsDir: RUNS_SCRATCH,
     runner: async (_models, _seriesPerPair, _runDir, options = {}) => {
@@ -637,7 +638,7 @@ test('gui runs a random-vs-random series and streams live battle state', async (
     const events = await fetch(`${base}api/events`, { signal: sse.signal });
     const pump = (async () => {
       const decoder = new TextDecoder();
-      for await (const chunk of events.body!) stream += decoder.decode(chunk as Uint8Array, { stream: true });
+      for await (const chunk of events.body!) stream += decoder.decode(chunk, { stream: true });
     })().catch(() => {});
 
     const badSpec = await apiJson(`${base}api/run`, { models: ['random', 'not-a-spec'], pool: 'test' });
@@ -655,27 +656,27 @@ test('gui runs a random-vs-random series and streams live battle state', async (
     });
     assert.equal(started.status, 200, JSON.stringify(started.data));
 
-    let run: Record<string, unknown> | null = null;
+    let run: RunSnapshot | null = null;
     for (let attempt = 0; attempt < 240; attempt += 1) {
-      const { data } = await apiJson(`${base}api/state`);
-      run = data.run as Record<string, unknown> | null;
+      const { data } = await apiJson<AppState>(`${base}api/state`);
+      run = data.run;
       if (run && run.state !== 'running') break;
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     assert.ok(run, 'run should be reported');
     assert.equal(run.state, 'done', String(run.error ?? ''));
     assert.equal(run.mode, 'rotation');
-    assert.match((run.notices as string[]).join('\n'), /odd .*unmirrored/);
-    const rows = run.rows as Array<Record<string, unknown>>;
+    assert.match(run.notices.join('\n'), /odd .*unmirrored/);
+    const rows = run.rows;
     assert.equal(rows.length, 1);
     assert.equal(rows[0]!.status, 'done');
     assert.ok(Number(rows[0]!.turns) > 0);
 
-    const battle = await apiJson(`${base}api/battle?index=0`);
-    const snapshot = battle.data.snapshot as Record<string, unknown>;
+    const battle = await apiJson<BattleMessage>(`${base}api/battle?index=0`);
+    const snapshot = battle.data.snapshot;
     assert.ok(snapshot, 'final battle snapshot should be retained');
     assert.ok(Number(snapshot.turn) >= 1);
-    const sides = snapshot.sides as Record<string, { player: string; mons: Array<Record<string, unknown>> }>;
+    const sides = snapshot.sides;
     assert.equal(sides.p1!.player, 'random');
     assert.ok(sides.p1!.mons.length > 0);
     for (const mon of sides.p1!.mons) {
@@ -689,12 +690,12 @@ test('gui runs a random-vs-random series and streams live battle state', async (
         `sprite for ${String(mon.species)} must be vendored`,
       );
     }
-    const games = battle.data.games as number[];
+    const games = battle.data.games;
     assert.ok(games.length >= 2, 'a finished bo3 should retain each game');
     assert.equal(battle.data.game, games[games.length - 1], 'the default view is the latest game');
-    const first = await apiJson(`${base}api/battle?index=0&game=1`);
+    const first = await apiJson<BattleMessage>(`${base}api/battle?index=0&game=1`);
     assert.equal(first.data.game, 1);
-    const firstSnapshot = first.data.snapshot as Record<string, unknown>;
+    const firstSnapshot = first.data.snapshot;
     assert.ok(firstSnapshot, 'game 1 stays viewable after the series ends');
     assert.ok(Number(firstSnapshot.turn) >= 1);
 
@@ -780,25 +781,26 @@ test('gui starts tournament runs and mirrors bracket state', async () => {
   try {
     const started = await apiJson(`${base}api/run`, { mode: 'tournament', models: ['random', 'random'], pool: 'test' });
     assert.equal(started.status, 200, JSON.stringify(started.data));
-    let run = (await apiJson(`${base}api/state`)).data.run as Record<string, unknown>;
+    let run = (await apiJson<AppState>(`${base}api/state`)).data.run!;
     for (let attempt = 0; attempt < 40 && run.state !== 'done'; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 50));
-      run = (await apiJson(`${base}api/state`)).data.run as Record<string, unknown>;
+      run = (await apiJson<AppState>(`${base}api/state`)).data.run!;
     }
     assert.equal(run.state, 'done', String(run.error ?? ''));
     assert.equal(run.mode, 'tournament');
-    assert.equal((run.rows as unknown[]).length, 1);
-    const bracket = run.bracket as Record<string, unknown>;
+    assert.equal(run.rows.length, 1);
+    const bracket = run.bracket!;
     assert.equal(bracket.champion, 0);
-    assert.equal((bracket.entrants as unknown[]).length, 2);
-    const battle = await apiJson(`${base}api/battle?index=0`);
-    const snapshot = battle.data.snapshot as Record<string, unknown>;
-    const decisions = snapshot.decisions as Array<Record<string, unknown>>;
+    assert.equal(bracket.entrants.length, 2);
+    const battle = await apiJson<BattleMessage>(`${base}api/battle?index=0`);
+    const snapshot = battle.data.snapshot;
+    assert.ok(snapshot);
+    const decisions = snapshot.decisions;
     assert.equal(decisions[0]!.error, 'Google API quota is exhausted (429).');
-    const spend = snapshot.spend as Record<string, { seconds: number; tokens: number }>;
+    const spend = snapshot.spend;
     assert.deepEqual(spend.p1, { seconds: 12, tokens: 50_000 }, 'decision and reflection spend accumulate');
     assert.deepEqual(spend.p2, { seconds: 0, tokens: 0 });
-    const timers = snapshot.timers as Record<string, Record<string, unknown> | null>;
+    const timers = snapshot.timers;
     assert.equal(timers.p2?.running, true, 'the deciding marker starts an untimed clock');
     assert.equal(timers.p2?.seconds, null);
     assert.equal(typeof timers.p2?.elapsedSeconds, 'number');
@@ -824,8 +826,8 @@ test('gui validates inline match teams and hands packed teams to the tournament'
   const pasteA = pasteFromPool('wolfe-mega-raichu-y.team');
   const pasteB = pasteFromPool('rios-mega-raichu-x-venusaur.team');
   try {
-    const state = await apiJson(`${base}api/state`);
-    const sampleTeams = state.data.sampleTeams as Array<{ name: string; paste: string }>;
+    const state = await apiJson<AppState>(`${base}api/state`);
+    const sampleTeams = state.data.sampleTeams;
     assert.equal(sampleTeams.length, 2, 'the default pool provides two sample teams');
     assert.ok(sampleTeams.every((team) => team.name && team.paste.trim().length > 0));
 
@@ -911,8 +913,8 @@ test('gui starts draft runs, validates the board, and mirrors draft state', asyn
   });
   const base = await gui.listen(0);
   try {
-    const state = await apiJson(`${base}api/state`);
-    const boards = state.data.boards as Array<Record<string, unknown>>;
+    const state = await apiJson<AppState>(`${base}api/state`);
+    const boards = state.data.boards;
     assert.ok(boards.length >= 1, 'the bundled draft board is advertised');
     assert.equal(boards[0]!.id, 'regmb-202607');
 
@@ -964,10 +966,10 @@ test('gui starts draft runs, validates the board, and mirrors draft state', asyn
       sequentialWeeks: true,
     });
     assert.equal(started.status, 200, JSON.stringify(started.data));
-    let run = (await apiJson(`${base}api/state`)).data.run as Record<string, unknown>;
+    let run = (await apiJson<AppState>(`${base}api/state`)).data.run!;
     for (let attempt = 0; attempt < 40 && run.state !== 'done'; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 50));
-      run = (await apiJson(`${base}api/state`)).data.run as Record<string, unknown>;
+      run = (await apiJson<AppState>(`${base}api/state`)).data.run!;
     }
     assert.equal(run.state, 'done', String(run.error ?? ''));
     assert.equal(run.mode, 'draft');
@@ -980,9 +982,9 @@ test('gui starts draft runs, validates the board, and mirrors draft state', asyn
       [{ afterWeek: 1, tradesAllowed: 2 }],
       'a short league keeps only the default windows that fit its round robin',
     );
-    const draft = run.draft as Record<string, unknown>;
+    const draft = run.draft!;
     assert.equal(draft.phase, 'draft');
-    const picks = draft.picks as Array<Record<string, unknown>>;
+    const picks = draft.picks;
     assert.equal(picks[0]!.rationale, 'strong pick');
   } finally {
     gui.close();

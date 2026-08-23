@@ -1,4 +1,12 @@
-import type { CompactMon, CompactMonReference, MatchupMon, ShowdownReference, SpeedProfile } from './reference.js';
+import type {
+  CompactMon,
+  CompactMonReference,
+  EstimateDamageArguments,
+  MatchupMon,
+  ShowdownReference,
+  SpeedProfile,
+  SpeedProfileInput,
+} from './reference.js';
 import type { BattleRequest, JsonObject, Pid } from './types.js';
 
 import { afterColon, asRecord, asRecords, asStrings, text } from './value.js';
@@ -20,6 +28,29 @@ export interface TimedEffect {
   name: string;
   startedTurn: number;
   duration?: number;
+}
+
+interface SideTimers {
+  p1: SideTimer | undefined;
+  p2: SideTimer | undefined;
+}
+
+export interface ProtectReducedSlots {
+  [slot: number]: boolean;
+}
+
+interface PriorityContext {
+  ability?: string;
+  item?: string;
+  itemConsumed: boolean;
+  fullHp?: boolean;
+  grassyTerrain: boolean;
+}
+
+interface PriorityInfo {
+  priority: number;
+  notes: string[];
+  unresolved?: string;
 }
 
 export class MonState {
@@ -66,15 +97,13 @@ export class SideState {
   showteam = false;
 }
 
-const STAT_LABELS: Record<string, string> = {
-  atk: 'Attack',
-  def: 'Defense',
-  spa: 'Special Attack',
-  spd: 'Special Defense',
-  spe: 'Speed',
-  accuracy: 'accuracy',
-  evasion: 'evasion',
-};
+const STAT_LABELS = new Map([
+  ['atk', 'Attack'],
+  ['def', 'Defense'],
+  ['spa', 'Special Attack'],
+  ['spd', 'Special Defense'],
+  ['spe', 'Speed'],
+]);
 
 const CHOICE_ITEMS = new Set(['choiceband', 'choicescarf', 'choicespecs']);
 const SCREEN_MOVES = new Set(['reflect', 'lightscreen', 'auroraveil']);
@@ -91,14 +120,14 @@ const TIMED_SIDE_CONDITIONS = new Map<string, number>([
   ['luckychant', 5],
 ]);
 
-const WEATHER_ROCKS: Record<string, string> = {
-  raindance: 'damprock',
-  sunnyday: 'heatrock',
-  sandstorm: 'smoothrock',
-  snow: 'icyrock',
-  snowscape: 'icyrock',
-  hail: 'icyrock',
-};
+const WEATHER_ROCKS = new Map([
+  ['raindance', 'damprock'],
+  ['sunnyday', 'heatrock'],
+  ['sandstorm', 'smoothrock'],
+  ['snow', 'icyrock'],
+  ['snowscape', 'icyrock'],
+  ['hail', 'icyrock'],
+]);
 
 export const PROTECT_MOVES = new Set([
   'protect',
@@ -123,26 +152,25 @@ export class BattleState {
   private upkeepDone = false;
   weather: TimedEffect | undefined;
   fields = new Map<string, TimedEffect>();
-  sides: Record<Pid, SideState> = { p1: new SideState(), p2: new SideState() };
-  timers: Record<Pid, SideTimer | undefined> = { p1: undefined, p2: undefined };
+  sides = { p1: new SideState(), p2: new SideState() };
+  timers: SideTimers = { p1: undefined, p2: undefined };
   /** Wall-clock of the last |t:| line, so replaying a streamed log anchors
    * running timers to when thinking actually started, not parse time. */
   private logClockMs: number | undefined;
 
   constructor(readonly pid: Pid) {}
 
-  feed(lines: unknown): void {
-    if (!Array.isArray(lines)) return;
-    for (const raw of lines) {
+  feed(lines: readonly string[]): void {
+    for (const line of lines) {
       if (
-        typeof raw !== 'string' ||
-        raw.startsWith('|uhtml|') ||
-        raw.startsWith('|uhtmlchange|') ||
-        raw.startsWith('|html|') ||
-        raw.startsWith('|raw|')
+        !line ||
+        line.startsWith('|uhtml|') ||
+        line.startsWith('|uhtmlchange|') ||
+        line.startsWith('|html|') ||
+        line.startsWith('|raw|')
       )
         continue;
-      this.feedLine(raw);
+      this.feedLine(line);
     }
   }
 
@@ -195,11 +223,9 @@ export class BattleState {
     } else if (kind === 'move' && args.length >= 2) {
       const mon = this.mon(args[0]!);
       mon.recordMove(args[1]!, 1);
-      mon.lastMove = {
-        name: args[1]!,
-        ...(args[2] ? { target: args[2] } : {}),
-        turn: this.turn,
-      };
+      mon.lastMove = args[2]
+        ? { name: args[1]!, target: args[2], turn: this.turn }
+        : { name: args[1]!, turn: this.turn };
       if (!mon.itemConsumed && CHOICE_ITEMS.has(this.speciesKey(mon.item ?? ''))) mon.choiceLock = args[1]!;
       const moveId = this.speciesKey(args[1]!);
       if (!PROTECT_MOVES.has(moveId)) mon.protectSuccessStreak = 0;
@@ -254,7 +280,7 @@ export class BattleState {
         this.speciesKey(this.weather.name) !== this.speciesKey(args[0])
       ) {
         const name = this.effect(args[0]);
-        const rock = WEATHER_ROCKS[this.speciesKey(name)];
+        const rock = WEATHER_ROCKS.get(this.speciesKey(name));
         const setter = this.effectSource(args) ?? this.lastMoveUserThisTurn(this.speciesKey(name));
         const extended = rock !== undefined && setter?.item !== undefined && this.speciesKey(setter.item) === rock;
         this.weather = { name, startedTurn: this.effectStartTurn(), duration: extended ? 8 : 5 };
@@ -276,11 +302,12 @@ export class BattleState {
               [...this.sides[side].mons.values()].find((mon) => mon.item && this.speciesKey(mon.item) === 'lightclay');
             if (setter?.item && this.speciesKey(setter.item) === 'lightclay') duration = 8;
           }
-          this.sides[side].conditions.set(key, {
+          const condition: TimedEffect = {
             name: effect,
             startedTurn: Math.max(1, this.turn),
-            ...(duration === undefined ? {} : { duration }),
-          });
+          };
+          if (duration !== undefined) condition.duration = duration;
+          this.sides[side].conditions.set(key, condition);
         } else this.sides[side].conditions.delete(key);
       }
     } else if (kind === '-item' && args.length >= 2) {
@@ -385,8 +412,8 @@ export class BattleState {
     return out;
   }
 
-  protectReducedSlots(): Record<number, boolean> {
-    const reduced: Record<number, boolean> = {};
+  protectReducedSlots(): ProtectReducedSlots {
+    const reduced: ProtectReducedSlots = {};
     const side = this.sides[this.pid];
     for (const [number, slot] of [
       [1, 'a'],
@@ -399,7 +426,7 @@ export class BattleState {
     return reduced;
   }
 
-  activeMatchupSides(reference?: ShowdownReference): { allies: MatchupMon[]; foes: MatchupMon[] } {
+  activeMatchupSides(reference?: ShowdownReference) {
     const collect = (pid: Pid, ally: boolean): MatchupMon[] => {
       const side = this.sides[pid];
       return (['a', 'b'] as const).flatMap((slot) => {
@@ -407,16 +434,15 @@ export class BattleState {
         const mon = key ? side.mons.get(key) : undefined;
         if (!mon || mon.fainted) return [];
         const ability = mon.abilitySuppressed ? undefined : (mon.ability ?? reference?.speciesAbility(mon.species));
-        return [
-          {
-            species: mon.species,
-            moves: [...mon.moves.values()].map((move) => move.name),
-            ally,
-            ...(ability === undefined ? {} : { ability }),
-            ...(mon.item === undefined ? {} : { item: mon.item }),
-            itemConsumed: mon.itemConsumed,
-          },
-        ];
+        const matchup: MatchupMon = {
+          species: mon.species,
+          moves: [...mon.moves.values()].map((move) => move.name),
+          ally,
+        };
+        if (ability !== undefined) matchup.ability = ability;
+        if (mon.item !== undefined) matchup.item = mon.item;
+        matchup.itemConsumed = mon.itemConsumed;
+        return [matchup];
       });
     };
     const foe: Pid = this.pid === 'p1' ? 'p2' : 'p1';
@@ -448,9 +474,9 @@ export class BattleState {
     return undefined;
   }
 
-  compareActionOrder(args: Record<string, unknown>, reference: ShowdownReference): string {
-    const firstName = typeof args.first === 'string' ? args.first.trim() : '';
-    const secondName = typeof args.second === 'string' ? args.second.trim() : '';
+  compareActionOrder(args: JsonObject, reference: ShowdownReference): string {
+    const firstName = text(args.first).trim();
+    const secondName = text(args.second).trim();
     if (!firstName || !secondName) return 'first and second are required active Pokémon names or ally/foe slot labels.';
     const first = this.findMon(firstName);
     const second = this.findMon(secondName);
@@ -464,20 +490,26 @@ export class BattleState {
     const firstProfile = this.speedProfile(first.pid, first.mon, reference);
     const secondProfile = this.speedProfile(second.pid, second.mon, reference);
     if (!firstProfile || !secondProfile) return 'Speed data is unavailable for one of the selected Pokémon.';
-    const firstMove = typeof args.first_move === 'string' ? args.first_move.trim() : '';
-    const secondMove = typeof args.second_move === 'string' ? args.second_move.trim() : '';
+    const firstMove = text(args.first_move).trim();
+    const secondMove = text(args.second_move).trim();
     const switchKeys = new Set(['switch', 'switchout', 'switching', 'swap']);
     const firstIsSwitch = switchKeys.has(this.speciesKey(firstMove));
     const secondIsSwitch = switchKeys.has(this.speciesKey(secondMove));
     const grassyTerrain = [...this.fields.values()].some((effect) => /grassy/i.test(effect.name));
-    const contextFor = (mon: MonState) => ({
-      ...(mon.ability === undefined ? {} : { ability: mon.ability }),
-      ...(mon.item === undefined ? {} : { item: mon.item }),
-      itemConsumed: mon.itemConsumed,
-      ...(mon.hpPercent === undefined ? {} : { fullHp: mon.hpPercent >= 99.5 }),
-      grassyTerrain,
-    });
-    const emptyInfo: { priority: number; notes: string[]; unresolved?: string } = { priority: 0, notes: [] };
+    const contextFor = (mon: MonState): PriorityContext => {
+      const context: PriorityContext = {
+        itemConsumed: mon.itemConsumed,
+        grassyTerrain,
+      };
+      if (mon.ability !== undefined) context.ability = mon.ability;
+      if (mon.item !== undefined) context.item = mon.item;
+      if (mon.hpPercent !== undefined) context.fullHp = mon.hpPercent >= 99.5;
+      return context;
+    };
+    const emptyInfo: PriorityInfo = {
+      priority: 0,
+      notes: [],
+    };
     const firstInfo =
       firstMove && !firstIsSwitch ? reference.priorityProfile(firstMove, contextFor(first.mon)) : emptyInfo;
     const secondInfo =
@@ -574,11 +606,11 @@ export class BattleState {
     return lines.join('\n');
   }
 
-  estimateDamage(args: Record<string, unknown>, request: BattleRequest, reference: ShowdownReference): string {
+  estimateDamage(args: JsonObject, request: BattleRequest, reference: ShowdownReference): string {
     this.updateOwnRequest(request);
-    const attackerName = typeof args.attacker === 'string' ? args.attacker.trim() : '';
-    const defenderName = typeof args.defender === 'string' ? args.defender.trim() : '';
-    const move = typeof args.move === 'string' ? args.move.trim() : '';
+    const attackerName = text(args.attacker).trim();
+    const defenderName = text(args.defender).trim();
+    const move = text(args.move).trim();
     if (!attackerName || !defenderName || !move) return 'attacker, defender, and move are required.';
     const attacker = this.findMon(attackerName);
     const defender = this.findMon(defenderName);
@@ -591,7 +623,7 @@ export class BattleState {
     }
     if (attacker.mon === defender.mon) return 'attacker and defender must identify different Pokémon.';
 
-    const exactStats = (entry: { pid: Pid; mon: MonState }, includeHp: boolean): Record<string, number> => {
+    const exactStats = (entry: { pid: Pid; mon: MonState }, includeHp: boolean) => {
       if (entry.pid !== this.pid) return {};
       const stats = { ...entry.mon.stats };
       if (includeHp) {
@@ -602,21 +634,31 @@ export class BattleState {
     };
     const ability = (mon: MonState) =>
       mon.abilitySuppressed ? undefined : (mon.ability ?? reference.speciesAbility(mon.species));
-    const authoritative: Record<string, unknown> = {
+    const authoritative: EstimateDamageArguments = {
       attacker: attacker.mon.species,
       defender: defender.mon.species,
       move,
     };
     const setMon = (side: 'attacker' | 'defender', entry: { pid: Pid; mon: MonState }): void => {
       const monAbility = ability(entry.mon);
-      if (monAbility) authoritative[`${side}_ability`] = monAbility;
-      if (entry.mon.item && !entry.mon.itemConsumed) authoritative[`${side}_item`] = entry.mon.item;
-      if (entry.mon.nature) authoritative[`${side}_nature`] = entry.mon.nature;
-      if (entry.mon.status) authoritative[`${side}_status`] = entry.mon.status;
-      if (Object.keys(entry.mon.boosts).length) authoritative[`${side}_boosts`] = { ...entry.mon.boosts };
-      if (entry.mon.hpPercent !== undefined) authoritative[`${side}_hp_percent`] = entry.mon.hpPercent;
       const stats = exactStats(entry, side === 'defender');
-      if (Object.keys(stats).length) authoritative[`${side}_stats`] = stats;
+      if (side === 'attacker') {
+        if (monAbility) authoritative.attacker_ability = monAbility;
+        if (entry.mon.item && !entry.mon.itemConsumed) authoritative.attacker_item = entry.mon.item;
+        if (entry.mon.nature) authoritative.attacker_nature = entry.mon.nature;
+        if (entry.mon.status) authoritative.attacker_status = entry.mon.status;
+        if (Object.keys(entry.mon.boosts).length) authoritative.attacker_boosts = { ...entry.mon.boosts };
+        if (entry.mon.hpPercent !== undefined) authoritative.attacker_hp_percent = entry.mon.hpPercent;
+        if (Object.keys(stats).length) authoritative.attacker_stats = stats;
+      } else {
+        if (monAbility) authoritative.defender_ability = monAbility;
+        if (entry.mon.item && !entry.mon.itemConsumed) authoritative.defender_item = entry.mon.item;
+        if (entry.mon.nature) authoritative.defender_nature = entry.mon.nature;
+        if (entry.mon.status) authoritative.defender_status = entry.mon.status;
+        if (Object.keys(entry.mon.boosts).length) authoritative.defender_boosts = { ...entry.mon.boosts };
+        if (entry.mon.hpPercent !== undefined) authoritative.defender_hp_percent = entry.mon.hpPercent;
+        if (Object.keys(stats).length) authoritative.defender_stats = stats;
+      }
     };
     setMon('attacker', attacker);
     setMon('defender', defender);
@@ -639,10 +681,16 @@ export class BattleState {
     ] as const) {
       const ally = active.find((other) => other.pid === entry.pid && other.mon !== entry.mon);
       if (!ally) continue;
-      authoritative[`${side}_ally`] = ally.mon.species;
       const allyAbility = ability(ally.mon);
-      if (allyAbility) authoritative[`${side}_ally_ability`] = allyAbility;
-      if (ally.mon.item && !ally.mon.itemConsumed) authoritative[`${side}_ally_item`] = ally.mon.item;
+      if (side === 'attacker') {
+        authoritative.attacker_ally = ally.mon.species;
+        if (allyAbility) authoritative.attacker_ally_ability = allyAbility;
+        if (ally.mon.item && !ally.mon.itemConsumed) authoritative.attacker_ally_item = ally.mon.item;
+      } else {
+        authoritative.defender_ally = ally.mon.species;
+        if (allyAbility) authoritative.defender_ally_ability = allyAbility;
+        if (ally.mon.item && !ally.mon.itemConsumed) authoritative.defender_ally_item = ally.mon.item;
+      }
     }
     const screens = [...this.sides[defender.pid].conditions.keys()].filter((condition) => SCREEN_MOVES.has(condition));
     if (screens.length) authoritative.defender_screens = screens;
@@ -735,19 +783,21 @@ export class BattleState {
   private speedProfile(pid: Pid, mon: MonState, reference: ShowdownReference): SpeedProfile | undefined {
     const conditions = this.sides[pid].conditions;
     const terrain = [...this.fields.values()].find((effect) => /terrain/i.test(effect.name))?.name;
-    return reference.speedProfile({
+    const input: SpeedProfileInput = {
       species: mon.species,
-      ...(mon.nature === undefined ? {} : { nature: mon.nature }),
-      ...(pid === this.pid && Number.isInteger(mon.stats.spe) ? { exact: mon.stats.spe } : {}),
-      ...(mon.item === undefined ? {} : { item: mon.item }),
       itemConsumed: mon.itemConsumed,
-      ...(mon.ability === undefined ? {} : { ability: mon.ability }),
-      ...(mon.status === undefined ? {} : { status: mon.status }),
-      ...(mon.boosts.spe === undefined ? {} : { boost: mon.boosts.spe }),
       tailwind: conditions.has('tailwind'),
-      ...(this.weather?.name === undefined ? {} : { weather: this.weather.name }),
-      ...(terrain === undefined ? {} : { terrain }),
-    });
+    };
+    if (mon.nature !== undefined) input.nature = mon.nature;
+    const speed = mon.stats.spe;
+    if (pid === this.pid && speed !== undefined && Number.isInteger(speed)) input.exact = speed;
+    if (mon.item !== undefined) input.item = mon.item;
+    if (mon.ability !== undefined) input.ability = mon.ability;
+    if (mon.status !== undefined) input.status = mon.status;
+    if (mon.boosts.spe !== undefined) input.boost = mon.boosts.spe;
+    if (this.weather) input.weather = this.weather.name;
+    if (terrain !== undefined) input.terrain = terrain;
+    return reference.speedProfile(input);
   }
 
   private speedOrder(
@@ -935,9 +985,7 @@ export class BattleState {
         .sort(([a], [b]) => a.localeCompare(b));
       if (boosts.length)
         attrs.push(
-          `boosts ${boosts
-            .map(([stat, value]) => `${STAT_LABELS[stat] ?? stat} ${value >= 0 ? '+' : ''}${value}`)
-            .join(', ')}`,
+          `boosts ${boosts.map(([stat, value]) => `${STAT_LABELS.get(stat) ?? stat} ${value >= 0 ? '+' : ''}${value}`).join(', ')}`,
         );
       if (mon.volatiles.size) attrs.push(`volatile ${[...mon.volatiles].sort().join(', ')}`);
       if (mon.moves.size)
@@ -970,7 +1018,7 @@ export class BattleState {
         const maxHp = /\/(\d+)/.exec(mon.hp ?? '')?.[1];
         attrs.push(
           `stats ${maxHp ? `Max HP ${maxHp}, ` : ''}${Object.entries(mon.stats)
-            .map(([stat, value]) => `${STAT_LABELS[stat] ?? stat} ${value}`)
+            .map(([stat, value]) => `${STAT_LABELS.get(stat) ?? stat} ${value}`)
             .join(', ')}`,
         );
       } else if (reference?.speed) attrs.push(`raw Speed range ${reference.speed}`);
@@ -1010,11 +1058,10 @@ export class BattleState {
       mon.ability = text(pokemon.ability) || text(pokemon.baseAbility) || mon.ability;
       if (text(pokemon.ability) || text(pokemon.baseAbility)) mon.abilitySuppressed = false;
       const stats = asRecord(pokemon.stats);
-      mon.stats = Object.fromEntries(
-        Object.entries(stats).filter(
-          (entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isInteger(entry[1]),
-        ),
-      );
+      mon.stats = {};
+      for (const [stat, value] of Object.entries(stats)) {
+        if (Number.isInteger(value)) mon.stats[stat] = Number(value);
+      }
       for (const move of asStrings(pokemon.moves)) if (move) mon.recordMove(move);
       if (!pokemon.active) continue;
       const slot = activeIndex++;
@@ -1025,8 +1072,8 @@ export class BattleState {
         const name = text(move.move) || text(move.id);
         if (!name) continue;
         const entry = mon.recordMove(name);
-        if (Number.isInteger(move.pp)) entry.pp = move.pp as number;
-        if (Number.isInteger(move.maxpp)) entry.maxpp = move.maxpp as number;
+        if (Number.isInteger(move.pp)) entry.pp = Number(move.pp);
+        if (Number.isInteger(move.maxpp)) entry.maxpp = Number(move.maxpp);
       }
     }
   }
@@ -1108,9 +1155,9 @@ export class BattleState {
 
   private identParts(ident: string): [Pid | undefined, string] {
     const head = ident.split(':')[0]!;
-    return head.startsWith('p1') || head.startsWith('p2')
-      ? [head.slice(0, 2) as Pid, head.slice(2, 3) || 'a']
-      : [undefined, 'a'];
+    if (head.startsWith('p1')) return ['p1', head.slice(2, 3) || 'a'];
+    if (head.startsWith('p2')) return ['p2', head.slice(2, 3) || 'a'];
+    return [undefined, 'a'];
   }
 
   private monKey(ident: string): string {

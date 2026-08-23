@@ -3,10 +3,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-
 import type { RotationEvent } from '../src/rotation.js';
 import { makePlans, runRotation } from '../src/rotation.js';
 import { mapLimit } from '../src/series.js';
+import type { JsonObject } from '../src/types.js';
 
 test('even series counts reuse team matchups while swapping model sides', () => {
   const plans = makePlans(
@@ -47,7 +47,7 @@ test('Rotation emits ordered events and completed results', async (t) => {
     onEvent: (event) => events.push(event),
     contributor: { provider: 'github', subject: '42', login: 'octocat' },
   });
-  const config = JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8')) as Record<string, unknown>;
+  const config: JsonObject = JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8'));
   assert.equal(config.mode, 'rotation');
   assert.deepEqual(config.contributor, { provider: 'github', subject: '42', login: 'octocat' });
   assert.deepEqual(rows[0]?.contributor, config.contributor);
@@ -63,7 +63,8 @@ test('Rotation emits ordered events and completed results', async (t) => {
   const updates = events.filter((event) => event.type === 'game-update');
   assert.ok(updates.length > 0);
   assert.ok(updates.every((event) => event.lines.length > 0 && event.game >= 1));
-  const last = events.at(-1) as Extract<RotationEvent, { type: 'series-end' }>;
+  const last = events.at(-1);
+  assert.ok(last?.type === 'series-end');
   assert.equal(last.record.mode, 'rotation');
   assert.deepEqual(last.record.score, rows[0]?.score);
   assert.deepEqual(gameEnds.at(-1)?.score, rows[0]?.score);

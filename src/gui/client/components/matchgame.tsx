@@ -11,7 +11,7 @@ import { Mark } from './mark';
 
 export type StoredGameView = LeagueGameResponse & { receivedAt: number };
 
-export function useMatchGame(path: string, pollingMs: number): { view: StoredGameView | null; error: string } {
+export function useMatchGame(path: string, pollingMs: number) {
   const [view, setView] = useState<StoredGameView | null>(null);
   const [error, setError] = useState('');
 

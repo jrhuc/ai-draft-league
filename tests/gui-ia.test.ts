@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test, { after, before } from 'node:test';
-
 import { Window } from 'happy-dom';
 import { GuiServer } from '../src/gui/server.js';
 
@@ -19,6 +18,7 @@ type TestElement = {
 
 function element(node: unknown): TestElement {
   assert.ok(node);
+  // SAFETY: happy-dom elements expose the fields TestElement names.
   return node as TestElement;
 }
 
@@ -47,10 +47,12 @@ async function waitFor(predicate: () => boolean, ms = 30000): Promise<void> {
 async function boot(hash = ''): Promise<Window> {
   const window = new Window({ url: `${base}${hash}` });
   window.document.body.innerHTML = '<div id="app"></div>';
-  (window as unknown as Record<string, unknown>).EventSource = class {
-    onmessage: unknown = null;
-    close(): void {}
-  };
+  Object.assign(window, {
+    EventSource: class {
+      onmessage: ((event: { data: string }) => void) | null = null;
+      close(): void {}
+    },
+  });
   window.eval(bundle);
   await waitFor(() => window.document.querySelector('header.app-header') !== null);
   await waitFor(() => activeView(window).querySelector('h1') !== null);

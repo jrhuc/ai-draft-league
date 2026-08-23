@@ -1,5 +1,11 @@
+import type { ModelMessage, ToolCallPart } from 'ai';
+
 export type Pid = 'p1' | 'p2';
-export type JsonObject = Record<string, unknown>;
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonObject | readonly JsonValue[];
+export interface JsonObject {
+  [key: string]: JsonValue | undefined;
+}
 export type ExperimentMode = 'rotation' | 'exhibition' | 'tournament' | 'draft';
 
 export interface ContributorAttribution {
@@ -12,16 +18,47 @@ export interface PlayerOptions {
   name: string;
   team: string;
 }
+export interface BattleMoveRequest extends JsonObject {
+  move: string;
+  id?: string | undefined;
+  pp?: number | undefined;
+  maxpp?: number | undefined;
+  target?: string | undefined;
+  disabled?: string | boolean | undefined;
+}
+
+export interface BattleActiveRequest extends JsonObject {
+  moves: BattleMoveRequest[];
+  canMegaEvo?: boolean | undefined;
+  trapped?: boolean | undefined;
+}
+
+export interface BattlePokemonRequest extends JsonObject {
+  ident?: string | undefined;
+  details?: string | undefined;
+  condition?: string | undefined;
+  active?: boolean | undefined;
+  commanding?: boolean | undefined;
+  reviving?: boolean | undefined;
+  item?: string | undefined;
+  ability?: string | undefined;
+  moves?: string[] | undefined;
+  stats?: JsonObject | undefined;
+}
+
+export interface BattleSideRequest extends JsonObject {
+  name?: string | undefined;
+  id?: string | undefined;
+  pokemon?: BattlePokemonRequest[] | undefined;
+}
 
 export interface BattleRequest extends JsonObject {
-  wait?: boolean;
-  teamPreview?: boolean;
-  maxChosenTeamSize?: number;
-  forceSwitch?: boolean[];
-  active?: Array<JsonObject | null>;
-  side?: {
-    pokemon?: JsonObject[];
-  };
+  wait?: boolean | undefined;
+  teamPreview?: boolean | undefined;
+  maxChosenTeamSize?: number | undefined;
+  forceSwitch?: boolean[] | undefined;
+  active?: Array<BattleActiveRequest | null> | undefined;
+  side?: BattleSideRequest | undefined;
   timer?: {
     turnSeconds?: number;
     seconds?: number;
@@ -86,7 +123,7 @@ export interface ToolCall {
   name: string;
   arguments: JsonObject;
   /** Provider metadata that must be replayed with the call. */
-  providerMetadata?: JsonObject;
+  providerMetadata?: NonNullable<ToolCallPart['providerOptions']>;
 }
 
 export interface Completion {
@@ -97,24 +134,23 @@ export interface Completion {
   reasoning?: string;
   provider?: string;
   /** AI SDK response messages, replayed verbatim so provider metadata survives. */
-  responseMessages?: JsonObject[];
+  responseMessages?: ModelMessage[];
 }
 
-export interface ProviderMessage extends JsonObject {
+export interface ProviderMessage {
   role: 'user' | 'assistant' | 'tool';
   content?: string | null;
   toolCallId?: string;
   name?: string;
   toolCalls?: ToolCall[];
   /** Raw AI SDK messages sent in place of this message when present. */
-  raw?: JsonObject[];
+  raw?: ModelMessage[];
 }
 
 export interface CompleteOptions {
   maxTokens?: number;
   /** Explicit reasoning-token budget below maxTokens, guaranteeing visible-text headroom. */
   reasoningMaxTokens?: number;
-  temperature?: number;
   tools?: ToolDefinition[];
   toolChoice?: 'auto' | 'none' | 'required';
   signal?: AbortSignal;

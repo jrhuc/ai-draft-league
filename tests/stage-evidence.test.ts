@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { evidenceSuppliedRecord, normalizeStageEvidence } from '../src/stage-evidence.js';
+import { normalizeStageEvidence } from '../src/stage-evidence.js';
 
 test('stage evidence distinguishes absent fields from an explicit empty notebook', () => {
   const retained = normalizeStageEvidence(undefined, undefined, {
@@ -14,7 +14,6 @@ test('stage evidence distinguishes absent fields from an explicit empty notebook
     notebook: 'Keep this plan.',
     supplied: { rationale: false, notebookUpdate: false },
   });
-  assert.deepEqual(evidenceSuppliedRecord(retained), { rationale: false, notebook_update: false });
 
   const cleared = normalizeStageEvidence('', '', {
     currentNotebook: 'Keep this plan.',
@@ -26,5 +25,4 @@ test('stage evidence distinguishes absent fields from an explicit empty notebook
     notebook: '',
     supplied: { rationale: true, notebookUpdate: true },
   });
-  assert.deepEqual(evidenceSuppliedRecord(cleared), { rationale: true, notebook_update: true });
 });

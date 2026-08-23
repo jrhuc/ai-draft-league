@@ -3,9 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
-import type { AgentContextEvent, AgentContextKind } from './agent-context.js';
-import type { DecisionLog, GameEnd, GameStart } from './battle-agent.js';
-import { RandomEngine } from './battle-agent.js';
+import type { AgentContextEvent } from './agent-context.js';
+import type { DecisionLog, DecisionStatName, DecisionStats, GameEnd, GameStart } from './battle-agent.js';
+import { DECISION_STAT_NAMES, RandomEngine } from './battle-agent.js';
 import { appendJsonlObject, readJsonlObjects } from './jsonl.js';
 import { LLMEngine } from './llm-engine.js';
 import { REPO_ROOT } from './paths.js';
@@ -17,7 +17,8 @@ import { loadShowdown, showdownCommit } from './showdown.js';
 import { SimBattle } from './sim.js';
 import type { Team } from './teams.js';
 import { DEFAULT_TIMER_SCALE } from './timer.js';
-import type { BattleOutcome, ContributorAttribution, JsonObject, Pid, PlayerOptions, TimerScale } from './types.js';
+import type { BattleOutcome, ContributorAttribution, JsonObject, Pid, TimerScale } from './types.js';
+import { isErrnoCode } from './value.js';
 
 export interface ExperimentOptions extends ModelReasoningConfig {
   seed?: number;
@@ -37,7 +38,8 @@ export async function mapLimit<T, R>(
   signal: AbortSignal | undefined,
   task: (item: T, signal: AbortSignal) => Promise<R>,
 ): Promise<R[]> {
-  const results = new Array<R | undefined>(items.length);
+  const results: Array<R | undefined> = [];
+  results.length = items.length;
   const controller = new AbortController();
   const forward = () => controller.abort();
   if (signal?.aborted) controller.abort();
@@ -102,6 +104,11 @@ export interface ChanceEventCounts extends JsonObject {
   full_paralysis: number;
 }
 
+export interface ChanceEventCountsBySide {
+  p1: ChanceEventCounts;
+  p2: ChanceEventCounts;
+}
+
 export const SERIES_GAME_COMPLETION_SCHEMA_VERSION = 1 as const;
 
 const sha256Schema = z.string().regex(/^[0-9a-f]{64}$/u);
@@ -121,8 +128,7 @@ const chanceEventCountsSchema = z.strictObject({
   flinched_turns: z.number().int().nonnegative(),
   full_paralysis: z.number().int().nonnegative(),
 });
-const sideChanceEventsSchema = z.strictObject({ p1: chanceEventCountsSchema, p2: chanceEventCountsSchema });
-const seriesGameSummarySchema = z.strictObject({
+const seriesGameSummaryFields = {
   winner: z.string().min(1).nullable(),
   winner_side: z.enum(['p1', 'p2']).nullable(),
   turns: z.number().int().nonnegative(),
@@ -130,13 +136,14 @@ const seriesGameSummarySchema = z.strictObject({
   model_choice_fallbacks: sideCountSchema,
   simulator_substitutions: sideCountSchema,
   timer_autodefaults: sideCountSchema,
-  chance_events: sideChanceEventsSchema,
+  chance_events: z.strictObject({ p1: chanceEventCountsSchema, p2: chanceEventCountsSchema }),
   log: z.string().min(1),
-});
+};
+const seriesGameSummarySchema = z.strictObject(seriesGameSummaryFields);
 const seriesGameResultSchema = z.strictObject({
   number: z.number().int().positive(),
   seed: gameSeedSchema,
-  ...seriesGameSummarySchema.shape,
+  ...seriesGameSummaryFields,
 });
 const gameCompletionMarkerSchema = z.strictObject({
   kind: z.literal('game_complete'),
@@ -152,8 +159,8 @@ const gameCompletionMarkerSchema = z.strictObject({
 export type SeriesGameResult = z.infer<typeof seriesGameResultSchema>;
 type GameCompletionMarker = z.infer<typeof gameCompletionMarkerSchema>;
 
-export function chanceEventCounts(log: string[]): Record<Pid, ChanceEventCounts> {
-  const counts: Record<Pid, ChanceEventCounts> = {
+export function chanceEventCounts(log: string[]): ChanceEventCountsBySide {
+  const counts: ChanceEventCountsBySide = {
     p1: { misses: 0, crits_taken: 0, flinched_turns: 0, full_paralysis: 0 },
     p2: { misses: 0, crits_taken: 0, flinched_turns: 0, full_paralysis: 0 },
   };
@@ -205,16 +212,26 @@ export interface Bo3Result {
 export const SINGLE_ELIMINATION_GAME_LIMIT = 9;
 
 export type GameSeed = [number, number, number, number];
+const seriesResultObjectSchema = seriesGameResultSchema
+  .pick({ number: true, seed: true, winner_side: true })
+  .extend({ winner: seriesGameSummaryFields.winner.optional() })
+  .loose();
 
 export function seriesSeedSchedule(regulationSeeds: readonly GameSeed[], requireWinner = false): GameSeed[] {
   if (requireWinner && regulationSeeds.length !== 3) {
     throw new Error('single-elimination series requires exactly three regulation game seeds');
   }
-  const seeds = regulationSeeds.map((seed) => [...seed] as GameSeed);
+  const seeds = regulationSeeds.map(([first, second, third, fourth]): GameSeed => [first, second, third, fourth]);
   if (!requireWinner) return seeds;
   const random = seededRng(JSON.stringify(regulationSeeds));
   while (seeds.length < SINGLE_ELIMINATION_GAME_LIMIT) {
-    seeds.push(Array.from({ length: 4 }, () => 1 + Math.floor(random() * 0xffff)) as GameSeed);
+    const seed: GameSeed = [
+      1 + Math.floor(random() * 0xffff),
+      1 + Math.floor(random() * 0xffff),
+      1 + Math.floor(random() * 0xffff),
+      1 + Math.floor(random() * 0xffff),
+    ];
+    seeds.push(seed);
   }
   return seeds;
 }
@@ -245,7 +262,7 @@ export function foldSeriesGames(
   } catch (cause) {
     throw new Error(`${label} ${cause instanceof Error ? cause.message : String(cause)}`);
   }
-  const score: Record<Pid, number> = { p1: 0, p2: 0 };
+  const score = { p1: 0, p2: 0 };
   const isComplete = (count: number): boolean => {
     if (Math.max(score.p1, score.p2) >= 2) return true;
     if (count < regulationSeeds.length) return false;
@@ -256,18 +273,16 @@ export function foldSeriesGames(
     if (index >= SINGLE_ELIMINATION_GAME_LIMIT || index >= seeds.length) {
       throw new Error(`${label} exceeds the ${SINGLE_ELIMINATION_GAME_LIMIT}-game playoff limit`);
     }
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    const parsedGame = seriesResultObjectSchema.safeParse(value);
+    if (!parsedGame.success) {
       throw new Error(`${label} game ${index + 1} is not a result object`);
     }
-    const game = value as Record<string, unknown>;
+    const game = parsedGame.data;
     if (game.number !== index + 1) throw new Error(`${label} game indexes are not consecutive from one`);
     if (!isDeepStrictEqual(game.seed, seeds[index])) {
       throw new Error(`${label} game ${index + 1} is not bound to its exact scheduled seed`);
     }
     const side = game.winner_side;
-    if (side !== null && side !== 'p1' && side !== 'p2') {
-      throw new Error(`${label} game ${index + 1} has an invalid winner side`);
-    }
     if (options.players && game.winner !== (side === null ? null : options.players[side])) {
       throw new Error(`${label} game ${index + 1} winner does not match its scheduled side`);
     }
@@ -304,12 +319,13 @@ export async function playBo3(context: Bo3Context): Promise<Bo3Result> {
     const gameId = `${seriesId}-${gameNumber}`;
     fs.rmSync(gameCompletionMarkerPath(context.seriesDir, gameNumber), { force: true });
     const start: GameStart = { gameId, gameNumber, seriesId, seriesScore: { ...score } };
-    const modelFallbacksAtStart = Object.fromEntries(
-      (['p1', 'p2'] as const).map((pid) => [pid, engines[pid].decisionStats().fallbacks ?? 0]),
-    ) as Record<Pid, number>;
+    const modelFallbacksAtStart = {
+      p1: engines.p1.decisionStats().fallbacks ?? 0,
+      p2: engines.p2.decisionStats().fallbacks ?? 0,
+    };
     for (const engine of Object.values(engines)) engine.beginGame(start);
     context.onGameStart?.(gameNumber);
-    const players: Record<Pid, PlayerOptions> = {
+    const players = {
       p1: { name: names.p1, team: context.teams.p1.packed },
       p2: { name: names.p2, team: context.teams.p2.packed },
     };
@@ -336,12 +352,10 @@ export async function playBo3(context: Bo3Context): Promise<Bo3Result> {
     context.signal?.throwIfAborted();
     const winnerSide = (['p1', 'p2'] as const).find((pid) => names[pid] === outcome.winner);
     if (winnerSide) score[winnerSide] += 1;
-    const modelChoiceFallbacks = Object.fromEntries(
-      (['p1', 'p2'] as const).map((pid) => [
-        pid,
-        (engines[pid].decisionStats().fallbacks ?? 0) - modelFallbacksAtStart[pid],
-      ]),
-    ) as Record<Pid, number>;
+    const modelChoiceFallbacks = {
+      p1: (engines.p1.decisionStats().fallbacks ?? 0) - modelFallbacksAtStart.p1,
+      p2: (engines.p2.decisionStats().fallbacks ?? 0) - modelFallbacksAtStart.p2,
+    };
     await Promise.all(
       (['p1', 'p2'] as const).map(async (pid) => {
         const end: GameEnd = {
@@ -429,11 +443,12 @@ interface RecordedSeriesFields extends JsonObject {
   timer_scale: TimerScale;
   closed_sheets?: true;
   reasoning: ReasoningLevel | null;
+  sampling: 'provider-default';
   reasoning_by_player?: Record<Pid, ReasoningLevel | null>;
   decision_stats: JsonObject;
 }
 
-type CompletedSeriesFields = Pick<
+export type CompletedSeriesFields = Pick<
   RecordedSeriesFields,
   | 'series_id'
   | 'attempt_id'
@@ -449,6 +464,7 @@ type CompletedSeriesFields = Pick<
   | 'timer_scale'
   | 'closed_sheets'
   | 'reasoning'
+  | 'sampling'
   | 'reasoning_by_player'
 >;
 
@@ -471,7 +487,7 @@ interface AdoptedSeries {
   resumeFrom: string | undefined;
 }
 
-function optionalTextDigests(values: Partial<Record<Pid, string>> | undefined): Record<Pid, string | null> {
+function optionalTextDigests(values: Partial<Record<Pid, string>> | undefined) {
   const digest = (value: string | undefined): string | null =>
     value === undefined ? null : createHash('sha256').update(value).digest('hex');
   return { p1: digest(values?.p1), p2: digest(values?.p2) };
@@ -506,12 +522,26 @@ const recordedSeriesIdentitySchema = z.object({
     briefing_digests: pidOptionalDigestSchema,
   }),
 });
-const recordedSeriesMetadataSchema = z.strictObject({
+export const recordedSeriesMetadataSchema = z.strictObject({
   schema_version: z.literal(RECORDED_SERIES_METADATA_SCHEMA_VERSION),
   series_id: z.string().min(1),
   started: z.string().min(1),
   identity: recordedSeriesIdentitySchema,
 });
+export const storedSeriesMetadataSchema = z
+  .looseObject({
+    players: pidTextSchema.optional(),
+    identity: z
+      .looseObject({
+        players: pidTextSchema.optional(),
+        series_index: z.number().int().nonnegative().nullable().optional(),
+      })
+      .optional(),
+  })
+  .transform((stored) => ({
+    players: stored.identity?.players ?? stored.players ?? null,
+    seriesIndex: stored.identity?.series_index ?? null,
+  }));
 
 type RecordedSeriesIdentity = z.infer<typeof recordedSeriesIdentitySchema>;
 type RecordedSeriesMetadata = z.infer<typeof recordedSeriesMetadataSchema>;
@@ -540,14 +570,6 @@ function recordedSeriesIdentity(context: RecordedSeriesContext): RecordedSeriesI
   });
 }
 
-function storedSeriesIndex(value: unknown): unknown {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const identity = (value as Record<string, unknown>).identity;
-  return identity && typeof identity === 'object' && !Array.isArray(identity)
-    ? (identity as Record<string, unknown>).series_index
-    : undefined;
-}
-
 function adoptSeriesDir(
   context: RecordedSeriesContext,
   expectedIdentity: RecordedSeriesIdentity,
@@ -564,13 +586,14 @@ function adoptSeriesDir(
     const seriesDir = path.join(root, seriesId);
     let value: unknown;
     try {
-      value = JSON.parse(fs.readFileSync(path.join(seriesDir, 'series.json'), 'utf8')) as unknown;
+      value = JSON.parse(fs.readFileSync(path.join(seriesDir, 'series.json'), 'utf8'));
     } catch {
       continue;
     }
     const parsed = recordedSeriesMetadataSchema.safeParse(value);
     if (!parsed.success) {
-      if (storedSeriesIndex(value) === context.seriesIndex) {
+      const indexed = storedSeriesMetadataSchema.safeParse(value);
+      if (indexed.success && indexed.data.seriesIndex === context.seriesIndex) {
         throw new Error(
           `recorded series metadata for schedule slot ${String(context.seriesIndex)} (${seriesId}) is not current: ${z.prettifyError(parsed.error)}`,
         );
@@ -617,6 +640,11 @@ function seriesGameResult(marker: GameCompletionMarker): SeriesGameResult {
   return result;
 }
 
+interface CompletedGameEvidence {
+  marker: GameCompletionMarker;
+  result: SeriesGameResult;
+}
+
 function completedGameEvidence(input: {
   seriesId: string;
   attemptId: string;
@@ -628,7 +656,7 @@ function completedGameEvidence(input: {
   modelChoiceFallbacks: Record<Pid, number>;
   log: string;
   logBytes: Buffer;
-}): { marker: GameCompletionMarker; result: SeriesGameResult } {
+}): CompletedGameEvidence {
   const marker = gameCompletionMarkerSchema.parse({
     kind: 'game_complete',
     schema_version: SERIES_GAME_COMPLETION_SCHEMA_VERSION,
@@ -676,12 +704,12 @@ function gameCompletionMarker(
   try {
     bytes = fs.readFileSync(file);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    if (isErrnoCode(error, 'ENOENT')) return undefined;
     throw error;
   }
   let value: unknown;
   try {
-    value = JSON.parse(bytes.toString('utf8')) as unknown;
+    value = JSON.parse(bytes.toString('utf8'));
   } catch (cause) {
     throw new Error(`invalid game completion marker ${file}`, { cause });
   }
@@ -710,6 +738,25 @@ function gameCompletionMarker(
   seriesGameResult(marker);
   return marker;
 }
+
+interface SideDecisionRows {
+  p1: JsonObject[];
+  p2: JsonObject[];
+}
+
+const decisionNotebookSchema = z.looseObject({ notebook: z.string() });
+const attemptOwnedDecisionSchema = z.looseObject({ attempt_id: z.string().min(1) });
+const replayableDecisionSchema = z.looseObject({
+  request_digest: z.string(),
+  submission_source: z.coerce.string(),
+  timer: z.json().optional(),
+});
+const terminalDecisionSchema = z.looseObject({
+  kind: z.literal('decision'),
+  outcome: z.enum(['accepted', 'rejected']),
+  submission_id: z.string(),
+  action: z.string(),
+});
 
 /** A completed game is owned by the attempt named in its marker. Interrupted games use only
  * terminal submissions from the latest attempt lineage, so a restart branch cannot inherit a
@@ -779,20 +826,22 @@ function reconstructAdoptedSeries(
     (row) => row.kind === 'attempt_started' && row.series_id === seriesId,
   )?.attempt_id;
   const currentLineage =
-    typeof currentAttemptId === 'string' ? resolveAttemptLineage(attemptRows, currentAttemptId) : undefined;
+    currentAttemptId === undefined ? undefined : resolveAttemptLineage(attemptRows, currentAttemptId);
   const currentAttempts = new Set(currentLineage ?? []);
-  const decisions: Record<Pid, JsonObject[]> = { p1: [], p2: [] };
-  const replay: Record<Pid, JsonObject[]> = { p1: [], p2: [] };
+  const decisions: SideDecisionRows = { p1: [], p2: [] };
+  const replay: SideDecisionRows = { p1: [], p2: [] };
   const notebooks: Partial<Record<Pid, string>> = {};
   for (const pid of ['p1', 'p2'] as const) {
     const rows = readJsonlObjects(path.join(seriesDir, `${pid}-decisions.jsonl`));
     const completedRows = selectCompletedDecisionRows(rows, attemptRows, completedAttempts);
     decisions[pid].push(...completedRows);
     for (const row of completedRows) {
-      if (typeof row.notebook === 'string') notebooks[pid] = row.notebook;
+      const recordedNotebook = decisionNotebookSchema.safeParse(row);
+      if (recordedNotebook.success) notebooks[pid] = recordedNotebook.data.notebook;
     }
     for (const row of rows) {
-      const attemptId = typeof row.attempt_id === 'string' ? row.attempt_id : undefined;
+      const ownedDecision = attemptOwnedDecisionSchema.safeParse(row);
+      const attemptId = ownedDecision.success ? ownedDecision.data.attempt_id : undefined;
       const gameNumber = Number(row.game_number);
       const completedLineage = completedLineages.get(gameNumber);
       if (attemptId && completedLineage?.has(attemptId)) continue;
@@ -809,19 +858,22 @@ function reconstructAdoptedSeries(
     storedPlayers.p1 !== 'random' &&
     storedPlayers.p2 !== 'random' &&
     (['p1', 'p2'] as const).every((pid) =>
-      replay[pid].every(
-        (row) =>
-          typeof row.request_digest === 'string' &&
-          ['model', 'automatic', 'model-default'].includes(String(row.submission_source)) &&
-          !row.timer,
-      ),
+      replay[pid].every((row) => {
+        const parsed = replayableDecisionSchema.safeParse(row);
+        return (
+          parsed.success &&
+          ['model', 'automatic', 'model-default'].includes(parsed.data.submission_source) &&
+          !parsed.data.timer
+        );
+      }),
     );
   const hasReplay = replay.p1.length > 0 || replay.p2.length > 0;
   if (replayable && hasReplay) {
     for (const pid of ['p1', 'p2'] as const) {
       decisions[pid].push(...replay[pid]);
       for (const row of replay[pid]) {
-        if (typeof row.notebook === 'string') notebooks[pid] = row.notebook;
+        const recordedNotebook = decisionNotebookSchema.safeParse(row);
+        if (recordedNotebook.success) notebooks[pid] = recordedNotebook.data.notebook;
       }
     }
   } else {
@@ -838,17 +890,12 @@ function reconstructAdoptedSeries(
     decisions,
     notebooks,
     replay,
-    resumeFrom: replayable && hasReplay && typeof currentAttemptId === 'string' ? currentAttemptId : undefined,
+    resumeFrom: replayable && hasReplay ? currentAttemptId : undefined,
   };
 }
 
 function isTerminalDecision(row: JsonObject): boolean {
-  return (
-    row.kind === 'decision' &&
-    (row.outcome === 'accepted' || row.outcome === 'rejected') &&
-    typeof row.submission_id === 'string' &&
-    typeof row.action === 'string'
-  );
+  return terminalDecisionSchema.safeParse(row).success;
 }
 
 export const SERIES_ATTEMPT_SCHEMA_VERSION = 1 as const;
@@ -864,7 +911,7 @@ const contextLedgerBoundsSchema = z.strictObject({
   start: contextLedgerHeadsSchema,
   end: contextLedgerHeadsSchema,
 });
-const attemptBaseShape = {
+const attemptIdentityFields = {
   schema_version: z.literal(SERIES_ATTEMPT_SCHEMA_VERSION),
   timestamp: z.string().min(1),
   attempt_id: z.string().min(1),
@@ -875,23 +922,35 @@ const attemptBaseShape = {
 const seriesAttemptRowSchema = z.discriminatedUnion('kind', [
   z.strictObject({
     kind: z.literal('attempt_started'),
-    ...attemptBaseShape,
+    ...attemptIdentityFields,
     resumed_from: z.string().min(1).optional(),
   }),
-  z.strictObject({ kind: z.literal('attempt_superseded'), ...attemptBaseShape, superseded_by: z.string().min(1) }),
+  z.strictObject({ kind: z.literal('attempt_superseded'), ...attemptIdentityFields, superseded_by: z.string().min(1) }),
   z.strictObject({
     kind: z.literal('attempt_completed'),
-    ...attemptBaseShape,
+    ...attemptIdentityFields,
     completed_games: z.number().int().positive(),
   }),
   z.strictObject({
     kind: z.literal('attempt_aborted'),
-    ...attemptBaseShape,
+    ...attemptIdentityFields,
     error: z.strictObject({ name: z.string().min(1), message: z.string() }),
   }),
 ]);
 
 type SeriesAttemptRow = z.infer<typeof seriesAttemptRowSchema>;
+const attemptLineageStartSchema = z.looseObject({
+  kind: z.literal('attempt_started'),
+  attempt_id: z.string(),
+  series_id: z.string(),
+  resumed_from: z.string().min(1).optional(),
+});
+type AttemptLineageStart = z.infer<typeof attemptLineageStartSchema>;
+
+interface AttemptLineageEntry {
+  row: AttemptLineageStart;
+  index: number;
+}
 
 function attemptLedgerRows(file: string): SeriesAttemptRow[] {
   return readJsonlObjects(file).map((row, index) => {
@@ -909,11 +968,12 @@ export function resolveAttemptLineage(
   cutoff = rows.length,
 ): string[] | undefined {
   if (!attemptId || !Number.isInteger(cutoff) || cutoff < 0 || cutoff > rows.length) return undefined;
-  const starts = new Map<string, { row: JsonObject; index: number }>();
+  const starts = new Map<string, AttemptLineageEntry>();
   for (const [index, row] of rows.slice(0, cutoff).entries()) {
-    if (row.kind !== 'attempt_started' || typeof row.attempt_id !== 'string') continue;
-    if (starts.has(row.attempt_id)) return undefined;
-    starts.set(row.attempt_id, { row, index });
+    const parsedStart = attemptLineageStartSchema.safeParse(row);
+    if (!parsedStart.success) continue;
+    if (starts.has(parsedStart.data.attempt_id)) return undefined;
+    starts.set(parsedStart.data.attempt_id, { row: parsedStart.data, index });
   }
   const reverse: string[] = [];
   const seen = new Set<string>();
@@ -925,7 +985,7 @@ export function resolveAttemptLineage(
     seen.add(current);
     const entry = starts.get(current);
     const currentSeriesId = entry?.row.series_id;
-    if (!entry || entry.index >= childIndex || typeof currentSeriesId !== 'string' || !currentSeriesId) {
+    if (!entry || entry.index >= childIndex || !currentSeriesId) {
       return undefined;
     }
     const start = entry.row;
@@ -933,9 +993,7 @@ export function resolveAttemptLineage(
     if (seriesId === undefined) seriesId = currentSeriesId;
     else if (currentSeriesId !== seriesId) return undefined;
     reverse.push(current);
-    if (!Object.hasOwn(start, 'resumed_from')) current = undefined;
-    else if (typeof start.resumed_from === 'string' && start.resumed_from) current = start.resumed_from;
-    else return undefined;
+    current = start.resumed_from;
   }
   return reverse.reverse();
 }
@@ -957,7 +1015,8 @@ export function selectCompletedDecisionRows(
     lineages.set(gameNumber, new Set(lineage));
   }
   return rows.filter((row) => {
-    const attemptId = typeof row.attempt_id === 'string' ? row.attempt_id : undefined;
+    const ownedDecision = attemptOwnedDecisionSchema.safeParse(row);
+    const attemptId = ownedDecision.success ? ownedDecision.data.attempt_id : undefined;
     const lineage = lineages.get(Number(row.game_number));
     return Boolean(attemptId && lineage?.has(attemptId) && (row.kind === 'game_reflection' || isTerminalDecision(row)));
   });
@@ -1055,12 +1114,14 @@ function canonicalCompletedAttempt(adopted: AdoptedSeries): Extract<SeriesAttemp
   return completed;
 }
 
-/** Reads the series owner's strict metadata, marker-bound log evidence, and attempt ledger for the
- * exact expected invocation, then exposes only the completed result fields persisted by outer modes. */
-export function readCompletedSeriesEvidence(context: RecordedSeriesContext): {
+interface CompletedSeriesEvidence {
   winnerSide: Pid | undefined;
   fields: CompletedSeriesFields;
-} {
+}
+
+/** Reads the series owner's strict metadata, marker-bound log evidence, and attempt ledger for the
+ * exact expected invocation, then exposes only the completed result fields persisted by outer modes. */
+export function readCompletedSeriesEvidence(context: RecordedSeriesContext): CompletedSeriesEvidence {
   if (context.seriesIndex === undefined) throw new Error('completed series evidence requires a schedule slot');
   const identity = recordedSeriesIdentity(context);
   const adopted = adoptSeriesDir(context, identity);
@@ -1069,13 +1130,11 @@ export function readCompletedSeriesEvidence(context: RecordedSeriesContext): {
   }
   const completed = canonicalCompletedAttempt(adopted);
   const winnerSide = adopted.folded.winnerSide;
-  const reasoning = (pid: Pid): ReasoningLevel | null =>
-    reasoningForModel(identity.players[pid], {
-      ...(identity.scaffold.reasoning === null ? {} : { reasoning: identity.scaffold.reasoning }),
-      ...(identity.scaffold.reasoning_by_model === null
-        ? {}
-        : { reasoningByModel: identity.scaffold.reasoning_by_model }),
-    }) ?? null;
+  const reasoningConfig: ModelReasoningConfig = {};
+  if (identity.scaffold.reasoning !== null) reasoningConfig.reasoning = identity.scaffold.reasoning;
+  if (identity.scaffold.reasoning_by_model !== null) {
+    reasoningConfig.reasoningByModel = identity.scaffold.reasoning_by_model;
+  }
   const fields: CompletedSeriesFields = {
     series_id: adopted.seriesId,
     attempt_id: completed.attempt_id,
@@ -1089,17 +1148,25 @@ export function readCompletedSeriesEvidence(context: RecordedSeriesContext): {
     games: adopted.games,
     engine_seeds: identity.engine_seeds,
     timer_scale: identity.scaffold.timer_scale,
-    ...(identity.scaffold.closed_sheets ? { closed_sheets: true as const } : {}),
     reasoning: identity.scaffold.reasoning,
-    ...(identity.scaffold.reasoning_by_model === null
-      ? {}
-      : { reasoning_by_player: { p1: reasoning('p1'), p2: reasoning('p2') } }),
+    sampling: 'provider-default',
   };
+  if (identity.scaffold.closed_sheets) fields.closed_sheets = true;
+  if (identity.scaffold.reasoning_by_model !== null) {
+    fields.reasoning_by_player = {
+      p1: reasoningForModel(identity.players.p1, reasoningConfig) ?? null,
+      p2: reasoningForModel(identity.players.p2, reasoningConfig) ?? null,
+    };
+  }
   return { winnerSide, fields };
 }
 
 type ContextLedgerHead = z.infer<typeof contextLedgerHeadSchema>;
 type ContextLedgerHeads = z.infer<typeof contextLedgerHeadsSchema>;
+const contextLedgerRowSchema = z.looseObject({
+  context_id: z.string(),
+  sequence: z.number(),
+});
 
 interface IncompleteAttempt {
   attemptId: string;
@@ -1115,24 +1182,23 @@ function contextLedgerHead(seriesDir: string, pid: Pid): ContextLedgerHead {
   try {
     contents = fs.readFileSync(file);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    if (!isErrnoCode(error, 'ENOENT')) throw error;
     contents = Buffer.alloc(0);
   }
   let contextId: string | null = null;
   let sequence = 0;
   for (const line of contents.toString('utf8').split('\n')) {
     if (!line) continue;
-    let parsed: unknown;
+    let value: unknown;
     try {
-      parsed = JSON.parse(line) as unknown;
+      value = JSON.parse(line);
     } catch {
       break;
     }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) break;
-    const row = parsed as JsonObject;
-    if (typeof row.context_id !== 'string' || typeof row.sequence !== 'number') break;
-    contextId = row.context_id;
-    sequence = row.sequence;
+    const parsed = contextLedgerRowSchema.safeParse(value);
+    if (!parsed.success) break;
+    contextId = parsed.data.context_id;
+    sequence = parsed.data.sequence;
   }
   return {
     context_id: contextId,
@@ -1200,17 +1266,31 @@ function attemptRecord(
   });
 }
 
-function projectedDecisionStats(rows: JsonObject[]): Record<string, number> {
-  const stats: Record<string, number> = {};
-  const add = (key: string, value = 1) => {
+const numericDecisionStatSchema = z.number();
+const decisionActionSchema = z.string();
+const persistedAgentContextSchema = z.looseObject({
+  kind: z.literal('agent_context'),
+  pid: z.enum(['p1', 'p2']),
+  series_id: z.string(),
+  context_id: z.string(),
+  sequence: z.number(),
+  context_kind: z.enum(['episode', 'observation', 'decision', 'reflection']),
+  payload: z.record(z.string(), z.json()),
+});
+
+function projectedDecisionStats(rows: JsonObject[]): DecisionStats {
+  const stats: DecisionStats = {};
+  const add = (key: DecisionStatName, value = 1) => {
     stats[key] = (stats[key] ?? 0) + value;
   };
   for (const row of rows) {
     if (row.kind === 'game_reflection') {
       add('reflections');
       if (row.fallback === true) add('reflection_fallbacks');
-      if (typeof row.reasoning_tokens === 'number') add('reasoning_tokens', row.reasoning_tokens);
-      if (typeof row.cost === 'number') add('cost', row.cost);
+      const reasoningTokens = numericDecisionStatSchema.safeParse(row.reasoning_tokens);
+      if (reasoningTokens.success) add('reasoning_tokens', reasoningTokens.data);
+      const cost = numericDecisionStatSchema.safeParse(row.cost);
+      if (cost.success) add('cost', cost.data);
       continue;
     }
     if (row.kind !== 'decision') continue;
@@ -1219,11 +1299,15 @@ function projectedDecisionStats(rows: JsonObject[]): Record<string, number> {
     add('decisions');
     if (row.fallback === true) add('fallbacks');
     if (Array.isArray(row.tool_lookups)) add('tool_lookups', row.tool_lookups.length);
-    if (typeof row.parse_failures === 'number') add('parse_failures', row.parse_failures);
-    if (typeof row.reasoning_tokens === 'number') add('reasoning_tokens', row.reasoning_tokens);
-    if (typeof row.cost === 'number') add('cost', row.cost);
+    const parseFailures = numericDecisionStatSchema.safeParse(row.parse_failures);
+    if (parseFailures.success) add('parse_failures', parseFailures.data);
+    const reasoningTokens = numericDecisionStatSchema.safeParse(row.reasoning_tokens);
+    if (reasoningTokens.success) add('reasoning_tokens', reasoningTokens.data);
+    const cost = numericDecisionStatSchema.safeParse(row.cost);
+    if (cost.success) add('cost', cost.data);
     if (row.requested_choices !== undefined) add('substituted_actions');
-    const action = typeof row.action === 'string' ? row.action : '';
+    const parsedAction = decisionActionSchema.safeParse(row.action);
+    const action = parsedAction.success ? parsedAction.data : '';
     const parts = action.split(',');
     add('move_selections', parts.filter((part) => /(?:^|\s)move\s/.test(part)).length);
     add('switch_selections', parts.filter((part) => /(?:^|\s)switch\s/.test(part)).length);
@@ -1241,12 +1325,12 @@ function projectedDecisionStats(rows: JsonObject[]): Record<string, number> {
   return stats;
 }
 
-function combinedDecisionStats(
-  restored: Record<string, number>,
-  current: Record<string, number>,
-): Record<string, number> {
+function combinedDecisionStats(restored: DecisionStats, current: DecisionStats): DecisionStats {
   const combined = { ...current };
-  for (const [key, value] of Object.entries(restored)) combined[key] = (combined[key] ?? 0) + value;
+  for (const key of DECISION_STAT_NAMES) {
+    const value = restored[key];
+    if (value !== undefined) combined[key] = (combined[key] ?? 0) + value;
+  }
   if (combined.cost !== undefined) combined.cost = Math.round(combined.cost * 1e6) / 1e6;
   return combined;
 }
@@ -1264,36 +1348,30 @@ function loadAgentContext(seriesDir: string, seriesId: string, pid: Pid): AgentC
     const lineOffset = byteOffset;
     byteOffset += Buffer.byteLength(line, 'utf8') + (index < lines.length - 1 ? 1 : 0);
     if (!line) continue;
-    let parsed: unknown;
+    let value: unknown;
     try {
-      parsed = JSON.parse(line) as unknown;
+      value = JSON.parse(line);
     } catch (error) {
       if (index !== lastNonempty) throw new Error(`invalid ${pid} context row ${index + 1}`, { cause: error });
       fs.truncateSync(file, lineOffset);
       break;
     }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
-      throw new Error(`invalid ${pid} context row ${index + 1}`);
-    const row = parsed as JsonObject;
-    const kind = row.context_kind;
+    const parsed = persistedAgentContextSchema.safeParse(value);
     const sequence = events.length + 1;
     if (
-      row.kind !== 'agent_context' ||
-      row.pid !== pid ||
-      row.series_id !== seriesId ||
-      row.context_id !== `ctx-${String(sequence).padStart(8, '0')}` ||
-      row.sequence !== sequence ||
-      !['episode', 'observation', 'decision', 'reflection'].includes(String(kind)) ||
-      !row.payload ||
-      typeof row.payload !== 'object' ||
-      Array.isArray(row.payload)
-    )
+      !parsed.success ||
+      parsed.data.pid !== pid ||
+      parsed.data.series_id !== seriesId ||
+      parsed.data.context_id !== `ctx-${String(sequence).padStart(8, '0')}` ||
+      parsed.data.sequence !== sequence
+    ) {
       throw new Error(`invalid ${pid} context row ${index + 1}`);
+    }
     events.push({
-      id: row.context_id,
+      id: parsed.data.context_id,
       sequence,
-      kind: kind as AgentContextKind,
-      payload: row.payload as JsonObject,
+      kind: parsed.data.context_kind,
+      payload: parsed.data.payload,
     });
   }
   return events;
@@ -1351,11 +1429,11 @@ export async function playRecordedSeries(context: RecordedSeriesContext): Promis
         ),
       );
     }
-    const names: Record<Pid, string> = { p1: `p1-${context.players.p1}`, p2: `p2-${context.players.p2}` };
+    const names = { p1: `p1-${context.players.p1}`, p2: `p2-${context.players.p2}` };
     const reference = Object.values(context.players).some((player) => player !== 'random')
       ? new ShowdownReference(context.format, context.psDir)
       : undefined;
-    const reasoning: Record<Pid, ReasoningLevel | undefined> = {
+    const reasoning = {
       p1: reasoningForModel(context.players.p1, context),
       p2: reasoningForModel(context.players.p2, context),
     };
@@ -1371,35 +1449,34 @@ export async function playRecordedSeries(context: RecordedSeriesContext): Promis
       };
     };
 
-    const engines = Object.fromEntries(
-      (['p1', 'p2'] as const).map((pid) => [
+    const engineFor = (pid: Pid) => {
+      const setup: EngineSetup = {
         pid,
-        makeEngine({
-          pid,
-          spec: context.players[pid],
-          seed: context.engineSeeds[pid],
-          decisionLog: decisionSink(pid),
-          traceLog: path.join(seriesDir, `${pid}-trace.jsonl`),
-          contextLog: path.join(seriesDir, `${pid}-context.jsonl`),
-          initialContext: adopted ? loadAgentContext(seriesDir, seriesId, pid) : [],
-          format: context.format,
-          psDir: context.psDir,
-          reasoning: reasoning[pid],
-          reference,
-          signal: context.signal,
-          apiKey: context.apiKeys?.[context.players[pid]],
-          initialNotebook: adopted?.notebooks[pid] ?? context.initialNotebooks?.[pid],
-          draftRoster: context.draftRosters?.[pid],
-          briefing: context.briefings?.[pid],
-        }),
-      ]),
-    ) as Record<Pid, RandomEngine | LLMEngine>;
+        spec: context.players[pid],
+        seed: context.engineSeeds[pid],
+        decisionLog: decisionSink(pid),
+        traceLog: path.join(seriesDir, `${pid}-trace.jsonl`),
+        contextLog: path.join(seriesDir, `${pid}-context.jsonl`),
+        initialContext: adopted ? loadAgentContext(seriesDir, seriesId, pid) : [],
+        format: context.format,
+        psDir: context.psDir,
+        reasoning: reasoning[pid],
+        reference,
+        signal: context.signal,
+        apiKey: context.apiKeys?.[context.players[pid]],
+        initialNotebook: adopted?.notebooks[pid] ?? context.initialNotebooks?.[pid],
+        draftRoster: context.draftRosters?.[pid],
+        briefing: context.briefings?.[pid],
+      };
+      return makeEngine(setup);
+    };
+    const engines = { p1: engineFor('p1'), p2: engineFor('p2') };
     for (const pid of ['p1', 'p2'] as const) {
       const engine = engines[pid];
       if (adopted?.replay[pid].length && engine instanceof LLMEngine) engine.primeReplay(adopted.replay[pid]);
     }
     const battleFormat = context.closedSheets ? closedSheetsFormat(context.format, context.psDir) : context.format;
-    const { score, games, winnerSide } = await playBo3({
+    const battleContext: Bo3Context = {
       engines,
       names,
       players: context.players,
@@ -1409,47 +1486,46 @@ export async function playRecordedSeries(context: RecordedSeriesContext): Promis
       seriesDir,
       format: battleFormat,
       psDir: context.psDir,
-      ...(adopted?.games.length ? { completedGames: adopted.games } : {}),
-      ...(context.requireWinner === undefined ? {} : { requireWinner: context.requireWinner }),
       timerScale,
       attemptId,
-      ...(context.signal === undefined ? {} : { signal: context.signal }),
-      ...(context.onGameUpdate === undefined ? {} : { onGameUpdate: context.onGameUpdate }),
-      ...(context.onGameEnd === undefined ? {} : { onGameEnd: context.onGameEnd }),
-    });
-    const stats = Object.fromEntries(
-      (['p1', 'p2'] as const).map((pid) => [
-        pid,
-        combinedDecisionStats(projectedDecisionStats(adopted?.decisions[pid] ?? []), engines[pid].decisionStats()),
-      ]),
-    ) as JsonObject;
+      requireWinner: context.requireWinner,
+      signal: context.signal,
+      onGameUpdate: context.onGameUpdate,
+      onGameEnd: context.onGameEnd,
+    };
+    if (adopted?.games.length) battleContext.completedGames = adopted.games;
+    const { score, games, winnerSide } = await playBo3(battleContext);
+    const stats = {
+      p1: combinedDecisionStats(projectedDecisionStats(adopted?.decisions.p1 ?? []), engines.p1.decisionStats()),
+      p2: combinedDecisionStats(projectedDecisionStats(adopted?.decisions.p2 ?? []), engines.p2.decisionStats()),
+    };
+    const fields: RecordedSeriesFields = {
+      timestamp: new Date().toISOString(),
+      run_id: path.basename(context.runDir),
+      series_id: seriesId,
+      attempt_id: attemptId,
+      format: context.format,
+      players: context.players,
+      teams: { p1: context.teams.p1.id, p2: context.teams.p2.id },
+      winner: winnerSide ? context.players[winnerSide] : null,
+      winner_side: winnerSide ?? null,
+      score,
+      turns: games.reduce((sum, game) => sum + Number(game.turns), 0),
+      games,
+      engine_seeds: context.engineSeeds,
+      timer_scale: timerScale,
+      reasoning: context.reasoning ?? null,
+      sampling: 'provider-default',
+      decision_stats: stats,
+    };
+    if (context.closedSheets) fields.closed_sheets = true;
+    if (context.reasoningByModel !== undefined) {
+      fields.reasoning_by_player = { p1: reasoning.p1 ?? null, p2: reasoning.p2 ?? null };
+    }
     const result: RecordedSeries = {
-      coachNotes: Object.fromEntries(
-        (['p1', 'p2'] as const).map((pid) => [pid, engines[pid].coachingNote()]),
-      ) as Record<Pid, string>,
+      coachNotes: { p1: engines.p1.coachingNote(), p2: engines.p2.coachingNote() },
       winnerSide,
-      fields: {
-        timestamp: new Date().toISOString(),
-        run_id: path.basename(context.runDir),
-        series_id: seriesId,
-        attempt_id: attemptId,
-        format: context.format,
-        players: context.players,
-        teams: { p1: context.teams.p1.id, p2: context.teams.p2.id },
-        winner: winnerSide ? context.players[winnerSide] : null,
-        winner_side: winnerSide ?? null,
-        score,
-        turns: games.reduce((sum, game) => sum + Number(game.turns), 0),
-        games,
-        engine_seeds: context.engineSeeds,
-        timer_scale: timerScale,
-        ...(context.closedSheets ? { closed_sheets: true } : {}),
-        reasoning: context.reasoning ?? null,
-        ...(context.reasoningByModel === undefined
-          ? {}
-          : { reasoning_by_player: { p1: reasoning.p1 ?? null, p2: reasoning.p2 ?? null } }),
-        decision_stats: stats,
-      },
+      fields,
     };
     appendAttemptRecord(
       seriesDir,

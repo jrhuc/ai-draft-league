@@ -3,8 +3,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { z } from 'zod';
+import type { DraftLeagueOptions } from './draftleague.js';
+import type { ExhibitionOptions } from './exhibition.js';
 import { exportSeasonBundle } from './export-season.js';
 import { GuiServer } from './gui/server.js';
+import { draftLeagueConfigSchema } from './league-store.js';
 import { makeRunDirectory, prepareDataDirectories, RESULTS_PATH, RUNS_DIR } from './paths.js';
 import type { ReasoningLevel } from './providers.js';
 import { isReasoningLevel, nitroSpec } from './providers.js';
@@ -13,9 +17,13 @@ import { loadSeriesRecords, scopeRows, TEST_POOL } from './records.js';
 import { writeReport } from './report.js';
 import { runRotation } from './rotation.js';
 import { withRunStatus } from './run-status.js';
+import type { ExperimentOptions } from './series.js';
 import type { Team } from './teams.js';
 import { parseTimerScale } from './timer.js';
+import type { TournamentOptions } from './tournament.js';
+import { tournamentConfigSchema } from './tournament.js';
 import type { TimerScale } from './types.js';
+import { asRecord, text } from './value.js';
 
 const EXPERIMENT_CLI_OPTIONS = {
   models: { type: 'string', multiple: true },
@@ -32,6 +40,67 @@ interface ExperimentCliValues {
   reasoning?: string;
   'timer-scale'?: string;
   nitro: boolean;
+}
+
+type ExperimentExecutionOptions = Pick<ExperimentOptions, 'seed' | 'reasoning' | 'reasoningByModel' | 'timerScale'> & {
+  recordsPath: string;
+};
+
+const tournamentResumeConfigSchema = tournamentConfigSchema.pick({
+  models: true,
+  seed: true,
+  pool: true,
+  format: true,
+  provenance: true,
+  concurrency: true,
+  reasoning: true,
+  reasoning_by_model: true,
+  timer_scale: true,
+});
+const draftResumeConfigSchema = draftLeagueConfigSchema
+  .pick({
+    models: true,
+    seed: true,
+    board: true,
+    concurrency: true,
+    reasoning: true,
+    timer_scale: true,
+    sequential_weeks: true,
+    closed_sheets: true,
+    draft_only: true,
+    transactions: true,
+  })
+  .partial({ sequential_weeks: true, draft_only: true, transactions: true });
+const storedTeamSchema = z.looseObject({
+  id: z.string(),
+  packed: z.string(),
+  seed: z.number().optional(),
+  provenance: z
+    .strictObject({
+      placement: z.number().nullable(),
+      player: z.string(),
+      handle: z.string(),
+      swiss: z.string(),
+      paste: z.string(),
+    })
+    .optional(),
+  source: z.record(z.string(), z.json()).optional(),
+});
+
+function loadStoredTeams(file: string): Team[] {
+  return z
+    .array(storedTeamSchema)
+    .parse(JSON.parse(fs.readFileSync(file, 'utf8')))
+    .map((stored) => {
+      const team: Team = {
+        id: stored.id,
+        packed: stored.packed,
+        seed: stored.seed,
+        provenance: stored.provenance,
+        source: stored.source,
+      };
+      return team;
+    });
 }
 
 const HELP = `Usage: vgcleague <command>
@@ -136,15 +205,12 @@ function experimentModels(
   return nitro ? selected.map(nitroSpec) : selected;
 }
 
-function experimentExecution(values: ExperimentCliValues) {
-  const reasoning = reasoningLevel(values.reasoning);
-  const timerScale = timerScaleOption(values['timer-scale']);
-  const seed = optionalInteger('seed', values.seed);
+function experimentExecution(values: ExperimentCliValues): ExperimentExecutionOptions {
   return {
     recordsPath: RESULTS_PATH,
-    ...(seed === undefined ? {} : { seed }),
-    ...(reasoning === undefined ? {} : { reasoning }),
-    ...(timerScale === undefined ? {} : { timerScale }),
+    seed: optionalInteger('seed', values.seed),
+    reasoning: reasoningLevel(values.reasoning),
+    timerScale: timerScaleOption(values['timer-scale']),
   };
 }
 
@@ -221,26 +287,14 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     const { runTournament, DEFAULT_PROVENANCE } = await import('./tournament.js');
     const resumeDir = values.resume ? path.resolve(values.resume) : undefined;
     const storedConfig = resumeDir
-      ? (JSON.parse(fs.readFileSync(path.join(resumeDir, 'config.json'), 'utf8')) as {
-          models: string[];
-          seed: number;
-          pool?: string | null;
-          format?: string;
-          provenance?: string;
-          concurrency?: number;
-          reasoning?: string | null;
-          reasoning_by_model?: Record<string, string> | null;
-          timer_scale?: number | 'off';
-        })
+      ? tournamentResumeConfigSchema.parse(JSON.parse(fs.readFileSync(path.join(resumeDir, 'config.json'), 'utf8')))
       : undefined;
     const storedTeams =
-      storedConfig && !storedConfig.pool
-        ? (JSON.parse(fs.readFileSync(path.join(resumeDir!, 'teams.json'), 'utf8')) as Team[])
-        : undefined;
+      resumeDir && storedConfig && !storedConfig.pool ? loadStoredTeams(path.join(resumeDir, 'teams.json')) : undefined;
     const models = storedConfig
       ? storedConfig.models
       : experimentModels(command, values.models, positionals, values.nitro);
-    let execution: ReturnType<typeof experimentExecution>;
+    let execution: ExperimentExecutionOptions;
     if (storedConfig) {
       const storedReasoning = storedConfig.reasoning ? reasoningLevel(storedConfig.reasoning) : undefined;
       const storedByModel = Object.entries(storedConfig.reasoning_by_model ?? {}).flatMap(([model, level]) => {
@@ -250,9 +304,9 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       execution = {
         recordsPath: RESULTS_PATH,
         seed: storedConfig.seed,
-        ...(storedReasoning === undefined ? {} : { reasoning: storedReasoning }),
-        ...(storedByModel.length === 0 ? {} : { reasoningByModel: Object.fromEntries(storedByModel) }),
-        ...(storedConfig.timer_scale === undefined ? {} : { timerScale: storedConfig.timer_scale }),
+        reasoning: storedReasoning,
+        reasoningByModel: storedByModel.length > 0 ? Object.fromEntries(storedByModel) : undefined,
+        timerScale: storedConfig.timer_scale,
       };
     } else {
       execution = experimentExecution(values);
@@ -261,17 +315,19 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     if (provenance !== 'disclosed' && provenance !== 'blind')
       throw new Error('--provenance must be "disclosed" or "blind"');
     const runDir = resumeDir ?? makeRunDirectory();
-    const rows = await withRunStatus(runDir, () =>
-      runTournament(models, runDir, {
-        ...(storedTeams
-          ? { teams: storedTeams, ...(storedConfig?.format ? { format: storedConfig.format } : {}) }
-          : { pool: storedConfig?.pool ?? values.pool }),
-        provenance,
-        concurrency: storedConfig?.concurrency ?? positiveInteger('concurrency', values.concurrency),
-        ...(resumeDir ? { resume: true } : {}),
-        ...execution,
-      }),
-    );
+    const tournamentOptions: TournamentOptions = {
+      provenance,
+      concurrency: storedConfig?.concurrency ?? positiveInteger('concurrency', values.concurrency),
+      ...execution,
+    };
+    if (storedTeams) {
+      tournamentOptions.teams = storedTeams;
+      if (storedConfig?.format) tournamentOptions.format = storedConfig.format;
+    } else {
+      tournamentOptions.pool = storedConfig?.pool ?? values.pool;
+    }
+    if (resumeDir) tournamentOptions.resume = true;
+    const rows = await withRunStatus(runDir, () => runTournament(models, runDir, tournamentOptions));
     printResults(rows);
     const champion = rows[rows.length - 1];
     if (champion) console.log(`Champion: ${String(champion.advanced ?? champion.winner)}`);
@@ -303,30 +359,19 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     const { parseTransactionWeeks } = await import('./trade-window.js');
     const resumeDir = values.resume ? path.resolve(values.resume) : undefined;
     const storedConfig = resumeDir
-      ? (JSON.parse(fs.readFileSync(path.join(resumeDir, 'config.json'), 'utf8')) as {
-          models: string[];
-          seed: number;
-          board: string;
-          concurrency?: number;
-          reasoning?: string | null;
-          timer_scale?: number | 'off';
-          sequential_weeks?: boolean;
-          closed_sheets?: boolean;
-          draft_only?: boolean;
-          transactions?: Array<{ after_week: number; trades_allowed: number }> | null;
-        })
+      ? draftResumeConfigSchema.parse(JSON.parse(fs.readFileSync(path.join(resumeDir, 'config.json'), 'utf8')))
       : undefined;
     const models = storedConfig
       ? storedConfig.models
       : experimentModels(command, values.models, positionals, values.nitro);
-    let execution: ReturnType<typeof experimentExecution>;
+    let execution: ExperimentExecutionOptions;
     if (storedConfig) {
       const storedReasoning = storedConfig.reasoning ? reasoningLevel(storedConfig.reasoning) : undefined;
       execution = {
         recordsPath: RESULTS_PATH,
         seed: storedConfig.seed,
-        ...(storedReasoning === undefined ? {} : { reasoning: storedReasoning }),
-        ...(storedConfig.timer_scale === undefined ? {} : { timerScale: storedConfig.timer_scale }),
+        reasoning: storedReasoning,
+        timerScale: storedConfig.timer_scale,
       };
     } else {
       execution = experimentExecution(values);
@@ -347,43 +392,38 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         : parseTransactionWeeks(values.transactions, draftLeagueTopology(models.length).weekCount));
     const runDir = resumeDir ?? makeRunDirectory();
     let lastTeambuilds = 0;
-    const rows = await withRunStatus(runDir, () =>
-      runDraftLeague(models, runDir, {
-        board: storedConfig ? storedConfig.board : values.board,
-        concurrency: storedConfig?.concurrency ?? positiveInteger('concurrency', values.concurrency),
-        ...(throughWeek === undefined ? {} : { throughWeek }),
-        ...(resumeDir ? { resume: true } : {}),
-        ...((storedConfig ? storedConfig.sequential_weeks === true : values['sequential-weeks'])
-          ? { sequentialWeeks: true }
-          : {}),
-        ...((storedConfig ? storedConfig.closed_sheets === true : values['closed-sheets'])
-          ? { closedSheets: true }
-          : {}),
-        ...(transactions === undefined ? {} : { transactions }),
-        ...(values.swaps === undefined ? {} : { swapsAllowed: nonnegativeInteger('swaps', values.swaps) }),
-        ...(values['draft-only'] ? { draftOnly: true } : {}),
-        ...(preset ? { preset } : {}),
-        ...execution,
-        onEvent: (event) => {
-          if (event.type !== 'draft') return;
-          if (event.draft.phase === 'draft' && event.draft.picks.length > 0) {
-            const pick = event.draft.picks[event.draft.picks.length - 1]!;
-            const coach = event.draft.teamNames[pick.entrant] || event.draft.entrants[pick.entrant];
-            console.log(`pick ${pick.pick}: ${coach} takes ${pick.mon}${pick.fallback ? ' (fallback)' : ''}`);
-          }
-          if (event.draft.teambuilds.length > lastTeambuilds) {
-            lastTeambuilds = event.draft.teambuilds.length;
-            const build = event.draft.teambuilds[lastTeambuilds - 1]!;
-            const repaired = build.sets.filter((set) => set.repaired).length;
-            console.log(
-              `teambuild: ${event.draft.teamNames[build.entrant] || event.draft.entrants[build.entrant]} vs ` +
-                `${event.draft.teamNames[build.opponent] || event.draft.entrants[build.opponent]} — ` +
-                `${build.brought.join(', ')}${repaired ? ` (${repaired} repaired)` : ''}`,
-            );
-          }
-        },
-      }),
-    );
+    const draftOptions: DraftLeagueOptions = {
+      board: storedConfig ? storedConfig.board : values.board,
+      concurrency: storedConfig?.concurrency ?? positiveInteger('concurrency', values.concurrency),
+      ...execution,
+      onEvent: (event) => {
+        if (event.type !== 'draft') return;
+        if (event.draft.phase === 'draft' && event.draft.picks.length > 0) {
+          const pick = event.draft.picks[event.draft.picks.length - 1]!;
+          const coach = event.draft.teamNames[pick.entrant] || event.draft.entrants[pick.entrant];
+          console.log(`pick ${pick.pick}: ${coach} takes ${pick.mon}${pick.fallback ? ' (fallback)' : ''}`);
+        }
+        if (event.draft.teambuilds.length > lastTeambuilds) {
+          lastTeambuilds = event.draft.teambuilds.length;
+          const build = event.draft.teambuilds[lastTeambuilds - 1]!;
+          const repaired = build.sets.filter((set) => set.repaired).length;
+          console.log(
+            `teambuild: ${event.draft.teamNames[build.entrant] || event.draft.entrants[build.entrant]} vs ` +
+              `${event.draft.teamNames[build.opponent] || event.draft.entrants[build.opponent]} — ` +
+              `${build.brought.join(', ')}${repaired ? ` (${repaired} repaired)` : ''}`,
+          );
+        }
+      },
+      throughWeek,
+      resume: Boolean(resumeDir),
+      sequentialWeeks: storedConfig ? storedConfig.sequential_weeks === true : values['sequential-weeks'],
+      closedSheets: storedConfig ? storedConfig.closed_sheets === true : values['closed-sheets'],
+      transactions,
+      swapsAllowed: values.swaps === undefined ? undefined : nonnegativeInteger('swaps', values.swaps),
+      draftOnly: values['draft-only'],
+      preset,
+    };
+    const rows = await withRunStatus(runDir, () => runDraftLeague(models, runDir, draftOptions));
     printResults(rows);
     const totalSeries = draftLeagueTopology(models.length).totalSeries;
     if (values['draft-only']) {
@@ -393,8 +433,8 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       console.log(`League stopped after ${rows.length} of ${totalSeries} series.`);
       console.log(`Resume with: vgcleague draft --resume ${runDir}`);
     } else {
-      const champion = rows[rows.length - 1]?.advanced;
-      if (typeof champion !== 'string' || !champion) throw new Error('draft final did not identify a champion');
+      const champion = text(rows[rows.length - 1]?.advanced);
+      if (!champion) throw new Error('draft final did not identify a champion');
       console.log(`Champion: ${champion}`);
     }
     console.log(`Draft logs: ${path.join(runDir, 'draft')}`);
@@ -423,27 +463,24 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     const seed = optionalInteger('seed', values.seed);
     const { runExhibition } = await import('./exhibition.js');
     const runDir = makeRunDirectory();
-    const row = await withRunStatus(runDir, () =>
-      runExhibition(runDir, {
-        opponent,
-        seat,
-        name: values.name,
-        pool: values.pool,
-        recordsPath: RESULTS_PATH,
-        ...(seed === undefined ? {} : { seed }),
-        ...(values.port === undefined ? {} : { port: positiveInteger('port', values.port) }),
-        ...(reasoning === undefined ? {} : { reasoning }),
-        ...(values['agent-dir'] === undefined ? {} : { agentDir: values['agent-dir'] }),
-        onNotice: (line) => console.log(line),
-        onReady: ({ url, agentDir }) => {
-          console.log(`Seat bridge listening at ${url}`);
-          console.log(`Agent workspace: ${agentDir}`);
-          console.log(
-            'Start the terminal agent with that directory as its working directory and have it read SEAT.md.',
-          );
-        },
-      }),
-    );
+    const exhibitionOptions: ExhibitionOptions = {
+      opponent,
+      seat,
+      name: values.name,
+      pool: values.pool,
+      recordsPath: RESULTS_PATH,
+      onNotice: (line) => console.log(line),
+      onReady: ({ url, agentDir }) => {
+        console.log(`Seat bridge listening at ${url}`);
+        console.log(`Agent workspace: ${agentDir}`);
+        console.log('Start the terminal agent with that directory as its working directory and have it read SEAT.md.');
+      },
+      seed,
+      port: values.port === undefined ? undefined : positiveInteger('port', values.port),
+      reasoning,
+      agentDir: values['agent-dir'],
+    };
+    const row = await withRunStatus(runDir, () => runExhibition(runDir, exhibitionOptions));
     printResults([row]);
     return 0;
   }
@@ -518,10 +555,10 @@ async function selfcheck(): Promise<number> {
 
 function printResults(rows: SeriesRecord[]): void {
   for (const row of rows) {
-    const score = row.score as Record<string, number>;
+    const score = asRecord(row.score);
     const games = Array.isArray(row.games) ? row.games : [];
     console.log(
-      `${row.players.p1} vs ${row.players.p2}: ${row.winner ?? 'tie'} (${score.p1}-${score.p2}, ${games.length} games, ${row.turns} turns)`,
+      `${row.players.p1} vs ${row.players.p2}: ${row.winner ?? 'tie'} (${String(score.p1)}-${String(score.p2)}, ${games.length} games, ${row.turns} turns)`,
     );
   }
 }
@@ -542,7 +579,7 @@ function printOutcomes(rows: SeriesRecord[]): void {
     renderTable(
       ['Mode', 'Pool', 'Clock', 'p1', 'p2', 'Score', 'Winner', 'Run / series'],
       rows.map((row) => {
-        const score = row.score as Record<string, number> | undefined;
+        const score = row.score === undefined ? undefined : asRecord(row.score);
         const clock = row.timer_scale === 'off' ? 'off' : `${row.timer_scale ?? 1}x`;
         return [
           row.mode ?? 'legacy',
@@ -550,7 +587,7 @@ function printOutcomes(rows: SeriesRecord[]): void {
           clock,
           row.players.p1,
           row.players.p2,
-          score ? `${score.p1 ?? '?'}-${score.p2 ?? '?'}` : '?',
+          score ? `${String(score.p1 ?? '?')}-${String(score.p2 ?? '?')}` : '?',
           row.winner ?? 'tie',
           `${String(row.run_id ?? '?')} / ${String(row.series_id ?? '?')}`,
         ];

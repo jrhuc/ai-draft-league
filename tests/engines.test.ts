@@ -21,9 +21,11 @@ import type {
   BattleRequest,
   CompleteOptions,
   Completion,
+  JsonObject,
   Provider,
   ProviderMessage,
 } from '../src/types.js';
+import { asRecord, asRecords } from '../src/value.js';
 
 function request(activeCount = 1): BattleRequest {
   return {
@@ -114,7 +116,7 @@ test('a decision written only in the reasoning channel is salvaged without a ret
       toolCalls: [],
     },
   ]);
-  const decisions: Record<string, unknown>[] = [];
+  const decisions: JsonObject[] = [];
   const engine = new LLMEngine('p1', 'scripted', { provider, decisionLog: decisions });
   assert.equal(await acceptedAct(engine, request(), { povLines: ['|turn|1'] }), 'move 2');
   assert.equal(provider.calls.length, 1, 'the answer already paid for is used instead of a retry');
@@ -124,7 +126,7 @@ test('a decision written only in the reasoning channel is salvaged without a ret
 
 test('primed replay requires an exact request digest and seat provenance', async () => {
   const game = { gameId: 'game-1', gameNumber: 1, seriesId: 'series-1' };
-  const recorded: Record<string, unknown>[] = [];
+  const recorded: JsonObject[] = [];
   const source = new LLMEngine('p1', 'scripted', {
     provider: new ScriptedProvider([decision([0], 'recorded choice', 'carried plan')]),
     decisionLog: recorded,
@@ -137,7 +139,7 @@ test('primed replay requires an exact request digest and seat provenance', async
   assert.match(String(row.request_digest), /^battle-decision-request-v1:[a-f0-9]{64}$/);
 
   const provider = new ScriptedProvider([decision([1], 'live again')]);
-  const decisions: Record<string, unknown>[] = [];
+  const decisions: JsonObject[] = [];
   const engine = new LLMEngine('p1', 'scripted', { provider, decisionLog: decisions });
   engine.beginGame(game);
   engine.primeReplay([row]);
@@ -153,11 +155,11 @@ test('primed replay requires an exact request digest and seat provenance', async
   engine.resolveSubmission(live, 'accepted');
   assert.equal(provider.calls.length, 1);
   assert.equal(decisions[0]?.submission_id, 'attempt-two:p1:2');
-  assert.match(provider.calls[0]!.messages[0]!.content as string, /Decision: move 1/);
+  assert.match(String(provider.calls[0]!.messages[0]!.content), /Decision: move 1/);
 
   const expectLiveDecision = async (
     label: string,
-    replayRow: Record<string, unknown>,
+    replayRow: JsonObject,
     battleRequest = request(),
     liveChoice = 1,
   ) => {
@@ -193,7 +195,7 @@ test('primed replay requires an exact request digest and seat provenance', async
 
 test('transitive replay preserves accepted prefixes, rejected retries, and a live tail without re-journaling', async () => {
   const game = { gameId: 'game-lineage', gameNumber: 1, seriesId: 'series-lineage' };
-  const rowsA: Record<string, unknown>[] = [];
+  const rowsA: JsonObject[] = [];
   const attemptA = new LLMEngine('p1', 'scripted', {
     provider: new ScriptedProvider([decision([0]), decision([1])]),
     decisionLog: rowsA,
@@ -206,7 +208,7 @@ test('transitive replay preserves accepted prefixes, rejected retries, and a liv
   assert.ok(a2);
   attemptA.resolveSubmission(a2, 'rejected', '|error|[Invalid choice] retry');
 
-  const rowsB: Record<string, unknown>[] = [];
+  const rowsB: JsonObject[] = [];
   const providerB = new ScriptedProvider([decision([0])]);
   const attemptB = new LLMEngine('p1', 'scripted', { provider: providerB, decisionLog: rowsB });
   attemptB.beginGame(game);
@@ -227,7 +229,7 @@ test('transitive replay preserves accepted prefixes, rejected retries, and a liv
   assert.equal(providerB.calls.length, 1);
   assert.equal(rowsB.length, 1, 'A replay rows are not journaled into B');
 
-  const rowsC: Record<string, unknown>[] = [];
+  const rowsC: JsonObject[] = [];
   const providerC = new ScriptedProvider([]);
   const attemptC = new LLMEngine('p1', 'scripted', { provider: providerC, decisionLog: rowsC });
   attemptC.beginGame(game);
@@ -254,7 +256,7 @@ test('exact replay includes automatic transitions while model-position eligibili
   const game = { gameId: 'game-automatic', gameNumber: 1, seriesId: 'series-automatic' };
   const automatic = request();
   automatic.active = [{ moves: [{ move: 'Only', id: 'only', pp: 10, maxpp: 10, target: 'self', disabled: false }] }];
-  const recorded: Record<string, unknown>[] = [];
+  const recorded: JsonObject[] = [];
   const source = new LLMEngine('p1', 'scripted', {
     provider: new ScriptedProvider([decision([0]), decision([1])]),
     decisionLog: recorded,
@@ -279,7 +281,7 @@ test('exact replay includes automatic transitions while model-position eligibili
     2,
   );
 
-  const replayLog: Record<string, unknown>[] = [];
+  const replayLog: JsonObject[] = [];
   const provider = new ScriptedProvider([]);
   const replay = new LLMEngine('p1', 'scripted', { provider, decisionLog: replayLog });
   replay.beginGame(game);
@@ -308,7 +310,7 @@ test('LLM choices parse prose, retry, and record fallbacks', async () => {
   ];
   for (const [responses, expected, fallback, calls, parseFailures] of cases) {
     const provider = new ScriptedProvider(responses);
-    const decisions: Record<string, unknown>[] = [];
+    const decisions: JsonObject[] = [];
     const engine = new LLMEngine('p1', 'scripted', { provider, decisionLog: decisions });
     assert.equal(await acceptedAct(engine, request(), { povLines: ['|turn|1'] }), expected);
     assert.equal(decisions[0]!.fallback, fallback);
@@ -370,7 +372,7 @@ test('battle evidence flags follow model field presence rather than harness summ
   ];
 
   for (const item of cases) {
-    const logs: Record<string, unknown>[] = [];
+    const logs: JsonObject[] = [];
     const engine = new LLMEngine('p1', 'scripted', {
       provider: new ScriptedProvider(item.responses),
       decisionLog: logs,
@@ -385,7 +387,7 @@ test('battle evidence flags follow model field presence rather than harness summ
     assert.equal(logs[0]!.fallback, item.fallback ?? false, item.name);
   }
 
-  const logs: Record<string, unknown>[] = [];
+  const logs: JsonObject[] = [];
   const provider = new ScriptedProvider([]);
   const engine = new LLMEngine('p1', 'scripted', {
     provider,
@@ -407,7 +409,7 @@ test('battle evidence flags follow model field presence rather than harness summ
 
 test('full seat context retains request snapshots and complete accepted decision menus', async () => {
   const provider = new ScriptedProvider(['{"choices":[1]}']);
-  const contextRows: Record<string, unknown>[] = [];
+  const contextRows: JsonObject[] = [];
   const engine = new LLMEngine('p1', 'scripted', { provider, contextLog: contextRows });
   const battleRequest = request();
   engine.beginGame({ gameId: 'game-1', gameNumber: 1, seriesId: 'series-1' });
@@ -424,7 +426,7 @@ test('full seat context retains request snapshots and complete accepted decision
   assert.deepEqual(context.events[1]!.payload.lines, ['|turn|1']);
   assert.equal(context.events[2]!.payload.event, 'battle_request');
   assert.deepEqual(context.events[2]!.payload.request, request());
-  assert.equal('opponent' in (context.events[2]!.payload.request as BattleRequest), false);
+  assert.equal('opponent' in asRecord(context.events[2]!.payload.request), false);
   assert.deepEqual(context.events[3]!.payload.menus, [
     [
       { label: 'First', part: 'move 1', kind: 'move' },
@@ -448,7 +450,7 @@ test('full seat context retains request snapshots and complete accepted decision
 });
 
 test('a context log failure does not expose an unpersisted cursor and retry reuses it', () => {
-  const contextRows: Record<string, unknown>[] = [];
+  const contextRows: JsonObject[] = [];
   let fail = true;
   const engine = new LLMEngine('p1', 'scripted', {
     provider: new ScriptedProvider([]),
@@ -494,7 +496,7 @@ test('Gemini-like nested candidate objects preserve the complete top-level decis
       ],
     }),
   ]);
-  const decisions: Record<string, unknown>[] = [];
+  const decisions: JsonObject[] = [];
   const engine = new LLMEngine('p1', 'scripted', { provider, decisionLog: decisions });
 
   assert.equal(await acceptedAct(engine, request(), { povLines: ['|turn|1'] }), 'move 2');
@@ -601,7 +603,7 @@ test('DSML tool-call markup gets a reprompt naming the problem', async () => {
     '<｜｜DSML｜｜invoke name="estimate_damage"><｜｜DSML｜｜parameter name="attacker">Gholdengo</｜｜DSML｜｜parameter>',
     decision([1]),
   ]);
-  const decisions: Record<string, unknown>[] = [];
+  const decisions: JsonObject[] = [];
   const engine = new LLMEngine('p1', 'scripted', { provider, decisionLog: decisions });
   assert.equal(await acceptedAct(engine, request(), { povLines: ['|turn|1'] }), 'move 2');
   assert.equal(decisions[0]!.fallback, false);
@@ -621,8 +623,8 @@ test('unoffered native tools are recorded, refused, and reprompted without dispa
     },
     decision([1], 'The researched choice remains mine.', 'preserve the plan'),
   ]);
-  const decisions: Record<string, unknown>[] = [];
-  const traces: Record<string, unknown>[] = [];
+  const decisions: JsonObject[] = [];
+  const traces: JsonObject[] = [];
   const engine = new LLMEngine('p1', 'scripted', { provider, decisionLog: decisions, traceLog: traces });
   assert.equal(await acceptedAct(engine, request(), { povLines: [] }), 'move 2');
   const refusals = provider.calls[1]!.messages.filter((message) => message.role === 'tool');
@@ -631,7 +633,7 @@ test('unoffered native tools are recorded, refused, and reprompted without dispa
     String(refusals[1]?.content),
     /Not executed: tool "change_battle_result" was not offered for this decision/,
   );
-  const toolTrace = traces[0]!.tool_calls as Array<Record<string, unknown>>;
+  const toolTrace = asRecords(traces[0]!.tool_calls);
   assert.equal(toolTrace.length, 2);
   assert.ok(toolTrace.every((entry) => /Not executed/.test(String(entry.result))));
   assert.equal(decisions[0]!.rationale, 'The researched choice remains mine.');
@@ -647,7 +649,7 @@ test('a tool-call-only final answer is retried untimed instead of defaulting', a
     finishReason: 'stop',
   };
   const provider = new ScriptedProvider([toolOnly, toolOnly, toolOnly, toolOnly, toolOnly, decision([1])]);
-  const decisions: Record<string, unknown>[] = [];
+  const decisions: JsonObject[] = [];
   const engine = new LLMEngine('p1', 'scripted', { provider, decisionLog: decisions });
   assert.equal(await acceptedAct(engine, request(), { povLines: ['|turn|1'] }), 'move 2');
   assert.equal(decisions[0]!.fallback, false);
@@ -672,7 +674,7 @@ test('the timeline renders Protect blocks explicitly instead of a generic activa
 });
 
 test('transient provider failures with a live timer leave the choice to the battle timer', async () => {
-  const decisions: Record<string, unknown>[] = [];
+  const decisions: JsonObject[] = [];
   const logged = Promise.withResolvers<void>();
   const engine = new LLMEngine('p1', 'dead', {
     provider: new ScriptedProvider([new ApiError(503, 'overloaded')]),
@@ -708,7 +710,7 @@ test('an empty timed response fails the run and leaves the choice to the timer',
 });
 
 test('empty reflections record a fallback review', async () => {
-  const decisions: Record<string, unknown>[] = [];
+  const decisions: JsonObject[] = [];
   const engine = new LLMEngine('p1', 'prime:test-model', {
     provider: new ScriptedProvider(['', '']),
     decisionLog: decisions,
@@ -729,7 +731,7 @@ test('a draft roster switches only the series-final reflection to the prep-revie
   const finalGame = {
     gameNumber: 3,
     outcome: { winner: 'opponent', won: false, turns: 9 },
-    seriesScore: { p1: 1, p2: 2 } as Record<'p1' | 'p2', number>,
+    seriesScore: { p1: 1, p2: 2 },
   };
 
   const draftFinal = new ScriptedProvider([reflection]);
@@ -808,7 +810,7 @@ test('updatedPace averages qualifying samples and ignores noise', () => {
 });
 
 test('reasoning truncation without time to retry yields to the battle timer with a clear summary', async () => {
-  const decisions: Record<string, unknown>[] = [];
+  const decisions: JsonObject[] = [];
   const logged = Promise.withResolvers<void>();
   const engine = new LLMEngine('p1', 'prime:reasoning-model', {
     provider: new ScriptedProvider([lengthTruncated]),
@@ -833,7 +835,7 @@ test('reasoning truncation without time to retry yields to the battle timer with
 
 test('untimed truncation records a legal fallback with the truncation summary', async () => {
   const provider = new ScriptedProvider([lengthTruncated, lengthTruncated, lengthTruncated, lengthTruncated]);
-  const decisions: Record<string, unknown>[] = [];
+  const decisions: JsonObject[] = [];
   const engine = new LLMEngine('p1', 'prime:test-model', { provider, decisionLog: decisions });
   assert.equal(await acceptedAct(engine, request(), { povLines: [] }), 'move 1');
   assert.equal(provider.calls[0]!.options.maxTokens, DECISION_MAX_TOKENS_CEILING);
@@ -854,7 +856,7 @@ test('a decision cut off mid-reasoning blames the budget, not the model formatti
     usage: { input_tokens: 10, output_tokens: options.maxTokens ?? 0 },
     toolCalls: [],
   });
-  const decisions: Record<string, unknown>[] = [];
+  const decisions: JsonObject[] = [];
   const engine = new LLMEngine('p1', 'openrouter:qwen/qwen3.5-flash-02-23', {
     provider: new ScriptedProvider([rambled, rambled, rambled, rambled]),
     decisionLog: decisions,
@@ -898,7 +900,7 @@ test('an early length-stopped ramble is summarized before the model is reprompte
     },
     decision([1], 'I still choose the second move.', 'keep the plan'),
   ]);
-  const decisions: Record<string, unknown>[] = [];
+  const decisions: JsonObject[] = [];
   const engine = new LLMEngine('p1', 'fake:model', { provider, decisionLog: decisions });
   assert.equal(await acceptedAct(engine, request(), { povLines: [] }), 'move 2');
   const replayed = provider.calls[1]!.messages.map((message) => String(message.content ?? '')).join('\n');
@@ -916,7 +918,7 @@ test('a genuine format failure is still reported as one', async () => {
     usage: { input_tokens: 10, output_tokens: 200 },
     toolCalls: [],
   });
-  const decisions: Record<string, unknown>[] = [];
+  const decisions: JsonObject[] = [];
   const engine = new LLMEngine('p1', 'scripted', {
     provider: new ScriptedProvider([malformed(), malformed(), malformed(), malformed()]),
     decisionLog: decisions,
@@ -931,7 +933,7 @@ test('reflections use a reasoning-safe token budget', async () => {
   const provider = new ScriptedProvider([
     JSON.stringify({ summary: 'Lost the rain matchup.', adjustment: 'Lead differently.', notebook: 'notes' }),
   ]);
-  const decisions: Record<string, unknown>[] = [];
+  const decisions: JsonObject[] = [];
   const engine = new LLMEngine('p1', 'prime:test-model', { provider, decisionLog: decisions });
   await engine.endGame({
     gameNumber: 1,
@@ -951,8 +953,8 @@ test('tool calls returned after toolChoice none never execute or count', async (
       toolCalls: [{ id: 'late-1', name: 'lookup_move', arguments: { name: 'Protect' } }],
     },
   ]);
-  const decisions: Record<string, unknown>[] = [];
-  const traces: Record<string, unknown>[] = [];
+  const decisions: JsonObject[] = [];
+  const traces: JsonObject[] = [];
   const engine = new LLMEngine('p1', 'scripted', { provider, decisionLog: decisions, traceLog: traces });
   const timed = request();
   timed.timer = { turnSeconds: 10, seconds: 420 };
@@ -978,7 +980,7 @@ test('untimed tool batches allow wide verification across many rounds', async ()
     batch([10], 'Surf'),
     { text: decision([1], 'spread', 'spread'), usage: { output_tokens: 1 }, toolCalls: [] },
   ]);
-  const traces: Record<string, unknown>[] = [];
+  const traces: JsonObject[] = [];
   const engine = new LLMEngine('p1', 'scripted', { provider, decisionLog: [], traceLog: traces });
   assert.equal(await acceptedAct(engine, request(), { povLines: [] }), 'move 2');
   assert.equal(provider.calls.length, 5);
@@ -986,7 +988,7 @@ test('untimed tool batches allow wide verification across many rounds', async ()
   for (const call of provider.calls) {
     assert.equal(call.options.toolChoice, 'auto', 'four rounds sit well under the untimed cap');
   }
-  const toolTrace = traces[0]!.tool_calls as Array<Record<string, unknown>>;
+  const toolTrace = asRecords(traces[0]!.tool_calls);
   assert.equal(toolTrace.length, 10, 'the raised untimed cap executes the whole five-call batch');
   assert.equal(traces[0]!.tool_rounds, 4);
 });
@@ -1002,7 +1004,7 @@ test('timed tool batches stay capped at two rounds of two calls', async () => {
     batch([4, 5, 6]),
     { text: decision([1], 'spread', 'spread'), usage: { output_tokens: 1 }, toolCalls: [] },
   ]);
-  const traces: Record<string, unknown>[] = [];
+  const traces: JsonObject[] = [];
   const engine = new LLMEngine('p1', 'scripted', { provider, decisionLog: [], traceLog: traces });
   assert.equal(
     await acceptedAct(engine, { ...request(), timer: { seconds: 400, turnSeconds: 40 } }, { povLines: [] }),
@@ -1010,7 +1012,7 @@ test('timed tool batches stay capped at two rounds of two calls', async () => {
   );
   assert.equal(provider.calls.length, 3);
   assert.equal(provider.calls[2]!.options.toolChoice, 'none');
-  const toolTrace = traces[0]!.tool_calls as Array<Record<string, unknown>>;
+  const toolTrace = asRecords(traces[0]!.tool_calls);
   assert.equal(toolTrace.length, 6, 'two executed plus one explicitly-refused call per timed round');
   assert.ok(
     toolTrace.some((entry) => /Not executed/.test(String(entry.result))),
@@ -1039,7 +1041,7 @@ test('one action-order call may accompany two standard calls in the single tool 
     },
     { text: decision([0]), usage: {}, toolCalls: [] },
   ]);
-  const traces: Record<string, unknown>[] = [];
+  const traces: JsonObject[] = [];
   const engine = new LLMEngine('p1', 'scripted', { provider, decisionLog: [], traceLog: traces });
   const orderedRequest = request();
   orderedRequest.active![0]!.moves = [
@@ -1059,7 +1061,7 @@ test('one action-order call may accompany two standard calls in the single tool 
   assert.equal(await action, 'move 1');
   assert.ok(provider.calls[0]!.options.tools?.some((tool) => tool.name === 'compare_action_order'));
   const damageTool = provider.calls[0]!.options.tools?.find((tool) => tool.name === 'estimate_damage');
-  const damageProperties = damageTool?.parameters.properties as Record<string, unknown>;
+  const damageProperties = asRecord(damageTool?.parameters.properties);
   assert.deepEqual(Object.keys(damageProperties).sort(), [
     'attacker',
     'defender',
@@ -1074,7 +1076,7 @@ test('one action-order call may accompany two standard calls in the single tool 
     replayed.map((call) => call.name),
     ['estimate_damage', 'lookup_move', 'compare_action_order'],
   );
-  const toolTrace = traces[0]!.tool_calls as Array<Record<string, unknown>>;
+  const toolTrace = asRecords(traces[0]!.tool_calls);
   assert.equal(toolTrace.length, 3);
   assert.match(String(toolTrace[2]!.result), /Gengar-Mega is guaranteed to act first/);
 });
@@ -1088,8 +1090,8 @@ test('readable decisions, technical traces, and post-game reflections stay separ
       notebook: 'Mon1 is the preferred endgame; verify opposing speed order.',
     }),
   ]);
-  const decisions: Record<string, unknown>[] = [];
-  const traces: Record<string, unknown>[] = [];
+  const decisions: JsonObject[] = [];
+  const traces: JsonObject[] = [];
   const engine = new LLMEngine('p1', 'scripted', {
     provider,
     decisionLog: decisions,
@@ -1144,7 +1146,7 @@ test('the deciding game reflects on the finished series instead of a next game',
       notebook: 'Opponent leans on Tailwind turns 1-2.',
     }),
   ]);
-  const decisions: Record<string, unknown>[] = [];
+  const decisions: JsonObject[] = [];
   const engine = new LLMEngine('p2', 'scripted', { provider, decisionLog: decisions });
   await engine.endGame({
     gameNumber: 2,
@@ -1158,8 +1160,8 @@ test('the deciding game reflects on the finished series instead of a next game',
   assert.match(String(provider.calls[0]!.messages[0]!.content), /The series is over: you lost it 0-2 \(you are p2\)\./);
 });
 
-test('hard quota failures during reflection stop the series', async () => {
-  const decisions: Record<string, unknown>[] = [];
+test('provider failures during reflection fall back instead of stopping the series', async () => {
+  const decisions: JsonObject[] = [];
   const engine = new LLMEngine('p1', 'openrouter:google/gemini-test', {
     provider: new ScriptedProvider([
       new ApiError(429, 'openrouter:google/gemini-test 429: exceeded your current quota; requests per day'),
@@ -1167,15 +1169,15 @@ test('hard quota failures during reflection stop the series', async () => {
     decisionLog: decisions,
   });
 
-  await assert.rejects(
-    engine.endGame({
-      gameNumber: 1,
-      outcome: { winner: 'opponent', won: false, turns: 8 },
-      seriesScore: { p1: 0, p2: 1 },
-    }),
-  );
+  await engine.endGame({
+    gameNumber: 1,
+    outcome: { winner: 'opponent', won: false, turns: 8 },
+    seriesScore: { p1: 0, p2: 1 },
+  });
   assert.equal(decisions[0]!.kind, 'game_reflection');
+  assert.equal(decisions[0]!.fallback, true);
   assert.equal(decisions[0]!.failure_kind, 'quota');
+  assert.match(String(decisions[0]!.summary), /model reflection unavailable/);
 });
 
 test('game transcripts reset while notebook and score persist, with a marked character cap', async () => {
@@ -1241,7 +1243,7 @@ test('readable logs suppress unchanged notebooks and tendency counters remain po
     { move: 'Second', id: 'second', pp: 10, maxpp: 10, target: 'self', disabled: false },
   ];
   protectRequest.side!.pokemon![0]!.moves = ['protect', 'second'];
-  const logs: Record<string, unknown>[] = [];
+  const logs: JsonObject[] = [];
   const engine = new LLMEngine('p1', 'scripted', {
     provider: new ScriptedProvider([
       decision([0], 'Scout once.', 'Preserve the attacker.'),
@@ -1294,7 +1296,7 @@ test('team-preview adaptation counters compare public bring and lead choices', a
 });
 
 test('the closing review of a decided series is marked series_over', async () => {
-  const decisions: Record<string, unknown>[] = [];
+  const decisions: JsonObject[] = [];
   const engine = new LLMEngine('p1', 'scripted', {
     provider: new ScriptedProvider(['', '']),
     decisionLog: decisions,
@@ -1318,7 +1320,7 @@ function megaRequest(): BattleRequest {
 
 test('a double-Mega joint choice is retried with the conflict explained, not silently defaulted', async () => {
   const provider = new ScriptedProvider([decision([1, 1], 'mega both'), decision([1, 0], 'mega one')]);
-  const decisions: Record<string, unknown>[] = [];
+  const decisions: JsonObject[] = [];
   const engine = new LLMEngine('p1', 'scripted', { provider, decisionLog: decisions });
   assert.equal(await acceptedAct(engine, megaRequest(), { povLines: ['|turn|1'] }), 'move 1 mega, move 1');
   assert.equal(provider.calls.length, 2);
@@ -1331,7 +1333,7 @@ test('a double-Mega joint choice is retried with the conflict explained, not sil
 test('a persistent illegal joint choice becomes a flagged legal fallback', async () => {
   const stubborn = () => decision([1, 1], 'mega both again');
   const provider = new ScriptedProvider([stubborn(), stubborn(), stubborn(), stubborn()]);
-  const decisions: Record<string, unknown>[] = [];
+  const decisions: JsonObject[] = [];
   const engine = new LLMEngine('p1', 'scripted', { provider, decisionLog: decisions });
   assert.equal(await acceptedAct(engine, megaRequest(), { povLines: ['|turn|1'] }), 'move 1, move 1');
   assert.equal(decisions[0]!.fallback, true);
@@ -1359,7 +1361,7 @@ test('engines that submit conflicting choices record the substitution', async ()
       this.committed = { choices, parts, ...(substitution ? { substitution } : {}) };
     }
   }
-  const rows: Record<string, unknown>[] = [];
+  const rows: JsonObject[] = [];
   const engine = new FixedEngine('p1', rows);
   assert.equal(await acceptedAct(engine, megaRequest(), { povLines: [] }), 'move 1, move 1');
   assert.deepEqual(engine.committed?.choices, [0, 0]);
@@ -1402,7 +1404,7 @@ test('a stale abandoned decision cannot commit or clobber the next request', asy
       });
     },
   };
-  const decisions: Record<string, unknown>[] = [];
+  const decisions: JsonObject[] = [];
   const engine = new LLMEngine('p1', 'scripted', { provider, decisionLog: decisions });
   const first = acceptedAct(engine, request(), { povLines: ['|turn|1'] });
   await started.promise;

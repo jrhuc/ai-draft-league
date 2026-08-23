@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { z } from 'zod';
 import { baseCostsBySpecies, boardRow, createBoardSearch } from './board-search.js';
-import { completeWithDexTools } from './dex-lookups.js';
+import { completeWithDexTools, type DexToolRequest } from './dex-lookups.js';
 import type { BoardInfo, DraftBoardMonView, DraftPickView } from './gui/api.js';
 import { appendJsonlObject, readJsonlObjects } from './jsonl.js';
 import { BOARDS_DIR, defaultPsDir } from './paths.js';
@@ -14,11 +15,69 @@ import { classifyProviderFailure, makeProvider, parseSpec, reasoningForModel } f
 import type { Rng } from './random.js';
 import { ShowdownReference } from './reference.js';
 import { loadShowdown } from './showdown.js';
-import { evidenceSuppliedRecord, normalizeStageEvidence, type StageEvidence } from './stage-evidence.js';
-import type { JsonObject, Provider, ProviderMessage } from './types.js';
-import { clip, text } from './value.js';
+import { normalizeStageEvidence, type StageEvidence } from './stage-evidence.js';
+import type { JsonObject, JsonValue, Provider, ProviderMessage } from './types.js';
+import { clip, isRecord } from './value.js';
 
 const BOARD_SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
+export const draftBoardMonSchema = z.object({
+  id: z.string().regex(BOARD_SLUG),
+  name: z.string().min(1),
+  species: z.string(),
+  forme: z.string().optional(),
+  item: z.string().optional(),
+  base: z.string().min(1),
+  types: z.array(z.string()),
+  cost: z.number().int().min(1),
+  origin: z.enum(['base', 'regmb']),
+  anchor: z.string().optional(),
+  usage: z.string().optional(),
+  listed: z.number().optional(),
+});
+export const draftBoardSchema = z.object({
+  id: z.string().min(1),
+  format: z.string().endsWith('bo3'),
+  budget: z.number().int().min(1),
+  picks: z.number().int().min(4),
+  source: z.string(),
+  mons: z.array(draftBoardMonSchema),
+});
+export type DraftBoardMon = z.infer<typeof draftBoardMonSchema>;
+export type DraftBoard = z.infer<typeof draftBoardSchema>;
+const pickResponseSchema = z.object({
+  pick: z.string().catch(''),
+  reasoning: z.string().optional().catch(undefined),
+  notebook: z.string().optional().catch(undefined),
+});
+const franchiseNameResponseSchema = z.object({ team_name: z.string() });
+export const draftTranscriptRowSchema = z.object({
+  pick: z.number().int(),
+  entrant: z.number().int().optional(),
+  model: z.string(),
+  mon: z.string(),
+  name: z.string(),
+  cost: z.number(),
+  budget_left: z.number(),
+  action: z.object({ pick: z.string() }).optional(),
+  rationale: z.string(),
+  evidence_supplied: z.object({ rationale: z.boolean(), notebook_update: z.boolean() }).optional(),
+  notebook: z.string().optional(),
+  team_name: z.string().optional(),
+  fallback: z.boolean(),
+  timestamp: z.string(),
+});
+export type DraftTranscriptRow = z.infer<typeof draftTranscriptRowSchema>;
+const franchiseNameTranscriptRowSchema = z.object({
+  entrant: z.number().int(),
+  model: z.string(),
+  team_name: z.string(),
+  fallback: z.boolean(),
+  timestamp: z.string(),
+});
+
+export function isRejection<T extends object>(result: T | string): result is string {
+  return !(result instanceof Object);
+}
 
 const DRAFT_AVAILABLE_MECHANICS_TOOLS = [
   'You have the Showdown dex tools. Use them to check anything the board summary does not answer: what a Mega',
@@ -65,7 +124,7 @@ const DRAFT_PROMPT_POLICY = {
   turnTemplate:
     'Overall pick {{pick}} of {{total}}; {{remaining}} left for you, {{budget}} points to fill them from what is still on the board.',
   boardHeading: 'DRAFT BOARD (id | cost | name | types | base stats | abilities):',
-  boardOrder: 'cost-descending' as 'cost-descending' | 'name',
+  boardOrder: 'cost-descending',
   takenHeading: 'ALREADY DRAFTED:',
   nothingTaken: '- (nothing yet; you have the first pick)',
   rosterHeading: 'YOUR ROSTER:',
@@ -117,30 +176,6 @@ export function connectedDraftPromptRevision(mechanicsTools: MechanicsToolAvaila
     .slice(0, 12);
 }
 
-export interface DraftBoardMon {
-  id: string;
-  name: string;
-  species: string;
-  forme?: string;
-  item?: string;
-  base: string;
-  types: string[];
-  cost: number;
-  origin: 'base' | 'regmb';
-  anchor?: string;
-  usage?: string;
-  listed?: number;
-}
-
-export interface DraftBoard {
-  id: string;
-  format: string;
-  budget: number;
-  picks: number;
-  source: string;
-  mons: DraftBoardMon[];
-}
-
 function cheapestCostsByBase(mons: readonly DraftBoardMon[]): number[] {
   const costs = new Map<string, number>();
   for (const mon of mons) {
@@ -178,53 +213,19 @@ export function listBoards(boardsDir = BOARDS_DIR): BoardInfo[] {
 export function loadBoard(name: string, boardsDir = BOARDS_DIR, psDir = defaultPsDir()): DraftBoard {
   if (!BOARD_SLUG.test(name)) throw new Error('board name must be lowercase letters, digits, and dashes');
   const file = path.join(boardsDir, `${name}.json`);
-  const data: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
-  if (typeof data !== 'object' || data === null || Array.isArray(data)) throw new Error(`invalid board ${file}`);
-  const manifest = data as Record<string, unknown>;
-  const id = text(manifest.id);
-  const format = text(manifest.format);
-  const budget = Number(manifest.budget);
-  const picks = Number(manifest.picks);
-  if (!id || !format.endsWith('bo3')) throw new Error(`${file} needs an id and a BO3 format`);
-  if (id !== name) throw new Error(`${file} id must match its filename`);
-  if (!Number.isInteger(budget) || budget < 1 || !Number.isInteger(picks) || picks < 4) {
-    throw new Error(`${file} needs an integer budget and at least 4 picks per entrant`);
-  }
+  const parsed = draftBoardSchema.safeParse(JSON.parse(fs.readFileSync(file, 'utf8')));
+  if (!parsed.success) throw new Error(`invalid board ${file}: ${z.prettifyError(parsed.error)}`);
+  const board = parsed.data;
+  if (board.id !== name) throw new Error(`${file} id must match its filename`);
   const { Dex } = loadShowdown(psDir);
-  const resolvedFormat = Dex.formats.get(format);
+  const resolvedFormat = Dex.formats.get(board.format);
   if (!resolvedFormat.exists) throw new Error(`${file} names an unknown format`);
   const dex = Dex.mod(resolvedFormat.mod || 'base');
-  const entries = Array.isArray(manifest.mons) ? manifest.mons : [];
   const seen = new Set<string>();
-  const mons = entries.map((entry) => {
-    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
-      throw new Error(`invalid board entry in ${file}`);
-    }
-    const record = entry as Record<string, unknown>;
-    const origin = text(record.origin);
-    if (origin !== 'base' && origin !== 'regmb') {
-      throw new Error(`board entry ${JSON.stringify(record.id)} in ${file} needs a valid origin`);
-    }
-    const mon: DraftBoardMon = {
-      id: text(record.id),
-      name: text(record.name),
-      species: text(record.species),
-      ...(record.forme ? { forme: text(record.forme) } : {}),
-      ...(record.item ? { item: text(record.item) } : {}),
-      base: text(record.base),
-      types: Array.isArray(record.types) ? record.types.map((type) => String(type)) : [],
-      cost: Number(record.cost),
-      origin,
-      ...(record.anchor ? { anchor: text(record.anchor) } : {}),
-      ...(record.usage ? { usage: text(record.usage) } : {}),
-      ...(record.listed === undefined ? {} : { listed: Number(record.listed) }),
-    };
-    if (!BOARD_SLUG.test(mon.id) || !mon.name || !mon.base || !Number.isInteger(mon.cost) || mon.cost < 1) {
-      throw new Error(`invalid board entry ${JSON.stringify(record.id)} in ${file}`);
-    }
+  for (const mon of board.mons) {
     const species = dex.species.get(mon.species);
     if (!species.exists || species.isNonstandard) {
-      throw new Error(`board entry ${JSON.stringify(mon.id)} in ${file} is not a legal species in ${format}`);
+      throw new Error(`board entry ${JSON.stringify(mon.id)} in ${file} is not a legal species in ${board.format}`);
     }
     if (mon.base !== species.baseSpecies) {
       throw new Error(`board entry ${JSON.stringify(mon.id)} in ${file} has the wrong base species`);
@@ -234,8 +235,7 @@ export function loadBoard(name: string, boardsDir = BOARDS_DIR, psDir = defaultP
     }
     if (mon.item) {
       const item = dex.items.get(mon.item);
-      const megaStone = item.megaStone;
-      const target = typeof megaStone === 'string' ? megaStone : megaStone?.[species.name];
+      const target = isRecord(item.megaStone) ? item.megaStone[species.name] : item.megaStone;
       if (!item.exists || target !== mon.forme) {
         throw new Error(`board entry ${JSON.stringify(mon.id)} in ${file} has an invalid Mega forme or stone`);
       }
@@ -256,14 +256,14 @@ export function loadBoard(name: string, boardsDir = BOARDS_DIR, psDir = defaultP
     }
     if (seen.has(mon.id)) throw new Error(`duplicate board entry ${JSON.stringify(mon.id)} in ${file}`);
     seen.add(mon.id);
-    return mon;
-  });
-  if (mons.length < picks * 2) throw new Error(`${file} needs at least ${picks * 2} draftable entries`);
-  const cheapest = cheapestCostsByBase(mons).slice(0, picks);
+  }
+  const { picks, budget } = board;
+  if (board.mons.length < picks * 2) throw new Error(`${file} needs at least ${picks * 2} draftable entries`);
+  const cheapest = cheapestCostsByBase(board.mons).slice(0, picks);
   if (cheapest.length < picks || cheapest.reduce((sum, cost) => sum + cost, 0) > budget) {
     throw new Error(`${file} needs a budget that can afford one ${picks}-Pokémon roster`);
   }
-  return { id, format, budget, picks, source: text(manifest.source), mons };
+  return board;
 }
 
 export function describeBoardMon(mon: DraftBoardMon, psDir = defaultPsDir(), format?: string): DraftBoardMonView {
@@ -277,8 +277,17 @@ export function describeBoardMon(mon: DraftBoardMon, psDir = defaultPsDir(), for
     cost: mon.cost,
     types: mon.types,
     item: mon.item ?? '',
-    abilities: Object.values(species.abilities ?? {}).filter(Boolean) as string[],
-    baseStats: species.baseStats as unknown as Record<string, number>,
+    abilities: [species.abilities[0], species.abilities[1], species.abilities.H, species.abilities.S].flatMap(
+      (ability) => (ability ? [ability] : []),
+    ),
+    baseStats: {
+      hp: species.baseStats.hp,
+      atk: species.baseStats.atk,
+      def: species.baseStats.def,
+      spa: species.baseStats.spa,
+      spd: species.baseStats.spd,
+      spe: species.baseStats.spe,
+    },
   };
 }
 
@@ -334,7 +343,6 @@ export function applyDraftPick(state: DraftState, action: DraftPickAction): Draf
   if (action.entrant !== expectedEntrant) {
     throw new Error(`draft pick ${expectedPick} belongs to entrant ${expectedEntrant}, not entrant ${action.entrant}`);
   }
-  if (typeof action.mon !== 'string') throw new Error(`draft pick ${expectedPick} needs an exact board id`);
   const mon = state.board.mons.find((candidate) => candidate.id === action.mon);
   if (!mon) throw new Error(`draft pick ${expectedPick} names unknown board id ${JSON.stringify(action.mon)}`);
   const legal = legalPicks(state, action.entrant);
@@ -361,6 +369,7 @@ interface DraftSeatLog {
   user: string;
   response: string;
   usage?: Record<string, number>;
+  finish_reason?: string;
   tool_lookups?: { name: string; arguments: JsonObject; result: string }[];
   error?: string;
 }
@@ -386,49 +395,51 @@ export interface RunDraftOptions extends ModelReasoningConfig {
   makeDraftProvider?: (spec: string, apiKey: string | undefined, reasoning: ReasoningLevel | undefined) => Provider;
 }
 
-function replayTranscript(
-  file: string,
-  state: DraftState,
-  context: {
-    models: string[];
-    order: number[];
-    picks: DraftPickView[];
-    notebooks: string[];
-    onPick?: (view: DraftPickView, state: DraftState) => void;
-  },
-): { count: number; state: DraftState } {
-  const rows = readJsonlObjects(file) as Record<string, unknown>[];
+interface ReplayTranscriptContext {
+  models: string[];
+  order: number[];
+  picks: DraftPickView[];
+  notebooks: string[];
+  onPick?: (view: DraftPickView, state: DraftState) => void;
+}
+
+interface ReplayTranscriptResult {
+  count: number;
+  state: DraftState;
+}
+
+function replayTranscript(file: string, state: DraftState, context: ReplayTranscriptContext): ReplayTranscriptResult {
+  const rows = readJsonlObjects(file).map((row) => draftTranscriptRowSchema.parse(row));
   let replayedState = state;
   for (const [index, row] of rows.entries()) {
     const drafter = context.order[index];
     if (drafter === undefined) throw new Error(`${file} holds more picks than the draft has slots`);
     if (row.model !== context.models[drafter]) {
-      throw new Error(`${file} pick ${index + 1} belongs to ${String(row.model)}, expected ${context.models[drafter]}`);
+      throw new Error(`${file} pick ${index + 1} belongs to ${row.model}, expected ${context.models[drafter]}`);
     }
     try {
       replayedState = applyDraftPick(replayedState, {
-        pick: row.pick as number,
+        pick: row.pick,
         entrant: drafter,
-        mon: row.mon as string,
+        mon: row.mon,
       });
     } catch (cause) {
       const reason = cause instanceof Error ? cause.message : String(cause);
       throw new Error(`${file} pick ${index + 1} is invalid: ${reason}`, { cause });
     }
     const mon = replayedState.rosters[drafter]!.at(-1)!;
-    if (typeof row.budget_left === 'number' && row.budget_left !== replayedState.budgets[drafter]) {
+    if (row.budget_left !== undefined && row.budget_left !== replayedState.budgets[drafter]) {
       throw new Error(
         `${file} pick ${index + 1} leaves ${replayedState.budgets[drafter]} points, but the transcript recorded ${row.budget_left}`,
       );
     }
-    if (typeof row.team_name === 'string' && row.team_name && !replayedState.teamNames[drafter])
-      replayedState.teamNames[drafter] = row.team_name;
-    if (typeof row.notebook === 'string') context.notebooks[drafter] = row.notebook;
+    if (row.team_name && !replayedState.teamNames[drafter]) replayedState.teamNames[drafter] = row.team_name;
+    if (row.notebook !== undefined) context.notebooks[drafter] = row.notebook;
     const view: DraftPickView = {
       pick: index + 1,
       entrant: drafter,
       mon: mon.id,
-      rationale: typeof row.rationale === 'string' ? clip(row.rationale, DRAFT_PROMPT_POLICY.rationaleLimit) : '',
+      rationale: clip(row.rationale ?? '', DRAFT_PROMPT_POLICY.rationaleLimit),
       fallback: row.fallback === true,
     };
     context.picks.push(view);
@@ -466,10 +477,7 @@ export function draftBoardTable(
   const { Dex } = loadShowdown(psDir);
   const dex = Dex.mod(Dex.formats.get(board.format).mod || 'base');
   const lines: string[] = [heading];
-  const order =
-    DRAFT_PROMPT_POLICY.boardOrder === 'name'
-      ? (a: DraftBoardMon, b: DraftBoardMon) => a.name.localeCompare(b.name)
-      : (a: DraftBoardMon, b: DraftBoardMon) => b.cost - a.cost || a.name.localeCompare(b.name);
+  const order = (a: DraftBoardMon, b: DraftBoardMon) => b.cost - a.cost || a.name.localeCompare(b.name);
   const baseCosts = baseCostsBySpecies(board.mons);
   for (const mon of [...mons].sort(order)) {
     lines.push(boardRow(mon, dex, baseCosts));
@@ -485,22 +493,17 @@ function draftSystemPrompt(
   rosterPolicy: string,
   mechanicsTools: MechanicsToolAvailability = 'available',
 ): string {
-  const values: Record<string, string> = {
-    model: models[drafter]!,
-    format: board.format,
-    coaches: String(models.length),
-    picks: String(board.picks),
-    budget: String(board.budget),
-    board: draftBoardTable(board, psDir),
-    rosterPolicy,
-  };
+  const values = [
+    ['model', models[drafter]!],
+    ['format', board.format],
+    ['coaches', String(models.length)],
+    ['picks', String(board.picks)],
+    ['budget', String(board.budget)],
+    ['board', draftBoardTable(board, psDir)],
+    ['rosterPolicy', rosterPolicy],
+  ] as const;
   const rendered = DRAFT_PROMPT_POLICY.systemTemplate
-    .map((line) =>
-      Object.entries(values).reduce(
-        (current, [name, value]) => current.replaceAll(`{{${name}}}`, value),
-        line as string,
-      ),
-    )
+    .map((line) => values.reduce((current, [name, value]) => current.replaceAll(`{{${name}}}`, value), String(line)))
     .join('\n');
   return rendered.replace(
     DRAFT_AVAILABLE_MECHANICS_TOOLS,
@@ -614,17 +617,18 @@ export function parsePick(
 ): ParsedPick | string {
   const match = /\{[\s\S]*\}/.exec(response);
   if (!match) return 'the reply contained no JSON object';
-  let parsed: unknown;
+  let json: JsonValue;
   try {
-    parsed = JSON.parse(match[0]);
+    json = JSON.parse(match[0]);
   } catch {
     return 'the JSON object did not parse';
   }
-  const record = parsed as Record<string, unknown>;
-  const pickId = slug(String(record.pick ?? ''));
+  const record = pickResponseSchema.safeParse(json);
+  if (!record.success) return 'the reply must be one JSON object';
+  const pickId = slug(record.data.pick);
   const mon = legal.find((candidate) => candidate.id === pickId || slug(candidate.name) === pickId);
   if (!mon) return rejection(pickId, legal, state, drafter, models);
-  const evidence = normalizeStageEvidence(record.reasoning, record.notebook, {
+  const evidence = normalizeStageEvidence(record.data.reasoning, record.data.notebook, {
     currentNotebook,
     rationaleLimit: DRAFT_PROMPT_POLICY.rationaleLimit,
     notebookLimit: DRAFT_PROMPT_POLICY.notebookLimit,
@@ -632,8 +636,8 @@ export function parsePick(
   return {
     mon,
     reasoning: evidence.rationale,
-    ...(evidence.supplied.notebookUpdate ? { notebook: evidence.notebook } : {}),
     evidence,
+    notebook: evidence.supplied.notebookUpdate ? evidence.notebook : undefined,
   };
 }
 
@@ -644,18 +648,15 @@ interface ParsedFranchiseName {
 export function parseFranchiseName(response: string): ParsedFranchiseName | string {
   const match = /\{[\s\S]*\}/.exec(response);
   if (!match) return 'the reply contained no JSON object';
-  let parsed: unknown;
+  let json: JsonValue;
   try {
-    parsed = JSON.parse(match[0]);
+    json = JSON.parse(match[0]);
   } catch {
     return 'the JSON object did not parse';
   }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    return 'the reply must be one JSON object';
-  }
-  const value = (parsed as Record<string, unknown>).team_name;
-  if (typeof value !== 'string') return '"team_name" must be a non-empty string';
-  const teamName = value.trim().replace(/\s+/g, ' ').slice(0, FRANCHISE_NAME_PROMPT_POLICY.nameLimit);
+  const record = franchiseNameResponseSchema.safeParse(json);
+  if (!record.success) return '"team_name" must be a non-empty string';
+  const teamName = record.data.team_name.trim().replace(/\s+/g, ' ').slice(0, FRANCHISE_NAME_PROMPT_POLICY.nameLimit);
   return teamName ? { teamName } : '"team_name" must be a non-empty string';
 }
 
@@ -679,16 +680,16 @@ function replayFranchiseNames(file: string, models: readonly string[], state: Dr
   }
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue;
-    const row = JSON.parse(line) as Record<string, unknown>;
-    const entrant = Number(row.entrant);
-    if (!Number.isInteger(entrant) || entrant < 0 || entrant >= models.length) {
+    const row = franchiseNameTranscriptRowSchema.parse(JSON.parse(line));
+    const entrant = row.entrant;
+    if (entrant < 0 || entrant >= models.length) {
       throw new Error(`${file} holds an invalid franchise-name entrant`);
     }
     if (row.model !== models[entrant]) {
-      throw new Error(`${file} names ${String(row.model)} for entrant ${entrant}, expected ${models[entrant]}`);
+      throw new Error(`${file} names ${row.model} for entrant ${entrant}, expected ${models[entrant]}`);
     }
     const parsed = parseFranchiseName(JSON.stringify({ team_name: row.team_name }));
-    if (typeof parsed === 'string') throw new Error(`${file} holds an invalid franchise name for entrant ${entrant}`);
+    if (isRejection(parsed)) throw new Error(`${file} holds an invalid franchise name for entrant ${entrant}`);
     if (state.teamNames[entrant] && state.teamNames[entrant] !== parsed.teamName) {
       throw new Error(`${file} conflicts with the draft transcript for entrant ${entrant}`);
     }
@@ -730,12 +731,12 @@ async function nameFranchises(
           try {
             const completion = await provider.complete(system, messages, {
               maxTokens: FRANCHISE_NAME_PROMPT_POLICY.maxTokens,
-              ...(options.signal === undefined ? {} : { signal: options.signal }),
+              signal: options.signal,
             });
             response = completion.text;
             usage = completion.usage;
             const parsed = parseFranchiseName(response);
-            if (typeof parsed === 'string') {
+            if (isRejection(parsed)) {
               error = parsed;
               messages.push({ role: 'assistant', content: response || '[the reply contained no visible text]' });
               messages.push({
@@ -748,18 +749,11 @@ async function nameFranchises(
             error = failure.summary;
             terminalError = new Error(`${failure.summary} Franchise naming cannot continue.`, { cause });
           }
-          fs.appendFileSync(
-            seatLog,
-            `${JSON.stringify({
-              attempt,
-              ...(attempt === 1 ? { system } : {}),
-              user,
-              response,
-              ...(usage ? { usage } : {}),
-              ...(error ? { error } : {}),
-            } satisfies FranchiseNameSeatLog)}\n`,
-            'utf8',
-          );
+          const logEntry: FranchiseNameSeatLog = { attempt, user, response };
+          if (attempt === 1) logEntry.system = system;
+          if (usage) logEntry.usage = usage;
+          if (error) logEntry.error = error;
+          fs.appendFileSync(seatLog, `${JSON.stringify(logEntry)}\n`, 'utf8');
           if (terminalError) throw terminalError;
         }
       }
@@ -768,17 +762,14 @@ async function nameFranchises(
         fallback = true;
       }
       state.teamNames[entrant] = teamName;
-      fs.appendFileSync(
-        transcript,
-        `${JSON.stringify({
-          entrant,
-          model,
-          team_name: teamName,
-          fallback,
-          timestamp: new Date().toISOString(),
-        })}\n`,
-        'utf8',
-      );
+      const row: z.infer<typeof franchiseNameTranscriptRowSchema> = {
+        entrant,
+        model,
+        team_name: teamName,
+        fallback,
+        timestamp: new Date().toISOString(),
+      };
+      appendJsonlObject(transcript, row);
       options.onName?.(entrant, teamName, state);
     }),
   );
@@ -807,10 +798,7 @@ export async function runDraft(models: string[], board: DraftBoard, options: Run
     const make =
       options.makeDraftProvider ??
       ((spec: string, apiKey: string | undefined, reasoning: ReasoningLevel | undefined) =>
-        makeProvider(parseSpec(spec), {
-          ...(reasoning === undefined ? {} : { reasoning }),
-          ...(apiKey === undefined ? {} : { apiKey }),
-        }));
+        makeProvider(parseSpec(spec), { apiKey, reasoning }));
     return make(model, options.apiKeys?.[model], reasoningForModel(model, options));
   });
   const reference = new ShowdownReference(board.format, psDir);
@@ -825,13 +813,7 @@ export async function runDraft(models: string[], board: DraftBoard, options: Run
   const notebooks = models.map(() => '');
 
   const order = snakeOrder(models.length, board.picks);
-  const replayed = replayTranscript(transcript, state, {
-    models,
-    order,
-    picks,
-    notebooks,
-    ...(options.onPick ? { onPick: options.onPick } : {}),
-  });
+  const replayed = replayTranscript(transcript, state, { models, order, picks, notebooks, onPick: options.onPick });
   state = replayed.state;
   for (const [pickNumber, drafter] of order.entries()) {
     if (pickNumber < replayed.count) continue;
@@ -862,12 +844,13 @@ export async function runDraft(models: string[], board: DraftBoard, options: Run
         const promptForAttempt = messages[messages.length - 1]!.content ?? '';
         let response = '';
         let usage: Record<string, number> | undefined;
+        let finishReason: string | undefined;
         let error: string | undefined;
         let terminalError: Error | undefined;
         const lookups: { name: string; arguments: JsonObject; result: string }[] = [];
         try {
           response = '';
-          const completion = await completeWithDexTools({
+          const request: DexToolRequest = {
             provider,
             system,
             messages,
@@ -875,24 +858,29 @@ export async function runDraft(models: string[], board: DraftBoard, options: Run
             reference,
             boardSearch,
             policy: DRAFT_PROMPT_POLICY,
-            ...(options.signal === undefined ? {} : { signal: options.signal }),
             onLookup: (call) => lookups.push(call),
-          });
+            signal: options.signal,
+          };
+          const completion = await completeWithDexTools(request);
           response = completion.text;
           usage = completion.usage;
+          finishReason = completion.finishReason;
+          const dropped = (usage.output_tokens ?? 0) === 0 && (usage.input_tokens ?? 0) === 0;
           const truncated = completion.outputLimitReached;
           const stoppedEarly = completion.finishReason === 'length' && !truncated;
           if (!response.trim() && !truncated && !stoppedEarly && completion.reasoning) {
             const salvaged = parsePick(completion.reasoning, legal, state, drafter, models, notebooks[drafter]!);
-            if (typeof salvaged !== 'string') response = completion.reasoning;
+            if (!isRejection(salvaged)) response = completion.reasoning;
           }
           const parsed = parsePick(response, legal, state, drafter, models, notebooks[drafter]!);
-          if (typeof parsed === 'string') {
+          if (isRejection(parsed)) {
             error = truncated
               ? `the reply used its whole ${DRAFT_PROMPT_POLICY.maxTokens}-token budget before naming a pick`
               : stoppedEarly
                 ? `the provider stopped the reply for length before reaching the requested ${DRAFT_PROMPT_POLICY.maxTokens}-token cap`
-                : parsed;
+                : dropped
+                  ? `the provider stream ended without usage or a finish event (finish=${finishReason ?? 'unknown'}); ${parsed}`
+                  : parsed;
             lastError = error;
             messages.push({
               role: 'assistant',
@@ -919,20 +907,18 @@ export async function runDraft(models: string[], board: DraftBoard, options: Run
           lastError = error;
           terminalError = new Error(`${failure.summary} The draft cannot continue.`, { cause });
         }
-        fs.appendFileSync(
-          seatLogs[drafter]!,
-          `${JSON.stringify({
-            pick: pickNumber + 1,
-            attempt,
-            ...(attempt === 1 ? { system } : {}),
-            user: promptForAttempt,
-            response,
-            ...(usage ? { usage } : {}),
-            ...(lookups.length ? { tool_lookups: lookups } : {}),
-            ...(error ? { error } : {}),
-          } satisfies DraftSeatLog)}\n`,
-          'utf8',
-        );
+        const logEntry: DraftSeatLog = {
+          pick: pickNumber + 1,
+          attempt,
+          user: promptForAttempt,
+          response,
+        };
+        if (attempt === 1) logEntry.system = system;
+        if (usage) logEntry.usage = usage;
+        if (finishReason) logEntry.finish_reason = finishReason;
+        if (lookups.length) logEntry.tool_lookups = lookups;
+        if (error) logEntry.error = error;
+        fs.appendFileSync(seatLogs[drafter]!, `${JSON.stringify(logEntry)}\n`, 'utf8');
         if (terminalError) throw terminalError;
       }
       if (!chosen) {
@@ -970,21 +956,25 @@ export async function runDraft(models: string[], board: DraftBoard, options: Run
       fallback,
     };
     picks.push(view);
-    appendJsonlObject(transcript, {
+    const transcriptRow: DraftTranscriptRow = {
       pick: pickNumber + 1,
       entrant: drafter,
-      model: models[drafter],
+      model: models[drafter]!,
       mon: chosen.id,
       name: chosen.name,
       cost: chosen.cost,
-      budget_left: state.budgets[drafter],
+      budget_left: state.budgets[drafter]!,
       action: { pick: chosen.id },
       rationale: reasoning,
-      evidence_supplied: evidenceSuppliedRecord(evidence),
-      ...(evidence.supplied.notebookUpdate || notebooks[drafter] ? { notebook: notebooks[drafter] } : {}),
+      evidence_supplied: {
+        rationale: evidence.supplied.rationale,
+        notebook_update: evidence.supplied.notebookUpdate,
+      },
       fallback,
       timestamp: new Date().toISOString(),
-    });
+    };
+    if (evidence.supplied.notebookUpdate || evidence.notebook) transcriptRow.notebook = evidence.notebook;
+    appendJsonlObject(transcript, transcriptRow);
     options.onPick?.(view, state);
   }
 

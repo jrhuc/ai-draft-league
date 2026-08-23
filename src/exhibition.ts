@@ -2,7 +2,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import type { RandomEngine } from './battle-agent.js';
+import { z } from 'zod';
+
 import { LLMEngine } from './llm-engine.js';
 import { defaultPsDir, RESULTS_PATH } from './paths.js';
 import type { ReasoningLevel } from './providers.js';
@@ -14,7 +15,6 @@ import { ShowdownReference } from './reference.js';
 import { SeatBridge } from './seat.js';
 import { makeEngine, playBo3 } from './series.js';
 import { showdownCommit } from './showdown.js';
-import type { Team } from './teams.js';
 import { loadPool, validatePool } from './teams.js';
 import { DEFAULT_TIMER_SCALE } from './timer.js';
 import type { Pid } from './types.js';
@@ -75,19 +75,19 @@ export async function runExhibition(runDir: string, options: ExhibitionOptions):
   const firstTeam = Math.floor(random() * pool.teams.length);
   let secondTeam = Math.floor(random() * (pool.teams.length - 1));
   if (secondTeam >= firstTeam) secondTeam += 1;
-  const teams: Record<Pid, Team> = { p1: pool.teams[firstTeam]!, p2: pool.teams[secondTeam]! };
-  const gameSeeds = Array.from(
-    { length: 3 },
-    () => Array.from({ length: 4 }, () => 1 + Math.floor(random() * 0xffff)) as [number, number, number, number],
-  );
+  const teams = { p1: pool.teams[firstTeam]!, p2: pool.teams[secondTeam]! };
+  const gameSeeds = Array.from({ length: 3 }, (): [number, number, number, number] => [
+    1 + Math.floor(random() * 0xffff),
+    1 + Math.floor(random() * 0xffff),
+    1 + Math.floor(random() * 0xffff),
+    1 + Math.floor(random() * 0xffff),
+  ]);
   const engineSeed = Math.floor(random() * Number.MAX_SAFE_INTEGER);
 
   const seriesId = randomUUID().replaceAll('-', '').slice(0, 12);
   const seriesDir = path.join(runDir, 'series', seriesId);
   fs.mkdirSync(seriesDir, { recursive: true });
-  const players: Record<Pid, string> = { p1: '', p2: '' };
-  players[seatSide] = seatName;
-  players[oppSide] = options.opponent;
+  const players = seatSide === 'p1' ? { p1: seatName, p2: options.opponent } : { p1: options.opponent, p2: seatName };
   const executionHarnesses = {
     [seatSide]: {
       adapter: 'trusted-external-bridge',
@@ -186,7 +186,7 @@ export async function runExhibition(runDir: string, options: ExhibitionOptions):
     };
     options.onReady?.({ url, agentDir });
 
-    const names: Record<Pid, string> = { p1: `p1-${players.p1}`, p2: `p2-${players.p2}` };
+    const names = { p1: `p1-${players.p1}`, p2: `p2-${players.p2}` };
     seatEngine = new LLMEngine(seatSide, seatName, {
       provider: bridge.provider(),
       decisionLog: path.join(seriesDir, `${seatSide}-decisions.jsonl`),
@@ -196,21 +196,19 @@ export async function runExhibition(runDir: string, options: ExhibitionOptions):
       psDir,
       reference,
     });
-    const engines = {
-      [seatSide]: seatEngine,
-      [oppSide]: makeEngine({
-        pid: oppSide,
-        spec: options.opponent,
-        seed: engineSeed,
-        decisionLog: path.join(seriesDir, `${oppSide}-decisions.jsonl`),
-        traceLog: path.join(seriesDir, `${oppSide}-trace.jsonl`),
-        contextLog: path.join(seriesDir, `${oppSide}-context.jsonl`),
-        format: pool.format,
-        psDir,
-        reasoning: options.reasoning,
-        reference,
-      }),
-    } as Record<Pid, LLMEngine | RandomEngine>;
+    const opponentEngine = makeEngine({
+      pid: oppSide,
+      spec: options.opponent,
+      seed: engineSeed,
+      decisionLog: path.join(seriesDir, `${oppSide}-decisions.jsonl`),
+      traceLog: path.join(seriesDir, `${oppSide}-trace.jsonl`),
+      contextLog: path.join(seriesDir, `${oppSide}-context.jsonl`),
+      format: pool.format,
+      psDir,
+      reasoning: options.reasoning,
+      reference,
+    });
+    const engines = seatSide === 'p1' ? { p1: seatEngine, p2: opponentEngine } : { p1: opponentEngine, p2: seatEngine };
 
     const result = await playBo3({
       engines,
@@ -271,7 +269,8 @@ function writeAgentWorkspace(agentDir: string, url: string, token: string, seatN
   try {
     fs.mkdirSync(agentDir, { mode: 0o700 });
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new Error('agent workspace must be freshly created');
+    const failure = z.object({ code: z.string().optional() }).safeParse(error);
+    if (failure.success && failure.data.code === 'EEXIST') throw new Error('agent workspace must be freshly created');
     throw error;
   }
 
@@ -304,7 +303,8 @@ function writePrivateArtifact(filePath: string, contents: string): void {
       0o600,
     );
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
+    const failure = z.object({ code: z.string().optional() }).safeParse(error);
+    const code = failure.success ? failure.data.code : undefined;
     if (code === 'EEXIST' || code === 'ELOOP')
       throw new Error(`agent workspace artifact must be freshly created: ${path.basename(filePath)}`);
     throw error;

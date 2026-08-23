@@ -74,8 +74,10 @@ export function Dropdown({
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (!rootRef.current?.contains(target) && !popRef.current?.contains(target)) setOpen(false);
+      const path = event.composedPath();
+      const inRoot = rootRef.current !== null && path.includes(rootRef.current);
+      const inPopup = popRef.current !== null && path.includes(popRef.current);
+      if (!inRoot && !inPopup) setOpen(false);
     };
     document.addEventListener('pointerdown', onPointerDown);
     return () => document.removeEventListener('pointerdown', onPointerDown);

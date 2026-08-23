@@ -9,7 +9,7 @@ import { acceptedBattleActionEntries } from '../src/fork.js';
 import { REPO_ROOT } from '../src/paths.js';
 import { loadShowdown } from '../src/showdown.js';
 import type { BattleRequest, Pid } from '../src/types.js';
-import { requestActionCandidates } from './fixtures/fork.js';
+import { activeRequest, requestActionCandidates } from './fixtures/fork.js';
 
 const Showdown = loadShowdown();
 const SEED = '31,41,59,26' as const;
@@ -54,7 +54,7 @@ function newBattle(format = FORMAT, packed = ORACLE_PACKED): Battle {
 }
 
 function requestOf(battle: Battle, pid: Pid = 'p1'): BattleRequest {
-  return battle.getSide(pid).activeRequest as unknown as BattleRequest;
+  return activeRequest(battle, pid);
 }
 
 function cloneBattle(battle: Battle): Battle {
@@ -124,9 +124,7 @@ test('special target kinds round-trip through their real move request', () => {
   choosePreview(battle);
   const request = requestOf(battle);
   assert.ok(request.active?.every((active) => !active?.canTerastallize));
-  const targets = request.active?.flatMap((active) =>
-    ((active?.moves ?? []) as Array<Record<string, unknown>>).map((move) => move.target),
-  );
+  const targets = request.active?.flatMap((active) => (active?.moves ?? []).map((move) => move.target));
   for (const target of [
     'adjacentAllyOrSelf',
     'adjacentAlly',

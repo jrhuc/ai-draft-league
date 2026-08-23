@@ -12,7 +12,6 @@
 .bracket-round { display: contents; }
 .bracket-round h3 { grid-row: 1; margin: 0; padding-bottom: 12px; color: var(--muted); font: 800 10px/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; }
 .bracket-cell { position: relative; display: flex; align-items: center; }
-.bracket-cell > .bracket-match { flex: 1; min-width: 0; }
 .bracket-in { position: absolute; top: 50%; height: 1px; background: var(--muted); pointer-events: none; z-index: 1; right: 100%; width: calc(var(--bracket-col-gap) / 2); }
 .bracket-out { position: absolute; top: 50%; height: 1px; background: var(--muted); pointer-events: none; z-index: 1; left: 100%; width: calc(var(--bracket-col-gap) / 2 + 1px); }
 .bracket-cell.pair-top.has-target::after { content: ""; position: absolute; left: calc(100% + var(--bracket-col-gap) / 2); width: 1px; height: calc(50% + var(--bracket-row-gap) / 2 + 1px); background: var(--line-strong); pointer-events: none; top: 50%; }
@@ -61,6 +60,7 @@
 .side.right .mon.active { border-left-width: 1px; border-right-width: 4px; box-shadow: inset -3px 0 0 var(--yellow); }
 .bracket { --bracket-row-gap: 36px; --bracket-col-gap: 34px; display: grid; gap: var(--bracket-row-gap) var(--bracket-col-gap); min-width: min-content; grid-auto-columns: minmax(275px, max-content); }
 .bracket-match { position: relative; display: flex; flex-direction: column; gap: 0; padding: 0; overflow: visible; color: var(--ink); background: var(--surface-raised); border: 1px solid var(--line-strong); text-align: left; cursor: pointer; transition: background-color .16s ease, border-color .16s ease, box-shadow .16s ease; }
+.bracket-cell > .bracket-match { flex: 1; min-width: 0; }
 .bracket-match.selected { border-color: var(--blue-dark); box-shadow: inset 0 -3px 0 var(--yellow); }
 .bracket-match.live { border-color: var(--coral); box-shadow: 0 0 0 3px rgba(255, 123, 129, .14); }
 .bracket-live { position: absolute; left: -1px; right: -1px; bottom: 100%; z-index: 1; display: flex; align-items: center; gap: 7px; padding: 5px 12px; color: var(--navy); background: var(--coral); font: 800 9px/1 var(--mono); letter-spacing: 0.16em; text-transform: uppercase; }

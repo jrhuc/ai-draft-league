@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { z } from 'zod';
 import { appendJsonlObject, readJsonlObjects } from './jsonl.js';
 import { acquireLease, LeaseBusyError } from './run-status.js';
-import type { ExperimentMode, JsonObject, Pid, TimerScale } from './types.js';
+import type { ExperimentMode, JsonObject, JsonValue, Pid, TimerScale } from './types.js';
 
 export interface SeriesRecord extends JsonObject {
   mode?: ExperimentMode | undefined;
@@ -18,6 +18,8 @@ export interface SeriesRecord extends JsonObject {
   contributor?: { provider: 'github'; subject: string; login: string } | undefined;
   players: Record<Pid, string>;
   winner?: string | null | undefined;
+  score?: Record<Pid, number> | undefined;
+  turns?: number | undefined;
 }
 
 export const SERIES_RECORD_SCHEMA_VERSION = 1 as const;
@@ -27,18 +29,39 @@ const pidCountSchema = z.strictObject({
   p1: z.number().int().nonnegative(),
   p2: z.number().int().nonnegative(),
 });
-const gameSchema = z.looseObject({
-  number: z.number().int().positive(),
-  winner: z.string().min(1).nullable(),
-  winner_side: z.enum(['p1', 'p2']).nullable(),
-  turns: z.number().int().nonnegative(),
-  seed: z.tuple([
-    z.number().int().nonnegative().max(0xffff),
-    z.number().int().nonnegative().max(0xffff),
-    z.number().int().nonnegative().max(0xffff),
-    z.number().int().nonnegative().max(0xffff),
-  ]),
-});
+const gameSchema = z
+  .object({
+    number: z.number().int().positive(),
+    winner: z.string().min(1).nullable(),
+    winner_side: z.enum(['p1', 'p2']).nullable(),
+    turns: z.number().int().nonnegative(),
+    seed: z.tuple([
+      z.number().int().nonnegative().max(0xffff),
+      z.number().int().nonnegative().max(0xffff),
+      z.number().int().nonnegative().max(0xffff),
+      z.number().int().nonnegative().max(0xffff),
+    ]),
+  })
+  .catchall(z.json());
+const decisionStatSchema = z
+  .object({
+    decisions: z.number().finite().optional(),
+    fallbacks: z.number().finite().optional(),
+    parse_failures: z.number().finite().optional(),
+    tool_lookups: z.number().finite().optional(),
+    move_selections: z.number().finite().optional(),
+    switch_selections: z.number().finite().optional(),
+    protect_selections: z.number().finite().optional(),
+    consecutive_protect_selections: z.number().finite().optional(),
+    spread_move_selections: z.number().finite().optional(),
+    mega_selections: z.number().finite().optional(),
+    lead_changes: z.number().finite().optional(),
+    bring_changes: z.number().finite().optional(),
+    cost: z.number().finite().optional(),
+    reasoning_tokens: z.number().finite().optional(),
+  })
+  .catchall(z.json());
+const decisionStatsSchema = z.strictObject({ p1: decisionStatSchema, p2: decisionStatSchema });
 const seriesRecordSchema = z.object({
   schema_version: z.literal(SERIES_RECORD_SCHEMA_VERSION),
   mode: z.enum(['rotation', 'exhibition', 'tournament', 'draft']),
@@ -61,13 +84,14 @@ const seriesRecordSchema = z.object({
   timer_scale: z.union([z.literal('off'), z.number().positive()]).optional(),
   closed_sheets: z.literal(true).optional(),
   reasoning: z.enum(['minimal', 'low', 'medium', 'high', 'xhigh']).nullable(),
+  sampling: z.literal('provider-default').optional(),
   reasoning_by_player: z
     .strictObject({
       p1: z.enum(['minimal', 'low', 'medium', 'high', 'xhigh']).nullable(),
       p2: z.enum(['minimal', 'low', 'medium', 'high', 'xhigh']).nullable(),
     })
     .optional(),
-  decision_stats: z.strictObject({ p1: z.json(), p2: z.json() }),
+  decision_stats: decisionStatsSchema,
   contributor: z
     .strictObject({ provider: z.literal('github'), subject: z.string().min(1), login: z.string().min(1) })
     .optional(),
@@ -99,7 +123,7 @@ const seriesRecordSchema = z.object({
 
 export type ParsedSeriesRecord = z.infer<typeof seriesRecordSchema>;
 
-export function parseSeriesRecord(value: unknown, label: string): ParsedSeriesRecord {
+export function parseSeriesRecord(value: JsonValue, label: string): ParsedSeriesRecord {
   const parsed = seriesRecordSchema.safeParse(value);
   if (!parsed.success) throw new Error(`${label} is not a current series record: ${z.prettifyError(parsed.error)}`);
   return parsed.data;
@@ -116,18 +140,18 @@ export function modelKey(spec: string): string {
 
 export const TEST_POOL = 'test';
 
-export function scopeRows(rows: SeriesRecord[], pool?: string): SeriesRecord[] {
+export function scopeRows<Row extends SeriesRecord>(rows: Row[], pool?: string): Row[] {
   return pool === undefined ? rows.filter((row) => row.pool !== TEST_POOL) : rows.filter((row) => row.pool === pool);
 }
 
-const rowCache = new Map<string, { mtimeMs: number; size: number; rows: SeriesRecord[] }>();
+const rowCache = new Map<string, { mtimeMs: number; size: number; rows: ParsedSeriesRecord[] }>();
 
 export class RecordsBusyError extends Error {}
 
 interface RecordsMutation {
-  load: () => SeriesRecord[];
+  load: () => ParsedSeriesRecord[];
   append: (row: JsonObject) => void;
-  replace: (rows: readonly SeriesRecord[]) => void;
+  replace: (rows: readonly ParsedSeriesRecord[]) => void;
 }
 
 /** Holds the one records journal lease across a complete append, import, or removal transaction. */
@@ -171,7 +195,7 @@ export function appendRow(file: string, row: JsonObject): void {
 }
 
 /** Cached by mtime and size; callers must treat the returned rows as immutable. */
-export function loadSeriesRecords(file: string): SeriesRecord[] {
+export function loadSeriesRecords(file: string): ParsedSeriesRecord[] {
   let stat: fs.Stats;
   try {
     stat = fs.statSync(file);

@@ -3,12 +3,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-
 import { main } from '../src/cli.js';
 import { acquireLease, withRunStatus, writeRunStatus } from '../src/run-status.js';
+import type { JsonObject } from '../src/types.js';
 
-function readStatus(runDir: string): Record<string, unknown> {
-  return JSON.parse(fs.readFileSync(path.join(runDir, 'status.json'), 'utf8')) as Record<string, unknown>;
+function readStatus(runDir: string): JsonObject {
+  return JSON.parse(fs.readFileSync(path.join(runDir, 'status.json'), 'utf8'));
 }
 
 test('withRunStatus holds a run lease and writes lifecycle status', async (t) => {
@@ -90,13 +90,13 @@ test('interleaved lease acquisitions have exactly one owner', (t) => {
   let contenderRelease: (() => void) | undefined;
   let interleaved = false;
   try {
-    fs.writeFileSync = ((...args: unknown[]) => {
+    fs.writeFileSync = (file, data, options) => {
       if (!interleaved) {
         interleaved = true;
         contenderRelease = acquireLease(lease);
       }
-      return Reflect.apply(originalWriteFileSync, fs, args);
-    }) as typeof fs.writeFileSync;
+      originalWriteFileSync(file, data, options);
+    };
     assert.throws(() => acquireLease(lease), new RegExp(`owned by live pid ${process.pid}`));
   } finally {
     fs.writeFileSync = originalWriteFileSync;

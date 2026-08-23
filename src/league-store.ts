@@ -2,14 +2,16 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
+import { z } from 'zod';
 
 import type { DraftBoard, DraftBoardMon } from './draft.js';
-import { snakeOrder } from './draft.js';
+import { draftTranscriptRowSchema, snakeOrder } from './draft.js';
 import type { DraftPickView, TeambuildView } from './gui/api.js';
 import { appendJsonlObject, readJsonlObjects } from './jsonl.js';
 import { seededRng, shuffle } from './random.js';
 import type { SeriesRecord } from './records.js';
 import { loadSeriesRecords } from './records.js';
+import { storedSeriesMetadataSchema } from './series.js';
 import { harnessCommit } from './showdown.js';
 import {
   decodeTeamBuildJournalRow,
@@ -19,10 +21,11 @@ import {
   type TeamBuildSheetPolicy,
 } from './teambuild.js';
 import { MAX_TRADE_OFFERS, type TransactionSchedule } from './trade-window.js';
-import type { ContributorAttribution, Pid, TimerScale } from './types.js';
+import type { ContributorAttribution, JsonValue, Pid, TimerScale } from './types.js';
+import { isErrnoCode, isRecord } from './value.js';
 
 export interface StoredLeague {
-  config: Record<string, unknown>;
+  config: StoredDraftLeagueConfig;
   configBytes: string;
   entrants: string[];
   teamNames: string[];
@@ -33,6 +36,38 @@ export interface StoredLeague {
   swapsAllowed: number;
   preset: string | null;
 }
+export interface StoredCoaching {
+  playoffContext: Array<Map<number, string>>;
+  reflectionNotes: Array<Map<number, string>>;
+}
+
+const transactionWindowSchema = z.strictObject({
+  after_week: z.number().int().safe().min(1),
+  trades_allowed: z.number().int().safe().min(0).max(MAX_TRADE_OFFERS),
+});
+export const draftLeagueConfigSchema = z.looseObject({
+  mode: z.literal('draft'),
+  models: z.array(z.string()),
+  entrants: z.array(z.string()).min(2),
+  seed: z.number(),
+  board: z.string(),
+  format: z.string().optional(),
+  concurrency: z.number().optional(),
+  reasoning: z.string().nullable().optional(),
+  reasoning_by_model: z.record(z.string(), z.string()).nullable().optional(),
+  timer_scale: z.union([z.number(), z.literal('off')]).optional(),
+  closed_sheets: z.boolean().optional(),
+  sequential_weeks: z.boolean(),
+  draft_only: z.boolean(),
+  preset: z.string().nullable().optional(),
+  transactions: z.array(transactionWindowSchema).nullable(),
+  swaps_allowed: z.number().int().safe(),
+  team_names: z.array(z.string()),
+  weeks: z.number().optional(),
+  rosters: z.array(z.array(z.string().min(1))).optional(),
+  draft_notes: z.array(z.string()).optional(),
+});
+export type StoredDraftLeagueConfig = z.infer<typeof draftLeagueConfigSchema>;
 const DRAFT_CONFIG_FIELDS = [
   'mode',
   'harness_commit',
@@ -158,26 +193,17 @@ export function writeDraftLeagueRosters(
   );
 }
 
-export function loadStoredCoaching(
-  runDir: string,
-  entrants: number,
-): {
-  playoffContext: Array<Map<number, string>>;
-  reflectionNotes: Array<Map<number, string>>;
-} {
+export function loadStoredCoaching(runDir: string, entrants: number): StoredCoaching {
   const playoffContext = Array.from({ length: entrants }, () => new Map<number, string>());
   const reflectionNotes = Array.from({ length: entrants }, () => new Map<number, string>());
   for (const row of readJsonlObjects(path.join(runDir, 'coaching.jsonl'))) {
     const entrant = Number(row.entrant);
     const seriesIndex = Number(row.series_index);
-    if (
-      Number.isInteger(entrant) &&
-      playoffContext[entrant] &&
-      Number.isInteger(seriesIndex) &&
-      typeof row.context === 'string'
-    ) {
-      playoffContext[entrant].set(seriesIndex, row.context);
-      if (typeof row.notebook === 'string') reflectionNotes[entrant]!.set(seriesIndex, row.notebook);
+    const context = z.string().safeParse(row.context);
+    if (Number.isInteger(entrant) && playoffContext[entrant] && Number.isInteger(seriesIndex) && context.success) {
+      playoffContext[entrant].set(seriesIndex, context.data);
+      const notebook = z.string().safeParse(row.notebook);
+      if (notebook.success) reflectionNotes[entrant]!.set(seriesIndex, notebook.data);
     }
   }
   return { playoffContext, reflectionNotes };
@@ -191,22 +217,14 @@ export function appendStoredCoaching(
 }
 
 export function loadStoredPicks(runDir: string, entrants: number, board: DraftBoard): DraftPickView[] {
-  const rows = [...readJsonlObjects(path.join(runDir, 'draft', 'draft.jsonl'))].sort(
-    (a, b) => Number(a.pick) - Number(b.pick),
-  );
+  const rows = [...readJsonlObjects(path.join(runDir, 'draft', 'draft.jsonl'))]
+    .map((row) => draftTranscriptRowSchema.parse(row))
+    .sort((a, b) => a.pick - b.pick);
   const order = snakeOrder(entrants, board.picks);
   return rows.flatMap((row, index) => {
     const entrant = order[index];
-    if (entrant === undefined || typeof row.mon !== 'string') return [];
-    return [
-      {
-        pick: Number(row.pick),
-        entrant,
-        mon: row.mon,
-        rationale: typeof row.rationale === 'string' ? row.rationale : '',
-        fallback: row.fallback === true,
-      },
-    ];
+    if (entrant === undefined) return [];
+    return [{ pick: row.pick, entrant, mon: row.mon, rationale: row.rationale, fallback: row.fallback }];
   });
 }
 
@@ -224,7 +242,7 @@ export function loadStoredLeagueRows(
   for (const row of loadSeriesRecords(recordsPath)) {
     if (row.run_id !== runId || row.mode !== 'draft') continue;
     const seriesIndex = row.series_index;
-    const plan = Number.isSafeInteger(seriesIndex) ? plans[seriesIndex as number] : undefined;
+    const plan = seriesIndex === undefined || !Number.isSafeInteger(seriesIndex) ? undefined : plans[seriesIndex];
     if (!plan || plan.stage !== row.stage || plan.round !== row.round) {
       throw new Error(
         `run ${runId} series ${String(seriesIndex)} does not match the rebuilt schedule; it cannot resume`,
@@ -248,14 +266,14 @@ export function draftOnlyPromotionEvidence(runDir: string, rows: readonly Series
     try {
       if (fs.statSync(path.join(runDir, relative)).size > 0) evidence.push(relative);
     } catch (cause) {
-      if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw cause;
+      if (!isErrnoCode(cause, 'ENOENT')) throw cause;
     }
   }
   for (const directory of ['series', 'reviews']) {
     try {
       if (fs.readdirSync(path.join(runDir, directory)).length) evidence.push(`${directory}/`);
     } catch (cause) {
-      if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw cause;
+      if (!isErrnoCode(cause, 'ENOENT')) throw cause;
     }
   }
   return evidence;
@@ -271,7 +289,7 @@ export function postWindowEvidence(
     plans.filter((plan) => plan.stage === 'playoff' || plan.round > afterWeek).map((plan) => plan.index),
   );
   const evidence = rows
-    .filter((row) => pastBarrier.has(row.series_index as number))
+    .filter((row) => row.series_index !== undefined && pastBarrier.has(row.series_index))
     .map((row) => `result series ${String(row.series_index)}`);
   const teambuildFile = path.join(runDir, 'teambuild', 'teambuild.jsonl');
   for (const [index, row] of readJsonlObjects(teambuildFile).entries()) {
@@ -279,41 +297,32 @@ export function postWindowEvidence(
     if (pastBarrier.has(seriesIndex)) evidence.push(`teambuild/teambuild.jsonl series ${seriesIndex}`);
   }
   for (const row of readJsonlObjects(path.join(runDir, 'coaching.jsonl'))) {
-    if (pastBarrier.has(row.series_index as number)) evidence.push(`coaching.jsonl series ${String(row.series_index)}`);
+    const seriesIndex = z.number().int().safe().safeParse(row.series_index);
+    if (seriesIndex.success && pastBarrier.has(seriesIndex.data))
+      evidence.push(`coaching.jsonl series ${seriesIndex.data}`);
   }
   const seriesRoot = path.join(runDir, 'series');
   let seriesDirectories: string[] = [];
   try {
     seriesDirectories = fs.readdirSync(seriesRoot);
   } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw cause;
+    if (!isErrnoCode(cause, 'ENOENT')) throw cause;
   }
   for (const directory of seriesDirectories) {
-    let meta: Record<string, unknown>;
     try {
-      meta = JSON.parse(fs.readFileSync(path.join(seriesRoot, directory, 'series.json'), 'utf8')) as Record<
-        string,
-        unknown
-      >;
-    } catch {
-      continue;
-    }
-    const identity =
-      meta.schema_version === 3 &&
-      typeof meta.identity === 'object' &&
-      meta.identity !== null &&
-      !Array.isArray(meta.identity)
-        ? (meta.identity as Record<string, unknown>)
-        : undefined;
-    const seriesIndex = identity?.series_index;
-    if (typeof seriesIndex === 'number' && pastBarrier.has(seriesIndex)) evidence.push(`series/${directory}`);
+      const meta = storedSeriesMetadataSchema.safeParse(
+        JSON.parse(fs.readFileSync(path.join(seriesRoot, directory, 'series.json'), 'utf8')),
+      );
+      if (meta.success && meta.data.seriesIndex !== null && pastBarrier.has(meta.data.seriesIndex))
+        evidence.push(`series/${directory}`);
+    } catch {}
   }
   if (readJsonlObjects(path.join(runDir, 'season.jsonl')).length) evidence.push('season.jsonl');
   let reviewFiles: string[] = [];
   try {
     reviewFiles = fs.readdirSync(path.join(runDir, 'reviews'));
   } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw cause;
+    if (!isErrnoCode(cause, 'ENOENT')) throw cause;
   }
   for (const file of reviewFiles) {
     const match = /^week-(\d+)\.jsonl$/u.exec(file);
@@ -338,13 +347,13 @@ export function requireTransactionResultPrefix(
   }
   const expectedIndexes = new Set(expected.map((plan) => plan.index));
   const prefix = rows.slice(0, expected.length);
-  const crossed = prefix.find((row) => !expectedIndexes.has(row.series_index as number));
+  const crossed = prefix.find((row) => row.series_index === undefined || !expectedIndexes.has(row.series_index));
   if (crossed) {
     throw new Error(
       `run ${runId} later-round series ${String(crossed.series_index)} crosses the transaction barrier before the exact pre-window result prefix`,
     );
   }
-  const prefixIndexes = new Set(prefix.map((row) => row.series_index as number));
+  const prefixIndexes = new Set(prefix.flatMap((row) => (row.series_index === undefined ? [] : [row.series_index])));
   const missing = expected.filter((plan) => !prefixIndexes.has(plan.index));
   if (missing.length || prefixIndexes.size !== expected.length) {
     throw new Error(
@@ -481,72 +490,51 @@ export function loadStoredLeague(runDir: string): StoredLeague | undefined {
   try {
     configBytes = fs.readFileSync(configPath, 'utf8');
   } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === 'ENOENT')
-      throw new Error(`${runDir} holds no draft league config to resume`);
+    if (isErrnoCode(cause, 'ENOENT')) throw new Error(`${runDir} holds no draft league config to resume`);
     throw cause;
   }
-  const parsed = JSON.parse(configBytes) as unknown;
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new Error(`${runDir} draft league config must be one object`);
+  const parsedConfig: JsonValue = JSON.parse(configBytes);
+  if (!isRecord(parsedConfig) || parsedConfig.mode !== 'draft') throw new Error(`${runDir} is not a draft league run`);
+  if (!Object.hasOwn(parsedConfig, 'rosters')) return undefined;
+  const parsed = draftLeagueConfigSchema.safeParse(parsedConfig);
+  if (!parsed.success) {
+    const windowIssue = parsed.error.issues.some((issue) => issue.path[0] === 'transactions');
+    throw new Error(
+      windowIssue
+        ? `${runDir} season config has an invalid transaction window`
+        : `${runDir} is not a structurally complete drafted-league config`,
+    );
   }
-  const config = parsed as Record<string, unknown>;
-  if (config.mode !== 'draft') throw new Error(`${runDir} is not a draft league run`);
-  if (!Object.hasOwn(config, 'rosters')) return undefined;
+  const config = parsed.data;
+  const { entrants, team_names: teamNames, rosters: rosterIds, draft_notes: draftNotes } = config;
   if (
-    !Array.isArray(config.entrants) ||
-    config.entrants.length < 2 ||
-    config.entrants.some((model) => typeof model !== 'string') ||
-    !Array.isArray(config.team_names) ||
-    config.team_names.length !== config.entrants.length ||
-    config.team_names.some((name) => typeof name !== 'string') ||
-    !Array.isArray(config.rosters) ||
-    config.rosters.length !== config.entrants.length ||
-    config.rosters.some(
-      (roster) => !Array.isArray(roster) || roster.some((id) => typeof id !== 'string' || id.length === 0),
-    ) ||
-    !Array.isArray(config.draft_notes) ||
-    config.draft_notes.length !== config.entrants.length ||
-    config.draft_notes.some((note) => typeof note !== 'string') ||
-    typeof config.sequential_weeks !== 'boolean' ||
-    typeof config.draft_only !== 'boolean' ||
-    !Number.isSafeInteger(config.swaps_allowed)
+    rosterIds === undefined ||
+    draftNotes === undefined ||
+    teamNames.length !== entrants.length ||
+    rosterIds.length !== entrants.length ||
+    draftNotes.length !== entrants.length
   ) {
     throw new Error(`${runDir} is not a structurally complete drafted-league config`);
   }
-  let transactions: TransactionSchedule | undefined;
-  if (config.draft_only) {
-    if (config.transactions !== null) throw new Error(`${runDir} draft-only config must record null transactions`);
-    transactions = undefined;
-  } else {
-    if (!Array.isArray(config.transactions))
-      throw new Error(`${runDir} season config has an invalid transaction schedule`);
-    transactions = config.transactions.map((window) => {
-      if (typeof window !== 'object' || window === null || Array.isArray(window)) {
-        throw new Error(`${runDir} season config has an invalid transaction window`);
-      }
-      const record = window as Record<string, unknown>;
-      if (
-        !Number.isSafeInteger(record.after_week) ||
-        Number(record.after_week) < 1 ||
-        !Number.isSafeInteger(record.trades_allowed) ||
-        Number(record.trades_allowed) < 0 ||
-        Number(record.trades_allowed) > MAX_TRADE_OFFERS
-      ) {
-        throw new Error(`${runDir} season config has an invalid transaction window`);
-      }
-      return { afterWeek: Number(record.after_week), tradesAllowed: Number(record.trades_allowed) };
-    });
+  if (config.draft_only && config.transactions !== null) {
+    throw new Error(`${runDir} draft-only config must record null transactions`);
   }
+  const transactions = config.draft_only
+    ? undefined
+    : (config.transactions ?? []).map((window) => ({
+        afterWeek: window.after_week,
+        tradesAllowed: window.trades_allowed,
+      }));
   return {
     config,
     configBytes,
-    entrants: config.entrants as string[],
-    teamNames: config.team_names as string[],
-    rosterIds: config.rosters as string[][],
-    draftNotes: config.draft_notes as string[],
+    entrants,
+    teamNames,
+    rosterIds,
+    draftNotes,
     sequentialWeeks: config.sequential_weeks,
     transactions,
-    swapsAllowed: config.swaps_allowed as number,
-    preset: typeof config.preset === 'string' ? config.preset : null,
+    swapsAllowed: config.swaps_allowed,
+    preset: config.preset ?? null,
   };
 }

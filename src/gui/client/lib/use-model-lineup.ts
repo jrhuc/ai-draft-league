@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 
 import type { AppState, ModelInfo, ModelsResponse, ProviderInfo } from '../../api';
-import { resolveOption } from '../components/dropdown';
+import { type DropdownOption, resolveOption } from '../components/dropdown';
 import { api } from '../http';
 import { needsProviderKey, type RunMode } from './run-draft';
 
@@ -58,11 +58,14 @@ export function useModelLineup({
         )
       : [];
   const sharedReasoningKey = sharedReasoningLevels.join('\u0000');
-  const modelOptions = catalog.map((model) => ({
-    value: model.id,
-    label: model.id,
-    ...(model.label && model.label !== model.id ? { description: model.label } : {}),
-  }));
+  const modelOptions = catalog.map((model) => {
+    const option: DropdownOption = {
+      value: model.id,
+      label: model.id,
+    };
+    if (model.label && model.label !== model.id) option.description = model.label;
+    return option;
+  });
 
   useEffect(() => {
     catalogGenerationRef.current += 1;

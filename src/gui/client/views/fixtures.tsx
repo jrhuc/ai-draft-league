@@ -92,7 +92,7 @@ function bracketPreview(count: number): string {
   return `${count - 1} best-of-three series over ${Math.log2(size)} rounds${byes ? ` · ${byes} first-round bye${byes === 1 ? '' : 's'}` : ''}.`;
 }
 
-const HEADINGS: Record<RunMode, { eyebrow: string; title: [string, string]; lede: string }> = {
+const HEADINGS = {
   match: {
     eyebrow: 'Exhibition match',
     title: ['Set up an', 'exhibition match'],
@@ -113,7 +113,7 @@ const HEADINGS: Record<RunMode, { eyebrow: string; title: [string, string]; lede
     title: ['Set up a', 'rotation run'],
     lede: 'Pick an immutable team pool and at least two models. Every pairing plays mirrored best-of-three series. Results append to the local records.',
   },
-};
+} as const;
 
 export function FixturesView({ app, run, onStarted, onPools }: FixturesProps) {
   const [mode, setMode] = useState<RunMode>('match');
@@ -221,7 +221,7 @@ export function FixturesView({ app, run, onStarted, onPools }: FixturesProps) {
   const loadPoolTeams = (name: string, force = false) => {
     if (!name) return;
     const current = poolTeams[name];
-    if (!force && current && (current === 'loading' || (typeof current === 'object' && 'teams' in current))) return;
+    if (!force && current && (current === 'loading' || 'teams' in current)) return;
     setPoolTeams((previous) => ({ ...previous, [name]: 'loading' }));
     api<PoolTeamsResponse>(`/api/pool/teams?name=${encodeURIComponent(name)}`)
       .then((data) => setPoolTeams((previous) => ({ ...previous, [name]: data })))
@@ -468,7 +468,7 @@ export function FixturesView({ app, run, onStarted, onPools }: FixturesProps) {
               })
             )}
           </div>
-          <div class={`add-bay ${models.length >= maxModels ? 'hidden' : ''}`}>
+          <div class="add-bay" hidden={models.length >= maxModels}>
             <div class="privacy-note">
               <b>Bring your own key</b>
               <span>

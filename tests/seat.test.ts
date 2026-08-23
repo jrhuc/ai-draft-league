@@ -3,17 +3,18 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-
 import { runExhibition } from '../src/exhibition.js';
 import type { SeriesRecord } from '../src/records.js';
 import { loadSeriesRecords, scopeRows } from '../src/records.js';
 import { SeatBridge } from '../src/seat.js';
+import type { JsonObject } from '../src/types.js';
+import { asRecord } from '../src/value.js';
 
 test('unscoped play data includes exhibitions without turning them into a ranking', () => {
-  const rows = [
+  const rows: SeriesRecord[] = [
     { mode: 'rotation', pool: 'regmb', players: { p1: 'a', p2: 'b' }, winner: 'a' },
     { mode: 'exhibition', pool: 'regmb', players: { p1: 'cli-agent', p2: 'b' }, winner: 'b' },
-  ] as SeriesRecord[];
+  ];
   assert.equal(scopeRows(rows).length, 2);
   assert.equal(scopeRows(rows, 'regmb').length, 2);
 });
@@ -25,7 +26,7 @@ test('seat bridge keeps a pending exchange, tools, and private context behind on
       lookups.push(name);
       return `result for ${String(args.name)}`;
     },
-    context: (query) => ({ query }),
+    context: (query) => ({ query: { ...query } }),
   });
   const url = await bridge.listen(0);
   const headers = { 'content-type': 'application/json', authorization: `Bearer ${bridge.token}` };
@@ -44,9 +45,9 @@ test('seat bridge keeps a pending exchange, tools, and private context behind on
     );
 
     const completion = bridge.provider().complete('SYSTEM TEXT', [{ role: 'user', content: 'prompt text' }]);
-    const poll = (await (await post('/poll', { waitMs: 2000 })).json()) as {
-      exchange: { id: number; phase: string; system: string; prompt: string };
-    };
+    const poll: { exchange: { id: number; phase: string; system: string; prompt: string } } = await (
+      await post('/poll', { waitMs: 2000 })
+    ).json();
     assert.deepEqual(
       {
         phase: poll.exchange.phase,
@@ -56,14 +57,12 @@ test('seat bridge keeps a pending exchange, tools, and private context behind on
       { phase: 'decision', system: 'SYSTEM TEXT', prompt: 'prompt text' },
     );
 
-    const tool = (await (await post('/tool', { name: 'lookup_move', arguments: { name: 'Protect' } })).json()) as {
-      result: string;
-    };
+    const tool: { result: string } = await (
+      await post('/tool', { name: 'lookup_move', arguments: { name: 'Protect' } })
+    ).json();
     assert.equal(tool.result, 'result for Protect');
     assert.deepEqual(lookups, ['lookup_move']);
-    const context = (await (await post('/context', { after: 'ctx-00000001' })).json()) as {
-      query: { after: string };
-    };
+    const context: { query: { after: string } } = await (await post('/context', { after: 'ctx-00000001' })).json();
     assert.equal(context.query.after, 'ctx-00000001');
 
     assert.equal((await post('/submit', { id: poll.exchange.id, text: '{"choices":[0]}' })).status, 200);
@@ -162,12 +161,13 @@ test('exhibition refuses reused or symlinked workspace artifacts', async () => {
     const originalOpenSyncDescriptor = Object.getOwnPropertyDescriptor(fs, 'openSync');
     if (!originalOpenSyncDescriptor) throw new Error('fs.openSync property descriptor is unavailable');
     let planted = false;
+    // SAFETY: the interceptor forwards every call to the original overloads unchanged.
     const interceptedOpenSync = ((filePath: fs.PathLike, flags: fs.OpenMode, mode?: fs.Mode) => {
       if (!planted && filePath === seatConfig) {
         layout.plant(seatConfig, target);
         planted = true;
       }
-      return Reflect.apply(originalOpenSync, fs, [filePath, flags, mode]) as number;
+      return originalOpenSync(filePath, flags, mode);
     }) as typeof fs.openSync;
     Object.defineProperty(fs, 'openSync', { ...originalOpenSyncDescriptor, value: interceptedOpenSync });
     try {
@@ -207,7 +207,7 @@ test('an exhibition series against random plays to completion through the bridge
     }),
   ]);
 
-  const config = JSON.parse(fs.readFileSync(path.join(agentDir, 'seat.json'), 'utf8')) as { token: string };
+  const config: { token: string } = JSON.parse(fs.readFileSync(path.join(agentDir, 'seat.json'), 'utf8'));
   assert.ok(fs.existsSync(path.join(agentDir, 'seat.mjs')));
   assert.ok(fs.existsSync(path.join(agentDir, 'SEAT.md')));
   if (process.platform !== 'win32') {
@@ -218,7 +218,7 @@ test('an exhibition series against random plays to completion through the bridge
   const headers = { 'content-type': 'application/json', authorization: `Bearer ${config.token}` };
 
   const prompts: string[] = [];
-  let battleTools: Array<{ name: string; parameters: Record<string, unknown> }> = [];
+  let battleTools: Array<{ name: string; parameters: JsonObject }> = [];
   let driving = true;
   const driver = (async () => {
     while (driving) {
@@ -229,7 +229,7 @@ test('an exhibition series against random plays to completion through the bridge
           headers,
           body: JSON.stringify({ waitMs: 500 }),
         });
-        data = (await response.json()) as typeof data;
+        data = await response.json();
       } catch {
         return;
       }
@@ -237,7 +237,8 @@ test('an exhibition series against random plays to completion through the bridge
       prompts.push(data.exchange.prompt);
       if (data.exchange.phase === 'decision' && battleTools.length === 0) {
         const response = await fetch(`${url}/tools`, { method: 'POST', headers, body: '{}' });
-        battleTools = ((await response.json()) as { tools: typeof battleTools }).tools;
+        const listed: { tools: typeof battleTools } = await response.json();
+        battleTools = listed.tools;
       }
       const text =
         data.exchange.phase === 'reflection'
@@ -310,10 +311,10 @@ test('an exhibition series against random plays to completion through the bridge
   assert.ok(battleTools.some((tool) => tool.name === 'compare_action_order'));
   const damage = battleTools.find((tool) => tool.name === 'estimate_damage');
   assert.ok(damage);
-  const damageParameters = damage.parameters.properties as Record<string, unknown>;
+  const damageParameters = asRecord(damage.parameters.properties);
   assert.deepEqual(Object.keys(damageParameters), ['attacker', 'defender', 'move', 'helping_hand', 'is_critical_hit']);
-  const score = row.score as Record<string, number>;
-  assert.equal(Math.max(score.p1!, score.p2!), 2);
+  const score = asRecord(row.score);
+  assert.equal(Math.max(Number(score.p1), Number(score.p2)), 2);
   assert.ok(prompts.some((prompt) => prompt.includes('Ordered team menu')));
   assert.ok(!prompts.some((prompt) => prompt.includes('Showdown timer:')));
 
@@ -329,7 +330,7 @@ test('an exhibition series against random plays to completion through the bridge
     .readFileSync(path.join(seriesDir, 'p1-context.jsonl'), 'utf8')
     .trim()
     .split('\n')
-    .map((line) => JSON.parse(line) as { context_id: string; kind: string });
+    .map((line): { context_id: string; kind: string } => JSON.parse(line));
   assert.equal(contextRows[0]?.context_id, 'ctx-00000001');
   assert.ok(contextRows.some((row) => row.kind === 'agent_context'));
 });

@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { REPO_ROOT } from '../src/paths.js';
 import { DEX_TOOLS, ShowdownReference } from '../src/reference.js';
 import { SHOWDOWN_LOCK, showdownCommit } from '../src/showdown.js';
-import { isRecord } from '../src/value.js';
+import { asRecord, isRecord, text } from '../src/value.js';
 
 test('reference reads exact data from the configured Showdown checkout', () => {
   const reference = new ShowdownReference('gen9championsvgc2026regmb');
@@ -150,7 +150,7 @@ test('lookup tools return one entry and reject missing data', () => {
   assert.equal(reference.lookup('unknown'), 'Unknown tool: unknown');
   assert.deepEqual(DEX_TOOLS.find((tool) => tool.name === 'lookup_species')!.parameters.required, ['name']);
   assert.equal(
-    'level' in (DEX_TOOLS.find((tool) => tool.name === 'lookup_species')!.parameters.properties as object),
+    'level' in asRecord(DEX_TOOLS.find((tool) => tool.name === 'lookup_species')!.parameters.properties),
     false,
   );
 });
@@ -220,12 +220,11 @@ test('offline damage defaults to a single hit and honors an explicit spread flag
   assert.match(spread, /spread \(0\.75x\)/);
   assert.notEqual(spread, single);
   assert.match(
-    (
-      DEX_TOOLS.find((entry) => entry.name === 'estimate_damage')!.parameters.properties as Record<
-        string,
-        { description: string }
-      >
-    ).is_spread_hit!.description,
+    text(
+      asRecord(
+        asRecord(DEX_TOOLS.find((entry) => entry.name === 'estimate_damage')!.parameters.properties).is_spread_hit,
+      ).description,
+    ),
     /Defaults false outside a live battle/,
   );
 });
