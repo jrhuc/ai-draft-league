@@ -2165,6 +2165,7 @@ test('current teambuild provenance counts as post-window transaction-barrier evi
   const recordsPath = path.join(directory, 'results.jsonl');
   const models = ['random', 'random'];
   await runDraftLeague(models, directory, { recordsPath, seed: 79, concurrency: 1, throughWeek: 1 });
+  fs.rmSync(path.join(directory, 'reviews', 'week-1.jsonl'));
   const teambuildFile = path.join(directory, 'teambuild', 'teambuild.jsonl');
   const postWindow = decodeTeamBuildJournalRow(readJsonlObjects(teambuildFile)[0]!);
   postWindow.artifact.task.provenance.seriesIndex = 1;
@@ -2807,10 +2808,7 @@ test('a league stopped between two closed windows resumes on the right roster ve
     'pausing after week 2 stops before its window opens',
   );
   assert.ok(fs.existsSync(path.join(directory, 'reviews', 'week-1.jsonl')), 'week 1 was reviewed before its window');
-  assert.ok(
-    !fs.existsSync(path.join(directory, 'reviews', 'week-2.jsonl')),
-    'pausing after week 2 stops before its review',
-  );
+  assert.ok(fs.existsSync(path.join(directory, 'reviews', 'week-2.jsonl')), 'pausing after week 2 keeps its review');
   const resumed = await runDraftLeague(models, directory, { recordsPath, seed: 23, concurrency: 2, resume: true });
   assert.equal(resumed.length, 7);
   assert.ok(fs.existsSync(path.join(directory, 'transactions', 'after-week-2', 'window.json')));

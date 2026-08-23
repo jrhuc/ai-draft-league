@@ -14,7 +14,7 @@ A franchise manager may hold 16 pages, with at most 8,000 characters per page an
 
 A weekly review runs at each barrier exposed by the league. With `--sequential-weeks`, it runs at the end of every round-robin week. With the default blind batches, it runs at the end of each transaction-window week and at the end of the round robin.
 
-The review runs before the transaction window that opens in the same week, so that window reads the revised memory. `--through-week <n>` completes week `n` and stops before the review at that barrier. `review_weeks` in `config.json` records the schedule. Playoffs use the final round-robin review.
+The review runs before the transaction window that opens in the same week, so that window reads the revised memory. `--through-week <n>` completes week `n` and its review, then stops before the transaction window at that barrier. `review_weeks` in `config.json` records the schedule. Playoffs use the final round-robin review.
 
 ### Reconciliation after a transaction window
 

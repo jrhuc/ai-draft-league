@@ -1176,11 +1176,11 @@ export async function runDraftLeague(
       await scheduleRoundRobin(
         plans.filter((plan) => plan.stage === 'roundrobin' && plan.round === week && !completed.has(plan.index)),
       );
+      await reviewWeekFor(week);
       if (stopWeek !== undefined && week >= stopWeek) {
         options.onEvent?.({ type: 'draft', draft: draftView(true) });
         return sorted(results);
       }
-      await reviewWeekFor(week);
       const windowIndex = schedule.findIndex((window) => window.afterWeek === week);
       if (windowIndex !== -1) {
         await openTradeWindow(windowIndex);

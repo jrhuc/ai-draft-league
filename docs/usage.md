@@ -125,7 +125,7 @@ pnpm run vgcleague draft --models <specs...> --rosters presets/noise-quartet.jso
 
 - `--draft-only` records rosters and stops; resume later to play the season.
 - `--through-week <n>` implies sequential weeks and stops cleanly after that
-  week.
+  week's review, before its transaction window.
 - `--closed-sheets` switches from the default open team sheets (Champions Bo3
   excludes hidden stat points either way).
 - `--transactions` chooses the window weeks or turns them off. The default opens windows after weeks 1, 2, and 3. See [Transactions](trade-window.md) for the full rule
