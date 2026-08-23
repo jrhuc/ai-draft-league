@@ -1,7 +1,7 @@
 import type { SlotMenu } from './choices.js';
 
 export const MANAGER_CHARGE =
-  'The franchise is yours for the whole season: you draft its roster, review it after every week, trade and sign in the transaction windows, and each matchup’s six is built and piloted on your behalf from the roster and memory you leave behind.';
+  'The franchise is yours for the whole season: you draft its roster, review it after every week, trade and sign in the transaction windows, and each matchup’s six is built and piloted on your behalf from the roster and memory you leave behind. The goal is not to run the franchise correctly but to win the league: you are judged on results against the other coaches, nothing else.';
 
 export const FORMAT_AUTHORITY_NOTICE =
   'Pokémon Champions and this regulation may postdate your training data. Treat the rules in this prompt and the pinned Pokémon Showdown simulator as authoritative. Do not import mechanics from other Pokémon games or formats. If a mechanic is absent from the rules and legal actions, treat it as unavailable rather than trying to correct the format.';
