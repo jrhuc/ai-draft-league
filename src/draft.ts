@@ -900,19 +900,23 @@ export async function runDraft(models: string[], board: DraftBoard, options: Run
                   ? `the provider stream ended without usage or a finish event (finish=${finishReason ?? 'unknown'}); ${parsed}`
                   : parsed;
             lastError = error;
-            messages.push({
-              role: 'assistant',
-              content:
-                truncated || stoppedEarly
-                  ? '[reply cut off before a pick]'
-                  : response || '[the reply contained no visible text]',
-            });
-            messages.push({
-              role: 'user',
-              content: truncated
-                ? DRAFT_PROMPT_POLICY.truncatedTemplate.replace('{{budget}}', String(DRAFT_PROMPT_POLICY.maxTokens))
-                : DRAFT_PROMPT_POLICY.rejectionTemplate.replace('{{error}}', error),
-            });
+            if (dropped) {
+              if (attempt < DRAFT_PROMPT_POLICY.attempts) await providerRetryDelay(attempt, options.signal);
+            } else {
+              messages.push({
+                role: 'assistant',
+                content:
+                  truncated || stoppedEarly
+                    ? '[reply cut off before a pick]'
+                    : response || '[the reply contained no visible text]',
+              });
+              messages.push({
+                role: 'user',
+                content: truncated
+                  ? DRAFT_PROMPT_POLICY.truncatedTemplate.replace('{{budget}}', String(DRAFT_PROMPT_POLICY.maxTokens))
+                  : DRAFT_PROMPT_POLICY.rejectionTemplate.replace('{{error}}', error),
+              });
+            }
           } else {
             chosen = parsed.mon;
             reasoning = parsed.reasoning;
