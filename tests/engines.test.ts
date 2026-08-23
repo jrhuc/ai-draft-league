@@ -1081,6 +1081,18 @@ test('one action-order call may accompany two standard calls in the single tool 
   assert.match(String(toolTrace[2]!.result), /Gengar-Mega is guaranteed to act first/);
 });
 
+test('closed-sheet engines describe damage tools and rules without open sheets', async () => {
+  const provider = new ScriptedProvider([{ text: decision([0]), usage: {}, toolCalls: [] }]);
+  const engine = new LLMEngine('p1', 'scripted', { provider, decisionLog: [], closedSheets: true });
+  assert.equal(await acceptedAct(engine, request(), { povLines: ['|turn|1'] }), 'move 1');
+  const call = provider.calls[0]!;
+  assert.match(call.system, /Team sheets are closed/);
+  assert.doesNotMatch(call.system, /open team sheets/i);
+  const damageTool = call.options.tools?.find((tool) => tool.name === 'estimate_damage');
+  assert.match(String(damageTool?.description), /what the battle has revealed/);
+  assert.doesNotMatch(String(damageTool?.description), /open team sheets/i);
+});
+
 test('readable decisions, technical traces, and post-game reflections stay separate', async () => {
   const provider = new ScriptedProvider([
     decision([1], 'Second is safer into the shown board.', 'Preserve Mon1 for the endgame.'),

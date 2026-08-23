@@ -706,7 +706,7 @@ export class BattleState {
         monAbility ? ` (${monAbility})` : entry.mon.abilitySuppressed ? ' (ability suppressed)' : ' (ability unknown)'
       }`;
     };
-    const context = `Live battle and open-sheet state applied: ${known(attacker, 'attacker')}; ${known(defender, 'defender')}.`;
+    const context = `Live battle and known team-sheet state applied: ${known(attacker, 'attacker')}; ${known(defender, 'defender')}.`;
     return `${context}\n${reference.lookup('estimate_damage', authoritative)}`;
   }
 

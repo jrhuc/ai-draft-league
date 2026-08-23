@@ -12,12 +12,13 @@ import { summarizeBattleEvents } from './battle-transcript.js';
 import type { MenuHints, SlotMenu, TargetNames } from './choices.js';
 import { buildMenus } from './choices.js';
 import {
+  battleSystemPrompt,
   DRAFT_SERIES_REFLECTION_SYSTEM,
   REFLECTION_SYSTEM,
   renderDecision,
   SERIES_REFLECTION_SYSTEM,
+  type SheetPolicy,
   SYSTEM,
-  TIMED_SYSTEM,
 } from './prompts.js';
 import type { ReasoningLevel } from './providers.js';
 import {
@@ -135,6 +136,7 @@ export interface LLMEngineOptions {
    * reflection to the draft variant that also reviews the registration itself. */
   draftRoster?: string;
   briefing?: string;
+  closedSheets?: boolean;
 }
 
 const CONSECUTIVE_DECISION_FAILURE_LIMIT = 3;
@@ -195,27 +197,34 @@ const ACTION_ORDER_TOOL: ToolDefinition = {
   },
 };
 
-const DECISION_TOOLS = [
-  ...DEX_TOOLS.map((tool) => {
-    if (tool.name !== 'estimate_damage') return tool;
-    const parameters = decisionToolParametersSchema.parse(tool.parameters);
-    return {
-      ...tool,
-      description:
-        'Estimate damage using the current battle request and open team sheets. Supply only the two visible Pokémon and move; the harness applies known abilities, items, exact own stats, opposing nature ranges, boosts, status, HP, screens, weather, terrain, both active allies with their abilities, and the fainted count that scales Last Respects. Helping Hand and critical-hit flags are optional hypothetical modifiers.',
-      parameters: {
-        ...parameters,
-        properties: Object.fromEntries(
-          ['attacker', 'defender', 'move', 'helping_hand', 'is_critical_hit'].map((name) => [
-            name,
-            parameters.properties[name] ?? null,
-          ]),
-        ),
-      },
-    };
-  }),
-  ACTION_ORDER_TOOL,
-];
+const DAMAGE_TOOL_DESCRIPTIONS = {
+  open: 'Estimate damage using the current battle request and open team sheets. Supply only the two visible Pokémon and move; the harness applies known abilities, items, exact own stats, opposing nature ranges, boosts, status, HP, screens, weather, terrain, both active allies with their abilities, and the fainted count that scales Last Respects. Helping Hand and critical-hit flags are optional hypothetical modifiers.',
+  closed:
+    'Estimate damage using the current battle request and what the battle has revealed. Supply only the two visible Pokémon and move; the harness applies revealed abilities and items, exact own stats, legal opposing stat ranges, boosts, status, HP, screens, weather, terrain, both active allies with their abilities, and the fainted count that scales Last Respects. Helping Hand and critical-hit flags are optional hypothetical modifiers.',
+} satisfies Record<SheetPolicy, string>;
+
+function decisionTools(sheets: SheetPolicy): ToolDefinition[] {
+  return [
+    ...DEX_TOOLS.map((tool) => {
+      if (tool.name !== 'estimate_damage') return tool;
+      const parameters = decisionToolParametersSchema.parse(tool.parameters);
+      return {
+        ...tool,
+        description: DAMAGE_TOOL_DESCRIPTIONS[sheets],
+        parameters: {
+          ...parameters,
+          properties: Object.fromEntries(
+            ['attacker', 'defender', 'move', 'helping_hand', 'is_critical_hit'].map((name) => [
+              name,
+              parameters.properties[name] ?? null,
+            ]),
+          ),
+        },
+      };
+    }),
+    ACTION_ORDER_TOOL,
+  ];
+}
 
 /** reasoning_tokens is a breakdown of output_tokens, so summing input and output covers the full spend. */
 function totalTokens(usage: Record<string, number> | undefined): number {
@@ -350,6 +359,8 @@ export class LLMEngine extends BaseEngine {
   private decisionController: AbortController | undefined;
   private activeToolRequest: BattleRequest | undefined;
   private consecutiveDecisionFailures = 0;
+  private readonly sheets: SheetPolicy;
+  private readonly decisionTools: ToolDefinition[];
 
   constructor(
     pid: Pid,
@@ -357,6 +368,8 @@ export class LLMEngine extends BaseEngine {
     private readonly options: LLMEngineOptions = {},
   ) {
     super(pid, options.decisionLog);
+    this.sheets = options.closedSheets === true ? 'closed' : 'open';
+    this.decisionTools = decisionTools(this.sheets);
     if (options.provider) this.provider = options.provider;
     else {
       this.provider = makeProvider(parseSpec(spec), { apiKey: options.apiKey, reasoning: options.reasoning });
@@ -511,13 +524,13 @@ export class LLMEngine extends BaseEngine {
   }
 
   decisionToolDefinitions(): ToolDefinition[] {
-    return structuredClone(DECISION_TOOLS);
+    return structuredClone(this.decisionTools);
   }
 
   lookupDecisionTool(name: string, args: JsonObject): string {
     const request = this.activeToolRequest;
     if (!request) throw new Error('battle tools are available only during an active decision');
-    if (!DECISION_TOOLS.some((tool) => tool.name === name)) throw new Error(`unknown battle tool ${name}`);
+    if (!this.decisionTools.some((tool) => tool.name === name)) throw new Error(`unknown battle tool ${name}`);
     if (name === ACTION_ORDER_TOOL.name) return this.state.compareActionOrder(args, this.reference);
     if (name === 'estimate_damage') return this.state.estimateDamage(args, request, this.reference);
     return this.reference.lookup(name, args);
@@ -611,7 +624,7 @@ export class LLMEngine extends BaseEngine {
     let parseFailures = 0;
     let toolRounds = 0;
     const toolCalls: ToolTrace[] = [];
-    const offeredToolNames = new Set(DECISION_TOOLS.map((tool) => tool.name));
+    const offeredToolNames = new Set(this.decisionTools.map((tool) => tool.name));
     const seenToolResults = new Map<string, string>();
     const failedAttempts: { response: string; error: string }[] = [];
     const reasoningParts: string[] = [];
@@ -722,10 +735,10 @@ export class LLMEngine extends BaseEngine {
             messages,
             {
               maxTokens,
-              tools: DECISION_TOOLS,
+              tools: this.decisionTools,
               toolChoice: finalRound ? 'none' : 'auto',
             },
-            this.briefed(request.timer ? TIMED_SYSTEM : SYSTEM),
+            this.briefed(battleSystemPrompt({ sheets: this.sheets, timed: Boolean(request.timer) })),
             decisionSignal,
           );
         } catch (caught) {

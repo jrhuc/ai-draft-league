@@ -249,7 +249,7 @@ test('effectiveness shows the per-type factors behind the combined multiplier', 
   );
 });
 
-test('exact defender stats collapse the open-sheet range', () => {
+test('exact defender stats collapse the legal range', () => {
   const reference = new ShowdownReference('gen9championsvgc2026regmb');
   const args = {
     attacker: 'Gengar',
@@ -258,7 +258,7 @@ test('exact defender stats collapse the open-sheet range', () => {
     attacker_stats: { atk: 90, def: 80, spa: 182, spd: 95, spe: 178 },
   };
   const open = reference.lookup('estimate_damage', args);
-  assert.match(open, /attack exact from request, open-sheet defense\/HP range/);
+  assert.match(open, /attack exact from request, legal defense\/HP range/);
   const exact = reference.lookup('estimate_damage', {
     ...args,
     defender_stats: { hp: 217, def: 121, spd: 141 },

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  battleSystemPrompt,
   DRAFT_SERIES_REFLECTION_SYSTEM,
   FORMAT_AUTHORITY_NOTICE,
   REFLECTION_SYSTEM,
@@ -35,6 +36,17 @@ test('system prompt names the tools and reserves timer policy for timed play', (
   ]) {
     assertFormatAuthority(prompt);
   }
+});
+
+test('closed-sheet system prompt never claims open team sheets', () => {
+  const closed = battleSystemPrompt({ sheets: 'closed', timed: false });
+  assert.match(closed, /Team sheets are closed/);
+  assert.doesNotMatch(closed, /open team sheets/i);
+  assert.match(closed, /estimate_damage/);
+  assertFormatAuthority(closed);
+  assert.equal(battleSystemPrompt({ sheets: 'open', timed: false }), SYSTEM);
+  assert.equal(battleSystemPrompt({ sheets: 'open', timed: true }), TIMED_SYSTEM);
+  assert.match(battleSystemPrompt({ sheets: 'closed', timed: true }), /battle timer/);
 });
 
 test('decision prompt leads with merged state and keeps mechanics compact', () => {

@@ -6,7 +6,9 @@ export const MANAGER_CHARGE =
 export const FORMAT_AUTHORITY_NOTICE =
   'Pokémon Champions and this regulation may postdate your training data. Treat the rules in this prompt and the pinned Pokémon Showdown simulator as authoritative. Do not import mechanics from other Pokémon games or formats. If a mechanic is absent from the rules and legal actions, treat it as unavailable rather than trying to correct the format.';
 
-const SYSTEM_CORE = [
+export type SheetPolicy = 'open' | 'closed';
+
+const SYSTEM_CORE_BEFORE_SHEETS = [
   'You are an expert VGC player in a persistent best-of-three match. Maximize the probability of winning the series.',
   FORMAT_AUTHORITY_NOTICE,
   'Choose only from the legality-filtered numbered menus. Never invent a move, target, switch, effect, immunity, stat, or revealed fact.',
@@ -14,20 +16,41 @@ const SYSTEM_CORE = [
   'One Mega Evolution is allowed per game; if you brought more than one Mega Stone holder, which of them evolves is your choice.',
   'Within a turn, all switches resolve first, then Mega Evolutions in Speed order, then moves by priority and then Speed; apart from Speed ties the order is deterministic, never random.',
   'On-entry abilities such as weather trigger at the moment their Pokémon switches in or Mega Evolves; simultaneous triggers resolve in Speed order, and a newer weather or terrain replaces the current one.',
-  'Open team sheets reveal sets and natures, but not exact opposing IVs/EVs. Your own request stats are exact; foe damage must stay a range.',
-  'lookup_matchup reports only the type chart. For actual KO ranges, use estimate_damage: it binds known abilities, items, stats, stages, status, HP, screens, weather, terrain, and both active allies with their abilities from the current battle and open team sheets. Use compare_action_order for Speed order. Trust a tool only for the factors its result says it applied.',
-  'Your private notebook is a full replacement carried across turns and games.',
 ];
+
+const SHEET_RULES = {
+  open: 'Open team sheets reveal sets and natures, but not exact opposing IVs/EVs. Your own request stats are exact; foe damage must stay a range.',
+  closed:
+    'Team sheets are closed: opposing moves, items, abilities, and natures are unknown until the battle reveals them, and species alone never implies a set. Your own request stats are exact; foe damage must stay a range.',
+} satisfies Record<SheetPolicy, string>;
+
+const TOOL_RULES = {
+  open: 'lookup_matchup reports only the type chart. For actual KO ranges, use estimate_damage: it binds known abilities, items, stats, stages, status, HP, screens, weather, terrain, and both active allies with their abilities from the current battle and open team sheets. Use compare_action_order for Speed order. Trust a tool only for the factors its result says it applied.',
+  closed:
+    'lookup_matchup reports only the type chart. For actual KO ranges, use estimate_damage: it binds the abilities, items, stats, stages, status, HP, screens, weather, terrain, and both active allies with their abilities that the battle has revealed so far, and treats anything unrevealed as neutral across legal ranges. Use compare_action_order for Speed order. Trust a tool only for the factors its result says it applied.',
+} satisfies Record<SheetPolicy, string>;
+
+const NOTEBOOK_RULE = 'Your private notebook is a full replacement carried across turns and games.';
 
 const RETURN_JSON = 'Return only the JSON object requested in the current decision prompt.';
 
-export const SYSTEM = [...SYSTEM_CORE, RETURN_JSON].join('\n');
+const TIMER_RULE =
+  'The battle timer runs while you think and use tools, and your reply is token-capped to what your generation speed fits into the remaining clock — a reply cut off at the cap submits nothing, so match depth to the clock and hurry when the turn timer or bank is short. Batch at most two reference calculations plus one action-order comparison per tool round.';
 
-export const TIMED_SYSTEM = [
-  ...SYSTEM_CORE,
-  'The battle timer runs while you think and use tools, and your reply is token-capped to what your generation speed fits into the remaining clock — a reply cut off at the cap submits nothing, so match depth to the clock and hurry when the turn timer or bank is short. Batch at most two reference calculations plus one action-order comparison per tool round.',
-  RETURN_JSON,
-].join('\n');
+export function battleSystemPrompt(options: { sheets: SheetPolicy; timed: boolean }): string {
+  return [
+    ...SYSTEM_CORE_BEFORE_SHEETS,
+    SHEET_RULES[options.sheets],
+    TOOL_RULES[options.sheets],
+    NOTEBOOK_RULE,
+    ...(options.timed ? [TIMER_RULE] : []),
+    RETURN_JSON,
+  ].join('\n');
+}
+
+export const SYSTEM = battleSystemPrompt({ sheets: 'open', timed: false });
+
+export const TIMED_SYSTEM = battleSystemPrompt({ sheets: 'open', timed: true });
 
 const REFLECTION_EVIDENCE =
   'Use only the supplied private battle evidence and authoritative outcome. Do not invent hidden information.';

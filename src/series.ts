@@ -83,6 +83,7 @@ export interface EngineSetup {
   initialNotebook?: string | undefined;
   draftRoster?: string | undefined;
   briefing?: string | undefined;
+  closedSheets?: boolean | undefined;
 }
 
 export function makeEngine(setup: EngineSetup): RandomEngine | LLMEngine {
@@ -1467,6 +1468,7 @@ export async function playRecordedSeries(context: RecordedSeriesContext): Promis
         initialNotebook: adopted?.notebooks[pid] ?? context.initialNotebooks?.[pid],
         draftRoster: context.draftRosters?.[pid],
         briefing: context.briefings?.[pid],
+        closedSheets: context.closedSheets,
       };
       return makeEngine(setup);
     };

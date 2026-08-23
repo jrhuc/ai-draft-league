@@ -102,7 +102,7 @@ export const DEX_TOOLS: ToolDefinition[] = [
   ),
   tool(
     'estimate_damage',
-    "Damage estimate computed by this format's real battle engine at level 50 in doubles, as a percentage range across legal investment. Abilities, any items (including berries), stat stages, status, screens, weather, terrain, Helping Hand, spread reduction, and variable-power moves are all applied exactly when supplied; anything you leave out is neutral. During a battle the harness supplies all of them from the live board and open sheets, along with both active allies and their abilities (Friend Guard, Power Spot, Ruin auras) and the fainted count that scales Last Respects, and what it reads there overrides anything you pass. The result names every factor it applied. It assumes no critical hit unless you ask for one, and it never models hazard chip or pre-existing activation state such as a Flash Fire charge, a Metronome count, or Rage Fist's hit tally. Supply your own Pokémon's exact battle stats on whichever side is yours to narrow the range; opposing stats use format-legal investment ranges from the open team sheet nature only. Only the stats this move actually uses are read; an implausible value falls back to the legal range with a note instead of failing the call.",
+    "Damage estimate computed by this format's real battle engine at level 50 in doubles, as a percentage range across legal investment. Abilities, any items (including berries), stat stages, status, screens, weather, terrain, Helping Hand, spread reduction, and variable-power moves are all applied exactly when supplied; anything you leave out is neutral. During a battle the harness supplies all of them from the live board and any open team sheet, along with both active allies and their abilities (Friend Guard, Power Spot, Ruin auras) and the fainted count that scales Last Respects, and what it reads there overrides anything you pass. The result names every factor it applied. It assumes no critical hit unless you ask for one, and it never models hazard chip or pre-existing activation state such as a Flash Fire charge, a Metronome count, or Rage Fist's hit tally. Supply your own Pokémon's exact battle stats on whichever side is yours to narrow the range; opposing stats use format-legal investment ranges, narrowed by the opposing nature only when a team sheet or the battle has revealed it. Only the stats this move actually uses are read; an implausible value falls back to the legal range with a note instead of failing the call.",
     {
       attacker: { type: 'string' },
       defender: { type: 'string' },
@@ -1473,10 +1473,10 @@ export class ShowdownReference {
       exactDef !== undefined && exactHp !== undefined
         ? 'defense/HP exact from request'
         : exactDef !== undefined
-          ? 'defense exact from request, open-sheet HP range'
+          ? 'defense exact from request, legal HP range'
           : exactHp !== undefined
-            ? 'HP exact from request, open-sheet defense range'
-            : 'open-sheet defense/HP range';
+            ? 'HP exact from request, legal defense range'
+            : 'legal defense/HP range';
 
     const applied: string[] = [];
     if (abilities.attacker) applied.push(`attacker ability ${abilities.attacker}`);

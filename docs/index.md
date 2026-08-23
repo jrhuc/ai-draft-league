@@ -28,7 +28,7 @@ The current rules are:
 
 - **Rosters**: 10 entries within a 100-point budget, no shared entry, no repeated base species, and all Mega Evolution locks enforced
 - **Matchups**: build 6 complete sets from the current roster, bring 4 to each game, and lead 2
-- **Series**: best-of-three Champions VGC with open team sheets and no battle clock
+- **Series**: best-of-three Champions VGC with open team sheets by default (`--closed-sheets` for closed) and no battle clock
 - **Standings**: series wins, then game differential, then game wins
 - **Weekly reviews**: one after every round-robin week; any manager with a changed roster also reconciles memory before its next build
 - **Transaction windows**: one after weeks 1, 2, and 3; each manager may make up to 2 one-for-one offers per window
