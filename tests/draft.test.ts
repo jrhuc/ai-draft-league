@@ -816,6 +816,36 @@ function scriptedProvider(responses: string[], onComplete?: (messages: ProviderM
   };
 }
 
+test('a transient provider failure retries instead of ending the draft', async (t) => {
+  const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vgc-draft-logs-'));
+  t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
+  let calls = 0;
+  const flaky: Provider = {
+    complete(): Promise<Completion> {
+      calls += 1;
+      if (calls === 1) return Promise.reject(new Error('OpenRouter API request failed (400).'));
+      const picks = [
+        '{"pick": "garchomp", "reasoning": "Anchor.", "notebook": "n"}',
+        '{"pick": "incineroar", "reasoning": "Support.", "notebook": "n"}',
+        '{"pick": "sinistcha", "reasoning": "Redirection.", "notebook": "n"}',
+        '{"pick": "farigiraf", "reasoning": "Insurance.", "notebook": "n"}',
+        '{"team_name":"Retry Rollouts"}',
+      ];
+      return Promise.resolve({ text: picks[Math.min(calls - 2, picks.length - 1)]!, usage: {}, toolCalls: [] });
+    },
+  };
+  const outcome = await runDraft(
+    ['fake:model', 'random'],
+    { ...BOARD, picks: 4 },
+    { logDir, rng: seededRng(1), makeDraftProvider: () => flaky },
+  );
+  assert.equal(outcome.rosters[0]![0]!.id, 'garchomp');
+  assert.equal(outcome.picks[0]!.fallback, false);
+  const rows = readJsonlObjects(path.join(logDir, 'drafter-0-fake-model.jsonl'));
+  assert.match(String(rows[0]!.error), /API request failed \(400\)/);
+  assert.equal(rows[1]!.error, undefined, 'the retry succeeds and the draft moves on');
+});
+
 test('drafters name their franchise only after every pick is complete', async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vgc-draft-logs-'));
   t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));

@@ -87,6 +87,26 @@ const DRAFT_AVAILABLE_MECHANICS_TOOLS = [
   'board itself by type, price, ability, base stat total, or which entries legally learn a given move.',
 ].join('\n');
 
+const PROVIDER_RETRY_BASE_MS = 5_000;
+
+/** A lost stream or upstream 4xx/5xx blip should not end a multi-hour draft: identical requests
+ * replay cleanly, so each seat call gets the full attempt budget before the failure is terminal. */
+function providerRetryDelay(attempt: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(done, PROVIDER_RETRY_BASE_MS * attempt);
+    function done(): void {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }
+    function onAbort(): void {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      reject(signal?.reason instanceof Error ? signal.reason : new Error('aborted'));
+    }
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 const DRAFT_PROMPT_POLICY = {
   systemTemplate: [
     'You are {{model}}, manager of a franchise in a Pokémon VGC draft league played in the format {{format}}.',
@@ -727,7 +747,6 @@ async function nameFranchises(
           let response = '';
           let usage: Record<string, number> | undefined;
           let error: string | undefined;
-          let terminalError: Error | undefined;
           try {
             const completion = await provider.complete(system, messages, {
               maxTokens: FRANCHISE_NAME_PROMPT_POLICY.maxTokens,
@@ -747,14 +766,13 @@ async function nameFranchises(
           } catch (cause) {
             const failure = classifyProviderFailure(cause, model);
             error = failure.summary;
-            terminalError = new Error(`${failure.summary} Franchise naming cannot continue.`, { cause });
+            if (attempt < FRANCHISE_NAME_PROMPT_POLICY.attempts) await providerRetryDelay(attempt, options.signal);
           }
           const logEntry: FranchiseNameSeatLog = { attempt, user, response };
           if (attempt === 1) logEntry.system = system;
           if (usage) logEntry.usage = usage;
           if (error) logEntry.error = error;
           fs.appendFileSync(seatLog, `${JSON.stringify(logEntry)}\n`, 'utf8');
-          if (terminalError) throw terminalError;
         }
       }
       if (!teamName) {
@@ -905,7 +923,9 @@ export async function runDraft(models: string[], board: DraftBoard, options: Run
           const failure = classifyProviderFailure(cause, models[drafter]);
           error = failure.summary;
           lastError = error;
-          terminalError = new Error(`${failure.summary} The draft cannot continue.`, { cause });
+          if (attempt === DRAFT_PROMPT_POLICY.attempts) {
+            terminalError = new Error(`${failure.summary} The draft cannot continue.`, { cause });
+          } else await providerRetryDelay(attempt, options.signal);
         }
         const logEntry: DraftSeatLog = {
           pick: pickNumber + 1,
