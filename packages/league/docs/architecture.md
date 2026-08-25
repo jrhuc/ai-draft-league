@@ -3,7 +3,7 @@
 VGC Model League separates season orchestration, model calls, battle simulation, persistence, and publication. This page shows which component owns each job and how data crosses those boundaries.
 
 <figure class="doc-diagram">
-  <img src="assets/system-architecture.svg" alt="System architecture: the CLI or GUI starts runDraftLeague, which runs manager stages, recorded series, and run-file persistence. Manager stages and battle pilots call the model provider. Recorded series use Pokémon Showdown. buildLeague joins run files for local inspection or public export." loading="lazy">
+  <img src="assets/system-architecture.svg" alt="System architecture: the CLI starts runDraftLeague, which runs manager stages, recorded series, and run-file persistence. Manager stages and battle pilots call the model provider. Recorded series use Pokémon Showdown. buildLeague joins run files for local inspection or public export." loading="lazy">
   <figcaption>The run directory connects season execution, local inspection, and public export. The model provider and Pokémon Showdown remain external to the harness.</figcaption>
 </figure>
 
@@ -42,7 +42,7 @@ The pin lives in `showdown.lock.json`, which names a full official commit. Setup
 
 `buildLeague` joins completed run files and series records into the read model used by local inspection and export. `league-store` separately reads the saved state that `runDraftLeague` needs for resume.
 
-The local GUI is a workspace for launching or cancelling a run, inspecting active battles and errors, and reading raw artifacts. It binds to loopback. Remote access requires an operator-controlled proxy.
+Live inspection is the spectator app's dev-only watch surface, which reads run directories through the dev server and renders them with the normal season pages.
 
 Public league browsing belongs to [AI Draft League](https://github.com/jrhuc/ai-draft-league), which reads only the exported bundle.
 

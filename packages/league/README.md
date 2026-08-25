@@ -32,8 +32,7 @@ one of these exact forms:
 - `random`
 
 Set `OPENROUTER_API_KEY`, `PRIME_API_KEY`, `AI_GATEWAY_API_KEY`, or `OPENCODE_API_KEY` for CLI
-runs that use the corresponding provider. For GUI runs, enter the same credentials as run-only
-browser input.
+runs that use the corresponding provider.
 
 ```sh
 pnpm install --frozen-lockfile
@@ -43,7 +42,7 @@ pnpm run vgcleague --help
 ```
 
 See [Usage](docs/usage.md) for commands. Run `pnpm run build:docs` for the
-technical site; the local operator GUI remains available through `pnpm start`.
+technical site; live watching happens through the spectator app dev server (`pnpm dev` at the repo root, then /watch).
 
 ## Documentation
 

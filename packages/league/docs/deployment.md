@@ -1,6 +1,6 @@
 # Deploy documentation and season bundles
 
-This repository publishes documentation and spectator data as separate outputs. The local operator GUI is not deployed.
+This repository publishes documentation and spectator data as separate outputs. The dev-only watch surface is never deployed.
 
 ## Publish the documentation
 
@@ -12,7 +12,7 @@ Build the same output locally:
 pnpm run build:docs
 ```
 
-The Pages artifact contains the documentation theme, text, and diagrams. It excludes league archives, replays, sprites, model logos, provider controls, local operator routes, run data, and GUI assets.
+The Pages artifact contains the documentation theme, text, and diagrams. It excludes league archives, replays, sprites, model logos, provider controls, local watch routes and run data.
 
 ## Export a season bundle
 
