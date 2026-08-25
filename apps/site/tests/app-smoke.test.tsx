@@ -1,5 +1,4 @@
 // @vitest-environment happy-dom
-import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
@@ -7,9 +6,9 @@ import { afterEach, expect, test, vi } from "vite-plus/test";
 import { App } from "../src/App";
 import { SeasonProvider } from "../src/lib/season-context";
 
-// SAFETY: season-bundle.json is the producer's exported artifact; SeasonBundle declares its
+// season-bundle.json is the producer's exported artifact; SeasonBundle declares its
 // shape, and the season-data suite verifies that declaration holds.
-const season = JSON.parse(readFileSync("public/season-bundle.json", "utf8"));
+import season from "../public/season-bundle.json";
 
 const roots: Root[] = [];
 

@@ -1,5 +1,7 @@
-# Workspace-level pnpm settings. This repository ships a single package, so no
-# member globs are declared; this file exists to hold install policy.
+packages:
+  - "apps/*"
+  - "packages/*"
+
 allowBuilds:
   esbuild: true
   fsevents: true

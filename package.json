@@ -2,34 +2,24 @@
   "name": "ai-draft-league",
   "version": "0.1.0",
   "private": true,
-  "description": "Independent spectator app for the AI Draft League",
+  "description": "AI Draft League: harness, CLI, and spectator site for frontier-model Pokémon draft leagues",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "type": "module",
   "scripts": {
-    "dev": "vp dev",
-    "build": "vp build",
-    "preview": "vp preview",
+    "dev": "vp run site#dev",
+    "build": "vp run site#build",
+    "test": "vp test",
     "check": "vp check",
     "lint": "vp lint",
     "fmt": "vp fmt",
-    "test": "vp test",
-    "deploy": "vp build && wrangler deploy"
-  },
-  "dependencies": {
-    "@fontsource-variable/geist": "5.3.0",
-    "@fontsource-variable/geist-mono": "5.3.0",
-    "react": "19.2.8",
-    "react-dom": "19.2.8",
-    "react-router-dom": "7.18.2"
+    "deploy": "vp run site#deploy"
   },
   "devDependencies": {
     "@oxlint/plugins": "1.79.0",
-    "@types/react": "19.2.18",
-    "@types/react-dom": "19.2.4",
-    "@vitejs/plugin-react": "6.0.5",
-    "happy-dom": "20.11.2",
-    "vite": "npm:@voidzero-dev/vite-plus-core@0.3.0",
-    "vite-plus": "0.3.0",
-    "wrangler": "4.123.0"
+    "vite-plus": "0.3.0"
   },
   "engines": {
     "node": ">=24.18.1 <25"

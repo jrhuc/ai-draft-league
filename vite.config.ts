@@ -1,13 +1,7 @@
-import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite-plus";
 
+// Repo-wide lint home: typeAware options are only honored in the root config.
 export default defineConfig({
-  plugins: [react()],
-  resolve: {
-    alias: {
-      "@": "/src",
-    },
-  },
   lint: {
     ignorePatterns: [
       ".agent/**",
@@ -37,6 +31,6 @@ export default defineConfig({
     options: { typeAware: true, typeCheck: true },
   },
   test: {
-    include: ["tests/**/*.test.ts?(x)"],
+    projects: ["apps/site"],
   },
 });

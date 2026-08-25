@@ -20,7 +20,7 @@ jobs:
       - run: vp install --frozen-lockfile
       - run: vp check
       - run: vp test
-      - run: vp build
+      - run: vp run site#build
 
   deploy:
     # Deploys only land from main after verification. Requires the
@@ -40,10 +40,11 @@ jobs:
           node-version: 24
           cache: true
       - run: vp install --frozen-lockfile
-      - run: vp build
+      - run: vp run site#build
       # The lockfile-pinned wrangler, same binary as a local deploy — not
       # whatever wrangler-action would fetch.
       - run: ./node_modules/.bin/wrangler deploy
+        working-directory: apps/site
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

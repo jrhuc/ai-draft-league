@@ -10,6 +10,15 @@ overrides:
 importers:
 
   .:
+    devDependencies:
+      '@oxlint/plugins':
+        specifier: 1.79.0
+        version: 1.79.0
+      vite-plus:
+        specifier: 0.3.0
+        version: 0.3.0(@types/node@24.13.3)(@voidzero-dev/vite-plus-core@0.3.0(@types/node@24.13.3)(esbuild@0.28.1)(typescript@5.9.3))(esbuild@0.28.1)(happy-dom@20.11.2)(typescript@5.9.3)
+
+  apps/site:
     dependencies:
       '@fontsource-variable/geist':
         specifier: 5.3.0
@@ -27,9 +36,6 @@ importers:
         specifier: 7.18.2
         version: 7.18.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
     devDependencies:
-      '@oxlint/plugins':
-        specifier: 1.79.0
-        version: 1.79.0
       '@types/react':
         specifier: 19.2.18
         version: 19.2.18
