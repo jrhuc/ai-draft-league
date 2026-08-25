@@ -328,7 +328,7 @@ export async function runDraftLeague(
         models,
         entrants,
         seed,
-        concurrency: options.concurrency ?? 2,
+        concurrency: options.concurrency ?? 4,
         reasoning: options.reasoning ?? null,
         reasoningByModel: options.reasoningByModel ?? null,
         timerScale,
@@ -1163,7 +1163,7 @@ export async function runDraftLeague(
   };
   const scheduleRoundRobin = async (scheduled: DraftLeagueSeriesPlan[]): Promise<void> => {
     results.push(
-      ...(await mapLimit(scheduled, options.concurrency ?? 2, options.signal, (plan, signal) =>
+      ...(await mapLimit(scheduled, options.concurrency ?? 4, options.signal, (plan, signal) =>
         playSeries(plan, signal),
       )),
     );
@@ -1177,14 +1177,14 @@ export async function runDraftLeague(
         plans.filter((plan) => plan.stage === 'roundrobin' && plan.round === week && !completed.has(plan.index)),
       );
       await reviewWeekFor(week);
-      if (stopWeek !== undefined && week >= stopWeek) {
-        options.onEvent?.({ type: 'draft', draft: draftView(true) });
-        return sorted(results);
-      }
       const windowIndex = schedule.findIndex((window) => window.afterWeek === week);
       if (windowIndex !== -1) {
         await openTradeWindow(windowIndex);
         await reconcileWindow(windowIndex);
+      }
+      if (stopWeek !== undefined && week >= stopWeek) {
+        options.onEvent?.({ type: 'draft', draft: draftView(true) });
+        return sorted(results);
       }
     }
   } else {
@@ -1263,7 +1263,7 @@ export async function runDraftLeague(
   if (playoffRounds === 2) {
     const semis = await mapLimit(
       [0, 1],
-      Math.min(options.concurrency ?? 2, 2),
+      Math.min(options.concurrency ?? 4, 2),
       options.signal,
       async (matchIndex, signal) => {
         const plan = playoffs[matchIndex]!;

@@ -165,6 +165,8 @@ const UNTIMED_MAX_STANDARD_TOOL_CALLS = 12;
 const UNTIMED_MAX_ORDER_TOOL_CALLS = 4;
 const DECISION_PARSE_ATTEMPTS = 2;
 const UNTIMED_DECISION_PARSE_ATTEMPTS = 4;
+const DECISION_PREFILL = '{"choices": [';
+const DEX_LOOKUP_CACHE_LIMIT = 256;
 const UNTIMED_EMPTY_RESPONSE_RETRIES = 2;
 /** Content backstops, not budgets: run-3 hit the old notebook cap of 1600 on 190 decisions, every one
  * amputating the newest plans mid-sentence. Anything these do clip carries a visible marker. */
@@ -322,6 +324,8 @@ export class LLMEngine extends BaseEngine {
   private readonly fullContext: AgentContextStream;
   private readonly contextAttempt = randomUUID();
   private transcript: string[] = [];
+  private transcriptChars = 0;
+  private readonly dexLookupCache = new Map<string, string>();
   private notebook: string;
   private gameId: string;
   private seriesId?: string;
@@ -403,6 +407,7 @@ export class LLMEngine extends BaseEngine {
     this.state = new BattleState(this.pid);
     this.pending = undefined;
     this.transcript = [];
+    this.transcriptChars = 0;
     this.remember(`[Game ${context.gameNumber} begins; series score ${this.scoreText()}]`);
     this.appendContext('episode', {
       event: 'game_begin',
@@ -533,7 +538,20 @@ export class LLMEngine extends BaseEngine {
     if (!this.decisionTools.some((tool) => tool.name === name)) throw new Error(`unknown battle tool ${name}`);
     if (name === ACTION_ORDER_TOOL.name) return this.state.compareActionOrder(args, this.reference);
     if (name === 'estimate_damage') return this.state.estimateDamage(args, request, this.reference);
-    return this.reference.lookup(name, args);
+    const key = `${name} ${JSON.stringify(args)}`;
+    const cached = this.dexLookupCache.get(key);
+    if (cached !== undefined) {
+      this.dexLookupCache.delete(key);
+      this.dexLookupCache.set(key, cached);
+      return cached;
+    }
+    const result = this.reference.lookup(name, args);
+    this.dexLookupCache.set(key, result);
+    if (this.dexLookupCache.size > DEX_LOOKUP_CACHE_LIMIT) {
+      const oldest = this.dexLookupCache.keys().next().value;
+      if (oldest !== undefined) this.dexLookupCache.delete(oldest);
+    }
+    return result;
   }
 
   override async act(request: BattleRequest, context: AgentContext): Promise<string> {
@@ -737,6 +755,8 @@ export class LLMEngine extends BaseEngine {
               maxTokens,
               tools: this.decisionTools,
               toolChoice: finalRound ? 'none' : 'auto',
+              ...(finalRound ? { prefillResponse: DECISION_PREFILL } : {}),
+              ...(request.timer ? { failFast: true } : {}),
             },
             this.briefed(battleSystemPrompt({ sheets: this.sheets, timed: Boolean(request.timer) })),
             decisionSignal,
@@ -1325,6 +1345,7 @@ export class LLMEngine extends BaseEngine {
     const lines = value.split('\n').filter(Boolean);
     if (!lines.length) return;
     this.transcript.push(...lines);
+    for (const line of lines) this.transcriptChars += line.length;
     this.trimTranscript();
   }
 
@@ -1339,25 +1360,34 @@ export class LLMEngine extends BaseEngine {
     }
     const current = this.transcript[index]!;
     const base = current.endsWith('.') ? current.slice(0, -1) : current;
-    this.transcript[index] = `${base}${base.endsWith(':') ? ' ' : '; '}${detail}.`;
+    const updated = `${base}${base.endsWith(':') ? ' ' : '; '}${detail}.`;
+    this.transcriptChars += updated.length - current.length;
+    this.transcript[index] = updated;
     this.trimTranscript();
   }
 
   private trimTranscript(): void {
-    let length = this.transcript.reduce((total, line) => total + line.length, this.transcript.length - 1);
+    let length = this.transcriptChars + this.transcript.length - 1;
     let dropped = false;
     while (length > TRANSCRIPT_CHARACTER_LIMIT && this.transcript.length > 1) {
-      length -= this.transcript.shift()!.length + 1;
+      const removed = this.transcript.shift()!;
+      length -= removed.length + 1;
+      this.transcriptChars -= removed.length;
       dropped = true;
     }
     if (length > TRANSCRIPT_CHARACTER_LIMIT) {
       const line = this.transcript[0]!;
       const prefix = /^(?:Turn \d+|Setup):/.exec(line)?.[0] ?? '';
       const retained = Math.max(0, TRANSCRIPT_CHARACTER_LIMIT - prefix.length - 2);
-      this.transcript[0] = `${prefix} …${line.slice(-retained)}`;
+      const clipped = `${prefix} …${line.slice(-retained)}`;
+      this.transcriptChars += clipped.length - line.length;
+      this.transcript[0] = clipped;
       dropped = true;
     }
-    if (dropped && this.transcript[0] !== TRANSCRIPT_CLIP_MARKER) this.transcript.unshift(TRANSCRIPT_CLIP_MARKER);
+    if (dropped && this.transcript[0] !== TRANSCRIPT_CLIP_MARKER) {
+      this.transcript.unshift(TRANSCRIPT_CLIP_MARKER);
+      this.transcriptChars += TRANSCRIPT_CLIP_MARKER.length;
+    }
   }
 
   private rememberEvents(lines: string[]): void {

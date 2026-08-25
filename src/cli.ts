@@ -28,7 +28,7 @@ import { asRecord, text } from './value.js';
 const EXPERIMENT_CLI_OPTIONS = {
   models: { type: 'string', multiple: true },
   seed: { type: 'string' },
-  concurrency: { type: 'string', default: '2' },
+  concurrency: { type: 'string', default: '4' },
   reasoning: { type: 'string' },
   'timer-scale': { type: 'string' },
   nitro: { type: 'boolean', default: false },
@@ -129,7 +129,8 @@ Commands:
       --swaps sets each franchise's season allowance of free-agent swaps (default 6)
       --draft-only stops once rosters are drafted and plays no games; resume the run to play the season
       --rosters seeds the league from a packaged roster preset instead of holding a live draft
-      --through-week stops cleanly after that round-robin week; --resume continues a stored league
+      --through-week stops cleanly after that round-robin week, including the transaction window
+      that follows it when one is scheduled; --resume continues a stored league
       round-robin series run concurrently with blind teambuilds; --sequential-weeks restores
       week-by-week play (implied by --through-week); --closed-sheets hides opposing team sheets
       the free-agent window defaults to week 3 (or the last week in shorter leagues); pass off for locked rosters

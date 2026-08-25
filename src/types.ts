@@ -149,10 +149,14 @@ export interface ProviderMessage {
 
 export interface CompleteOptions {
   maxTokens?: number;
+  /** Reply prefix seeded as a trailing assistant turn on APIs that support prefill; ignored elsewhere. */
+  prefillResponse?: string;
   /** Explicit reasoning-token budget below maxTokens, guaranteeing visible-text headroom. */
   reasoningMaxTokens?: number;
   tools?: ToolDefinition[];
   toolChoice?: 'auto' | 'none' | 'required';
+  /** Throw on the first infra-class failure instead of retrying, so timed battles keep their clock. */
+  failFast?: boolean;
   signal?: AbortSignal;
 }
 

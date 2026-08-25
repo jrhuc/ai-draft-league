@@ -292,7 +292,7 @@ export async function runTournament(
           mode: 'tournament',
           models,
           seed,
-          concurrency: options.concurrency ?? 2,
+          concurrency: options.concurrency ?? 4,
           reasoning: options.reasoning ?? null,
           pool: poolId,
           reasoning_by_model: options.reasoningByModel ?? null,
@@ -424,7 +424,7 @@ export async function runTournament(
   const forwardAbort = () => controller.abort();
   if (options.signal?.aborted) controller.abort();
   else options.signal?.addEventListener('abort', forwardAbort, { once: true });
-  const concurrency = Math.max(1, Math.min(options.concurrency ?? 2, seriesCount));
+  const concurrency = Math.max(1, Math.min(options.concurrency ?? 4, seriesCount));
   let failure: { error: unknown } | undefined;
 
   const runMatch = async (match: BracketMatch): Promise<void> => {

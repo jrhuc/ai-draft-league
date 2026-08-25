@@ -1892,7 +1892,11 @@ test('a draft league checkpoints after a week and resumes to a champion', async 
   });
   assert.equal(first.length, 2, 'week one is two series');
   assert.ok(first.every((row) => row.stage === 'roundrobin' && row.round === 1));
-  assert.ok(!fs.existsSync(path.join(directory, 'transactions')), 'pausing before the barrier does not open it');
+  assert.ok(
+    fs.existsSync(path.join(directory, 'transactions', 'after-week-1', 'window.json')),
+    'stopping after week 1 closes its transaction window',
+  );
+  assert.ok(!fs.existsSync(path.join(directory, 'transactions', 'after-week-2')), 'later windows stay closed');
 
   const resumed = await runDraftLeague(models, directory, {
     recordsPath,
@@ -1926,6 +1930,8 @@ test('the real league window updates the outer roster used by later construction
     throughWeek: 1,
     transactions: [{ afterWeek: 1, tradesAllowed: 0 }],
   });
+  /** The through-week stop closed the real (all-pass) window; clear it so the manual replay below owns the epoch. */
+  fs.rmSync(path.join(directory, 'transactions'), { recursive: true, force: true });
 
   const config: {
     entrants: string[];
@@ -2208,7 +2214,7 @@ test('current teambuild provenance counts as post-window transaction-barrier evi
 
   await assert.rejects(
     runDraftLeague(models, directory, { recordsPath, seed: 79, concurrency: 1, resume: true }),
-    /review barrier but lacks a complete review: teambuild\/teambuild.jsonl series 1/,
+    /review barrier but lacks a complete review: window.json, window.jsonl, window, teambuild\/teambuild.jsonl series 1/,
   );
 });
 
@@ -2816,7 +2822,7 @@ test('window prompts name their place in the schedule and the public moves of ea
   );
 });
 
-test('a league stopped between two closed windows resumes on the right roster version', async (t) => {
+test('a league stopped after its second window resumes on the right roster version', async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vgc-draft-league-epochs-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const recordsPath = path.join(directory, 'results.jsonl');
@@ -2834,8 +2840,8 @@ test('a league stopped between two closed windows resumes on the right roster ve
   assert.equal(first.length, 4, 'two weeks of a four-coach league are four series');
   assert.ok(fs.existsSync(path.join(directory, 'transactions', 'after-week-1', 'window.json')));
   assert.ok(
-    !fs.existsSync(path.join(directory, 'transactions', 'after-week-2')),
-    'pausing after week 2 stops before its window opens',
+    fs.existsSync(path.join(directory, 'transactions', 'after-week-2', 'window.json')),
+    'stopping after week 2 closes its window too',
   );
   assert.ok(fs.existsSync(path.join(directory, 'reviews', 'week-1.jsonl')), 'week 1 was reviewed before its window');
   assert.ok(fs.existsSync(path.join(directory, 'reviews', 'week-2.jsonl')), 'pausing after week 2 keeps its review');

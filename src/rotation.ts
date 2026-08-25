@@ -80,7 +80,7 @@ export async function runRotation(
         models,
         series_per_pair: seriesPerPair,
         seed,
-        concurrency: options.concurrency ?? 2,
+        concurrency: options.concurrency ?? 4,
         reasoning: options.reasoning ?? null,
         reasoning_by_model: options.reasoningByModel ?? null,
         timer_scale: timerScale,
@@ -94,7 +94,7 @@ export async function runRotation(
     'utf8',
   );
 
-  return mapLimit(plans, options.concurrency ?? 2, options.signal, async (plan, signal) => {
+  return mapLimit(plans, options.concurrency ?? 4, options.signal, async (plan, signal) => {
     options.onEvent?.({ type: 'series-start', index: plan.index });
     const seriesContext: RecordedSeriesContext = {
       players: plan.players,

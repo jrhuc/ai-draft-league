@@ -71,8 +71,29 @@ function appendSeparator(file: string): string {
   return '';
 }
 
+/** Byte size of each file as of its last validated append, letting clean appends skip re-reading it. */
+const validatedSizes = new Map<string, number>();
+
 export function appendJsonlObject(file: string, row: JsonObject): void {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const payload = `${JSON.stringify(row)}\n`;
+  let size: number | undefined;
+  try {
+    size = fs.statSync(file).size;
+  } catch (error) {
+    if (!isErrnoCode(error, 'ENOENT')) throw error;
+  }
+  if (size === undefined) {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.appendFileSync(file, payload, 'utf8');
+    validatedSizes.set(file, Buffer.byteLength(payload, 'utf8'));
+    return;
+  }
+  if (validatedSizes.get(file) === size) {
+    fs.appendFileSync(file, payload, 'utf8');
+    validatedSizes.set(file, size + Buffer.byteLength(payload, 'utf8'));
+    return;
+  }
   const separator = appendSeparator(file);
-  fs.appendFileSync(file, `${separator}${JSON.stringify(row)}\n`, 'utf8');
+  fs.appendFileSync(file, `${separator}${payload}`, 'utf8');
+  validatedSizes.set(file, fs.statSync(file).size);
 }

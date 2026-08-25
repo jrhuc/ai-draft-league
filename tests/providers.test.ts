@@ -290,9 +290,56 @@ test('the common compatible stream preserves tools, structured finish reason, an
   assert.deepEqual(uniqueToolCalls([...completion.toolCalls, completion.toolCalls[0]!]), completion.toolCalls);
 });
 
+test('infra-class failures retry with backoff until the provider heals', async () => {
+  let calls = 0;
+  const fetch: typeof globalThis.fetch = async () => {
+    calls += 1;
+    if (calls < 3) return new Response('{"error":{"message":"upstream sad"}}', { status: 503 });
+    return chatStream('healed');
+  };
+  const completion = await makeProvider(parseSpec('prime:retry-model'), {
+    apiKey: 'prime-key',
+    retry: { attempts: 5, baseMs: 1, capMs: 2 },
+    fetch,
+  }).complete('system', [{ role: 'user', content: 'hello' }]);
+  assert.equal(calls, 3);
+  assert.equal(completion.text, 'healed');
+});
+
+test('failFast and terminal failures skip infra retries', async () => {
+  let calls = 0;
+  const failing: typeof globalThis.fetch = async () => {
+    calls += 1;
+    return new Response('{"error":{"message":"upstream sad"}}', { status: 503 });
+  };
+  await assert.rejects(
+    makeProvider(parseSpec('prime:fail-fast-model'), {
+      apiKey: 'prime-key',
+      retry: { attempts: 5, baseMs: 1, capMs: 2 },
+      fetch: failing,
+    }).complete('system', [{ role: 'user', content: 'hello' }], { failFast: true }),
+  );
+  assert.equal(calls, 1);
+
+  let terminalCalls = 0;
+  const unauthorized: typeof globalThis.fetch = async () => {
+    terminalCalls += 1;
+    return new Response('{"error":{"message":"bad key"}}', { status: 401 });
+  };
+  await assert.rejects(
+    makeProvider(parseSpec('prime:terminal-model'), {
+      apiKey: 'prime-key',
+      retry: { attempts: 5, baseMs: 1, capMs: 2 },
+      fetch: unauthorized,
+    }).complete('system', [{ role: 'user', content: 'hello' }]),
+  );
+  assert.equal(terminalCalls, 1);
+});
+
 test('compatible HTTP and in-band stream failures preserve retry classification without leaking keys', async () => {
   const failed = makeProvider(parseSpec('prime:failed-model'), {
     apiKey: 'prime-secret',
+    retry: { attempts: 1 },
     fetch: async () =>
       new Response(JSON.stringify({ error: { message: 'service unavailable prime-secret' } }), {
         status: 503,
@@ -314,6 +361,7 @@ test('compatible HTTP and in-band stream failures preserve retry classification 
 
   const inBand = makeProvider(parseSpec('openrouter:failed-model'), {
     apiKey: 'openrouter-key',
+    retry: { attempts: 1 },
     fetch: async () => sseResponse([{ error: { code: 502, message: 'upstream worker failed' } }]),
   });
   await assert.rejects(inBand.complete('system', [{ role: 'user', content: 'hello' }]), (error: unknown) => {
@@ -357,7 +405,11 @@ test('adapter redacts thrown transport and malformed stream failures', async () 
   ];
   try {
     for (const failure of failures) {
-      const provider = makeProvider(parseSpec('prime:redaction-test'), { apiKey: suppliedKey, fetch: failure.fetch });
+      const provider = makeProvider(parseSpec('prime:redaction-test'), {
+        apiKey: suppliedKey,
+        retry: { attempts: 1 },
+        fetch: failure.fetch,
+      });
       await assert.rejects(provider.complete('system', [{ role: 'user', content: 'hello' }]), (error: unknown) => {
         assert.ok(error instanceof Error, failure.label);
         assert.doesNotMatch(error.message, new RegExp(`${suppliedKey}|${environmentKey}`), failure.label);
@@ -413,10 +465,12 @@ test('OpenCode models are routed to the one API shape that serves them', async (
   };
   for (const model of ['kimi-k3', 'muse-spark-1.2-contributor', 'minimax-m3']) {
     await assert.rejects(
-      makeProvider(parseSpec(`opencode-go:${model}`), { apiKey: 'opencode-key', reasoning: 'high', fetch }).complete(
-        'system',
-        [{ role: 'user', content: 'hello' }],
-      ),
+      makeProvider(parseSpec(`opencode-go:${model}`), {
+        apiKey: 'opencode-key',
+        reasoning: 'high',
+        retry: { attempts: 1 },
+        fetch,
+      }).complete('system', [{ role: 'user', content: 'hello' }]),
     );
   }
   assert.deepEqual(

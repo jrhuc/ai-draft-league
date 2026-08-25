@@ -26,6 +26,7 @@ import type {
   ProviderFailure,
   ProviderMessage,
   ToolCall,
+  ToolDefinition,
 } from './types.js';
 
 import { isRecord } from './value.js';
@@ -347,6 +348,40 @@ function openRouterErrorStatus(responseBody: string | undefined): number | undef
 
 const DEFAULT_TIMEOUT = 1800;
 
+export interface InfraRetryPolicy {
+  attempts: number;
+  timeoutAttempts: number;
+  baseMs: number;
+  capMs: number;
+}
+
+/** Timeout attempts get their own tighter budget because each one holds the seat for up to DEFAULT_TIMEOUT. */
+const INFRA_RETRY_DEFAULTS: InfraRetryPolicy = { attempts: 20, timeoutAttempts: 6, baseMs: 2_000, capMs: 300_000 };
+const RETRY_AFTER_CAP_MS = 600_000;
+
+/** Providers name their cooldown inconsistently, so the failure text is scanned for the common spellings. */
+function retryAfterMs(message: string): number | undefined {
+  const explicit = /retry[-_ ]?after[^0-9]{0,12}(\d+(?:\.\d+)?)/i.exec(message)?.[1];
+  if (explicit) return Math.min(Number(explicit) * 1000, RETRY_AFTER_CAP_MS);
+  const phrased = /try again in (\d+(?:\.\d+)?)\s*(ms|milliseconds?|s|sec|seconds?)/i.exec(message);
+  if (!phrased) return undefined;
+  const scale = phrased[2]!.startsWith('m') ? 1 : 1000;
+  return Math.min(Number(phrased[1]) * scale, RETRY_AFTER_CAP_MS);
+}
+
+function backoffSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted || ms <= 0) return Promise.resolve();
+  return new Promise((resolve) => {
+    const finish = (): void => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, ms);
+    signal?.addEventListener('abort', finish);
+  });
+}
+
 interface GatewayResponseMeta {
   cost?: number;
   provider?: string;
@@ -470,20 +505,41 @@ function convertMessages(messages: ProviderMessage[]): ModelMessage[] {
   return converted;
 }
 
+const TOOL_SETS = new WeakMap<ToolDefinition[], ToolSet>();
+
+const EPHEMERAL_CACHE = { anthropic: { cacheControl: { type: 'ephemeral' } } };
+
+function markFirstUserBreakpoint(messages: ModelMessage[]): void {
+  const first = messages.find((message) => message.role === 'user');
+  if (first) first.providerOptions = EPHEMERAL_CACHE;
+}
+
 class SdkProvider implements Provider {
   readonly model: string;
   readonly reasoning?: ReasoningLevel | undefined;
   private readonly apiKey: string | undefined;
   private readonly fetch: FetchRequest | undefined;
   private readonly api: OpenCodeApi;
+  private readonly retry: InfraRetryPolicy;
 
   constructor(
     private readonly spec: ProviderSpec,
-    options: { apiKey?: string | undefined; reasoning?: ReasoningLevel | undefined; fetch?: FetchRequest | undefined },
+    options: {
+      apiKey?: string | undefined;
+      reasoning?: ReasoningLevel | undefined;
+      fetch?: FetchRequest | undefined;
+      retry?: Partial<InfraRetryPolicy> | undefined;
+    },
   ) {
     this.model = spec.model;
     this.reasoning = options.reasoning;
     this.apiKey = options.apiKey;
+    this.retry = {
+      attempts: options.retry?.attempts ?? INFRA_RETRY_DEFAULTS.attempts,
+      timeoutAttempts: options.retry?.timeoutAttempts ?? INFRA_RETRY_DEFAULTS.timeoutAttempts,
+      baseMs: options.retry?.baseMs ?? INFRA_RETRY_DEFAULTS.baseMs,
+      capMs: options.retry?.capMs ?? INFRA_RETRY_DEFAULTS.capMs,
+    };
     this.api =
       spec.provider === 'opencode-go' || spec.provider === 'opencode-zen'
         ? opencodeApi(spec.provider, spec.model)
@@ -515,7 +571,14 @@ class SdkProvider implements Provider {
     };
   }
 
+  private cachedModel: { apiKey: string; model: LanguageModel } | undefined;
+
   private languageModel(apiKey: string): LanguageModel {
+    if (this.cachedModel?.apiKey !== apiKey) this.cachedModel = { apiKey, model: this.buildLanguageModel(apiKey) };
+    return this.cachedModel.model;
+  }
+
+  private buildLanguageModel(apiKey: string): LanguageModel {
     const option = providerOption(this.spec.provider);
     if (!option?.baseUrl) throw new Error(USAGE);
     const transport = this.fetch ? { fetch: this.fetch } : {};
@@ -571,7 +634,43 @@ class SdkProvider implements Provider {
     if (status.success) return new ApiError(status.data.code ?? status.data.status ?? 0, message);
     return new Error(message);
   }
+  /** All backoff lives here: the SDK's own retries are disabled so every failure is classified once,
+   * infra-class failures (rate limit, upstream, network, timeout) retry with jittered backoff honoring
+   * any advertised cooldown, and schema/legality/truncation handling stays with the callers' budgets.
+   * Timed battles pass failFast so the battle clock keeps control. */
   async complete(system: string, messages: ProviderMessage[], options: CompleteOptions = {}): Promise<Completion> {
+    let tries = 0;
+    let timeoutTries = 0;
+    for (;;) {
+      try {
+        return await this.completeAttempt(system, messages, options);
+      } catch (error) {
+        if (options.signal?.aborted) throw error;
+        const failure = classifyProviderFailure(error, `${this.spec.provider}:${this.model}`);
+        tries += 1;
+        if (failure.kind === 'timeout') timeoutTries += 1;
+        const retryable = !failure.terminal && failure.kind !== 'truncation' && !options.failFast;
+        const budgetSpent =
+          tries >= this.retry.attempts || (failure.kind === 'timeout' && timeoutTries >= this.retry.timeoutAttempts);
+        if (!retryable || budgetSpent) throw error;
+        const backoff = Math.min(this.retry.baseMs * 2 ** (tries - 1), this.retry.capMs);
+        const jittered = backoff / 2 + Math.random() * (backoff / 2);
+        const advertised = retryAfterMs(error instanceof Error ? error.message : String(error)) ?? 0;
+        const wait = Math.max(jittered, advertised);
+        console.error(
+          `[infra-retry] ${this.spec.provider}:${this.model} ${failure.kind} try ${tries}: ${failure.summary} retrying in ${Math.round(wait / 1000)}s`,
+        );
+        await backoffSleep(wait, options.signal);
+        if (options.signal?.aborted) throw error;
+      }
+    }
+  }
+
+  private async completeAttempt(
+    system: string,
+    messages: ProviderMessage[],
+    options: CompleteOptions,
+  ): Promise<Completion> {
     const timeout = AbortSignal.timeout(DEFAULT_TIMEOUT * 1000);
     const abortSignal = options.signal ? AbortSignal.any([timeout, options.signal]) : timeout;
     const apiKey = this.key();
@@ -580,15 +679,19 @@ class SdkProvider implements Provider {
       const model = this.languageModel(apiKey);
       let tools: ToolSet | undefined;
       if (options.tools?.length) {
-        tools = {};
-        for (const definition of options.tools) {
-          const parameters =
-            // SAFETY: ToolDefinition parameters are owned JSON Schemas built by this harness.
-            definition.parameters as JSONSchema7;
-          tools[definition.name] = tool({
-            description: definition.description,
-            inputSchema: jsonSchema(parameters),
-          });
+        tools = TOOL_SETS.get(options.tools);
+        if (!tools) {
+          tools = {};
+          for (const definition of options.tools) {
+            const parameters =
+              // SAFETY: ToolDefinition parameters are owned JSON Schemas built by this harness.
+              definition.parameters as JSONSchema7;
+            tools[definition.name] = tool({
+              description: definition.description,
+              inputSchema: jsonSchema(parameters),
+            });
+          }
+          TOOL_SETS.set(options.tools, tools);
         }
       }
       /** streamText reports stream failures through onError rather than rejecting, so rethrow the first
@@ -600,13 +703,24 @@ class SdkProvider implements Provider {
         : this.reasoning
           ? { reasoning: this.reasoning }
           : {};
+      /** Anthropic-style APIs reject prefill when extended thinking is on, so reasoning disables it. */
+      const prefill =
+        options.prefillResponse && this.api === 'messages' && !this.reasoning && !options.reasoningMaxTokens
+          ? options.prefillResponse
+          : undefined;
+      const converted = convertMessages(prefill ? [...messages, { role: 'assistant', content: prefill }] : messages);
+      /** Cache breakpoints stay claude-only: other Messages-shaped gateways may reject cache_control. */
+      const cacheBreakpoints = this.api === 'messages' && this.model.includes('claude');
+      if (cacheBreakpoints) markFirstUserBreakpoint(converted);
+      const systemMessage: ModelMessage = { role: 'system', content: system, providerOptions: EPHEMERAL_CACHE };
       const stream = streamText({
         model,
-        system,
-        messages: convertMessages(messages),
+        ...(cacheBreakpoints ? {} : { system }),
+        messages: cacheBreakpoints ? [systemMessage, ...converted] : converted,
         ...toolOptions,
         ...reasoningOptions,
         maxOutputTokens: options.maxTokens ?? 1200,
+        maxRetries: 0,
         abortSignal,
         onError: ({ error }) => {
           if (streamError === undefined) streamError = error;
@@ -662,7 +776,7 @@ class SdkProvider implements Provider {
         return convertedCall;
       });
       const completion: Completion = {
-        text,
+        text: prefill === undefined ? text : prefill + text,
         finishReason,
         usage: completionUsage,
         toolCalls,
@@ -708,6 +822,7 @@ export function makeProvider(
     apiKey?: string | undefined;
     reasoning?: ReasoningLevel | undefined;
     fetch?: FetchRequest | undefined;
+    retry?: Partial<InfraRetryPolicy> | undefined;
   } = {},
 ): Provider {
   validateReasoning(spec, options.reasoning);
