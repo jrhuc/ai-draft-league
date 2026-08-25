@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useLayoutEffect } from "react";
 import { useLocation } from "react-router-dom";
 
 /**
@@ -8,10 +8,14 @@ import { useLocation } from "react-router-dom";
  * below the fold reveal without delay as they are scrolled to. Re-armed on
  * every route change; fully inert when IntersectionObserver is unavailable
  * (the CSS `.no-io` escape hatch keeps content visible).
+ *
+ * Uses useLayoutEffect so sections hide before the browser paints: with a
+ * passive effect each page would paint fully visible for one frame and then
+ * snap to hidden, which read as a flash of the page-top gradient on load.
  */
 export function useReveal(): void {
   const { pathname } = useLocation();
-  useEffect(() => {
+  useLayoutEffect(() => {
     const page = document.querySelector(".page");
     if (!page) return;
     if (typeof IntersectionObserver === "undefined") {

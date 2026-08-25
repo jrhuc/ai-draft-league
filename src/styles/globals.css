@@ -30,6 +30,9 @@
 html {
   background: var(--bg);
   scroll-padding-top: 4rem;
+  /* Decorative bleeds (the hero glow's negative inset) must not widen the
+     document. clip avoids creating a scroll container the way hidden would. */
+  overflow-x: clip;
 }
 
 body {
@@ -279,6 +282,19 @@ button {
   gap: 3rem;
 }
 
+/* Grid items keep their automatic minimum size, so a wide child (the standings
+   table, a long rationale) can push its section past a minmax(0, 1fr) track and
+   widen the whole page. Zero the minimum along every layout branch instead. */
+.page > *,
+.home-grid > *,
+.two-col > *,
+.grid > *,
+.grid-2 > *,
+.grid-3 > *,
+.grid-6 > * {
+  min-width: 0;
+}
+
 .foot {
   border-top: 1px solid var(--line);
 }
@@ -310,6 +326,9 @@ button {
   gap: 0.9rem;
   padding-bottom: 2rem;
   border-bottom: 1px solid var(--line);
+  /* The glow pseudo bleeds 2rem past each side; clip horizontally so it cannot
+     widen the document. The upward bleed stays visible. */
+  overflow-x: clip;
 }
 
 .hero::before {
@@ -410,7 +429,9 @@ button {
 
 @media (max-width: 60rem) {
   .two-col {
-    grid-template-columns: 1fr;
+    /* minmax(0, …) so wide children (e.g. the standings table) scroll inside
+       .table-wrap instead of forcing the column past the viewport. */
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -443,15 +464,15 @@ a.card:hover,
 }
 
 .grid-2 {
-  grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(22rem, 100%), 1fr));
 }
 
 .grid-3 {
-  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(17rem, 100%), 1fr));
 }
 
 .grid-6 {
-  grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(13.5rem, 100%), 1fr));
 }
 
 /* ---- tables ---- */
@@ -596,7 +617,7 @@ td.team {
 
 @media (max-width: 64rem) {
   .home-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

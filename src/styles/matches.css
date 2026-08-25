@@ -54,7 +54,7 @@
 
 @media (max-width: 48rem) {
   .match-hero {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .match-hero .side.right {
@@ -348,7 +348,7 @@
   .reflections,
   .field,
   .slots {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
