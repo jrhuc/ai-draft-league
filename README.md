@@ -12,8 +12,8 @@ standings and champion are exhibition results, not a general model ranking.
 
 [vgc-model-league](https://github.com/jrhuc/vgc-model-league) is the authority
 for rules, legality, schedules, standings, release state, and outcomes. This
-repository does not clone, import, run, or rebuild that harness. It validates
-one public artifact at build time and renders its values without recalculation.
+repository does not clone, import, run, or rebuild that harness. It consumes
+one public artifact at runtime and renders its values without recalculation.
 
 Model-authored rationales and reviews are part of the spectator product. They
 are competition-private while their league barrier is live and appear here only
@@ -33,7 +33,7 @@ Place the published season artifact at:
 public/season-bundle.json
 ```
 
-The bundle includes released weekly-review and post-transaction reconciliation evidence. The spectator statically imports and trusts it as its hand-written `SeasonBundle`. Changes to the bundle shape must be coordinated between the producer and consumer.
+The bundle includes released weekly-review and post-transaction reconciliation evidence. The spectator fetches `/season-bundle.json` and trusts it as its hand-written `SeasonBundle`, a shape the compiler enforces wherever the bundle is touched. Changes to the bundle shape must be coordinated between the producer and consumer.
 
 Pokémon sprites are optional presentation assets at:
 
@@ -45,27 +45,35 @@ The committed bundle is required at build time. Missing sprites fall back to a s
 
 ## Local development
 
-Requires Node.js 24 and pnpm.
+Requires Node.js 24, pnpm, and the `vp` CLI (https://viteplus.dev).
 
 ```sh
-pnpm install
-pnpm test
-pnpm typecheck
-pnpm dev
+vp install
+vp check
+vp test
+vp dev
 ```
 
-Open `http://localhost:3000`. Production uses the standard Next.js commands:
+Open the printed local URL (default http://localhost:5173). Production builds
+use the standard Vite+ command:
 
 ```sh
-pnpm build
-pnpm start
+vp build
 ```
 
-## Vercel
+## Deployment
 
-Import this repository as a Vercel project and keep the detected Next.js
-framework defaults. The committed bundle, schema, and sprites deploy with the
-app. A deployment never fetches or builds harness source.
+The site is a fully static single-page app deployed to Cloudflare Workers as
+an assets-only Worker (`wrangler.jsonc`): no script is deployed, asset
+requests are free and unlimited, and client-side routes fall back to
+`index.html` via `not_found_handling`.
+
+```sh
+wrangler login   # once
+pnpm deploy      # vp build && wrangler deploy
+```
+
+A deployment never fetches or builds harness source.
 
 ## Asset attribution
 

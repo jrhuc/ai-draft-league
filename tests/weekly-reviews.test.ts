@@ -1,7 +1,6 @@
-import assert from "node:assert/strict";
-import test from "node:test";
-import type { WeeklyReview } from "../lib/season.ts";
-import { weeklyReviewsForFranchise } from "../lib/weekly-reviews.ts";
+import { expect, test } from "vite-plus/test";
+import type { WeeklyReview } from "../src/lib/season";
+import { weeklyReviewsForFranchise } from "../src/lib/weekly-reviews";
 
 function review(overrides: Partial<WeeklyReview> = {}): WeeklyReview {
   return {
@@ -17,7 +16,6 @@ function review(overrides: Partial<WeeklyReview> = {}): WeeklyReview {
   };
 }
 
-
 test("filters one franchise and orders each week before its reconciliation", () => {
   const reviews = weeklyReviewsForFranchise(
     [
@@ -29,14 +27,11 @@ test("filters one franchise and orders each week before its reconciliation", () 
     "alpha",
   );
 
-  assert.deepEqual(
-    reviews.map(({ week, stage, reasoningText }) => [week, stage, reasoningText]),
-    [
-      [1, "week", "Week one."],
-      [2, "week", "Week two."],
-      [2, "transactions", "Reconciled."],
-    ],
-  );
+  expect(reviews.map(({ week, stage, reasoningText }) => [week, stage, reasoningText])).toEqual([
+    [1, "week", "Week one."],
+    [2, "week", "Week two."],
+    [2, "transactions", "Reconciled."],
+  ]);
 });
 
 test("presents weekly, reconciliation, and fallback states", () => {
@@ -45,10 +40,8 @@ test("presents weekly, reconciliation, and fallback states", () => {
     "alpha",
   );
 
-  assert.equal(weekly?.stageLabel, "Weekly review");
-  assert.equal(reconciliation?.stageLabel, "Post-transaction reconciliation");
-  assert.equal(reconciliation?.fallbackLabel, "Fallback review");
-  assert.equal(reconciliation?.reasoningText, "No reasoning recorded.");
+  expect(weekly?.stageLabel).toBe("Weekly review");
+  expect(reconciliation?.stageLabel).toBe("Post-transaction reconciliation");
+  expect(reconciliation?.fallbackLabel).toBe("Fallback review");
+  expect(reconciliation?.reasoningText).toBe("No reasoning recorded.");
 });
-
-
