@@ -1,12 +1,19 @@
-import type { Battle } from 'pokemon-showdown';
-import { requestActionCandidateEntries } from '../../src/fork.js';
-import { routeUpdateLines } from '../../src/sim.js';
-import type { BattleRequest, Pid } from '../../src/types.js';
+import type { Battle } from "pokemon-showdown";
+import { requestActionCandidateEntries } from "../../src/fork.js";
+import { routeUpdateLines } from "../../src/sim.js";
+import type { BattleRequest, Pid } from "../../src/types.js";
 
 export type RouteState = Parameters<typeof routeUpdateLines>[1];
 
 export function routeState(): RouteState {
-  return { pov: { p1: [], p2: [] }, log: [], publicLog: [], pendingSplit: [], winner: null, turns: 0 };
+  return {
+    pov: { p1: [], p2: [] },
+    log: [],
+    publicLog: [],
+    pendingSplit: [],
+    winner: null,
+    turns: 0,
+  };
 }
 
 export function omniscientLog(lines: string[]): string[] {

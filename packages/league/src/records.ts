@@ -1,9 +1,9 @@
-import { randomUUID } from 'node:crypto';
-import fs from 'node:fs';
-import { z } from 'zod';
-import { appendJsonlObject, readJsonlObjects } from './jsonl.js';
-import { acquireLease, LeaseBusyError } from './run-status.js';
-import type { ExperimentMode, JsonObject, JsonValue, Pid, TimerScale } from './types.js';
+import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import { z } from "zod";
+import { appendJsonlObject, readJsonlObjects } from "./jsonl.js";
+import { acquireLease, LeaseBusyError } from "./run-status.js";
+import type { ExperimentMode, JsonObject, JsonValue, Pid, TimerScale } from "./types.js";
 
 export interface SeriesRecord extends JsonObject {
   mode?: ExperimentMode | undefined;
@@ -15,7 +15,7 @@ export interface SeriesRecord extends JsonObject {
   trade_window?: { after_week: number; trades_allowed?: number | undefined } | null | undefined;
   transactions?: Array<{ after_week: number; trades_allowed: number }> | undefined;
   roster_version?: number | undefined;
-  contributor?: { provider: 'github'; subject: string; login: string } | undefined;
+  contributor?: { provider: "github"; subject: string; login: string } | undefined;
   players: Record<Pid, string>;
   winner?: string | null | undefined;
   score?: Record<Pid, number> | undefined;
@@ -33,7 +33,7 @@ const gameSchema = z
   .object({
     number: z.number().int().positive(),
     winner: z.string().min(1).nullable(),
-    winner_side: z.enum(['p1', 'p2']).nullable(),
+    winner_side: z.enum(["p1", "p2"]).nullable(),
     turns: z.number().int().nonnegative(),
     seed: z.tuple([
       z.number().int().nonnegative().max(0xffff),
@@ -64,7 +64,7 @@ const decisionStatSchema = z
 const decisionStatsSchema = z.strictObject({ p1: decisionStatSchema, p2: decisionStatSchema });
 const seriesRecordSchema = z.object({
   schema_version: z.literal(SERIES_RECORD_SCHEMA_VERSION),
-  mode: z.enum(['rotation', 'exhibition', 'tournament', 'draft']),
+  mode: z.enum(["rotation", "exhibition", "tournament", "draft"]),
   timestamp: z.string().min(1),
   run_id: z.string().min(1),
   series_id: z.string().min(1),
@@ -76,24 +76,28 @@ const seriesRecordSchema = z.object({
   players: pidTextSchema,
   teams: pidTextSchema,
   winner: z.string().min(1).nullable(),
-  winner_side: z.enum(['p1', 'p2']).nullable(),
+  winner_side: z.enum(["p1", "p2"]).nullable(),
   score: pidCountSchema,
   turns: z.number().int().nonnegative(),
   games: z.array(gameSchema),
-  engine_seeds: z.partialRecord(z.enum(['p1', 'p2']), z.number().int()),
-  timer_scale: z.union([z.literal('off'), z.number().positive()]).optional(),
+  engine_seeds: z.partialRecord(z.enum(["p1", "p2"]), z.number().int()),
+  timer_scale: z.union([z.literal("off"), z.number().positive()]).optional(),
   closed_sheets: z.literal(true).optional(),
-  reasoning: z.enum(['minimal', 'low', 'medium', 'high', 'xhigh']).nullable(),
-  sampling: z.literal('provider-default').optional(),
+  reasoning: z.enum(["minimal", "low", "medium", "high", "xhigh"]).nullable(),
+  sampling: z.literal("provider-default").optional(),
   reasoning_by_player: z
     .strictObject({
-      p1: z.enum(['minimal', 'low', 'medium', 'high', 'xhigh']).nullable(),
-      p2: z.enum(['minimal', 'low', 'medium', 'high', 'xhigh']).nullable(),
+      p1: z.enum(["minimal", "low", "medium", "high", "xhigh"]).nullable(),
+      p2: z.enum(["minimal", "low", "medium", "high", "xhigh"]).nullable(),
     })
     .optional(),
   decision_stats: decisionStatsSchema,
   contributor: z
-    .strictObject({ provider: z.literal('github'), subject: z.string().min(1), login: z.string().min(1) })
+    .strictObject({
+      provider: z.literal("github"),
+      subject: z.string().min(1),
+      login: z.string().min(1),
+    })
     .optional(),
   trade_window: z
     .strictObject({
@@ -103,12 +107,17 @@ const seriesRecordSchema = z.object({
     .nullable()
     .optional(),
   transactions: z
-    .array(z.strictObject({ after_week: z.number().int().positive(), trades_allowed: z.number().int().nonnegative() }))
+    .array(
+      z.strictObject({
+        after_week: z.number().int().positive(),
+        trades_allowed: z.number().int().nonnegative(),
+      }),
+    )
     .optional(),
   roster_version: z.number().int().nonnegative().optional(),
   run_seed: z.number().int(),
-  ps_commit: z.union([z.string().regex(/^[0-9a-f]{40}$/u), z.literal('unknown')]),
-  seat: z.enum(['p1', 'p2']).optional(),
+  ps_commit: z.union([z.string().regex(/^[0-9a-f]{40}$/u), z.literal("unknown")]),
+  seat: z.enum(["p1", "p2"]).optional(),
   dual_seat: z.boolean().optional(),
   execution_harnesses: z.json().optional(),
   round: z.number().int().positive().optional(),
@@ -116,32 +125,35 @@ const seriesRecordSchema = z.object({
   seeds: z.json().optional(),
   provenance: z.json().optional(),
   advanced: z.string().min(1).optional(),
-  stage: z.enum(['roundrobin', 'playoff']).optional(),
+  stage: z.enum(["roundrobin", "playoff"]).optional(),
   board: z.string().min(1).optional(),
-  origin: z.strictObject({ source: z.literal('import'), at: z.string().min(1) }).optional(),
+  origin: z.strictObject({ source: z.literal("import"), at: z.string().min(1) }).optional(),
 });
 
 export type ParsedSeriesRecord = z.infer<typeof seriesRecordSchema>;
 
 export function parseSeriesRecord(value: JsonValue, label: string): ParsedSeriesRecord {
   const parsed = seriesRecordSchema.safeParse(value);
-  if (!parsed.success) throw new Error(`${label} is not a current series record: ${z.prettifyError(parsed.error)}`);
+  if (!parsed.success)
+    throw new Error(`${label} is not a current series record: ${z.prettifyError(parsed.error)}`);
   return parsed.data;
 }
 
 /** Normalizes provider-qualified specs when joining one model across archived evidence. */
 export function modelKey(spec: string): string {
-  const model = spec.slice(spec.indexOf(':') + 1);
+  const model = spec.slice(spec.indexOf(":") + 1);
   return model
-    .slice(model.lastIndexOf('/') + 1)
+    .slice(model.lastIndexOf("/") + 1)
     .toLowerCase()
-    .replace(/:(?:nitro|floor|free)$/, '');
+    .replace(/:(?:nitro|floor|free)$/, "");
 }
 
-export const TEST_POOL = 'test';
+export const TEST_POOL = "test";
 
 export function scopeRows<Row extends SeriesRecord>(rows: Row[], pool?: string): Row[] {
-  return pool === undefined ? rows.filter((row) => row.pool !== TEST_POOL) : rows.filter((row) => row.pool === pool);
+  return pool === undefined
+    ? rows.filter((row) => row.pool !== TEST_POOL)
+    : rows.filter((row) => row.pool === pool);
 }
 
 const rowCache = new Map<string, { mtimeMs: number; size: number; rows: ParsedSeriesRecord[] }>();
@@ -172,10 +184,14 @@ export function mutateRecords<T>(file: string, task: (mutation: RecordsMutation)
     replace: (rows) => {
       const staged = `${file}.${randomUUID()}.tmp`;
       try {
-        fs.writeFileSync(staged, rows.length ? `${rows.map((row) => JSON.stringify(row)).join('\n')}\n` : '', {
-          encoding: 'utf8',
-          flag: 'wx',
-        });
+        fs.writeFileSync(
+          staged,
+          rows.length ? `${rows.map((row) => JSON.stringify(row)).join("\n")}\n` : "",
+          {
+            encoding: "utf8",
+            flag: "wx",
+          },
+        );
         fs.renameSync(staged, file);
         rowCache.delete(file);
       } finally {
@@ -205,7 +221,9 @@ export function loadSeriesRecords(file: string): ParsedSeriesRecord[] {
   }
   const cached = rowCache.get(file);
   if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.rows;
-  const rows = readJsonlObjects(file).map((row, index) => parseSeriesRecord(row, `${file} row ${index + 1}`));
+  const rows = readJsonlObjects(file).map((row, index) =>
+    parseSeriesRecord(row, `${file} row ${index + 1}`),
+  );
   rowCache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, rows });
   return rows;
 }

@@ -1,11 +1,11 @@
-import fs from 'node:fs';
-import path from 'node:path';
+import fs from "node:fs";
+import path from "node:path";
 
-import { z } from 'zod';
+import { z } from "zod";
 
-import { createBoardSearch } from './board-search.js';
-import { completeWithDexTools, type ExtraTool } from './dex-lookups.js';
-import type { DraftBoard, DraftBoardMon } from './draft.js';
+import { createBoardSearch } from "./board-search.js";
+import { completeWithDexTools, type ExtraTool } from "./dex-lookups.js";
+import type { DraftBoard, DraftBoardMon } from "./draft.js";
 import {
   cloneMemory,
   type FranchiseMemory,
@@ -15,65 +15,74 @@ import {
   READ_MEMORY_PAGE,
   readMemoryPage,
   renderMemory,
-} from './franchise-memory.js';
-import { type GameSummary, seriesGameSummaries } from './game-usage.js';
-import type { DraftTableRow, TeambuildView } from './gui/api.js';
-import { BattleLog } from './gui/battlelog.js';
-import { appendJsonlObject, readJsonlObjects } from './jsonl.js';
-import { FORMAT_AUTHORITY_NOTICE, MANAGER_CHARGE } from './prompts.js';
-import type { ModelReasoningConfig, ReasoningLevel } from './providers.js';
-import { classifyProviderFailure, makeProvider, parseSpec, reasoningForModel } from './providers.js';
-import { ShowdownReference } from './reference.js';
-import { mapLimit, readCompletedSeriesDecisionRows, readCompletedSeriesGameLogs } from './series.js';
-import type { JsonObject, JsonValue, Provider, ProviderMessage } from './types.js';
-import { clip, isRecord, isText } from './value.js';
+} from "./franchise-memory.js";
+import { type GameSummary, seriesGameSummaries } from "./game-usage.js";
+import type { DraftTableRow, TeambuildView } from "./views.js";
+import { BattleLog } from "./battlelog.js";
+import { appendJsonlObject, readJsonlObjects } from "./jsonl.js";
+import { FORMAT_AUTHORITY_NOTICE, MANAGER_CHARGE } from "./prompts.js";
+import type { ModelReasoningConfig, ReasoningLevel } from "./providers.js";
+import {
+  classifyProviderFailure,
+  makeProvider,
+  parseSpec,
+  reasoningForModel,
+} from "./providers.js";
+import { ShowdownReference } from "./reference.js";
+import {
+  mapLimit,
+  readCompletedSeriesDecisionRows,
+  readCompletedSeriesGameLogs,
+} from "./series.js";
+import type { JsonObject, JsonValue, Provider, ProviderMessage } from "./types.js";
+import { clip, isRecord, isText } from "./value.js";
 
 const MEMORY_NOTICE = `- Your memory is yours to organise: a notebook page that every later prompt of yours shows in full, plus up to ${MEMORY_LIMITS.pages - 1} named pages that later prompts list by name and that you or your later selves fetch with read_memory_page. Each page holds at most ${MEMORY_LIMITS.pageChars} characters, ${MEMORY_LIMITS.totalChars} in all. It is the only state that carries from week to week; nothing else you write here is kept.`;
 
 const LEAGUE_TOOLS_NOTICE =
-  'You have the Showdown dex tools and five league tools: read_public_series returns the spectator log of any completed series, read_own_series returns your own turn-by-turn choices with their stated reasons and your end-of-game notes, read_own_build returns the six you registered for a series, your plan, and what you brought and Mega Evolved in each game, read_memory_page returns one of your pages in full, and read_memory_history returns your memory as it stood after an earlier review or reconciliation.';
+  "You have the Showdown dex tools and five league tools: read_public_series returns the spectator log of any completed series, read_own_series returns your own turn-by-turn choices with their stated reasons and your end-of-game notes, read_own_build returns the six you registered for a series, your plan, and what you brought and Mega Evolved in each game, read_memory_page returns one of your pages in full, and read_memory_history returns your memory as it stood after an earlier review or reconciliation.";
 
 const WEEKLY_REVIEW_PROMPT_POLICY = {
   systemTemplate: [
-    'You are {{model}}, manager of a franchise in a Pokémon VGC draft league played in the format {{format}}.',
+    "You are {{model}}, manager of a franchise in a Pokémon VGC draft league played in the format {{format}}.",
     MANAGER_CHARGE,
     FORMAT_AUTHORITY_NOTICE,
-    '',
-    'Round-robin week {{week}} of {{weeks}} is complete. This is your private weekly review: the one point where you revise the memory that every later team build and transaction decision of yours reads.',
-    '- The six registered and the games played this week were built and piloted from the memory you had written; judge them as work done on your behalf.',
+    "",
+    "Round-robin week {{week}} of {{weeks}} is complete. This is your private weekly review: the one point where you revise the memory that every later team build and transaction decision of yours reads.",
+    "- The six registered and the games played this week were built and piloted from the memory you had written; judge them as work done on your behalf.",
     MEMORY_NOTICE,
-    '- Every coach builds a new six from its roster for every matchup. Sets, items, moves and spreads you saw this week were built for that one series and may not return.',
-    '- Rosters change only in transaction windows. {{windowNotice}}',
-    '',
+    "- Every coach builds a new six from its roster for every matchup. Sets, items, moves and spreads you saw this week were built for that one series and may not return.",
+    "- Rosters change only in transaction windows. {{windowNotice}}",
+    "",
     `${LEAGUE_TOOLS_NOTICE} Use them to check anything you intend to write down.`,
   ],
   reconcileSystemTemplate: [
-    'You are {{model}}, manager of a franchise in a Pokémon VGC draft league played in the format {{format}}.',
+    "You are {{model}}, manager of a franchise in a Pokémon VGC draft league played in the format {{format}}.",
     MANAGER_CHARGE,
     FORMAT_AUTHORITY_NOTICE,
-    '',
-    'The transaction window after round-robin week {{week}} of {{weeks}} has closed and your roster changed. This is your private reconciliation: revise the memory that every later team build and transaction decision of yours reads so that it describes the roster you now own.',
+    "",
+    "The transaction window after round-robin week {{week}} of {{weeks}} has closed and your roster changed. This is your private reconciliation: revise the memory that every later team build and transaction decision of yours reads so that it describes the roster you now own.",
     MEMORY_NOTICE,
-    '- Every coach builds a new six from its roster for every matchup.',
-    '- {{windowNotice}}',
-    '',
+    "- Every coach builds a new six from its roster for every matchup.",
+    "- {{windowNotice}}",
+    "",
     LEAGUE_TOOLS_NOTICE,
   ],
-  standingsHeading: 'LEAGUE STANDINGS AFTER WEEK {{week}} (rank | coach | W-L | games):',
-  ownResultsHeading: 'YOUR SERIES THIS PERIOD:',
-  publicResultsHeading: 'OTHER RESULTS THIS PERIOD (series index | result):',
-  scheduleHeading: 'YOUR REMAINING SCHEDULE (week | opponent | their current roster):',
-  transactionsHeading: 'PUBLIC TRANSACTIONS SO FAR:',
-  rosterHeading: 'YOUR ROSTER:',
-  previousRosterHeading: 'YOUR ROSTER BEFORE THE WINDOW:',
-  currentRosterHeading: 'YOUR ROSTER NOW:',
+  standingsHeading: "LEAGUE STANDINGS AFTER WEEK {{week}} (rank | coach | W-L | games):",
+  ownResultsHeading: "YOUR SERIES THIS PERIOD:",
+  publicResultsHeading: "OTHER RESULTS THIS PERIOD (series index | result):",
+  scheduleHeading: "YOUR REMAINING SCHEDULE (week | opponent | their current roster):",
+  transactionsHeading: "PUBLIC TRANSACTIONS SO FAR:",
+  rosterHeading: "YOUR ROSTER:",
+  previousRosterHeading: "YOUR ROSTER BEFORE THE WINDOW:",
+  currentRosterHeading: "YOUR ROSTER NOW:",
   replyTemplate: [
     'Reply with one JSON object {"notebook":"<complete replacement notebook>","set_pages":{"<name>":"<complete page text>",...},"delete_pages":["<name>",...]}. Every field is optional and every omission keeps what exists: "set_pages" writes only the pages it names and leaves the rest as they are; only "delete_pages" removes a page. An optional "reasoning":"<concise note on what changed and why>" field is recorded as evidence.',
-    'An empty object {} keeps the current memory unchanged and is a complete answer.',
+    "An empty object {} keeps the current memory unchanged and is a complete answer.",
   ],
-  rejectionTemplate: 'That review was rejected: {{error}} Reply again with only the JSON object.',
+  rejectionTemplate: "That review was rejected: {{error}} Reply again with only the JSON object.",
   truncatedTemplate:
-    'Your previous reply used the whole {{budget}}-token budget before completing the JSON object. Reply now with only the JSON object.',
+    "Your previous reply used the whole {{budget}}-token budget before completing the JSON object. Reply now with only the JSON object.",
   rationaleLimit: 2_000,
   toolOutputLimit: 24_000,
   maxTokens: 32_768,
@@ -95,7 +104,7 @@ export interface WeeklyReviewSeries {
   rosters: Record<number, readonly DraftBoardMon[]>;
 }
 
-export type ReviewStage = 'week' | 'transactions';
+export type ReviewStage = "week" | "transactions";
 
 interface WeeklyReviewStateBase {
   board: DraftBoard;
@@ -115,7 +124,10 @@ interface WeeklyReviewStateBase {
 }
 
 export type WeeklyReviewState = WeeklyReviewStateBase &
-  ({ stage: 'week'; previousRosters?: never } | { stage: 'transactions'; previousRosters: DraftBoardMon[][] });
+  (
+    | { stage: "week"; previousRosters?: never }
+    | { stage: "transactions"; previousRosters: DraftBoardMon[][] }
+  );
 
 export interface RunWeeklyReviewOptions extends ModelReasoningConfig {
   runDir: string;
@@ -123,7 +135,11 @@ export interface RunWeeklyReviewOptions extends ModelReasoningConfig {
   concurrency?: number;
   signal?: AbortSignal;
   apiKeys?: Readonly<Record<string, string>>;
-  makeReviewProvider?: (spec: string, apiKey: string | undefined, reasoning: ReasoningLevel | undefined) => Provider;
+  makeReviewProvider?: (
+    spec: string,
+    apiKey: string | undefined,
+    reasoning: ReasoningLevel | undefined,
+  ) => Provider;
   onReview?: (review: WeeklyReview) => void;
 }
 
@@ -152,17 +168,17 @@ function slug(value: string): string {
   return (
     value
       .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '')
-      .slice(0, 48) || 'model'
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 48) || "model"
   );
 }
 
-export function reviewArtifactPaths(runDir: string, week: number, stage: ReviewStage = 'week') {
-  const name = stage === 'week' ? `week-${week}` : `week-${week}-transactions`;
+export function reviewArtifactPaths(runDir: string, week: number, stage: ReviewStage = "week") {
+  const name = stage === "week" ? `week-${week}` : `week-${week}-transactions`;
   return {
-    transcript: path.join(runDir, 'reviews', `${name}.jsonl`),
-    logDir: path.join(runDir, 'reviews', name),
+    transcript: path.join(runDir, "reviews", `${name}.jsonl`),
+    logDir: path.join(runDir, "reviews", name),
   };
 }
 
@@ -173,52 +189,65 @@ export interface ParsedWeeklyReview {
 
 type ParsedWeeklyReviewResult = { value: ParsedWeeklyReview } | { error: string };
 
-function parseWeeklyReviewResult(response: string, current: FranchiseMemory): ParsedWeeklyReviewResult {
+function parseWeeklyReviewResult(
+  response: string,
+  current: FranchiseMemory,
+): ParsedWeeklyReviewResult {
   const match = /\{[\s\S]*\}/.exec(response);
-  if (!match) return { error: 'the reply contained no JSON object' };
+  if (!match) return { error: "the reply contained no JSON object" };
   let object: JsonValue;
   try {
     object = JSON.parse(match[0]);
   } catch {
-    return { error: 'the JSON object did not parse' };
+    return { error: "the JSON object did not parse" };
   }
-  if (!isRecord(object)) return { error: 'the reply must be one JSON object' };
+  if (!isRecord(object)) return { error: "the reply must be one JSON object" };
   const reasoning = object.reasoning;
-  if (reasoning !== undefined && !isText(reasoning)) return { error: '"reasoning" must be a string' };
+  if (reasoning !== undefined && !isText(reasoning))
+    return { error: '"reasoning" must be a string' };
   const reply = parseMemoryReply(object, current);
   if (!(reply instanceof Object)) return { error: reply };
   return {
     value: {
       memory: reply.memory,
-      reasoning: clip((reasoning ?? '').trim(), WEEKLY_REVIEW_PROMPT_POLICY.rationaleLimit),
+      reasoning: clip((reasoning ?? "").trim(), WEEKLY_REVIEW_PROMPT_POLICY.rationaleLimit),
     },
   };
 }
 
-export function parseWeeklyReview(response: string, current: FranchiseMemory): ParsedWeeklyReview | string {
+export function parseWeeklyReview(
+  response: string,
+  current: FranchiseMemory,
+): ParsedWeeklyReview | string {
   const result = parseWeeklyReviewResult(response, current);
-  return 'error' in result ? result.error : result.value;
+  return "error" in result ? result.error : result.value;
 }
 
-function renderTemplate(lines: readonly string[], values: Readonly<Record<string, string>>): string {
+function renderTemplate(
+  lines: readonly string[],
+  values: Readonly<Record<string, string>>,
+): string {
   return lines
     .map((line) =>
-      Object.entries(values).reduce((rendered, [name, value]) => rendered.replaceAll(`{{${name}}}`, value), line),
+      Object.entries(values).reduce(
+        (rendered, [name, value]) => rendered.replaceAll(`{{${name}}}`, value),
+        line,
+      ),
     )
-    .join('\n');
+    .join("\n");
 }
 
 function windowNotice(state: WeeklyReviewState): string {
-  if (state.nextWindowWeek === null) return 'Rosters are now locked for the rest of the season.';
-  if (state.nextWindowWeek === state.week && state.stage === 'week') {
-    return 'A transaction window opens as soon as this review closes; your notebook is what you take into it.';
+  if (state.nextWindowWeek === null) return "Rosters are now locked for the rest of the season.";
+  if (state.nextWindowWeek === state.week && state.stage === "week") {
+    return "A transaction window opens as soon as this review closes; your notebook is what you take into it.";
   }
   return `The next transaction window opens after week ${state.nextWindowWeek}.`;
 }
 
 function systemPrompt(state: WeeklyReviewState, entrant: number): string {
   const template =
-    state.stage === 'week'
+    state.stage === "week"
       ? WEEKLY_REVIEW_PROMPT_POLICY.systemTemplate
       : WEEKLY_REVIEW_PROMPT_POLICY.reconcileSystemTemplate;
   return renderTemplate(template, {
@@ -231,72 +260,89 @@ function systemPrompt(state: WeeklyReviewState, entrant: number): string {
 }
 
 function rosterLine(roster: readonly DraftBoardMon[]): string {
-  return roster.map((mon) => `${mon.name} (${mon.id}, ${mon.cost})`).join(', ');
+  return roster.map((mon) => `${mon.name} (${mon.id}, ${mon.cost})`).join(", ");
 }
 
 function resultLine(series: WeeklyReviewSeries, models: readonly string[]): string {
   const [a, b] = series.entrants;
-  if (series.winner === null) return `${models[a]} drew with ${models[b]} ${series.score[0]}-${series.score[1]}`;
+  if (series.winner === null)
+    return `${models[a]} drew with ${models[b]} ${series.score[0]}-${series.score[1]}`;
   const loser = series.winner === a ? b : a;
   const [won, lost] = series.winner === a ? series.score : [series.score[1], series.score[0]];
   return `${models[series.winner]} beat ${models[loser]} ${won}-${lost}`;
 }
 
 function userPrompt(state: WeeklyReviewState, entrant: number): string {
-  const lines: string[] = [WEEKLY_REVIEW_PROMPT_POLICY.standingsHeading.replace('{{week}}', String(state.week))];
+  const lines: string[] = [
+    WEEKLY_REVIEW_PROMPT_POLICY.standingsHeading.replace("{{week}}", String(state.week)),
+  ];
   for (const [rank, row] of state.standings.entries()) {
     lines.push(
       `${rank + 1}. entrant ${row.entrant} | ${state.models[row.entrant]} | ${row.w}-${row.l} | ${row.gw}-${row.gl}`,
     );
   }
-  if (state.stage === 'week') {
+  if (state.stage === "week") {
     const period = new Set(state.period);
-    lines.push('', WEEKLY_REVIEW_PROMPT_POLICY.ownResultsHeading);
-    const own = state.series.filter((series) => period.has(series.index) && series.entrants.includes(entrant));
-    if (!own.length) lines.push('- (none)');
+    lines.push("", WEEKLY_REVIEW_PROMPT_POLICY.ownResultsHeading);
+    const own = state.series.filter(
+      (series) => period.has(series.index) && series.entrants.includes(entrant),
+    );
+    if (!own.length) lines.push("- (none)");
     for (const series of own) {
       lines.push(
         `- Series ${series.index}, week ${series.week}: ${series.context[entrant] ?? resultLine(series, state.models)}`,
       );
     }
-    lines.push('', WEEKLY_REVIEW_PROMPT_POLICY.publicResultsHeading);
-    const others = state.series.filter((series) => period.has(series.index) && !series.entrants.includes(entrant));
-    if (!others.length) lines.push('- (none)');
+    lines.push("", WEEKLY_REVIEW_PROMPT_POLICY.publicResultsHeading);
+    const others = state.series.filter(
+      (series) => period.has(series.index) && !series.entrants.includes(entrant),
+    );
+    if (!others.length) lines.push("- (none)");
     for (const series of others)
-      lines.push(`- Series ${series.index}, week ${series.week}: ${resultLine(series, state.models)}`);
+      lines.push(
+        `- Series ${series.index}, week ${series.week}: ${resultLine(series, state.models)}`,
+      );
   }
-  lines.push('', WEEKLY_REVIEW_PROMPT_POLICY.scheduleHeading);
-  const ahead = state.schedule.filter((plan) => plan.week > state.week && plan.entrants.includes(entrant));
-  if (!ahead.length) lines.push('- (the round robin is complete; playoffs seed from the standings)');
+  lines.push("", WEEKLY_REVIEW_PROMPT_POLICY.scheduleHeading);
+  const ahead = state.schedule.filter(
+    (plan) => plan.week > state.week && plan.entrants.includes(entrant),
+  );
+  if (!ahead.length)
+    lines.push("- (the round robin is complete; playoffs seed from the standings)");
   for (const plan of ahead) {
     const opponent = plan.entrants[0] === entrant ? plan.entrants[1] : plan.entrants[0];
-    lines.push(`- Week ${plan.week} | ${state.models[opponent]} | ${rosterLine(state.rosters[opponent]!)}`);
+    lines.push(
+      `- Week ${plan.week} | ${state.models[opponent]} | ${rosterLine(state.rosters[opponent]!)}`,
+    );
   }
-  lines.push('', WEEKLY_REVIEW_PROMPT_POLICY.transactionsHeading);
-  if (!state.transactions.length) lines.push('- (none yet)');
+  lines.push("", WEEKLY_REVIEW_PROMPT_POLICY.transactionsHeading);
+  if (!state.transactions.length) lines.push("- (none yet)");
   lines.push(...state.transactions);
-  if (state.stage === 'week') {
-    lines.push('', `${WEEKLY_REVIEW_PROMPT_POLICY.rosterHeading} ${rosterLine(state.rosters[entrant]!)}`);
+  if (state.stage === "week") {
+    lines.push(
+      "",
+      `${WEEKLY_REVIEW_PROMPT_POLICY.rosterHeading} ${rosterLine(state.rosters[entrant]!)}`,
+    );
   } else {
     lines.push(
-      '',
+      "",
       `${WEEKLY_REVIEW_PROMPT_POLICY.previousRosterHeading} ${rosterLine(state.previousRosters[entrant]!)}`,
       `${WEEKLY_REVIEW_PROMPT_POLICY.currentRosterHeading} ${rosterLine(state.rosters[entrant]!)}`,
     );
   }
   lines.push(
-    '',
+    "",
     ...renderMemory(state.memories[entrant]!),
-    '',
+    "",
     MEMORY_TOOL_NOTICE,
-    '',
+    "",
     ...WEEKLY_REVIEW_PROMPT_POLICY.replyTemplate,
   );
-  return lines.join('\n');
+  return lines.join("\n");
 }
 
 export function renderWeeklyReviewPrompt(state: WeeklyReviewState, entrant: number): string {
-  return [systemPrompt(state, entrant), '', userPrompt(state, entrant)].join('\n');
+  return [systemPrompt(state, entrant), "", userPrompt(state, entrant)].join("\n");
 }
 
 function boundedToolOutput(text: string): string {
@@ -304,51 +350,64 @@ function boundedToolOutput(text: string): string {
   return text.length > limit ? `${text.slice(0, limit)}\n[truncated at ${limit} characters]` : text;
 }
 
-export function narratePublicSeries(runDir: string, series: WeeklyReviewSeries, models: readonly string[]): string {
+export function narratePublicSeries(
+  runDir: string,
+  series: WeeklyReviewSeries,
+  models: readonly string[],
+): string {
   const [a, b] = series.entrants;
-  const names = { P1: models[a]!, P2: models[b]! } satisfies Record<'P1' | 'P2', string>;
-  const lines: string[] = [`Series ${series.index}, week ${series.week}: ${resultLine(series, models)}.`];
+  const names = { P1: models[a]!, P2: models[b]! } satisfies Record<"P1" | "P2", string>;
+  const lines: string[] = [
+    `Series ${series.index}, week ${series.week}: ${resultLine(series, models)}.`,
+  ];
   for (const [gameIndex, gameLines] of readCompletedSeriesGameLogs(
-    path.join(runDir, 'series', series.seriesId),
+    path.join(runDir, "series", series.seriesId),
     series.seriesId,
   ).entries()) {
     const log = new BattleLog(1_000);
     log.feed(gameLines);
-    lines.push('', `Game ${gameIndex + 1}:`);
+    lines.push("", `Game ${gameIndex + 1}:`);
     for (const entry of log.entries) {
       lines.push(
-        `${entry.turn ? `T${entry.turn} ` : ''}${entry.text.replace(/\bP[12]\b/g, (seatName: string) =>
-          seatName === 'P1' ? names.P1 : names.P2,
+        `${entry.turn ? `T${entry.turn} ` : ""}${entry.text.replace(
+          /\bP[12]\b/g,
+          (seatName: string) => (seatName === "P1" ? names.P1 : names.P2),
         )}`,
       );
     }
   }
-  return boundedToolOutput(lines.join('\n'));
+  return boundedToolOutput(lines.join("\n"));
 }
 
-export function narrateOwnSeries(runDir: string, series: WeeklyReviewSeries, entrant: number): string {
-  const pid = series.entrants[0] === entrant ? 'p1' : 'p2';
-  const seriesDir = path.join(runDir, 'series', series.seriesId);
+export function narrateOwnSeries(
+  runDir: string,
+  series: WeeklyReviewSeries,
+  entrant: number,
+): string {
+  const pid = series.entrants[0] === entrant ? "p1" : "p2";
+  const seriesDir = path.join(runDir, "series", series.seriesId);
   const rows = readCompletedSeriesDecisionRows(seriesDir, series.seriesId, pid);
   const lines: string[] = [`Series ${series.index}, week ${series.week}, your seat ${pid}.`];
-  let game = '';
+  let game = "";
   for (const row of rows) {
     if (String(row.game_number) !== game) {
       game = String(row.game_number);
-      lines.push('', `Game ${game}:`);
+      lines.push("", `Game ${game}:`);
     }
-    if (row.kind === 'decision') {
+    if (row.kind === "decision") {
       const rationale = z.string().safeParse(row.rationale);
-      const why = rationale.success && rationale.data ? ` — ${rationale.data}` : '';
-      lines.push(`${row.phase === 'team_preview' ? 'Preview' : `T${String(row.turn)}`}: ${String(row.action)}${why}`);
-    } else if (row.kind === 'game_reflection') {
+      const why = rationale.success && rationale.data ? ` — ${rationale.data}` : "";
       lines.push(
-        `After the game (${String(row.result)}): ${String(row.summary ?? '')}${row.adjustment ? ` Adjustment: ${String(row.adjustment)}` : ''}`,
+        `${row.phase === "team_preview" ? "Preview" : `T${String(row.turn)}`}: ${String(row.action)}${why}`,
+      );
+    } else if (row.kind === "game_reflection") {
+      lines.push(
+        `After the game (${String(row.result)}): ${String(row.summary ?? "")}${row.adjustment ? ` Adjustment: ${String(row.adjustment)}` : ""}`,
       );
     }
   }
-  if (series.context[entrant]) lines.push('', `Series note: ${series.context[entrant]}`);
-  return boundedToolOutput(lines.join('\n'));
+  if (series.context[entrant]) lines.push("", `Series note: ${series.context[entrant]}`);
+  return boundedToolOutput(lines.join("\n"));
 }
 
 export function describeOwnBuild(
@@ -361,45 +420,58 @@ export function describeOwnBuild(
   const roster = series.rosters[entrant] ?? [];
   const displayName = new Map(roster.map((mon) => [mon.id, mon.name]));
   const registered = new Set(build.brought);
-  const lines = [`Series ${series.index}, week ${series.week}. Plan: ${build.rationale || '(none)'}`];
+  const lines = [
+    `Series ${series.index}, week ${series.week}. Plan: ${build.rationale || "(none)"}`,
+  ];
   for (const set of build.sets) {
     const investment = Object.entries(set.evs)
       .filter(([, value]) => Number(value) > 0)
       .map(([stat, value]) => `${stat} ${value}`)
-      .join('/');
+      .join("/");
     lines.push(
-      `- ${set.species} @ ${set.item}; ${set.ability}; ${set.nature}; ${set.moves.join('/')}; ${investment || '0 investment'}`,
+      `- ${set.species} @ ${set.item}; ${set.ability}; ${set.nature}; ${set.moves.join("/")}; ${investment || "0 investment"}`,
     );
   }
-  const left = roster.filter((mon) => !registered.has(mon.id) && build.sets.every((set) => set.species !== mon.name));
-  if (left.length) lines.push(`Left behind: ${left.map((mon) => mon.name).join(', ')}`);
+  const left = roster.filter(
+    (mon) => !registered.has(mon.id) && build.sets.every((set) => set.species !== mon.name),
+  );
+  if (left.length) lines.push(`Left behind: ${left.map((mon) => mon.name).join(", ")}`);
   const side = series.entrants[0] === entrant ? 0 : 1;
   for (const [index, game] of usage.entries()) {
-    const brought = game.brought[side].map((id) => displayName.get(id) ?? id).join(', ') || '(none)';
+    const brought =
+      game.brought[side].map((id) => displayName.get(id) ?? id).join(", ") || "(none)";
     const megaId = game.megaEvolved[side];
-    const mega = megaId ? (displayName.get(megaId) ?? megaId) : 'none';
+    const mega = megaId ? (displayName.get(megaId) ?? megaId) : "none";
     lines.push(`Game ${index + 1}: brought ${brought}; Mega Evolved ${mega}`);
   }
-  return boundedToolOutput(lines.join('\n'));
+  return boundedToolOutput(lines.join("\n"));
 }
 
-function reviewTools(state: WeeklyReviewState, entrant: number, options: RunWeeklyReviewOptions): ExtraTool[] {
+function reviewTools(
+  state: WeeklyReviewState,
+  entrant: number,
+  options: RunWeeklyReviewOptions,
+): ExtraTool[] {
   const completed = new Map(state.series.map((series) => [series.index, series] as const));
   const seriesIndex = z.object({ series_index: z.number().int().nonnegative() });
   const seriesParameters: JsonObject = {
-    type: 'object',
-    properties: { series_index: { type: 'integer', minimum: 0 } },
-    required: ['series_index'],
+    type: "object",
+    properties: { series_index: { type: "integer", minimum: 0 } },
+    required: ["series_index"],
     additionalProperties: false,
   };
-  const seriesTool = (name: string, description: string, run: (seriesIndex: number) => string): ExtraTool => ({
+  const seriesTool = (
+    name: string,
+    description: string,
+    run: (seriesIndex: number) => string,
+  ): ExtraTool => ({
     definition: { name, description, parameters: seriesParameters },
     run: (args) => run(seriesIndex.parse(args).series_index),
   });
   return [
     seriesTool(
-      'read_public_series',
-      'The spectator log of one completed series this season: registrations, leads, every turn, and the result.',
+      "read_public_series",
+      "The spectator log of one completed series this season: registrations, leads, every turn, and the result.",
       (index) => {
         const series = completed.get(index);
         return series
@@ -408,8 +480,8 @@ function reviewTools(state: WeeklyReviewState, entrant: number, options: RunWeek
       },
     ),
     seriesTool(
-      'read_own_series',
-      'Your own choices in one of your completed series, with the reasons you gave at the time and your end-of-game notes.',
+      "read_own_series",
+      "Your own choices in one of your completed series, with the reasons you gave at the time and your end-of-game notes.",
       (index) => {
         const series = completed.get(index);
         return series?.entrants.includes(entrant)
@@ -418,8 +490,8 @@ function reviewTools(state: WeeklyReviewState, entrant: number, options: RunWeek
       },
     ),
     seriesTool(
-      'read_own_build',
-      'The six you registered for one of your completed series and the plan you wrote for it.',
+      "read_own_build",
+      "The six you registered for one of your completed series and the plan you wrote for it.",
       (index) => {
         const series = completed.get(index);
         if (!series?.entrants.includes(entrant)) {
@@ -430,56 +502,65 @@ function reviewTools(state: WeeklyReviewState, entrant: number, options: RunWeek
         return describeOwnBuild(
           series,
           entrant,
-          seriesGameSummaries(path.join(options.runDir, 'series', series.seriesId), series.seriesId, state.board.mons, [
-            first,
-            second,
-          ]),
+          seriesGameSummaries(
+            path.join(options.runDir, "series", series.seriesId),
+            series.seriesId,
+            state.board.mons,
+            [first, second],
+          ),
         );
       },
     ),
     {
       definition: {
-        name: 'read_memory_page',
+        name: "read_memory_page",
         description: READ_MEMORY_PAGE.description,
         parameters: {
-          type: 'object',
-          properties: { name: { type: 'string' } },
-          required: ['name'],
+          type: "object",
+          properties: { name: { type: "string" } },
+          required: ["name"],
           additionalProperties: false,
         },
       },
-      run: (args) => readMemoryPage(state.memories[entrant]!, z.object({ name: z.string() }).parse(args)),
+      run: (args) =>
+        readMemoryPage(state.memories[entrant]!, z.object({ name: z.string() }).parse(args)),
     },
     {
       definition: {
-        name: 'read_memory_history',
+        name: "read_memory_history",
         description:
           'Your memory as it stood after an earlier barrier, page names included: stage "week" is the weekly review, stage "transactions" is the reconciliation after that week\'s transaction window.',
         parameters: {
-          type: 'object',
+          type: "object",
           properties: {
-            week: { type: 'integer', minimum: 1 },
-            stage: { type: 'string', enum: ['week', 'transactions'] },
+            week: { type: "integer", minimum: 1 },
+            stage: { type: "string", enum: ["week", "transactions"] },
           },
-          required: ['week'],
+          required: ["week"],
           additionalProperties: false,
         },
       },
       run: (args) => {
         const { week, stage } = z
-          .object({ week: z.number().int().positive(), stage: z.enum(['week', 'transactions']).default('week') })
+          .object({
+            week: z.number().int().positive(),
+            stage: z.enum(["week", "transactions"]).default("week"),
+          })
           .parse(args);
         const precedes =
-          week < state.week || (week === state.week && stage === 'week' && state.stage === 'transactions');
+          week < state.week ||
+          (week === state.week && stage === "week" && state.stage === "transactions");
         const row = precedes
-          ? readWeeklyReviews(options.runDir, week, stage).find((candidate) => candidate.entrant === entrant)
+          ? readWeeklyReviews(options.runDir, week, stage).find(
+              (candidate) => candidate.entrant === entrant,
+            )
           : undefined;
         if (!row) {
-          return `You have no stored ${stage === 'week' ? 'review' : 'reconciliation'} for week ${week}. Stored barriers: ${
-            storedBarriers(options.runDir, state, entrant).join(', ') || 'none'
+          return `You have no stored ${stage === "week" ? "review" : "reconciliation"} for week ${week}. Stored barriers: ${
+            storedBarriers(options.runDir, state, entrant).join(", ") || "none"
           }.`;
         }
-        return renderMemory(row.memory, 'full').join('\n');
+        return renderMemory(row.memory, "full").join("\n");
       },
     },
   ];
@@ -488,8 +569,8 @@ function reviewTools(state: WeeklyReviewState, entrant: number, options: RunWeek
 function storedBarriers(runDir: string, state: WeeklyReviewState, entrant: number): string[] {
   const barriers: string[] = [];
   for (let week = 1; week <= state.week; week += 1) {
-    for (const stage of ['week', 'transactions'] as const) {
-      if (week === state.week && (stage === 'transactions' || state.stage === 'week')) continue;
+    for (const stage of ["week", "transactions"] as const) {
+      if (week === state.week && (stage === "transactions" || state.stage === "week")) continue;
       if (readWeeklyReviews(runDir, week, stage).some((row) => row.entrant === entrant)) {
         barriers.push(`week ${week} ${stage}`);
       }
@@ -503,7 +584,7 @@ const weeklyReviewRowSchema = z
     timestamp: z.string().optional(),
     entrant: z.number().int().nonnegative(),
     model: z.string(),
-    stage: z.enum(['week', 'transactions']),
+    stage: z.enum(["week", "transactions"]),
     week: z.number().int(),
     roster_version: z.number().int(),
     memory: z.record(z.string(), z.string()),
@@ -526,11 +607,16 @@ function replayReviews(file: string): WeeklyReview[] {
   });
 }
 
-export function readWeeklyReviews(runDir: string, week: number, stage: ReviewStage = 'week'): WeeklyReview[] {
+export function readWeeklyReviews(
+  runDir: string,
+  week: number,
+  stage: ReviewStage = "week",
+): WeeklyReview[] {
   const { transcript } = reviewArtifactPaths(runDir, week, stage);
   const reviews = replayReviews(transcript);
   const misplaced = reviews.find((review) => review.week !== week || review.stage !== stage);
-  if (misplaced) throw new Error(`${transcript} holds a review for week ${misplaced.week} ${misplaced.stage}`);
+  if (misplaced)
+    throw new Error(`${transcript} holds a review for week ${misplaced.week} ${misplaced.stage}`);
   return reviews;
 }
 
@@ -574,19 +660,25 @@ export async function runWeeklyReview(
         ((spec: string, apiKey: string | undefined, reasoning: ReasoningLevel | undefined) =>
           makeProvider(parseSpec(spec), { apiKey, reasoning }));
       const provider =
-        model === 'random' ? undefined : make(model, options.apiKeys?.[model], reasoningForModel(model, options));
+        model === "random"
+          ? undefined
+          : make(model, options.apiKeys?.[model], reasoningForModel(model, options));
       let parsedReview: ParsedWeeklyReview | undefined;
       let fallback = false;
       if (provider) {
         const system = systemPrompt(state, entrant);
-        const messages: ProviderMessage[] = [{ role: 'user', content: userPrompt(state, entrant) }];
+        const messages: ProviderMessage[] = [{ role: "user", content: userPrompt(state, entrant) }];
         const seatLog = path.join(logDir, `seat-${entrant}-${slug(model)}.jsonl`);
         const reference = new ShowdownReference(state.board.format, options.psDir);
         const boardSearch = createBoardSearch(state.board, options.psDir);
         const extraTools = reviewTools(state, entrant, options);
-        for (let attempt = 1; attempt <= WEEKLY_REVIEW_PROMPT_POLICY.attempts && !parsedReview; attempt += 1) {
-          const promptForAttempt = messages[messages.length - 1]!.content ?? '';
-          let response = '';
+        for (
+          let attempt = 1;
+          attempt <= WEEKLY_REVIEW_PROMPT_POLICY.attempts && !parsedReview;
+          attempt += 1
+        ) {
+          const promptForAttempt = messages[messages.length - 1]!.content ?? "";
+          let response = "";
           let usage: Record<string, number> | undefined;
           let error: string | undefined;
           let terminalError: Error | undefined;
@@ -606,21 +698,27 @@ export async function runWeeklyReview(
             });
             response = completion.text;
             usage = completion.usage;
-            const truncated = completion.outputLimitReached || completion.finishReason === 'length';
+            const truncated = completion.outputLimitReached || completion.finishReason === "length";
             const candidate = truncated
-              ? { error: 'the reply was cut off before completing the JSON object' }
+              ? { error: "the reply was cut off before completing the JSON object" }
               : parseWeeklyReviewResult(response, current);
-            if ('error' in candidate) {
+            if ("error" in candidate) {
               error = candidate.error;
-              messages.push({ role: 'assistant', content: response || '[the reply contained no visible text]' });
               messages.push({
-                role: 'user',
+                role: "assistant",
+                content: response || "[the reply contained no visible text]",
+              });
+              messages.push({
+                role: "user",
                 content: truncated
                   ? WEEKLY_REVIEW_PROMPT_POLICY.truncatedTemplate.replace(
-                      '{{budget}}',
+                      "{{budget}}",
                       String(WEEKLY_REVIEW_PROMPT_POLICY.maxTokens),
                     )
-                  : WEEKLY_REVIEW_PROMPT_POLICY.rejectionTemplate.replace('{{error}}', candidate.error),
+                  : WEEKLY_REVIEW_PROMPT_POLICY.rejectionTemplate.replace(
+                      "{{error}}",
+                      candidate.error,
+                    ),
               });
             } else {
               parsedReview = candidate.value;
@@ -628,7 +726,9 @@ export async function runWeeklyReview(
           } catch (cause) {
             const failure = classifyProviderFailure(cause, model);
             error = failure.summary;
-            terminalError = new Error(`${failure.summary} The weekly review cannot continue.`, { cause });
+            terminalError = new Error(`${failure.summary} The weekly review cannot continue.`, {
+              cause,
+            });
           }
           const completeLogRow = {
             attempt,
@@ -639,12 +739,12 @@ export async function runWeeklyReview(
             tool_lookups: lookups.length ? lookups : undefined,
             error: error || undefined,
           } satisfies ReviewSeatLog;
-          fs.appendFileSync(seatLog, `${JSON.stringify(completeLogRow)}\n`, 'utf8');
+          fs.appendFileSync(seatLog, `${JSON.stringify(completeLogRow)}\n`, "utf8");
           if (terminalError) throw terminalError;
         }
         fallback = parsedReview === undefined;
       }
-      parsedReview ??= { memory: current, reasoning: '' };
+      parsedReview ??= { memory: current, reasoning: "" };
       const review: WeeklyReview = {
         entrant,
         model,

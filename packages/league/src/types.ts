@@ -1,15 +1,15 @@
-import type { ModelMessage, ToolCallPart } from 'ai';
+import type { ModelMessage, ToolCallPart } from "ai";
 
-export type Pid = 'p1' | 'p2';
+export type Pid = "p1" | "p2";
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | readonly JsonValue[];
 export interface JsonObject {
   [key: string]: JsonValue | undefined;
 }
-export type ExperimentMode = 'rotation' | 'exhibition' | 'tournament' | 'draft';
+export type ExperimentMode = "rotation" | "exhibition" | "tournament" | "draft";
 
 export interface ContributorAttribution {
-  provider: 'github';
+  provider: "github";
   subject: string;
   login: string;
 }
@@ -65,15 +65,15 @@ export interface BattleRequest extends JsonObject {
   };
 }
 
-export type TimerScale = number | 'off';
+export type TimerScale = number | "off";
 
 export type SubmissionSource =
-  | 'model'
-  | 'automatic'
-  | 'random'
-  | 'model-default'
-  | 'simulator-default'
-  | 'timer-default';
+  | "model"
+  | "automatic"
+  | "random"
+  | "model-default"
+  | "simulator-default"
+  | "timer-default";
 
 export interface ActionSubmission {
   submissionId: string;
@@ -81,7 +81,7 @@ export interface ActionSubmission {
   source: SubmissionSource;
 }
 
-export type SubmissionOutcome = 'accepted' | 'rejected';
+export type SubmissionOutcome = "accepted" | "rejected";
 
 export interface AgentContext {
   povLines: string[];
@@ -97,7 +97,11 @@ export interface BattleAgent {
     request: BattleRequest,
     context: SubmissionContext,
   ): Promise<ActionSubmission | null> | ActionSubmission | null;
-  resolveSubmission(submission: ActionSubmission, outcome: SubmissionOutcome, showdownError?: string): void;
+  resolveSubmission(
+    submission: ActionSubmission,
+    outcome: SubmissionOutcome,
+    showdownError?: string,
+  ): void;
   observe(lines: string[]): Promise<void> | void;
   abandonDecision?(): void;
 }
@@ -123,7 +127,7 @@ export interface ToolCall {
   name: string;
   arguments: JsonObject;
   /** Provider metadata that must be replayed with the call. */
-  providerMetadata?: NonNullable<ToolCallPart['providerOptions']>;
+  providerMetadata?: NonNullable<ToolCallPart["providerOptions"]>;
 }
 
 export interface Completion {
@@ -138,7 +142,7 @@ export interface Completion {
 }
 
 export interface ProviderMessage {
-  role: 'user' | 'assistant' | 'tool';
+  role: "user" | "assistant" | "tool";
   content?: string | null;
   toolCallId?: string;
   name?: string;
@@ -154,24 +158,28 @@ export interface CompleteOptions {
   /** Explicit reasoning-token budget below maxTokens, guaranteeing visible-text headroom. */
   reasoningMaxTokens?: number;
   tools?: ToolDefinition[];
-  toolChoice?: 'auto' | 'none' | 'required';
+  toolChoice?: "auto" | "none" | "required";
   /** Throw on the first infra-class failure instead of retrying, so timed battles keep their clock. */
   failFast?: boolean;
   signal?: AbortSignal;
 }
 
 export interface Provider {
-  complete(system: string, messages: ProviderMessage[], options?: CompleteOptions): Promise<Completion>;
+  complete(
+    system: string,
+    messages: ProviderMessage[],
+    options?: CompleteOptions,
+  ): Promise<Completion>;
 }
 
 export type ProviderFailureKind =
-  | 'quota'
-  | 'rate_limit'
-  | 'timeout'
-  | 'truncation'
-  | 'upstream'
-  | 'network'
-  | 'request';
+  | "quota"
+  | "rate_limit"
+  | "timeout"
+  | "truncation"
+  | "upstream"
+  | "network"
+  | "request";
 
 export interface ProviderFailure {
   kind: ProviderFailureKind;

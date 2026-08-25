@@ -1,6 +1,6 @@
-import type { JsonObject } from './types.js';
+import type { JsonObject } from "./types.js";
 
-export type AgentContextKind = 'episode' | 'observation' | 'decision' | 'reflection';
+export type AgentContextKind = "episode" | "observation" | "decision" | "reflection";
 
 export interface AgentContextEvent extends JsonObject {
   id: string;
@@ -37,18 +37,19 @@ export class AgentContextStream {
   constructor(initial: readonly AgentContextEvent[] = [], sink?: AgentContextSink) {
     this.events = initial.map((event, index) => {
       const sequence = index + 1;
-      const id = `ctx-${String(sequence).padStart(8, '0')}`;
-      if (event.sequence !== sequence || event.id !== id) throw new Error(`non-contiguous context event ${event.id}`);
+      const id = `ctx-${String(sequence).padStart(8, "0")}`;
+      if (event.sequence !== sequence || event.id !== id)
+        throw new Error(`non-contiguous context event ${event.id}`);
       return structuredClone(event);
     });
     this.sink = sink;
   }
 
   append(kind: AgentContextKind, payload: JsonObject): AgentContextEvent {
-    if (this.persisting) throw new Error('context append already in progress');
+    if (this.persisting) throw new Error("context append already in progress");
     const sequence = this.events.length + 1;
     const event: AgentContextEvent = {
-      id: `ctx-${String(sequence).padStart(8, '0')}`,
+      id: `ctx-${String(sequence).padStart(8, "0")}`,
       sequence,
       kind,
       payload: structuredClone(payload),
@@ -72,13 +73,20 @@ export class AgentContextStream {
   read(query: AgentContextQuery = {}) {
     const after = sequenceOf(query.after, 0);
     const before = sequenceOf(query.before, Number.POSITIVE_INFINITY);
-    if (query.kind !== undefined && !['episode', 'observation', 'decision', 'reflection'].includes(query.kind))
+    if (
+      query.kind !== undefined &&
+      !["episode", "observation", "decision", "reflection"].includes(query.kind)
+    )
       throw new Error(`invalid context kind ${JSON.stringify(query.kind)}`);
     const requestedLimit = query.limit ?? 100;
-    if (!Number.isFinite(requestedLimit)) throw new Error(`invalid context limit ${JSON.stringify(requestedLimit)}`);
+    if (!Number.isFinite(requestedLimit))
+      throw new Error(`invalid context limit ${JSON.stringify(requestedLimit)}`);
     const limit = Math.max(1, Math.min(Math.trunc(requestedLimit), 500));
     const eligible = this.events.filter(
-      (event) => event.sequence > after && event.sequence < before && (!query.kind || event.kind === query.kind),
+      (event) =>
+        event.sequence > after &&
+        event.sequence < before &&
+        (!query.kind || event.kind === query.kind),
     );
     const events = eligible.slice(0, limit);
     return {

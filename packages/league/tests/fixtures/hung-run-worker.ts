@@ -1,1 +1,1 @@
-process.on('message', () => {});
+process.on("message", () => {});

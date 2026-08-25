@@ -1,11 +1,16 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 const id = z.string().min(1);
 const franchiseRef = z.string().regex(/^franchise-\d+$/);
 
-const pokemonSchema = z.strictObject({ id, name: id, spriteId: id, cost: z.number().int().nonnegative() });
+const pokemonSchema = z.strictObject({
+  id,
+  name: id,
+  spriteId: id,
+  cost: z.number().int().nonnegative(),
+});
 const rosterSlotSchema = pokemonSchema.extend({
-  acquired: z.enum(['draft', 'trade', 'free-agency']),
+  acquired: z.enum(["draft", "trade", "free-agency"]),
   overallPick: z.number().int().positive().nullable(),
   rationale: z.string(),
   fallback: z.boolean(),
@@ -40,7 +45,18 @@ const slotRefSchema = z.strictObject({
 });
 const eventSchema = z.strictObject({
   turn: z.number().int().nonnegative(),
-  kind: z.enum(['turn', 'move', 'switch', 'faint', 'status', 'field', 'win', 'timer', 'detail', 'preview']),
+  kind: z.enum([
+    "turn",
+    "move",
+    "switch",
+    "faint",
+    "status",
+    "field",
+    "win",
+    "timer",
+    "detail",
+    "preview",
+  ]),
   text: z.string(),
   actor: slotRefSchema.optional(),
   target: slotRefSchema.optional(),
@@ -61,7 +77,7 @@ const decisionSchema = z.strictObject({
 });
 const reflectionSchema = z.strictObject({
   franchiseId: franchiseRef,
-  result: z.enum(['won', 'lost']),
+  result: z.enum(["won", "lost"]),
   summary: z.string(),
   adjustment: z.string(),
   fallback: z.boolean(),
@@ -82,7 +98,7 @@ const matchSchema = z.strictObject({
   seriesIndex: z.number().int().nonnegative(),
   seriesId: id.nullable(),
   franchises: z.tuple([franchiseRef, franchiseRef]),
-  status: z.enum(['scheduled', 'complete']),
+  status: z.enum(["scheduled", "complete"]),
   score: z.tuple([z.number().int().nonnegative(), z.number().int().nonnegative()]).nullable(),
   winnerId: franchiseRef.nullable(),
   games: z.array(gameSummarySchema),
@@ -90,7 +106,7 @@ const matchSchema = z.strictObject({
 });
 const weeklyReviewSchema = z.strictObject({
   week: z.number().int().positive(),
-  stage: z.enum(['week', 'transactions']),
+  stage: z.enum(["week", "transactions"]),
   franchiseId: franchiseRef,
   rosterVersion: z.number().int().nonnegative(),
   reasoning: z.string(),
@@ -112,12 +128,12 @@ export const publicSeasonBundleSchema = z.strictObject({
       picksPerFranchise: z.number().int().nonnegative(),
     }),
     startedAt: z.iso.datetime(),
-    status: z.enum(['draft', 'regular-season', 'playoffs', 'complete']),
+    status: z.enum(["draft", "regular-season", "playoffs", "complete"]),
     releasedThroughWeek: z.number().int().nonnegative(),
     releasedPlayoffRounds: z.number().int().nonnegative(),
     totalWeeks: z.number().int().nonnegative(),
     playoffRounds: z.number().int().nonnegative(),
-    sheets: z.enum(['open', 'closed']),
+    sheets: z.enum(["open", "closed"]),
     /** Free-agent swaps each franchise may spend across the season's windows; null when unknown. */
     swapsAllowed: z.number().int().nonnegative().nullable(),
     championId: franchiseRef.nullable(),
@@ -177,7 +193,7 @@ export const publicSeasonBundleSchema = z.strictObject({
   weeks: z.array(
     z.strictObject({
       number: z.number().int().positive(),
-      status: z.enum(['released', 'scheduled']),
+      status: z.enum(["released", "scheduled"]),
       matches: z.array(matchSchema),
     }),
   ),

@@ -44,13 +44,13 @@ CLI runs read `OPENROUTER_API_KEY`, `PRIME_API_KEY`, `AI_GATEWAY_API_KEY`, or `O
 
 Endpoints are fixed, and model specs never take a base URL:
 
-| Spec | Endpoint | Model IDs |
-| --- | --- | --- |
-| `openrouter:` | `https://openrouter.ai/api/v1` | listed in the GUI catalog |
-| `prime:` | `https://api.pinference.ai/api/v1` | entered manually |
-| `gateway:` | `https://ai-gateway.vercel.sh/v1` | entered manually as `creator/model` |
-| `opencode-go:` | `https://opencode.ai/zen/go/v1` | listed in the GUI catalog |
-| `opencode-zen:` | `https://opencode.ai/zen/v1` | listed in the GUI catalog |
+| Spec            | Endpoint                           | Model IDs                           |
+| --------------- | ---------------------------------- | ----------------------------------- |
+| `openrouter:`   | `https://openrouter.ai/api/v1`     | listed in the GUI catalog           |
+| `prime:`        | `https://api.pinference.ai/api/v1` | entered manually                    |
+| `gateway:`      | `https://ai-gateway.vercel.sh/v1`  | entered manually as `creator/model` |
+| `opencode-go:`  | `https://opencode.ai/zen/go/v1`    | listed in the GUI catalog           |
+| `opencode-zen:` | `https://opencode.ai/zen/v1`       | listed in the GUI catalog           |
 
 OpenCode serves each model through one API shape. The harness follows OpenCode's endpoint tables: GPT, Grok, and Muse use the Responses API; Claude, Qwen, and MiniMax on Go use the Anthropic Messages API; Kimi, GLM, DeepSeek, MiMo, Hy3, and MiniMax on Zen use chat completions. Gemini requires the Google API and is rejected, so route it through OpenRouter instead.
 
@@ -80,13 +80,13 @@ pnpm run vgcleague draft   --models <spec> <spec> <spec> <spec> --board regmb-20
 pnpm run vgcleague exhibition --opponent <spec>
 ```
 
-| Mode | What happens | Comparison role |
-| --- | --- | --- |
-| GUI match | one best-of-three | contextual only |
-| Tournament | single-elimination bracket, one team per entrant | contextual only |
-| Draft | shared draft, matchup builds, round robin, playoffs | contextual only |
-| Rotation | mirrored assignments across a fixed pool | controlled/contextual; no rating |
-| Exhibition | one external terminal-agent seat | uncontrolled; no rating |
+| Mode       | What happens                                        | Comparison role                  |
+| ---------- | --------------------------------------------------- | -------------------------------- |
+| GUI match  | one best-of-three                                   | contextual only                  |
+| Tournament | single-elimination bracket, one team per entrant    | contextual only                  |
+| Draft      | shared draft, matchup builds, round robin, playoffs | contextual only                  |
+| Rotation   | mirrored assignments across a fixed pool            | controlled/contextual; no rating |
+| Exhibition | one external terminal-agent seat                    | uncontrolled; no rating          |
 
 All experiment commands accept `--seed`. Rotation, tournament, and draft also
 accept `--concurrency` and `--timer-scale <n|off>`. Battles are untimed by

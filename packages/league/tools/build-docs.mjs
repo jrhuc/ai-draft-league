@@ -1,32 +1,32 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { marked } from 'marked';
+import { marked } from "marked";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const docs = path.join(root, 'docs');
-const out = path.join(root, 'dist', 'docs');
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const docs = path.join(root, "docs");
+const out = path.join(root, "dist", "docs");
 const pages = [
-  ['index', 'Overview', 'Start'],
-  ['architecture', 'Architecture', 'Start'],
-  ['manager-model', 'Franchise managers', 'Concepts'],
-  ['measurement', 'Evidence', 'Concepts'],
-  ['usage', 'Usage', 'Operate'],
-  ['trade-window', 'Transactions', 'Operate'],
-  ['weekly-review', 'Weekly review', 'Operate'],
-  ['season-review', 'Season review', 'Operate'],
-  ['deployment', 'Deployment', 'Operate'],
+  ["index", "Overview", "Start"],
+  ["architecture", "Architecture", "Start"],
+  ["manager-model", "Franchise managers", "Concepts"],
+  ["measurement", "Evidence", "Concepts"],
+  ["usage", "Usage", "Operate"],
+  ["trade-window", "Transactions", "Operate"],
+  ["weekly-review", "Weekly review", "Operate"],
+  ["season-review", "Season review", "Operate"],
+  ["deployment", "Deployment", "Operate"],
 ];
-const primaryPages = new Set(['index', 'architecture', 'usage', 'measurement']);
+const primaryPages = new Set(["index", "architecture", "usage", "measurement"]);
 
 function slug(value, counts) {
   const base = value
-    .replace(/<[^>]+>/g, '')
-    .replace(/&amp;/g, 'and')
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "and")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
   const count = counts.get(base) ?? 0;
   counts.set(base, count + 1);
   return count === 0 ? base : `${base}-${count}`;
@@ -37,36 +37,41 @@ function renderMarkdown(source) {
   return marked
     .parse(source)
     .replace(/href="([^"#]+)\.md(#[^"]*)?"/g, (match, target, fragment) =>
-      /^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(target) ? match : `href="${target}.html${fragment ?? ''}"`,
+      /^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(target)
+        ? match
+        : `href="${target}.html${fragment ?? ""}"`,
     )
     .replace(/<h([1-6])>(.*?)<\/h\1>/g, (_match, level, contents) => {
       const id = slug(contents, counts);
-      return `<h${level} id="${id}"><a class="heading-anchor" href="#${id}" aria-label="Link to ${contents.replace(/<[^>]+>/g, '')}"></a>${contents}</h${level}>`;
+      return `<h${level} id="${id}"><a class="heading-anchor" href="#${id}" aria-label="Link to ${contents.replace(/<[^>]+>/g, "")}"></a>${contents}</h${level}>`;
     });
 }
 
 function pageLink(id) {
-  return id === 'index' ? './' : `./${id}.html`;
+  return id === "index" ? "./" : `./${id}.html`;
 }
 
 function document(pageId, label, body) {
   const nav = pages
     .filter(([id]) => primaryPages.has(id))
-    .map(([id, text]) => `<a href="${pageLink(id)}"${id === pageId ? ' aria-current="page"' : ''}>${text}</a>`)
-    .join('');
-  const sidebar = ['Start', 'Concepts', 'Operate']
+    .map(
+      ([id, text]) =>
+        `<a href="${pageLink(id)}"${id === pageId ? ' aria-current="page"' : ""}>${text}</a>`,
+    )
+    .join("");
+  const sidebar = ["Start", "Concepts", "Operate"]
     .map((section) => {
       const links = pages
         .filter(([, , group]) => group === section)
         .map(
           ([id, text]) =>
-            `<li><a href="${pageLink(id)}"${id === pageId ? ' aria-current="page"' : ''}>${text}</a></li>`,
+            `<li><a href="${pageLink(id)}"${id === pageId ? ' aria-current="page"' : ""}>${text}</a></li>`,
         )
-        .join('');
+        .join("");
       return `<section><p>${section}</p><ul>${links}</ul></section>`;
     })
-    .join('');
-  const title = pageId === 'index' ? 'VGC Model League' : `${label} · VGC Model League`;
+    .join("");
+  const title = pageId === "index" ? "VGC Model League" : `${label} · VGC Model League`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -97,10 +102,10 @@ function document(pageId, label, body) {
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(out, { recursive: true });
 for (const [id, label] of pages) {
-  const source = fs.readFileSync(path.join(docs, `${id}.md`), 'utf8');
-  const target = id === 'index' ? 'index.html' : `${id}.html`;
-  fs.writeFileSync(path.join(out, target), document(id, label, renderMarkdown(source)), 'utf8');
+  const source = fs.readFileSync(path.join(docs, `${id}.md`), "utf8");
+  const target = id === "index" ? "index.html" : `${id}.html`;
+  fs.writeFileSync(path.join(out, target), document(id, label, renderMarkdown(source)), "utf8");
 }
-fs.copyFileSync(path.join(docs, 'site.css'), path.join(out, 'site.css'));
-fs.cpSync(path.join(docs, 'assets'), path.join(out, 'assets'), { recursive: true });
+fs.copyFileSync(path.join(docs, "site.css"), path.join(out, "site.css"));
+fs.cpSync(path.join(docs, "assets"), path.join(out, "assets"), { recursive: true });
 console.log(`documentation built into ${path.relative(root, out)}/`);

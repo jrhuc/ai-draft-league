@@ -1,7 +1,7 @@
-import type { BoardSearch } from './board-search.js';
-import { assistantToolMessage, toolResultMessage, uniqueToolCalls } from './providers.js';
-import type { ShowdownReference } from './reference.js';
-import { DEX_TOOLS } from './reference.js';
+import type { BoardSearch } from "./board-search.js";
+import { assistantToolMessage, toolResultMessage, uniqueToolCalls } from "./providers.js";
+import type { ShowdownReference } from "./reference.js";
+import { DEX_TOOLS } from "./reference.js";
 import type {
   CompleteOptions,
   Completion,
@@ -10,15 +10,15 @@ import type {
   Provider,
   ProviderMessage,
   ToolDefinition,
-} from './types.js';
-import { isRecord, text } from './value.js';
+} from "./types.js";
+import { isRecord, text } from "./value.js";
 
 export const TOOL_BUDGET_NOTICE =
-  'Tool budget for this reply is exhausted; further tool calls will not be executed. Reply now with only the final JSON object.';
+  "Tool budget for this reply is exhausted; further tool calls will not be executed. Reply now with only the final JSON object.";
 
 function textToolCall(reply: string): { name: string; arguments: JsonObject } | undefined {
   const trimmed = reply.trim();
-  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return undefined;
+  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return undefined;
   let parsed: JsonValue;
   try {
     parsed = JSON.parse(trimmed);
@@ -63,11 +63,17 @@ function offeredTools(request: DexToolRequest): ToolDefinition[] {
   ];
 }
 
-async function completeOnce(request: DexToolRequest, options: { tools: boolean; final: boolean }): Promise<Completion> {
-  const completeOptions: CompleteOptions = { maxTokens: request.policy.maxTokens, signal: request.signal };
+async function completeOnce(
+  request: DexToolRequest,
+  options: { tools: boolean; final: boolean },
+): Promise<Completion> {
+  const completeOptions: CompleteOptions = {
+    maxTokens: request.policy.maxTokens,
+    signal: request.signal,
+  };
   if (options.tools) {
     completeOptions.tools = offeredTools(request);
-    completeOptions.toolChoice = options.final ? 'none' : 'auto';
+    completeOptions.toolChoice = options.final ? "none" : "auto";
   }
   return request.provider.complete(request.system, request.messages, completeOptions);
 }
@@ -81,7 +87,9 @@ export async function completeWithDexTools(request: DexToolRequest): Promise<Dex
   const usage: Record<string, number> = {};
   const seenToolResults = new Map<string, string>();
   const offeredNames = new Set(offeredTools(request).map((tool) => tool.name));
-  const extra = new Map((request.extraTools ?? []).map((tool) => [tool.definition.name, tool.run] as const));
+  const extra = new Map(
+    (request.extraTools ?? []).map((tool) => [tool.definition.name, tool.run] as const),
+  );
   const lookup = (name: string, args: JsonObject): string => {
     const seenKey = `${name} ${JSON.stringify(args)}`;
     const cached = seenToolResults.get(seenKey);
@@ -98,20 +106,20 @@ export async function completeWithDexTools(request: DexToolRequest): Promise<Dex
     request.signal?.throwIfAborted();
     const final = round >= request.policy.toolRounds;
     if (final && round === request.policy.toolRounds) {
-      request.messages.push({ role: 'user', content: TOOL_BUDGET_NOTICE });
+      request.messages.push({ role: "user", content: TOOL_BUDGET_NOTICE });
     }
     const completion = await completeOnce(request, { tools: true, final });
     for (const [key, value] of Object.entries(completion.usage)) {
-      usage[key] = (usage[key] ?? 0) + (key === 'cost' ? value : Math.trunc(value));
+      usage[key] = (usage[key] ?? 0) + (key === "cost" ? value : Math.trunc(value));
     }
     if (!completion.toolCalls.length || final) {
       const salvaged = final ? undefined : textToolCall(completion.text);
       if (salvaged) {
-        request.messages.push({ role: 'assistant', content: completion.text });
+        request.messages.push({ role: "assistant", content: completion.text });
         const result = lookup(salvaged.name, salvaged.arguments);
         request.onLookup?.({ name: salvaged.name, arguments: salvaged.arguments, result });
         request.messages.push({
-          role: 'user',
+          role: "user",
           content: `Tool result for ${salvaged.name}: ${result}\nWhen your analysis is done, reply with only the final JSON object.`,
         });
         continue;
@@ -123,7 +131,7 @@ export async function completeWithDexTools(request: DexToolRequest): Promise<Dex
         usage,
         outputLimitReached,
       };
-      if (outputLimitReached) result.finishReason = 'length';
+      if (outputLimitReached) result.finishReason = "length";
       return result;
     }
 

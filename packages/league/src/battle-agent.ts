@@ -1,33 +1,33 @@
-import fs from 'node:fs';
-import path from 'node:path';
+import fs from "node:fs";
+import path from "node:path";
 
-import type { MenuHints, SlotMenu } from './choices.js';
-import { buildMenus } from './choices.js';
-import type { Rng } from './random.js';
-import { seededRng } from './random.js';
+import type { MenuHints, SlotMenu } from "./choices.js";
+import { buildMenus } from "./choices.js";
+import type { Rng } from "./random.js";
+import { seededRng } from "./random.js";
 
 export const DECISION_STAT_NAMES = [
-  'decisions',
-  'fallbacks',
-  'reflections',
-  'reflection_fallbacks',
-  'move_selections',
-  'switch_selections',
-  'protect_selections',
-  'consecutive_protect_selections',
-  'ally_target_selections',
-  'spread_move_selections',
-  'mega_selections',
-  'tool_lookups',
-  'repeated_joint_actions',
-  'team_previews',
-  'bring_changes',
-  'lead_changes',
-  'substituted_actions',
-  'abandoned_decisions',
-  'parse_failures',
-  'reasoning_tokens',
-  'cost',
+  "decisions",
+  "fallbacks",
+  "reflections",
+  "reflection_fallbacks",
+  "move_selections",
+  "switch_selections",
+  "protect_selections",
+  "consecutive_protect_selections",
+  "ally_target_selections",
+  "spread_move_selections",
+  "mega_selections",
+  "tool_lookups",
+  "repeated_joint_actions",
+  "team_previews",
+  "bring_changes",
+  "lead_changes",
+  "substituted_actions",
+  "abandoned_decisions",
+  "parse_failures",
+  "reasoning_tokens",
+  "cost",
 ] as const;
 export type DecisionStatName = (typeof DECISION_STAT_NAMES)[number];
 export type DecisionStats = Partial<Record<DecisionStatName, number>>;
@@ -42,7 +42,7 @@ import type {
   SubmissionContext,
   SubmissionOutcome,
   SubmissionSource,
-} from './types.js';
+} from "./types.js";
 
 export interface GameStart {
   gameId: string;
@@ -68,7 +68,7 @@ interface SubmissionState {
 }
 
 export abstract class BaseEngine implements BattleAgent {
-  private submissionGameId = 'battle';
+  private submissionGameId = "battle";
   private submissionGameNumber = 0;
   private submissionSeriesId: string | null = null;
   private activeSubmissionId: string | undefined;
@@ -95,10 +95,13 @@ export abstract class BaseEngine implements BattleAgent {
     return {};
   }
   coachingNote(): string {
-    return '';
+    return "";
   }
 
-  async submit(request: BattleRequest, context: SubmissionContext): Promise<ActionSubmission | null> {
+  async submit(
+    request: BattleRequest,
+    context: SubmissionContext,
+  ): Promise<ActionSubmission | null> {
     const submissionState: SubmissionState = {};
     this.submissionState = submissionState;
     this.activeSubmissionId = context.submissionId;
@@ -113,34 +116,52 @@ export abstract class BaseEngine implements BattleAgent {
 
   async act(request: BattleRequest, context: AgentContext): Promise<string> {
     const menus = buildMenus(request, this.menuHints(request));
-    if (!menus.length) return '';
+    if (!menus.length) return "";
     /** Forfeit is always present on real turns, so it must not turn a single-option forced turn into a
      * model consultation; the concession option is only meaningful when there is also a real choice. */
-    let automatic = menus.every((menu) => menu.filter((item) => item.kind !== 'forfeit').length === 1);
+    let automatic = menus.every(
+      (menu) => menu.filter((item) => item.kind !== "forfeit").length === 1,
+    );
     let choices = automatic ? menus.map(() => 0) : await this.decideJoint(menus, request, context);
     let parts: string[];
     let substitution: ChoiceSubstitution | undefined;
     try {
       parts = BaseEngine.parts(menus, choices);
     } catch (caught) {
-      substitution = { requested: choices, reason: caught instanceof Error ? caught.message : String(caught) };
+      substitution = {
+        requested: choices,
+        reason: caught instanceof Error ? caught.message : String(caught),
+      };
       [choices, parts] = BaseEngine.defaults(menus);
       automatic = false;
     }
-    const choice = parts.includes('forfeit')
-      ? 'forfeit'
+    const choice = parts.includes("forfeit")
+      ? "forfeit"
       : request.teamPreview
-        ? `team ${parts.join('')}`
-        : parts.join(', ');
+        ? `team ${parts.join("")}`
+        : parts.join(", ");
     if (this.activeSubmissionId !== undefined) {
       const submission = this.newSubmission(choice, this.submissionSource(automatic, substitution));
       this.submissionState.submitted = submission;
-      this.actionSubmitted(request, context, menus, choices, parts, automatic, submission, substitution);
+      this.actionSubmitted(
+        request,
+        context,
+        menus,
+        choices,
+        parts,
+        automatic,
+        submission,
+        substitution,
+      );
     }
     return choice;
   }
 
-  resolveSubmission(submission: ActionSubmission, outcome: SubmissionOutcome, showdownError?: string): void {
+  resolveSubmission(
+    submission: ActionSubmission,
+    outcome: SubmissionOutcome,
+    showdownError?: string,
+  ): void {
     const held = this.pendingEvidence.get(submission.submissionId);
     const replayed = held === null && this.pendingEvidence.has(submission.submissionId);
     this.pendingEvidence.delete(submission.submissionId);
@@ -172,8 +193,11 @@ export abstract class BaseEngine implements BattleAgent {
   ): void {
     this.holdSubmissionEvidence(submission, this.basicSubmissionRow(submission));
   }
-  protected submissionSource(automatic: boolean, substitution?: ChoiceSubstitution): SubmissionSource {
-    return substitution ? 'model-default' : automatic ? 'automatic' : 'model';
+  protected submissionSource(
+    automatic: boolean,
+    substitution?: ChoiceSubstitution,
+  ): SubmissionSource {
+    return substitution ? "model-default" : automatic ? "automatic" : "model";
   }
   protected restoreSubmission(submission: ActionSubmission): void {
     this.submissionState.submitted = submission;
@@ -187,20 +211,21 @@ export abstract class BaseEngine implements BattleAgent {
   }
 
   private newSubmission(choice: string, source: SubmissionSource): ActionSubmission {
-    if (this.activeSubmissionId === undefined) throw new Error('submissions require a simulator submission id');
+    if (this.activeSubmissionId === undefined)
+      throw new Error("submissions require a simulator submission id");
     return { submissionId: this.activeSubmissionId, choice, source };
   }
 
   private basicSubmissionRow(submission: ActionSubmission): JsonObject {
     return {
-      kind: 'decision',
+      kind: "decision",
       game_id: this.submissionGameId,
       series_id: this.submissionSeriesId,
       game_number: this.submissionGameNumber,
       pid: this.pid,
       action: submission.choice,
-      automatic: submission.source === 'automatic',
-      fallback: submission.source === 'model-default',
+      automatic: submission.source === "automatic",
+      fallback: submission.source === "model-default",
     };
   }
 
@@ -210,12 +235,13 @@ export abstract class BaseEngine implements BattleAgent {
     else if (Array.isArray(output)) output.push(row);
     else {
       fs.mkdirSync(path.dirname(output), { recursive: true });
-      fs.appendFileSync(output, `${JSON.stringify(row)}\n`, 'utf8');
+      fs.appendFileSync(output, `${JSON.stringify(row)}\n`, "utf8");
     }
   }
 
   static parts(menus: SlotMenu[], choices: number[]): string[] {
-    if (choices.length !== menus.length) throw new Error(`choices must contain exactly ${menus.length} indices`);
+    if (choices.length !== menus.length)
+      throw new Error(`choices must contain exactly ${menus.length} indices`);
     const parts: string[] = [];
     choices.forEach((choice, slot) => {
       const menu = menus[slot]!;
@@ -223,22 +249,30 @@ export abstract class BaseEngine implements BattleAgent {
         throw new Error(`choice for slot ${slot + 1} is outside its menu`);
       const item = menu[choice]!;
       if (!BaseEngine.remaining(menu, parts).includes(item)) {
-        if (item.part.endsWith(' mega') && parts.some((part) => part.endsWith(' mega')))
-          throw new Error(`slot ${slot + 1} also chose Mega Evolve; only one Pokémon can Mega Evolve per battle`);
-        if (item.kind === 'switch')
-          throw new Error(`slot ${slot + 1} switches to a Pokémon an earlier slot already switches to`);
+        if (item.part.endsWith(" mega") && parts.some((part) => part.endsWith(" mega")))
+          throw new Error(
+            `slot ${slot + 1} also chose Mega Evolve; only one Pokémon can Mega Evolve per battle`,
+          );
+        if (item.kind === "switch")
+          throw new Error(
+            `slot ${slot + 1} switches to a Pokémon an earlier slot already switches to`,
+          );
         throw new Error(`choice for slot ${slot + 1} conflicts with an earlier slot`);
       }
       parts.push(item.part);
     });
-    const forced = menus.flatMap((menu, index) => (menu.some((item) => item.kind === 'switch') ? [index] : []));
-    if (forced.some((index) => parts[index] === 'pass')) {
+    const forced = menus.flatMap((menu, index) =>
+      menu.some((item) => item.kind === "switch") ? [index] : [],
+    );
+    if (forced.some((index) => parts[index] === "pass")) {
       const replacements = new Set(
-        forced.flatMap((index) => menus[index]!.filter((item) => item.kind === 'switch').map((item) => item.part)),
+        forced.flatMap((index) =>
+          menus[index]!.filter((item) => item.kind === "switch").map((item) => item.part),
+        ),
       );
       const allowed = Math.max(0, forced.length - replacements.size);
-      if (forced.filter((index) => parts[index] === 'pass').length > allowed)
-        throw new Error('cannot pass a forced switch while a replacement remains');
+      if (forced.filter((index) => parts[index] === "pass").length > allowed)
+        throw new Error("cannot pass a forced switch while a replacement remains");
     }
     return parts;
   }
@@ -250,7 +284,7 @@ export abstract class BaseEngine implements BattleAgent {
       const item = BaseEngine.remaining(menu, parts)[0];
       if (!item) {
         choices.push(-1);
-        parts.push('pass');
+        parts.push("pass");
       } else {
         choices.push(menu.indexOf(item));
         parts.push(item.part);
@@ -260,14 +294,14 @@ export abstract class BaseEngine implements BattleAgent {
   }
 
   static remaining(menu: SlotMenu, chosen: string[]): SlotMenu {
-    const switches = new Set(chosen.filter((part) => part.startsWith('switch ')));
+    const switches = new Set(chosen.filter((part) => part.startsWith("switch ")));
     const selected = new Set(chosen);
-    const mega = chosen.some((part) => part.endsWith(' mega'));
+    const mega = chosen.some((part) => part.endsWith(" mega"));
     return menu.filter(
       (item) =>
-        !(item.kind === 'switch' && switches.has(item.part)) &&
-        !(item.kind === 'team' && selected.has(item.part)) &&
-        !(mega && item.part.endsWith(' mega')),
+        !(item.kind === "switch" && switches.has(item.part)) &&
+        !(item.kind === "team" && selected.has(item.part)) &&
+        !(mega && item.part.endsWith(" mega")),
     );
   }
 }
@@ -280,8 +314,11 @@ export class RandomEngine extends BaseEngine {
     this.random = seededRng(seed);
   }
 
-  protected override submissionSource(automatic: boolean, substitution?: ChoiceSubstitution): SubmissionSource {
-    return substitution ? 'model-default' : automatic ? 'automatic' : 'random';
+  protected override submissionSource(
+    automatic: boolean,
+    substitution?: ChoiceSubstitution,
+  ): SubmissionSource {
+    return substitution ? "model-default" : automatic ? "automatic" : "random";
   }
 
   protected decideJoint(menus: SlotMenu[]): number[] {
@@ -291,11 +328,11 @@ export class RandomEngine extends BaseEngine {
       const candidates = BaseEngine.remaining(menu, parts);
       if (!candidates.length) {
         choices.push(-1);
-        parts.push('pass');
+        parts.push("pass");
         continue;
       }
       const weights: number[] = candidates.map((item) =>
-        item.kind === 'forfeit' ? 0 : item.part.endsWith(' mega') ? 0.25 : 1,
+        item.kind === "forfeit" ? 0 : item.part.endsWith(" mega") ? 0.25 : 1,
       );
       const target = this.random() * weights.reduce((sum, value) => sum + value, 0);
       let total = 0;

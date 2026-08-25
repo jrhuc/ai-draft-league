@@ -1,28 +1,28 @@
-import assert from 'node:assert/strict';
-import test from 'node:test';
+import assert from "node:assert/strict";
+import test from "node:test";
 
-import { normalizeStageEvidence } from '../src/stage-evidence.js';
+import { normalizeStageEvidence } from "../src/stage-evidence.js";
 
-test('stage evidence distinguishes absent fields from an explicit empty notebook', () => {
+test("stage evidence distinguishes absent fields from an explicit empty notebook", () => {
   const retained = normalizeStageEvidence(undefined, undefined, {
-    currentNotebook: 'Keep this plan.',
+    currentNotebook: "Keep this plan.",
     rationaleLimit: 100,
     notebookLimit: 100,
   });
   assert.deepEqual(retained, {
-    rationale: '',
-    notebook: 'Keep this plan.',
+    rationale: "",
+    notebook: "Keep this plan.",
     supplied: { rationale: false, notebookUpdate: false },
   });
 
-  const cleared = normalizeStageEvidence('', '', {
-    currentNotebook: 'Keep this plan.',
+  const cleared = normalizeStageEvidence("", "", {
+    currentNotebook: "Keep this plan.",
     rationaleLimit: 100,
     notebookLimit: 100,
   });
   assert.deepEqual(cleared, {
-    rationale: '',
-    notebook: '',
+    rationale: "",
+    notebook: "",
     supplied: { rationale: true, notebookUpdate: true },
   });
 });

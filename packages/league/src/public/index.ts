@@ -5,4 +5,4 @@ export {
   type PublicSeasonBundle,
   type PublicWeeklyReview,
   publicSeasonBundleSchema,
-} from './season-protocol.js';
+} from "./season-protocol.js";

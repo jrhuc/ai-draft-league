@@ -1,91 +1,100 @@
-import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import test from 'node:test';
-import { main } from '../src/cli.js';
-import { acquireLease, withRunStatus, writeRunStatus } from '../src/run-status.js';
-import type { JsonObject } from '../src/types.js';
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { main } from "../src/cli.js";
+import { acquireLease, withRunStatus, writeRunStatus } from "../src/run-status.js";
+import type { JsonObject } from "../src/types.js";
 
 function readStatus(runDir: string): JsonObject {
-  return JSON.parse(fs.readFileSync(path.join(runDir, 'status.json'), 'utf8'));
+  return JSON.parse(fs.readFileSync(path.join(runDir, "status.json"), "utf8"));
 }
 
-test('withRunStatus holds a run lease and writes lifecycle status', async (t) => {
-  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vgc-status-'));
+test("withRunStatus holds a run lease and writes lifecycle status", async (t) => {
+  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-status-"));
   t.after(() => fs.rmSync(runDir, { recursive: true, force: true }));
-  const lease = path.join(runDir, '.run.lease');
+  const lease = path.join(runDir, ".run.lease");
 
   const result = await withRunStatus(runDir, async () => {
-    assert.equal(readStatus(runDir).state, 'running');
+    assert.equal(readStatus(runDir).state, "running");
     assert.equal(fs.existsSync(lease), true);
     await assert.rejects(
-      withRunStatus(runDir, async () => 'second'),
+      withRunStatus(runDir, async () => "second"),
       new RegExp(`owned by live pid ${process.pid}`),
     );
-    return 'ok';
+    return "ok";
   });
-  assert.equal(result, 'ok');
+  assert.equal(result, "ok");
   assert.equal(fs.existsSync(lease), false);
   assert.deepEqual(
     { state: readStatus(runDir).state, error: readStatus(runDir).error },
-    { state: 'done', error: null },
+    { state: "done", error: null },
   );
 
   await assert.rejects(
     withRunStatus(runDir, async () => {
-      throw new Error('provider exploded');
+      throw new Error("provider exploded");
     }),
     /provider exploded/,
   );
   assert.deepEqual(
     { state: readStatus(runDir).state, error: readStatus(runDir).error },
-    { state: 'failed', error: 'provider exploded' },
+    { state: "failed", error: "provider exploded" },
   );
-  assert.equal(process.listeners('SIGINT').length, 0);
+  assert.equal(process.listeners("SIGINT").length, 0);
 });
 
-test('direct lifecycle status writers hold the same run lease', async (t) => {
-  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vgc-direct-status-'));
+test("direct lifecycle status writers hold the same run lease", async (t) => {
+  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-direct-status-"));
   t.after(() => fs.rmSync(runDir, { recursive: true, force: true }));
   const start = new Date().toISOString();
   writeRunStatus(runDir, {
-    state: 'running',
+    state: "running",
     error: null,
     notices: [],
     start_time: start,
     end_time: null,
     pid: process.pid,
   });
-  assert.equal(fs.existsSync(path.join(runDir, '.run.lease')), true);
+  assert.equal(fs.existsSync(path.join(runDir, ".run.lease")), true);
   await assert.rejects(
     withRunStatus(runDir, async () => undefined),
     /owned by live pid/,
   );
-  writeRunStatus(runDir, { state: 'done', error: null, notices: [], start_time: start, end_time: start });
-  assert.equal(fs.existsSync(path.join(runDir, '.run.lease')), false);
+  writeRunStatus(runDir, {
+    state: "done",
+    error: null,
+    notices: [],
+    start_time: start,
+    end_time: start,
+  });
+  assert.equal(fs.existsSync(path.join(runDir, ".run.lease")), false);
 });
 
-test('CLI resumes acquire the same atomic per-run lease', async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vgc-cli-resume-live-'));
+test("CLI resumes acquire the same atomic per-run lease", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-cli-resume-live-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   for (const [command, config] of [
-    ['tournament', { models: ['random', 'random'], seed: 1, pool: 'test' }],
-    ['draft', { models: ['random', 'random'], seed: 1, board: 'regmb-202607' }],
+    ["tournament", { models: ["random", "random"], seed: 1, pool: "test" }],
+    ["draft", { models: ["random", "random"], seed: 1, board: "regmb-202607" }],
   ] as const) {
     const runDir = path.join(root, command);
     fs.mkdirSync(runDir);
-    fs.writeFileSync(path.join(runDir, 'config.json'), JSON.stringify(config));
+    fs.writeFileSync(path.join(runDir, "config.json"), JSON.stringify(config));
     await withRunStatus(runDir, async () => {
-      await assert.rejects(main([command, '--resume', runDir]), new RegExp(`owned by live pid ${process.pid}`));
+      await assert.rejects(
+        main([command, "--resume", runDir]),
+        new RegExp(`owned by live pid ${process.pid}`),
+      );
     });
   }
 });
 
-test('interleaved lease acquisitions have exactly one owner', (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vgc-lease-interleaved-'));
+test("interleaved lease acquisitions have exactly one owner", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-lease-interleaved-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const lease = path.join(root, 'records.jsonl.lease');
+  const lease = path.join(root, "records.jsonl.lease");
   const originalWriteFileSync = fs.writeFileSync;
   let contenderRelease: (() => void) | undefined;
   let interleaved = false;
@@ -104,24 +113,27 @@ test('interleaved lease acquisitions have exactly one owner', (t) => {
 
   assert.equal(interleaved, true);
   assert.ok(contenderRelease);
-  assert.equal(JSON.parse(fs.readFileSync(lease, 'utf8')).pid, process.pid);
+  assert.equal(JSON.parse(fs.readFileSync(lease, "utf8")).pid, process.pid);
   contenderRelease();
   assert.deepEqual(fs.readdirSync(root), []);
 });
 
-test('a dead or malformed lease is replaced atomically', async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vgc-run-stale-'));
+test("a dead or malformed lease is replaced atomically", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-run-stale-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   for (const [name, owner] of [
-    ['dead', JSON.stringify({ id: 'dead-owner', pid: 999_999_999, acquired_at: new Date().toISOString() })],
-    ['malformed', '{not json'],
+    [
+      "dead",
+      JSON.stringify({ id: "dead-owner", pid: 999_999_999, acquired_at: new Date().toISOString() }),
+    ],
+    ["malformed", "{not json"],
   ]) {
     const runDir = path.join(root, name!);
     fs.mkdirSync(runDir);
-    fs.writeFileSync(path.join(runDir, '.run.lease'), owner!);
+    fs.writeFileSync(path.join(runDir, ".run.lease"), owner!);
     await withRunStatus(runDir, async () => {
-      assert.equal(readStatus(runDir).state, 'running');
+      assert.equal(readStatus(runDir).state, "running");
     });
-    assert.equal(fs.existsSync(path.join(runDir, '.run.lease')), false);
+    assert.equal(fs.existsSync(path.join(runDir, ".run.lease")), false);
   }
 });

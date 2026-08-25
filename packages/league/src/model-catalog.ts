@@ -1,7 +1,7 @@
-import { z } from 'zod';
-import type { DiscoveredModel, ProviderOption } from './provider-registry.js';
-import { readCappedText, redactSecrets } from './sanitize.js';
-import { asStrings } from './value.js';
+import { z } from "zod";
+import type { DiscoveredModel, ProviderOption } from "./provider-registry.js";
+import { readCappedText, redactSecrets } from "./sanitize.js";
+import { asStrings } from "./value.js";
 
 type FetchRequest = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -39,17 +39,21 @@ export async function discoverModels(
   apiKey: string | undefined,
   options: { fetch?: FetchRequest; signal?: AbortSignal } = {},
 ): Promise<DiscoveredModel[]> {
-  if (provider.discovery === 'manual') {
+  if (provider.discovery === "manual") {
     throw new Error(`${provider.label} uses manual model IDs`);
   }
-  if (provider.discovery === 'none') throw new Error(`${provider.label} does not have a model catalog`);
-  if (!provider.baseUrl) throw new Error('unsupported model catalog provider');
-  if (!apiKey) throw new Error(`Missing ${provider.envKey ?? 'API key'} for ${provider.label} model discovery`);
+  if (provider.discovery === "none")
+    throw new Error(`${provider.label} does not have a model catalog`);
+  if (!provider.baseUrl) throw new Error("unsupported model catalog provider");
+  if (!apiKey)
+    throw new Error(
+      `Missing ${provider.envKey ?? "API key"} for ${provider.label} model discovery`,
+    );
 
   const request = options.fetch ?? fetch;
   const signal = options.signal ?? AbortSignal.timeout(20_000);
   const response = await request(`${provider.baseUrl}/models`, {
-    method: 'GET',
+    method: "GET",
     headers: { Authorization: `Bearer ${apiKey}` },
     signal,
   });
@@ -60,12 +64,20 @@ export async function discoverModels(
   return normalizeModels(models);
 }
 
-async function responseBody(response: Response, provider: string, apiKey: string): Promise<CatalogEntry[]> {
+async function responseBody(
+  response: Response,
+  provider: string,
+  apiKey: string,
+): Promise<CatalogEntry[]> {
   const raw = await readCappedText(response, 1_000_000);
   if (raw === undefined) throw new Error(`${provider} model catalog response was too large`);
   if (!response.ok) {
-    const status = response.statusText ? `${response.status} ${response.statusText}` : String(response.status);
-    throw new Error(`${provider} model discovery failed (${status})${raw ? `: ${errorDetail(raw, apiKey)}` : ''}`);
+    const status = response.statusText
+      ? `${response.status} ${response.statusText}`
+      : String(response.status);
+    throw new Error(
+      `${provider} model discovery failed (${status})${raw ? `: ${errorDetail(raw, apiKey)}` : ""}`,
+    );
   }
   try {
     const envelope = catalogEnvelopeSchema.safeParse(JSON.parse(raw));
@@ -87,14 +99,19 @@ function errorDetail(raw: string, apiKey: string): string {
       const textError = z.string().safeParse(parsed.data.error);
       const objectError = errorObjectSchema.safeParse(parsed.data.error);
       if (textError.success) detail = textError.data;
-      else if (objectError.success) detail = objectError.data.message ?? JSON.stringify(objectError.data);
+      else if (objectError.success)
+        detail = objectError.data.message ?? JSON.stringify(objectError.data);
       else detail = parsed.data.message ?? raw;
     }
   } catch {}
   return redactSecrets(detail, [apiKey]).slice(0, 500);
 }
 
-function discoveredModel(id: string, displayName: string | undefined, supportsReasoning: boolean): DiscoveredModel {
+function discoveredModel(
+  id: string,
+  displayName: string | undefined,
+  supportsReasoning: boolean,
+): DiscoveredModel {
   if (displayName) {
     return supportsReasoning ? { id, displayName, supportsReasoning: true } : { id, displayName };
   }
@@ -104,9 +121,13 @@ function discoveredModel(id: string, displayName: string | undefined, supportsRe
 function modelFromRecord(record: CatalogEntry): DiscoveredModel | undefined {
   const id = record.id?.trim();
   if (!id || /[\p{Cc}\p{Cf}]/u.test(id)) return undefined;
-  const displayName = record.name?.replace(/[\p{Cc}\p{Cf}]/gu, ' ').trim();
-  const supportsReasoning = asStrings(record.supported_parameters).includes('reasoning');
-  return discoveredModel(id, displayName && displayName !== id ? displayName : undefined, supportsReasoning);
+  const displayName = record.name?.replace(/[\p{Cc}\p{Cf}]/gu, " ").trim();
+  const supportsReasoning = asStrings(record.supported_parameters).includes("reasoning");
+  return discoveredModel(
+    id,
+    displayName && displayName !== id ? displayName : undefined,
+    supportsReasoning,
+  );
 }
 
 function normalizeModels(models: readonly DiscoveredModel[]): DiscoveredModel[] {
@@ -132,19 +153,19 @@ function isTextModel(record: CatalogEntry): boolean {
   const architecture = record.architecture;
   if (!architecture) return isGenerativeModel(record);
   const outputs = asStrings(architecture.output_modalities).map((value) => value.toLowerCase());
-  if (outputs.length > 0) return outputs.includes('text');
+  if (outputs.length > 0) return outputs.includes("text");
   const modality = architecture.modality?.trim().toLowerCase();
   if (!modality) return isGenerativeModel(record);
-  const separator = modality.lastIndexOf('->');
-  return (separator >= 0 ? modality.slice(separator + 2) : modality).includes('text');
+  const separator = modality.lastIndexOf("->");
+  return (separator >= 0 ? modality.slice(separator + 2) : modality).includes("text");
 }
 
 function isGenerativeModel(record: CatalogEntry): boolean {
   const id = record.id?.trim().toLowerCase();
   return Boolean(
     id &&
-      !/(?:embedding|moderation|whisper|dall-e|transcription|computer-use|(?:^|[-_/])(?:tts|image|audio|realtime|sora)(?:[-_/]|$))/.test(
-        id,
-      ),
+    !/(?:embedding|moderation|whisper|dall-e|transcription|computer-use|(?:^|[-_/])(?:tts|image|audio|realtime|sora)(?:[-_/]|$))/.test(
+      id,
+    ),
   );
 }

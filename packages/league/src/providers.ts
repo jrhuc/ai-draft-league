@@ -1,7 +1,7 @@
-import { appendFileSync } from 'node:fs';
-import { createAnthropic } from '@ai-sdk/anthropic';
-import { createOpenAI } from '@ai-sdk/openai';
-import { createOpenAICompatible, type MetadataExtractor } from '@ai-sdk/openai-compatible';
+import { appendFileSync } from "node:fs";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
+import { createOpenAICompatible, type MetadataExtractor } from "@ai-sdk/openai-compatible";
 import {
   APICallError,
   type JSONSchema7,
@@ -12,11 +12,11 @@ import {
   streamText,
   type ToolSet,
   tool,
-} from 'ai';
-import { z } from 'zod';
+} from "ai";
+import { z } from "zod";
 
-import { providerOption } from './provider-registry.js';
-import { redactSecrets } from './sanitize.js';
+import { providerOption } from "./provider-registry.js";
+import { redactSecrets } from "./sanitize.js";
 import type {
   CompleteOptions,
   Completion,
@@ -27,9 +27,9 @@ import type {
   ProviderMessage,
   ToolCall,
   ToolDefinition,
-} from './types.js';
+} from "./types.js";
 
-import { isRecord } from './value.js';
+import { isRecord } from "./value.js";
 
 type FetchRequest = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -51,10 +51,16 @@ const gatewayMetadataSchema = z.object({
   provider: z.string().optional().catch(undefined),
   cost: z.number().optional().catch(undefined),
 });
-export type ReasoningLevel = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+export type ReasoningLevel = "minimal" | "low" | "medium" | "high" | "xhigh";
 
 export function isReasoningLevel(value: JsonValue | undefined): value is ReasoningLevel {
-  return value === 'minimal' || value === 'low' || value === 'medium' || value === 'high' || value === 'xhigh';
+  return (
+    value === "minimal" ||
+    value === "low" ||
+    value === "medium" ||
+    value === "high" ||
+    value === "xhigh"
+  );
 }
 
 export interface ModelReasoningConfig {
@@ -62,7 +68,10 @@ export interface ModelReasoningConfig {
   reasoningByModel?: Readonly<Record<string, ReasoningLevel>>;
 }
 
-export function reasoningForModel(model: string, config: ModelReasoningConfig): ReasoningLevel | undefined {
+export function reasoningForModel(
+  model: string,
+  config: ModelReasoningConfig,
+): ReasoningLevel | undefined {
   return config.reasoningByModel?.[model] ?? config.reasoning;
 }
 
@@ -73,25 +82,31 @@ export function validateModelExecution(
   for (const model of models) validateReasoning(parseSpec(model), reasoningForModel(model, config));
   if (!config.apiKeys) return;
   for (const model of models) {
-    if (model !== 'random' && config.apiKeys[model] === undefined)
+    if (model !== "random" && config.apiKeys[model] === undefined)
       throw new Error(`API key missing for ${model}; this run cannot use environment keys`);
   }
 }
 
 const USAGE =
-  'Usage: openrouter:<model-id>, prime:<model-id>, gateway:<model-id>, opencode-go:<model-id>, opencode-zen:<model-id>, or random';
+  "Usage: openrouter:<model-id>, prime:<model-id>, gateway:<model-id>, opencode-go:<model-id>, opencode-zen:<model-id>, or random";
 interface ProviderSpec {
-  provider: 'openrouter' | 'prime' | 'gateway' | 'opencode-go' | 'opencode-zen' | 'random';
+  provider: "openrouter" | "prime" | "gateway" | "opencode-go" | "opencode-zen" | "random";
   model: string;
 }
 
 export function parseSpec(value: string): ProviderSpec {
-  if (value === 'random') return { provider: 'random', model: 'random' };
-  for (const provider of ['openrouter', 'prime', 'gateway', 'opencode-go', 'opencode-zen'] as const) {
+  if (value === "random") return { provider: "random", model: "random" };
+  for (const provider of [
+    "openrouter",
+    "prime",
+    "gateway",
+    "opencode-go",
+    "opencode-zen",
+  ] as const) {
     const prefix = `${provider}:`;
     if (!value.startsWith(prefix)) continue;
     const model = value.slice(prefix.length);
-    if (model && !model.startsWith('-') && !/[\s\p{Cc}]/u.test(model)) return { provider, model };
+    if (model && !model.startsWith("-") && !/[\s\p{Cc}]/u.test(model)) return { provider, model };
     break;
   }
   throw new Error(USAGE);
@@ -99,7 +114,7 @@ export function parseSpec(value: string): ProviderSpec {
 
 export interface ProviderRoute {
   spec: string;
-  provider: ProviderSpec['provider'];
+  provider: ProviderSpec["provider"];
   base_url: string | null;
   model: string;
   api: OpenCodeApi;
@@ -121,37 +136,45 @@ export function describeProviderRoute(
     base_url: providerOption(parsed.provider)?.baseUrl ?? null,
     model: parsed.model,
     api:
-      parsed.provider === 'opencode-go' || parsed.provider === 'opencode-zen'
+      parsed.provider === "opencode-go" || parsed.provider === "opencode-zen"
         ? opencodeApi(parsed.provider, parsed.model)
-        : 'chat',
+        : "chat",
     reasoning: reasoning ?? null,
-    routing: parsed.provider === 'openrouter' ? openRouterRouting : null,
+    routing: parsed.provider === "openrouter" ? openRouterRouting : null,
   };
 }
 
 export function validateReasoning(spec: ProviderSpec, level?: string): void {
   if (!level) return;
   if (!isReasoningLevel(level)) throw new Error(`invalid reasoning level ${JSON.stringify(level)}`);
-  if (spec.provider === 'random') return;
-  if (spec.provider !== 'openrouter' && spec.provider !== 'opencode-go' && spec.provider !== 'opencode-zen') {
-    throw new Error(`${spec.provider}:${spec.model} has no advertised configurable reasoning levels`);
+  if (spec.provider === "random") return;
+  if (
+    spec.provider !== "openrouter" &&
+    spec.provider !== "opencode-go" &&
+    spec.provider !== "opencode-zen"
+  ) {
+    throw new Error(
+      `${spec.provider}:${spec.model} has no advertised configurable reasoning levels`,
+    );
   }
 }
 
-export type OpenCodeApi = 'chat' | 'messages' | 'responses';
+export type OpenCodeApi = "chat" | "messages" | "responses";
 
 /** OpenCode serves each model through exactly one API shape (https://opencode.ai/docs/zen, /docs/go):
  * GPT, Grok and Muse through the Responses API, Claude and Qwen (and MiniMax on Go) through the
  * Anthropic Messages API, and the rest through chat completions. Gemini needs the Google API, which
  * this harness does not speak. */
-export function opencodeApi(provider: 'opencode-go' | 'opencode-zen', model: string): OpenCodeApi {
+export function opencodeApi(provider: "opencode-go" | "opencode-zen", model: string): OpenCodeApi {
   const id = model.toLowerCase();
-  if (id.startsWith('gemini-'))
-    throw new Error(`${provider}:${model} is served through the Google API, which is not supported`);
-  if (/^(?:gpt-|grok-|muse-)/.test(id)) return 'responses';
-  if (/^(?:claude-|qwen)/.test(id)) return 'messages';
-  if (provider === 'opencode-go' && id.startsWith('minimax-')) return 'messages';
-  return 'chat';
+  if (id.startsWith("gemini-"))
+    throw new Error(
+      `${provider}:${model} is served through the Google API, which is not supported`,
+    );
+  if (/^(?:gpt-|grok-|muse-)/.test(id)) return "responses";
+  if (/^(?:claude-|qwen)/.test(id)) return "messages";
+  if (provider === "opencode-go" && id.startsWith("minimax-")) return "messages";
+  return "chat";
 }
 
 function parseToolArguments(value: JsonValue): JsonObject {
@@ -179,7 +202,7 @@ export function uniqueToolCalls(calls: ToolCall[]): ToolCall[] {
 
 export function assistantToolMessage(completion: Completion): ProviderMessage {
   const message: ProviderMessage = {
-    role: 'assistant',
+    role: "assistant",
     content: completion.text || null,
     toolCalls: uniqueToolCalls(completion.toolCalls),
   };
@@ -188,7 +211,7 @@ export function assistantToolMessage(completion: Completion): ProviderMessage {
 }
 
 export function toolResultMessage(callId: string, content: string): ProviderMessage {
-  return { role: 'tool', toolCallId: callId, content };
+  return { role: "tool", toolCallId: callId, content };
 }
 
 export class ApiError extends Error {
@@ -197,7 +220,7 @@ export class ApiError extends Error {
     message: string,
   ) {
     super(message);
-    this.name = 'ApiError';
+    this.name = "ApiError";
   }
 }
 
@@ -206,45 +229,52 @@ const HARD_QUOTA_ERROR =
 
 /** A 429 says nothing useful on its own, so the limit the provider names is pulled out of the body. */
 function limitDetail(message: string): string {
-  const quota = /"quotaId"\s*:\s*"([^"]+)"/.exec(message)?.[1] ?? /"quotaMetric"\s*:\s*"([^"]+)"/.exec(message)?.[1];
-  if (quota) return quota.split('/').pop() ?? quota;
-  return /\b(requests?|tokens?|input tokens?|output tokens?)[ _-]per[ _-](minute|hour|day)\b/i.exec(message)?.[0] ?? '';
+  const quota =
+    /"quotaId"\s*:\s*"([^"]+)"/.exec(message)?.[1] ??
+    /"quotaMetric"\s*:\s*"([^"]+)"/.exec(message)?.[1];
+  if (quota) return quota.split("/").pop() ?? quota;
+  return (
+    /\b(requests?|tokens?|input tokens?|output tokens?)[ _-]per[ _-](minute|hour|day)\b/i.exec(
+      message,
+    )?.[0] ?? ""
+  );
 }
 
 function rateLimited(label: string, message: string): ProviderFailure {
   const detail = limitDetail(message);
   return {
-    kind: 'rate_limit',
-    summary: `${label} API rate limit was reached (429${detail ? `; ${detail}` : ''}).`,
+    kind: "rate_limit",
+    summary: `${label} API rate limit was reached (429${detail ? `; ${detail}` : ""}).`,
     terminal: false,
   };
 }
 
-export function classifyProviderFailure(cause: unknown, spec = 'provider'): ProviderFailure {
+export function classifyProviderFailure(cause: unknown, spec = "provider"): ProviderFailure {
   const message = cause instanceof Error ? cause.message : String(cause);
-  const status = cause instanceof ApiError ? cause.status : Number(/\b([45]\d\d)\b/.exec(message)?.[1] ?? 0);
-  const provider = spec.split(':', 1)[0] || 'provider';
+  const status =
+    cause instanceof ApiError ? cause.status : Number(/\b([45]\d\d)\b/.exec(message)?.[1] ?? 0);
+  const provider = spec.split(":", 1)[0] || "provider";
   let label = provider.charAt(0).toUpperCase() + provider.slice(1);
-  if (provider === 'openrouter') label = 'OpenRouter';
-  else if (provider === 'prime') label = 'Prime Inference';
-  else if (provider === 'gateway') label = 'Vercel AI Gateway';
-  else if (provider === 'opencode-go') label = 'OpenCode Go';
-  else if (provider === 'opencode-zen') label = 'OpenCode Zen';
-  const suffix = status ? ` (${status})` : '';
+  if (provider === "openrouter") label = "OpenRouter";
+  else if (provider === "prime") label = "Prime Inference";
+  else if (provider === "gateway") label = "Vercel AI Gateway";
+  else if (provider === "opencode-go") label = "OpenCode Go";
+  else if (provider === "opencode-zen") label = "OpenCode Zen";
+  const suffix = status ? ` (${status})` : "";
   if (
     /Connect error (?:unauthenticated|unavailable|resource[_ -]?exhausted|internal|aborted|deadline[_ -]?exceeded)/i.test(
       message,
     )
   ) {
     return {
-      kind: 'upstream',
+      kind: "upstream",
       summary: `${label} transport failed transiently.`,
       terminal: false,
     };
   }
   if (/Upstream request failed|Inference is temporarily unavailable/i.test(message)) {
     return {
-      kind: 'upstream',
+      kind: "upstream",
       summary: `${label} API is temporarily unavailable${suffix}.`,
       terminal: false,
     };
@@ -255,17 +285,17 @@ export function classifyProviderFailure(cause: unknown, spec = 'provider'): Prov
   if (HARD_QUOTA_ERROR.test(message)) {
     const quotaId = /"quotaId"\s*:\s*"([^"]+)"/.exec(message)?.[1];
     return {
-      kind: 'quota',
+      kind: "quota",
       summary: `${label} API quota is exhausted${quotaId ? ` (${status || 429}; ${quotaId})` : suffix}.`,
       terminal: true,
     };
   }
   if ((status === 0 || status === 408) && /(?:timed? ?out|timeout|time exhausted)/i.test(message)) {
-    return { kind: 'timeout', summary: `${label} API request timed out.`, terminal: false };
+    return { kind: "timeout", summary: `${label} API request timed out.`, terminal: false };
   }
   if (status === 0 && /^reasoning exhausted the \d+-token response budget$/i.test(message.trim())) {
     return {
-      kind: 'truncation',
+      kind: "truncation",
       summary: `${label} API spent the whole response budget on reasoning and returned no answer.`,
       terminal: false,
     };
@@ -276,31 +306,31 @@ export function classifyProviderFailure(cause: unknown, spec = 'provider'): Prov
     )
   ) {
     return {
-      kind: 'truncation',
+      kind: "truncation",
       summary: `${label} API stopped the response for length below the requested output cap.`,
       terminal: false,
     };
   }
   if (status === 0 && /^empty response$/i.test(message.trim())) {
     return {
-      kind: 'upstream',
+      kind: "upstream",
       summary: `${label} API returned no usable response.`,
       terminal: true,
     };
   }
   if (status === 0 && cause instanceof ApiError) {
-    return { kind: 'network', summary: `${label} API could not be reached.`, terminal: false };
+    return { kind: "network", summary: `${label} API could not be reached.`, terminal: false };
   }
   if (status === 200) {
     return {
-      kind: 'upstream',
+      kind: "upstream",
       summary: `${label} API returned an unusable 200 response.`,
       terminal: false,
     };
   }
   if (status === 409 || status === 425) {
     return {
-      kind: 'upstream',
+      kind: "upstream",
       summary: `${label} API request was temporarily blocked (${status}).`,
       terminal: false,
     };
@@ -310,28 +340,36 @@ export function classifyProviderFailure(cause: unknown, spec = 'provider'): Prov
   }
   if (status === 402) {
     return {
-      kind: 'quota',
+      kind: "quota",
       summary: `${label} API credits are exhausted (402).`,
       terminal: true,
     };
   }
   if (cause instanceof TypeError) {
-    return { kind: 'network', summary: `${label} API could not be reached.`, terminal: false };
+    return { kind: "network", summary: `${label} API could not be reached.`, terminal: false };
   }
   if (status >= 500 && status !== 501 && status !== 505) {
     return {
-      kind: 'upstream',
+      kind: "upstream",
       summary: `${label} API is temporarily unavailable (${status}).`,
       terminal: false,
     };
   }
   if (status === 401 || status === 403) {
-    return { kind: 'request', summary: `${label} API rejected the credentials${suffix}.`, terminal: true };
+    return {
+      kind: "request",
+      summary: `${label} API rejected the credentials${suffix}.`,
+      terminal: true,
+    };
   }
   if (status === 404) {
-    return { kind: 'request', summary: `${label} model or endpoint was not found (404).`, terminal: true };
+    return {
+      kind: "request",
+      summary: `${label} model or endpoint was not found (404).`,
+      terminal: true,
+    };
   }
-  return { kind: 'request', summary: `${label} API request failed${suffix}.`, terminal: true };
+  return { kind: "request", summary: `${label} API request failed${suffix}.`, terminal: true };
 }
 
 function openRouterErrorStatus(responseBody: string | undefined): number | undefined {
@@ -356,7 +394,12 @@ export interface InfraRetryPolicy {
 }
 
 /** Timeout attempts get their own tighter budget because each one holds the seat for up to DEFAULT_TIMEOUT. */
-const INFRA_RETRY_DEFAULTS: InfraRetryPolicy = { attempts: 20, timeoutAttempts: 6, baseMs: 2_000, capMs: 300_000 };
+const INFRA_RETRY_DEFAULTS: InfraRetryPolicy = {
+  attempts: 20,
+  timeoutAttempts: 6,
+  baseMs: 2_000,
+  capMs: 300_000,
+};
 const RETRY_AFTER_CAP_MS = 600_000;
 
 /** Providers name their cooldown inconsistently, so the failure text is scanned for the common spellings. */
@@ -365,7 +408,7 @@ function retryAfterMs(message: string): number | undefined {
   if (explicit) return Math.min(Number(explicit) * 1000, RETRY_AFTER_CAP_MS);
   const phrased = /try again in (\d+(?:\.\d+)?)\s*(ms|milliseconds?|s|sec|seconds?)/i.exec(message);
   if (!phrased) return undefined;
-  const scale = phrased[2]!.startsWith('m') ? 1 : 1000;
+  const scale = phrased[2]!.startsWith("m") ? 1 : 1000;
   return Math.min(Number(phrased[1]) * scale, RETRY_AFTER_CAP_MS);
 }
 
@@ -374,11 +417,11 @@ function backoffSleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     const finish = (): void => {
       clearTimeout(timer);
-      signal?.removeEventListener('abort', finish);
+      signal?.removeEventListener("abort", finish);
       resolve();
     };
     const timer = setTimeout(finish, ms);
-    signal?.addEventListener('abort', finish);
+    signal?.addEventListener("abort", finish);
   });
 }
 
@@ -391,10 +434,14 @@ interface GatewayResponseMeta {
 export function parseRoutingPreferences(env: NodeJS.ProcessEnv = process.env): JsonObject {
   const pinned = env.VGC_OPENROUTER_PIN?.trim();
   if (!pinned) return { allow_fallbacks: false };
-  if (pinned.includes(',')) throw new Error('VGC_OPENROUTER_PIN accepts exactly one upstream provider');
+  if (pinned.includes(","))
+    throw new Error("VGC_OPENROUTER_PIN accepts exactly one upstream provider");
   return { order: [pinned], allow_fallbacks: false };
 }
-function bodyFetch(base: FetchRequest | undefined, amend: (body: JsonObject) => void): FetchRequest {
+function bodyFetch(
+  base: FetchRequest | undefined,
+  amend: (body: JsonObject) => void,
+): FetchRequest {
   const inner = base ?? fetch;
   return async (input, init) => {
     let request = init;
@@ -420,7 +467,10 @@ function openRouterFetch(base: FetchRequest | undefined, routing: JsonObject): F
 
 /** The Responses adapter only emits `reasoning.effort` for model ids it knows as OpenAI reasoning
  * models, so the effort a run asked for is written into the request body for every Responses model. */
-function responsesReasoningFetch(base: FetchRequest | undefined, level: ReasoningLevel): FetchRequest {
+function responsesReasoningFetch(
+  base: FetchRequest | undefined,
+  level: ReasoningLevel,
+): FetchRequest {
   return bodyFetch(base, (body) => {
     if (!isRecord(body.reasoning)) body.reasoning = { effort: level };
   });
@@ -457,7 +507,7 @@ const OPENROUTER_METADATA: MetadataExtractor = {
 };
 
 export function nitroSpec(spec: string): string {
-  if (!spec.startsWith('openrouter:')) return spec;
+  if (!spec.startsWith("openrouter:")) return spec;
   if (/:(?:nitro|floor|free)$/.test(spec)) return spec;
   return `${spec}:nitro`;
 }
@@ -466,30 +516,33 @@ function convertMessages(messages: ProviderMessage[]): ModelMessage[] {
   const converted: ModelMessage[] = [];
   const callNames = new Map<string, string>();
   for (const message of messages) {
-    if (message.role === 'tool') {
+    if (message.role === "tool") {
       converted.push({
-        role: 'tool',
+        role: "tool",
         content: [
           {
-            type: 'tool-result',
-            toolCallId: message.toolCallId ?? '',
-            toolName: callNames.get(message.toolCallId ?? '') ?? message.name ?? '',
-            output: { type: 'text', value: message.content ?? '' },
+            type: "tool-result",
+            toolCallId: message.toolCallId ?? "",
+            toolName: callNames.get(message.toolCallId ?? "") ?? message.name ?? "",
+            output: { type: "text", value: message.content ?? "" },
           },
         ],
       });
-    } else if (message.role === 'assistant' && message.toolCalls?.length) {
+    } else if (message.role === "assistant" && message.toolCalls?.length) {
       for (const call of message.toolCalls) callNames.set(call.id, call.name);
       if (message.raw?.length) {
         converted.push(...message.raw);
         continue;
       }
-      const content: Extract<ModelMessage, { role: 'assistant' }>['content'] = [];
-      if (message.content) content.push({ type: 'text', text: message.content });
+      const content: Extract<ModelMessage, { role: "assistant" }>["content"] = [];
+      if (message.content) content.push({ type: "text", text: message.content });
       for (const call of message.toolCalls) {
         const providerOptions = call.providerMetadata;
-        const part: Extract<Extract<ModelMessage, { role: 'assistant' }>['content'][number], { type: 'tool-call' }> = {
-          type: 'tool-call',
+        const part: Extract<
+          Extract<ModelMessage, { role: "assistant" }>["content"][number],
+          { type: "tool-call" }
+        > = {
+          type: "tool-call",
           toolCallId: call.id,
           toolName: call.name,
           input: call.arguments,
@@ -497,9 +550,9 @@ function convertMessages(messages: ProviderMessage[]): ModelMessage[] {
         if (providerOptions) part.providerOptions = providerOptions;
         content.push(part);
       }
-      converted.push({ role: 'assistant', content });
+      converted.push({ role: "assistant", content });
     } else {
-      converted.push({ role: message.role, content: message.content ?? '' });
+      converted.push({ role: message.role, content: message.content ?? "" });
     }
   }
   return converted;
@@ -507,10 +560,10 @@ function convertMessages(messages: ProviderMessage[]): ModelMessage[] {
 
 const TOOL_SETS = new WeakMap<ToolDefinition[], ToolSet>();
 
-const EPHEMERAL_CACHE = { anthropic: { cacheControl: { type: 'ephemeral' } } };
+const EPHEMERAL_CACHE = { anthropic: { cacheControl: { type: "ephemeral" } } };
 
 function markFirstUserBreakpoint(messages: ModelMessage[]): void {
-  const first = messages.find((message) => message.role === 'user');
+  const first = messages.find((message) => message.role === "user");
   if (first) first.providerOptions = EPHEMERAL_CACHE;
 }
 
@@ -541,13 +594,13 @@ class SdkProvider implements Provider {
       capMs: options.retry?.capMs ?? INFRA_RETRY_DEFAULTS.capMs,
     };
     this.api =
-      spec.provider === 'opencode-go' || spec.provider === 'opencode-zen'
+      spec.provider === "opencode-go" || spec.provider === "opencode-zen"
         ? opencodeApi(spec.provider, spec.model)
-        : 'chat';
+        : "chat";
     this.fetch =
-      spec.provider === 'openrouter'
+      spec.provider === "openrouter"
         ? openRouterFetch(options.fetch, parseRoutingPreferences())
-        : this.api === 'responses' && options.reasoning
+        : this.api === "responses" && options.reasoning
           ? responsesReasoningFetch(options.fetch, options.reasoning)
           : options.fetch;
   }
@@ -574,7 +627,8 @@ class SdkProvider implements Provider {
   private cachedModel: { apiKey: string; model: LanguageModel } | undefined;
 
   private languageModel(apiKey: string): LanguageModel {
-    if (this.cachedModel?.apiKey !== apiKey) this.cachedModel = { apiKey, model: this.buildLanguageModel(apiKey) };
+    if (this.cachedModel?.apiKey !== apiKey)
+      this.cachedModel = { apiKey, model: this.buildLanguageModel(apiKey) };
     return this.cachedModel.model;
   }
 
@@ -582,15 +636,23 @@ class SdkProvider implements Provider {
     const option = providerOption(this.spec.provider);
     if (!option?.baseUrl) throw new Error(USAGE);
     const transport = this.fetch ? { fetch: this.fetch } : {};
-    if (this.api === 'responses') {
-      return createOpenAI({ name: this.spec.provider, baseURL: option.baseUrl, apiKey, ...transport }).responses(
-        this.model,
-      );
+    if (this.api === "responses") {
+      return createOpenAI({
+        name: this.spec.provider,
+        baseURL: option.baseUrl,
+        apiKey,
+        ...transport,
+      }).responses(this.model);
     }
-    if (this.api === 'messages') {
-      return createAnthropic({ name: this.spec.provider, baseURL: option.baseUrl, apiKey, ...transport })(this.model);
+    if (this.api === "messages") {
+      return createAnthropic({
+        name: this.spec.provider,
+        baseURL: option.baseUrl,
+        apiKey,
+        ...transport,
+      })(this.model);
     }
-    if (this.spec.provider === 'openrouter') {
+    if (this.spec.provider === "openrouter") {
       return createOpenAICompatible({
         name: this.spec.provider,
         baseURL: option.baseUrl,
@@ -610,10 +672,10 @@ class SdkProvider implements Provider {
   private secrets(apiKey: string): string[] {
     return [
       apiKey,
-      process.env.OPENROUTER_API_KEY ?? '',
-      process.env.PRIME_API_KEY ?? '',
-      process.env.AI_GATEWAY_API_KEY ?? '',
-      process.env.OPENCODE_API_KEY ?? '',
+      process.env.OPENROUTER_API_KEY ?? "",
+      process.env.PRIME_API_KEY ?? "",
+      process.env.AI_GATEWAY_API_KEY ?? "",
+      process.env.OPENCODE_API_KEY ?? "",
     ];
   }
 
@@ -624,10 +686,10 @@ class SdkProvider implements Provider {
       try {
         detail = JSON.stringify(cause);
       } catch {
-        detail = 'provider transport failed';
+        detail = "provider transport failed";
       }
     } else detail = String(cause);
-    const message = redactSecrets(detail, secrets) || 'provider transport failed';
+    const message = redactSecrets(detail, secrets) || "provider transport failed";
     if (cause instanceof ApiError) return new ApiError(cause.status, message);
     if (cause instanceof TypeError) return new TypeError(message);
     const status = errorStatusSchema.safeParse(cause);
@@ -638,7 +700,11 @@ class SdkProvider implements Provider {
    * infra-class failures (rate limit, upstream, network, timeout) retry with jittered backoff honoring
    * any advertised cooldown, and schema/legality/truncation handling stays with the callers' budgets.
    * Timed battles pass failFast so the battle clock keeps control. */
-  async complete(system: string, messages: ProviderMessage[], options: CompleteOptions = {}): Promise<Completion> {
+  async complete(
+    system: string,
+    messages: ProviderMessage[],
+    options: CompleteOptions = {},
+  ): Promise<Completion> {
     let tries = 0;
     let timeoutTries = 0;
     for (;;) {
@@ -648,14 +714,16 @@ class SdkProvider implements Provider {
         if (options.signal?.aborted) throw error;
         const failure = classifyProviderFailure(error, `${this.spec.provider}:${this.model}`);
         tries += 1;
-        if (failure.kind === 'timeout') timeoutTries += 1;
-        const retryable = !failure.terminal && failure.kind !== 'truncation' && !options.failFast;
+        if (failure.kind === "timeout") timeoutTries += 1;
+        const retryable = !failure.terminal && failure.kind !== "truncation" && !options.failFast;
         const budgetSpent =
-          tries >= this.retry.attempts || (failure.kind === 'timeout' && timeoutTries >= this.retry.timeoutAttempts);
+          tries >= this.retry.attempts ||
+          (failure.kind === "timeout" && timeoutTries >= this.retry.timeoutAttempts);
         if (!retryable || budgetSpent) throw error;
         const backoff = Math.min(this.retry.baseMs * 2 ** (tries - 1), this.retry.capMs);
         const jittered = backoff / 2 + Math.random() * (backoff / 2);
-        const advertised = retryAfterMs(error instanceof Error ? error.message : String(error)) ?? 0;
+        const advertised =
+          retryAfterMs(error instanceof Error ? error.message : String(error)) ?? 0;
         const wait = Math.max(jittered, advertised);
         console.error(
           `[infra-retry] ${this.spec.provider}:${this.model} ${failure.kind} try ${tries}: ${failure.summary} retrying in ${Math.round(wait / 1000)}s`,
@@ -697,22 +765,39 @@ class SdkProvider implements Provider {
       /** streamText reports stream failures through onError rather than rejecting, so rethrow the first
        * captured error after consumption and preserve the normal retry/failure evidence path. */
       let streamError: unknown;
-      const toolOptions = tools ? (options.toolChoice ? { tools, toolChoice: options.toolChoice } : { tools }) : {};
+      const toolOptions = tools
+        ? options.toolChoice
+          ? { tools, toolChoice: options.toolChoice }
+          : { tools }
+        : {};
       const reasoningOptions = options.reasoningMaxTokens
-        ? { providerOptions: { [this.spec.provider]: { reasoning: { max_tokens: options.reasoningMaxTokens } } } }
+        ? {
+            providerOptions: {
+              [this.spec.provider]: { reasoning: { max_tokens: options.reasoningMaxTokens } },
+            },
+          }
         : this.reasoning
           ? { reasoning: this.reasoning }
           : {};
       /** Anthropic-style APIs reject prefill when extended thinking is on, so reasoning disables it. */
       const prefill =
-        options.prefillResponse && this.api === 'messages' && !this.reasoning && !options.reasoningMaxTokens
+        options.prefillResponse &&
+        this.api === "messages" &&
+        !this.reasoning &&
+        !options.reasoningMaxTokens
           ? options.prefillResponse
           : undefined;
-      const converted = convertMessages(prefill ? [...messages, { role: 'assistant', content: prefill }] : messages);
+      const converted = convertMessages(
+        prefill ? [...messages, { role: "assistant", content: prefill }] : messages,
+      );
       /** Cache breakpoints stay claude-only: other Messages-shaped gateways may reject cache_control. */
-      const cacheBreakpoints = this.api === 'messages' && this.model.includes('claude');
+      const cacheBreakpoints = this.api === "messages" && this.model.includes("claude");
       if (cacheBreakpoints) markFirstUserBreakpoint(converted);
-      const systemMessage: ModelMessage = { role: 'system', content: system, providerOptions: EPHEMERAL_CACHE };
+      const systemMessage: ModelMessage = {
+        role: "system",
+        content: system,
+        providerOptions: EPHEMERAL_CACHE,
+      };
       const stream = streamText({
         model,
         ...(cacheBreakpoints ? {} : { system }),
@@ -729,21 +814,30 @@ class SdkProvider implements Provider {
       await stream.consumeStream();
       if (streamError !== undefined) throw streamError;
       abortSignal.throwIfAborted();
-      const [text, finishReason, usage, streamToolCalls, rawReasoningText, response, providerMetadata] =
-        await Promise.all([
-          stream.text,
-          stream.finishReason,
-          stream.usage,
-          stream.toolCalls,
-          stream.reasoningText,
-          stream.response,
-          stream.providerMetadata,
-        ]);
+      const [
+        text,
+        finishReason,
+        usage,
+        streamToolCalls,
+        rawReasoningText,
+        response,
+        providerMetadata,
+      ] = await Promise.all([
+        stream.text,
+        stream.finishReason,
+        stream.usage,
+        stream.toolCalls,
+        stream.reasoningText,
+        stream.response,
+        stream.providerMetadata,
+      ]);
       const debugTarget = process.env.VGC_DEBUG_PROVIDER_ERRORS;
       if (debugTarget && !text.trim() && streamToolCalls.length === 0) {
-        let raw = '(unavailable)';
+        let raw = "(unavailable)";
         try {
-          raw = JSON.stringify(Object.getOwnPropertyDescriptor(response, 'body')?.value ?? null).slice(0, 2000);
+          raw = JSON.stringify(
+            Object.getOwnPropertyDescriptor(response, "body")?.value ?? null,
+          ).slice(0, 2000);
         } catch {}
         raw = redactSecrets(raw, secrets);
         const line = redactSecrets(
@@ -751,14 +845,14 @@ class SdkProvider implements Provider {
             `finish=${finishReason} usage=${JSON.stringify(usage)} response=${raw}`,
           secrets,
         );
-        if (debugTarget === '1') console.error(line);
+        if (debugTarget === "1") console.error(line);
         else appendFileSync(debugTarget, `${line}\n`);
       }
-      const reasoningText = rawReasoningText?.trim() ?? '';
+      const reasoningText = rawReasoningText?.trim() ?? "";
       const reasoningTokens = usage.outputTokenDetails?.reasoningTokens ?? 0;
       const gateway = gatewayMetadataSchema.safeParse(providerMetadata?.openrouter);
       const reportedGateway = gateway.success ? gateway.data : undefined;
-      const completionUsage: Completion['usage'] = {
+      const completionUsage: Completion["usage"] = {
         input_tokens: usage.inputTokens ?? 0,
         output_tokens: usage.outputTokens ?? 0,
       };
@@ -788,25 +882,35 @@ class SdkProvider implements Provider {
     } catch (error) {
       if (options.signal?.aborted) throw error;
       if (timeout.aborted)
-        throw new ApiError(0, `request to ${this.spec.provider}:${this.model} timed out after ${DEFAULT_TIMEOUT}s`);
+        throw new ApiError(
+          0,
+          `request to ${this.spec.provider}:${this.model} timed out after ${DEFAULT_TIMEOUT}s`,
+        );
       const finalError = RetryError.isInstance(error) ? error.lastError : error;
       if (APICallError.isInstance(finalError)) {
         const detail = redactSecrets(finalError.responseBody ?? finalError.message, secrets);
         const inBandStatus =
-          this.spec.provider === 'openrouter' ? openRouterErrorStatus(finalError.responseBody) : undefined;
+          this.spec.provider === "openrouter"
+            ? openRouterErrorStatus(finalError.responseBody)
+            : undefined;
         const status = inBandStatus ?? finalError.statusCode ?? 0;
         const debugTarget = process.env.VGC_DEBUG_PROVIDER_ERRORS;
         if (debugTarget) {
           const body =
-            finalError.requestBodyValues === undefined ? undefined : JSON.stringify(finalError.requestBodyValues);
+            finalError.requestBodyValues === undefined
+              ? undefined
+              : JSON.stringify(finalError.requestBodyValues);
           const line = redactSecrets(
-            `[provider-debug] ${this.spec.provider}:${this.model} ${status} request=${body ?? '(unavailable)'}`,
+            `[provider-debug] ${this.spec.provider}:${this.model} ${status} request=${body ?? "(unavailable)"}`,
             secrets,
           );
-          if (debugTarget === '1') console.error(line);
+          if (debugTarget === "1") console.error(line);
           else {
             appendFileSync(debugTarget, `${line}\n`);
-            appendFileSync(`${debugTarget}.messages.jsonl`, `${JSON.stringify(convertMessages(messages))}\n`);
+            appendFileSync(
+              `${debugTarget}.messages.jsonl`,
+              `${JSON.stringify(convertMessages(messages))}\n`,
+            );
           }
         }
         throw new ApiError(status, `${this.spec.provider}:${this.model} ${status}: ${detail}`);
@@ -826,11 +930,11 @@ export function makeProvider(
   } = {},
 ): Provider {
   validateReasoning(spec, options.reasoning);
-  if (spec.provider === 'random') throw new Error('random provider is handled separately');
+  if (spec.provider === "random") throw new Error("random provider is handled separately");
   return new SdkProvider(spec, options);
 }
 
-export type AgentModel = ReturnType<SdkProvider['agentModel']>;
+export type AgentModel = ReturnType<SdkProvider["agentModel"]>;
 
 export function makeAgentModel(
   spec: ProviderSpec,
@@ -841,6 +945,6 @@ export function makeAgentModel(
   } = {},
 ): AgentModel {
   validateReasoning(spec, options.reasoning);
-  if (spec.provider === 'random') throw new Error('random provider is handled separately');
+  if (spec.provider === "random") throw new Error("random provider is handled separately");
   return new SdkProvider(spec, options).agentModel();
 }

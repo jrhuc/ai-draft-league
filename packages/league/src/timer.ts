@@ -1,13 +1,13 @@
-import type { BattleStream } from 'pokemon-showdown';
-import type { RoomBattleBridge, RoomBattleTimer, TimerPlayer } from './showdown.js';
-import { loadRoomBattleTimer } from './showdown.js';
-import type { JsonValue, Pid, TimerScale } from './types.js';
+import type { BattleStream } from "pokemon-showdown";
+import type { RoomBattleBridge, RoomBattleTimer, TimerPlayer } from "./showdown.js";
+import { loadRoomBattleTimer } from "./showdown.js";
+import type { JsonValue, Pid, TimerScale } from "./types.js";
 
-export type TimerEvent = 'autodefault' | 'forfeit' | 'tie';
+export type TimerEvent = "autodefault" | "forfeit" | "tie";
 
 const TIMER_SCALE_MIN = 0.5;
 const TIMER_SCALE_MAX = 4;
-export const DEFAULT_TIMER_SCALE: TimerScale = 'off';
+export const DEFAULT_TIMER_SCALE: TimerScale = "off";
 interface TimerRequestStart {
   seconds?: number;
   turnSeconds?: number;
@@ -28,11 +28,13 @@ interface TimerRequestPayload {
 }
 
 export function parseTimerScale(value: JsonValue | undefined): TimerScale | undefined {
-  if (value === undefined || value === null || value === '') return undefined;
-  if (value === 'off' || value === 'untimed') return 'off';
+  if (value === undefined || value === null || value === "") return undefined;
+  if (value === "off" || value === "untimed") return "off";
   const scale = Number(value);
   if (!Number.isFinite(scale) || scale < TIMER_SCALE_MIN || scale > TIMER_SCALE_MAX) {
-    throw new Error(`timer scale must be 'off' or a number between ${TIMER_SCALE_MIN} and ${TIMER_SCALE_MAX}`);
+    throw new Error(
+      `timer scale must be 'off' or a number between ${TIMER_SCALE_MIN} and ${TIMER_SCALE_MAX}`,
+    );
   }
   return scale;
 }
@@ -55,21 +57,21 @@ export class TimerAdapter {
     psDir: string,
     scale: TimerScale,
   ) {
-    this.enabled = scale !== 'off';
-    this.players = (['p1', 'p2'] as const).map((slot) => ({
+    this.enabled = scale !== "off";
+    this.players = (["p1", "p2"] as const).map((slot) => ({
       slot,
       name: slot,
       active: true,
       knownActive: true,
       eliminated: false,
-      request: { isWait: 'cantUndo' },
+      request: { isWait: "cantUndo" },
       sendRoom() {},
     }));
     this.bySlot = { p1: this.players[0]!, p2: this.players[1]! };
     const room = { add: () => room, update: () => room };
     this.battle = {
       format,
-      challengeType: 'challenge',
+      challengeType: "challenge",
       ended: false,
       players: this.players,
       playerTable: {},
@@ -80,33 +82,33 @@ export class TimerAdapter {
         write: (command) => {
           const match = /^>(p[12]) default$/.exec(command);
           if (match) {
-            const pid: Pid = match[1] === 'p1' ? 'p1' : 'p2';
+            const pid: Pid = match[1] === "p1" ? "p1" : "p2";
             this.bySlot[pid].request.isWait = true;
-            this.onEvent(pid, 'autodefault');
+            this.onEvent(pid, "autodefault");
           }
           return this.stream.write(command);
         },
       },
       tie: () => {
-        for (const player of this.players) this.onEvent(player.slot, 'tie');
-        return this.stream.write('>forcetie');
+        for (const player of this.players) this.onEvent(player.slot, "tie");
+        return this.stream.write(">forcetie");
       },
       forfeitPlayer: (player) => {
         player.eliminated = true;
         player.request.isWait = true;
-        this.onEvent(player.slot, 'forfeit');
+        this.onEvent(player.slot, "forfeit");
         return this.stream.write(`>forcelose ${player.slot}`);
       },
     };
     const Timer = loadRoomBattleTimer(psDir);
     this.timer = new Timer(this.battle);
-    if (scale !== 'off' && scale !== 1) this.scaleSettings(scale);
+    if (scale !== "off" && scale !== 1) this.scaleSettings(scale);
     if (this.enabled) this.timer.start();
   }
 
   private scaleSettings(scale: number): void {
     const settings = this.timer.settings;
-    for (const key of ['starting', 'grace', 'addPerTurn', 'maxPerTurn', 'maxFirstTurn'] as const) {
+    for (const key of ["starting", "grace", "addPerTurn", "maxPerTurn", "maxFirstTurn"] as const) {
       if (settings[key] && Number.isFinite(settings[key])) {
         settings[key] = Math.max(5, Math.round((settings[key] * scale) / 5) * 5);
       }
@@ -121,35 +123,38 @@ export class TimerAdapter {
   }
 
   receive(message: string): string {
-    const lines = message.split('\n');
-    if (lines[0] === 'update') {
+    const lines = message.split("\n");
+    if (lines[0] === "update") {
       for (const line of lines.slice(1)) {
-        if (line.startsWith('|turn|')) this.battle.turn = Number(line.slice(6));
+        if (line.startsWith("|turn|")) this.battle.turn = Number(line.slice(6));
       }
-    } else if (lines[0] === 'sideupdate') {
-      const pid = lines[1] === 'p1' || lines[1] === 'p2' ? lines[1] : undefined;
+    } else if (lines[0] === "sideupdate") {
+      const pid = lines[1] === "p1" || lines[1] === "p2" ? lines[1] : undefined;
       const player = pid === undefined ? undefined : this.bySlot[pid];
-      const line = lines[2] ?? '';
-      if (player && pid && line.startsWith('|request|')) {
+      const line = lines[2] ?? "";
+      if (player && pid && line.startsWith("|request|")) {
         const request: TimerRequestPayload = JSON.parse(line.slice(9));
-        player.request = { isWait: request.wait ? 'cantUndo' : false };
+        player.request = { isWait: request.wait ? "cantUndo" : false };
         this.battle.requestCount += 1;
         if (this.enabled) {
           if (!request.update) this.timer.nextRequest(player);
-          this.requestStart[pid] = { seconds: player.secondsLeft, turnSeconds: player.turnSecondsLeft };
+          this.requestStart[pid] = {
+            seconds: player.secondsLeft,
+            turnSeconds: player.turnSecondsLeft,
+          };
           if (!request.wait) {
             request.timer = { turnSeconds: player.turnSecondsLeft, seconds: player.secondsLeft };
             lines[2] = `|request|${JSON.stringify(request)}`;
           }
         }
-      } else if (player && line.startsWith('|error|[Invalid choice]')) {
-        player.request.isWait = line.includes("Can't undo") ? 'cantUndo' : false;
+      } else if (player && line.startsWith("|error|[Invalid choice]")) {
+        player.request.isWait = line.includes("Can't undo") ? "cantUndo" : false;
       }
-    } else if (lines[0] === 'end') {
+    } else if (lines[0] === "end") {
       this.battle.ended = true;
       if (this.enabled) this.timer.end();
     }
-    return lines.join('\n');
+    return lines.join("\n");
   }
 
   choose(pid: Pid, choice: string): void | Promise<void> {
@@ -158,7 +163,7 @@ export class TimerAdapter {
     player.request.isWait = true;
     /** A concession is a stream-level command, not a battle choice: the sim has no "forfeit" choice
      * string, so the menu option maps to forcelose for the conceding side. */
-    if (choice === 'forfeit') return this.stream.write(`>forcelose ${pid}`);
+    if (choice === "forfeit") return this.stream.write(`>forcelose ${pid}`);
     return this.stream.write(`>${pid} ${choice}`);
   }
 

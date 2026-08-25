@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { z } from 'zod';
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { z } from "zod";
 
-import { defaultPsDir } from '../src/paths.js';
-import { packTeam, validateTeam } from '../src/teams.js';
-import type { JsonObject } from '../src/types.js';
-import { text } from '../src/value.js';
-import { jsonObjectSchema, publishPool } from './pool-output.js';
+import { defaultPsDir } from "../src/paths.js";
+import { packTeam, validateTeam } from "../src/teams.js";
+import type { JsonObject } from "../src/types.js";
+import { text } from "../src/value.js";
+import { jsonObjectSchema, publishPool } from "./pool-output.js";
 
 const sourceListSchema = z.array(jsonObjectSchema).catch([]);
 
@@ -19,18 +19,19 @@ interface BuiltTeam {
 }
 
 async function fetchPaste(url: string): Promise<string> {
-  const response = await fetch(`${url.replace(/^http:/, 'https:').replace(/\/$/, '')}/raw`, {
-    headers: { 'user-agent': 'vgc-model-league-pool-builder' },
+  const response = await fetch(`${url.replace(/^http:/, "https:").replace(/\/$/, "")}/raw`, {
+    headers: { "user-agent": "vgc-model-league-pool-builder" },
     signal: AbortSignal.timeout(30_000),
   });
-  if (!response.ok) throw new Error(`could not fetch ${url}: ${response.status} ${response.statusText}`);
+  if (!response.ok)
+    throw new Error(`could not fetch ${url}: ${response.status} ${response.statusText}`);
   return response.text();
 }
 
 async function buildPool(manifestFile: string): Promise<string> {
   const manifestPath = path.resolve(manifestFile);
   const poolDir = path.dirname(manifestPath);
-  const manifest = jsonObjectSchema.safeParse(JSON.parse(fs.readFileSync(manifestPath, 'utf8')));
+  const manifest = jsonObjectSchema.safeParse(JSON.parse(fs.readFileSync(manifestPath, "utf8")));
   if (!manifest.success) throw new Error(`invalid manifest ${manifestPath}`);
   const data = manifest.data;
   const poolId = text(data.id);
@@ -42,7 +43,7 @@ async function buildPool(manifestFile: string): Promise<string> {
   const teams: BuiltTeam[] = [];
   for (const source of sources) {
     const id = text(source.id);
-    if (!id) throw new Error('every source team needs an id');
+    if (!id) throw new Error("every source team needs an id");
     const packed = packTeam(await fetchPaste(text(source.paste)), psDir, format);
     validateTeam(packed, format, psDir);
     const duplicate = seen.get(packed);
@@ -66,6 +67,6 @@ async function buildPool(manifestFile: string): Promise<string> {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const manifest = process.argv[2];
   if (!manifest || process.argv.length !== 3)
-    throw new Error('Usage: pnpm run build-pool -- teams/<pool>/sources.json');
+    throw new Error("Usage: pnpm run build-pool -- teams/<pool>/sources.json");
   await buildPool(manifest);
 }

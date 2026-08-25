@@ -15,7 +15,8 @@
     "check": "vp check",
     "lint": "vp lint",
     "fmt": "vp fmt",
-    "deploy": "vp run site#deploy"
+    "deploy": "vp run site#deploy",
+    "test:league": "vp run league#test:unit"
   },
   "devDependencies": {
     "@oxlint/plugins": "1.79.0",

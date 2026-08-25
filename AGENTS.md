@@ -1,52 +1,39 @@
 # Working principles
 
-## Posture
+## Layout
 
-This repository is the spectator product for frontier-model Pokémon draft
-leagues. Optimize for narrative, clarity, playback, and entertainment: a
-community league broadcast with schedules, standings, rosters, transactions,
-recorded games, and stories that develop week to week.
-
-A season is an exhibition under one recorded configuration. Present its
-standings and champion accurately, but never turn them into a general model
-ranking.
+- `packages/league` — the harness: draft engine, battle sim integration,
+  provider clients, and the `vgcleague` CLI. Runs execute here; `runs/`,
+  `records/`, and `.env` are local state and are never committed.
+- `apps/site` — the spectator app, deployed to Cloudflare as static assets.
+- Repo-wide format, lint (anti-slop, type-aware), and type checks run from the
+  root: `pnpm check`. The league additionally builds with `tsc` and tests from
+  `dist` via `vp run league#test:unit`.
 
 ## Boundaries
 
-[vgc-model-league](https://github.com/jrhuc/vgc-model-league) is the authority
-for rules, legality, randomness, schedules, results, release state, and public
-evidence. This repository consumes only the exported `season-bundle.json`
-artifact. Any change to its shape must be coordinated between the producer and
-consumer. This repository never clones or imports harness source and never
-reimplements draft rules, transaction legality, team validation, battle state,
-standings, winners, or reveal timing. Broadcast metadata decorates bundle
-events; it never recalculates them.
+The deployed site consumes exactly one data artifact: the exported
+`apps/site/public/season-bundle.json`. It never reads `runs/` and never
+recalculates competitive facts (standings, legality, winners) — the league
+export is the authority. A dev-only live-watch surface may read local run
+directories through the dev server; it must never ship in the production
+bundle.
 
-Two visibility axes are independent:
+Site browser code imports league code only through pure modules (types,
+parsers, formatters). Provider SDKs and anything that touches credentials stay
+server/CLI-side.
 
-- competing models see only what the harness gives them through authorized
-  prompts and tools;
-- spectators see the released account of what models chose and said they were
-  trying to do: pick reasoning, build plans, decision rationales, reflections,
-  transaction messages and reasoning, weekly reviews, reconciliation, and
-  season reviews.
+Competing models see only what the harness gives them through authorized
+prompts and tools. Don't add browser, HTTP, or spectator-site tools to
+competition roles without deliberate design.
 
-Model-authored reasoning is competition-private until its release barrier, then
-spectator content. Raw provider traces and hidden reasoning channels, prompts,
-credentials, memory pages, unreleased results, and closed sheets before their
-reveal point are never spectator content.
-
-The site must not become a data source for competing models. The current league
-roles have no browser, HTTP, MCP, URL-fetch, spectator-site, or general network
-tool. If that harness boundary changes, the release policy must be reviewed
-before another season.
-
-Recorded playback of validated artifacts is preferred over live provider
-execution. The frontend may derive presentation labels and links, but it must
-not recalculate competitive facts.
+A season is an exhibition under one recorded configuration, not a general
+model ranking.
 
 ## Code
 
-Comments document constraints the code cannot express and use `/** doc */`
-blocks. Keep the public protocol typed and validated at build time. Reject an
-invalid bundle rather than guessing around it.
+This is a mutable personal project: delete obsolete protocols, compatibility
+paths, and defensive machinery instead of layering around them. Near-zero
+comments — a comment documents a constraint the code cannot express, in
+`/** doc */` form, and never narrates the implementation. Reject an invalid
+bundle rather than guessing around it.

@@ -1,19 +1,19 @@
-import fs from 'node:fs';
-import path from 'node:path';
+import fs from "node:fs";
+import path from "node:path";
 
-import { defaultPsDir, RESULTS_PATH } from './paths.js';
-import { validateModelExecution } from './providers.js';
-import type { Rng } from './random.js';
-import { resolveSeed, seededRng, seriesEntropy } from './random.js';
-import type { SeriesRecord } from './records.js';
-import { appendRow } from './records.js';
-import type { ExperimentOptions, RecordedSeriesContext } from './series.js';
-import { mapLimit, playRecordedSeries } from './series.js';
-import { showdownCommit } from './showdown.js';
-import type { Team } from './teams.js';
-import { loadPool, validatePool } from './teams.js';
-import { DEFAULT_TIMER_SCALE } from './timer.js';
-import type { ExperimentMode, JsonObject, Pid } from './types.js';
+import { defaultPsDir, RESULTS_PATH } from "./paths.js";
+import { validateModelExecution } from "./providers.js";
+import type { Rng } from "./random.js";
+import { resolveSeed, seededRng, seriesEntropy } from "./random.js";
+import type { SeriesRecord } from "./records.js";
+import { appendRow } from "./records.js";
+import type { ExperimentOptions, RecordedSeriesContext } from "./series.js";
+import { mapLimit, playRecordedSeries } from "./series.js";
+import { showdownCommit } from "./showdown.js";
+import type { Team } from "./teams.js";
+import { loadPool, validatePool } from "./teams.js";
+import { DEFAULT_TIMER_SCALE } from "./timer.js";
+import type { ExperimentMode, JsonObject, Pid } from "./types.js";
 
 interface SeriesPlan {
   index: number;
@@ -25,17 +25,24 @@ interface SeriesPlan {
 
 export type RotationEvent =
   | {
-      type: 'plans';
+      type: "plans";
       mode: ExperimentMode;
       plans: Array<{ index: number; players: Record<Pid, string> }>;
       pool: string;
       seed: number;
     }
-  | { type: 'series-start'; index: number }
-  | { type: 'game-update'; index: number; game: number; lines: string[]; publicLines: string[] }
-  | { type: 'game-end'; index: number; game: number; winner: string | null; turns: number; score: Record<Pid, number> }
-  | { type: 'decision'; index: number; pid: Pid; row: JsonObject }
-  | { type: 'series-end'; index: number; record: SeriesRecord };
+  | { type: "series-start"; index: number }
+  | { type: "game-update"; index: number; game: number; lines: string[]; publicLines: string[] }
+  | {
+      type: "game-end";
+      index: number;
+      game: number;
+      winner: string | null;
+      turns: number;
+      score: Record<Pid, number>;
+    }
+  | { type: "decision"; index: number; pid: Pid; row: JsonObject }
+  | { type: "series-end"; index: number; record: SeriesRecord };
 
 export interface RotationOptions extends ExperimentOptions {
   pool?: string;
@@ -49,7 +56,7 @@ export async function runRotation(
   runDir: string,
   options: RotationOptions = {},
 ): Promise<SeriesRecord[]> {
-  if (models.length < 2) throw new Error('at least two models are required');
+  if (models.length < 2) throw new Error("at least two models are required");
   if (seriesPerPair % 2) {
     const message = "warning: an odd --series-per-pair leaves each pair's last matchup unmirrored";
     if (options.onNotice) options.onNotice(message);
@@ -60,23 +67,23 @@ export async function runRotation(
   fs.mkdirSync(runDir, { recursive: true });
   const recordsPath = options.recordsPath ?? RESULTS_PATH;
   const psDir = options.psDir ?? defaultPsDir();
-  const pool = loadPool(options.pool ?? 'test');
+  const pool = loadPool(options.pool ?? "test");
   validatePool(pool, psDir);
   const seed = resolveSeed(options.seed);
   const timerScale = options.timerScale ?? DEFAULT_TIMER_SCALE;
   const plans = makePlans(models, seriesPerPair, pool.teams, seededRng(seed));
   options.onEvent?.({
-    mode: 'rotation',
-    type: 'plans',
+    mode: "rotation",
+    type: "plans",
     plans: plans.map((plan) => ({ index: plan.index, players: plan.players })),
     pool: pool.id,
     seed,
   });
   fs.writeFileSync(
-    path.join(runDir, 'config.json'),
+    path.join(runDir, "config.json"),
     `${JSON.stringify(
       {
-        mode: 'rotation',
+        mode: "rotation",
         models,
         series_per_pair: seriesPerPair,
         seed,
@@ -91,11 +98,11 @@ export async function runRotation(
       null,
       2,
     )}\n`,
-    'utf8',
+    "utf8",
   );
 
   return mapLimit(plans, options.concurrency ?? 4, options.signal, async (plan, signal) => {
-    options.onEvent?.({ type: 'series-start', index: plan.index });
+    options.onEvent?.({ type: "series-start", index: plan.index });
     const seriesContext: RecordedSeriesContext = {
       players: plan.players,
       teams: plan.teams,
@@ -107,10 +114,11 @@ export async function runRotation(
       signal,
       timerScale,
       onGameUpdate: (game, lines, publicLines) =>
-        options.onEvent?.({ type: 'game-update', index: plan.index, game, lines, publicLines }),
+        options.onEvent?.({ type: "game-update", index: plan.index, game, lines, publicLines }),
       onGameEnd: (game, winner, turns, score) =>
-        options.onEvent?.({ type: 'game-end', index: plan.index, game, winner, turns, score }),
-      onDecision: (pid, row) => options.onEvent?.({ type: 'decision', index: plan.index, pid, row }),
+        options.onEvent?.({ type: "game-end", index: plan.index, game, winner, turns, score }),
+      onDecision: (pid, row) =>
+        options.onEvent?.({ type: "decision", index: plan.index, pid, row }),
       reasoning: options.reasoning,
       reasoningByModel: options.reasoningByModel,
       apiKeys: options.apiKeys,
@@ -118,7 +126,7 @@ export async function runRotation(
     const { fields } = await playRecordedSeries(seriesContext);
     const row: SeriesRecord = {
       schema_version: 1,
-      mode: 'rotation',
+      mode: "rotation",
       series_index: plan.index,
       pool: pool.id,
       run_seed: seed,
@@ -127,12 +135,17 @@ export async function runRotation(
     };
     if (options.contributor !== undefined) row.contributor = options.contributor;
     appendRow(recordsPath, row);
-    options.onEvent?.({ type: 'series-end', index: plan.index, record: row });
+    options.onEvent?.({ type: "series-end", index: plan.index, record: row });
     return row;
   });
 }
 
-export function makePlans(models: string[], seriesPerPair: number, teams: Team[], random: Rng): SeriesPlan[] {
+export function makePlans(
+  models: string[],
+  seriesPerPair: number,
+  teams: Team[],
+  random: Rng,
+): SeriesPlan[] {
   const plans: SeriesPlan[] = [];
   for (let first = 0; first < models.length; first += 1) {
     for (let second = first + 1; second < models.length; second += 1) {
@@ -145,7 +158,9 @@ export function makePlans(models: string[], seriesPerPair: number, teams: Team[]
           matchup = [teams[firstTeam]!, teams[secondTeam]!];
         }
         const players: Record<Pid, string> =
-          pair % 2 ? { p1: models[second]!, p2: models[first]! } : { p1: models[first]!, p2: models[second]! };
+          pair % 2
+            ? { p1: models[second]!, p2: models[first]! }
+            : { p1: models[first]!, p2: models[second]! };
         plans.push({
           index: plans.length,
           players,

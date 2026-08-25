@@ -1,28 +1,28 @@
-import { randomUUID } from 'node:crypto';
-import fs from 'node:fs';
-import path from 'node:path';
-import { isDeepStrictEqual } from 'node:util';
-import { z } from 'zod';
+import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
+import { z } from "zod";
 
-import type { DraftBoard, DraftBoardMon } from './draft.js';
-import { draftTranscriptRowSchema, snakeOrder } from './draft.js';
-import type { DraftPickView, TeambuildView } from './gui/api.js';
-import { appendJsonlObject, readJsonlObjects } from './jsonl.js';
-import { seededRng, shuffle } from './random.js';
-import type { SeriesRecord } from './records.js';
-import { loadSeriesRecords } from './records.js';
-import { storedSeriesMetadataSchema } from './series.js';
-import { harnessCommit } from './showdown.js';
+import type { DraftBoard, DraftBoardMon } from "./draft.js";
+import { draftTranscriptRowSchema, snakeOrder } from "./draft.js";
+import type { DraftPickView, TeambuildView } from "./views.js";
+import { appendJsonlObject, readJsonlObjects } from "./jsonl.js";
+import { seededRng, shuffle } from "./random.js";
+import type { SeriesRecord } from "./records.js";
+import { loadSeriesRecords } from "./records.js";
+import { storedSeriesMetadataSchema } from "./series.js";
+import { harnessCommit } from "./showdown.js";
 import {
   decodeTeamBuildJournalRow,
   replayTeamBuildArtifact,
   type TeamBuildArtifact,
   type TeamBuildJournalEntry,
   type TeamBuildSheetPolicy,
-} from './teambuild.js';
-import { MAX_TRADE_OFFERS, type TransactionSchedule } from './trade-window.js';
-import type { ContributorAttribution, JsonValue, Pid, TimerScale } from './types.js';
-import { isErrnoCode, isRecord } from './value.js';
+} from "./teambuild.js";
+import { MAX_TRADE_OFFERS, type TransactionSchedule } from "./trade-window.js";
+import type { ContributorAttribution, JsonValue, Pid, TimerScale } from "./types.js";
+import { isErrnoCode, isRecord } from "./value.js";
 
 export interface StoredLeague {
   config: StoredDraftLeagueConfig;
@@ -46,7 +46,7 @@ const transactionWindowSchema = z.strictObject({
   trades_allowed: z.number().int().safe().min(0).max(MAX_TRADE_OFFERS),
 });
 export const draftLeagueConfigSchema = z.looseObject({
-  mode: z.literal('draft'),
+  mode: z.literal("draft"),
   models: z.array(z.string()),
   entrants: z.array(z.string()).min(2),
   seed: z.number(),
@@ -55,7 +55,7 @@ export const draftLeagueConfigSchema = z.looseObject({
   concurrency: z.number().optional(),
   reasoning: z.string().nullable().optional(),
   reasoning_by_model: z.record(z.string(), z.string()).nullable().optional(),
-  timer_scale: z.union([z.number(), z.literal('off')]).optional(),
+  timer_scale: z.union([z.number(), z.literal("off")]).optional(),
   closed_sheets: z.boolean().optional(),
   sequential_weeks: z.boolean(),
   draft_only: z.boolean(),
@@ -69,34 +69,34 @@ export const draftLeagueConfigSchema = z.looseObject({
 });
 export type StoredDraftLeagueConfig = z.infer<typeof draftLeagueConfigSchema>;
 const DRAFT_CONFIG_FIELDS = [
-  'mode',
-  'harness_commit',
-  'showdown_commit',
-  'models',
-  'entrants',
-  'seed',
-  'board',
-  'format',
-  'concurrency',
-  'reasoning',
-  'reasoning_by_model',
-  'timer_scale',
-  'closed_sheets',
-  'sequential_weeks',
-  'draft_only',
-  'preset',
-  'transactions',
-  'swaps_allowed',
-  'team_names',
-  'weeks',
-  'rosters',
-  'draft_notes',
-  'contributor',
+  "mode",
+  "harness_commit",
+  "showdown_commit",
+  "models",
+  "entrants",
+  "seed",
+  "board",
+  "format",
+  "concurrency",
+  "reasoning",
+  "reasoning_by_model",
+  "timer_scale",
+  "closed_sheets",
+  "sequential_weeks",
+  "draft_only",
+  "preset",
+  "transactions",
+  "swaps_allowed",
+  "team_names",
+  "weeks",
+  "rosters",
+  "draft_notes",
+  "contributor",
 ] as const;
 
 export interface StoredLeaguePlan {
   index: number;
-  stage: 'roundrobin' | 'playoff';
+  stage: "roundrobin" | "playoff";
   round: number;
   engineSeeds: Record<Pid, number>;
 }
@@ -117,7 +117,7 @@ export interface DraftLeagueConfig {
   reasoning: unknown;
   reasoningByModel: unknown;
   timerScale: TimerScale;
-  board: Pick<DraftBoard, 'id' | 'format'>;
+  board: Pick<DraftBoard, "id" | "format">;
   sequentialWeeks: boolean;
   closedSheets: boolean;
   draftOnly: boolean;
@@ -133,12 +133,15 @@ export interface DraftLeagueCompletion {
   contributor: ContributorAttribution | null;
 }
 
-export function writeDraftLeagueConfig(config: DraftLeagueConfig, outcome: Partial<DraftLeagueCompletion> = {}): void {
+export function writeDraftLeagueConfig(
+  config: DraftLeagueConfig,
+  outcome: Partial<DraftLeagueCompletion> = {},
+): void {
   fs.writeFileSync(
-    path.join(config.runDir, 'config.json'),
+    path.join(config.runDir, "config.json"),
     `${JSON.stringify(
       {
-        mode: 'draft',
+        mode: "draft",
         harness_commit: harnessCommit(),
         showdown_commit: config.showdownCommit,
         models: config.models,
@@ -163,7 +166,7 @@ export function writeDraftLeagueConfig(config: DraftLeagueConfig, outcome: Parti
       null,
       2,
     )}\n`,
-    'utf8',
+    "utf8",
   );
 }
 
@@ -176,7 +179,7 @@ export function writeDraftLeagueRosters(
   rosters: readonly (readonly DraftBoardMon[])[],
 ): void {
   fs.writeFileSync(
-    path.join(runDir, 'rosters.json'),
+    path.join(runDir, "rosters.json"),
     `${JSON.stringify(
       entrants.map((model, entrant) => ({
         entrant,
@@ -189,18 +192,23 @@ export function writeDraftLeagueRosters(
       null,
       2,
     )}\n`,
-    'utf8',
+    "utf8",
   );
 }
 
 export function loadStoredCoaching(runDir: string, entrants: number): StoredCoaching {
   const playoffContext = Array.from({ length: entrants }, () => new Map<number, string>());
   const reflectionNotes = Array.from({ length: entrants }, () => new Map<number, string>());
-  for (const row of readJsonlObjects(path.join(runDir, 'coaching.jsonl'))) {
+  for (const row of readJsonlObjects(path.join(runDir, "coaching.jsonl"))) {
     const entrant = Number(row.entrant);
     const seriesIndex = Number(row.series_index);
     const context = z.string().safeParse(row.context);
-    if (Number.isInteger(entrant) && playoffContext[entrant] && Number.isInteger(seriesIndex) && context.success) {
+    if (
+      Number.isInteger(entrant) &&
+      playoffContext[entrant] &&
+      Number.isInteger(seriesIndex) &&
+      context.success
+    ) {
       playoffContext[entrant].set(seriesIndex, context.data);
       const notebook = z.string().safeParse(row.notebook);
       if (notebook.success) reflectionNotes[entrant]!.set(seriesIndex, notebook.data);
@@ -213,18 +221,24 @@ export function appendStoredCoaching(
   runDir: string,
   row: { series_index: number; entrant: number; context: string; notebook: string },
 ): void {
-  appendJsonlObject(path.join(runDir, 'coaching.jsonl'), row);
+  appendJsonlObject(path.join(runDir, "coaching.jsonl"), row);
 }
 
-export function loadStoredPicks(runDir: string, entrants: number, board: DraftBoard): DraftPickView[] {
-  const rows = [...readJsonlObjects(path.join(runDir, 'draft', 'draft.jsonl'))]
+export function loadStoredPicks(
+  runDir: string,
+  entrants: number,
+  board: DraftBoard,
+): DraftPickView[] {
+  const rows = [...readJsonlObjects(path.join(runDir, "draft", "draft.jsonl"))]
     .map((row) => draftTranscriptRowSchema.parse(row))
     .sort((a, b) => a.pick - b.pick);
   const order = snakeOrder(entrants, board.picks);
   return rows.flatMap((row, index) => {
     const entrant = order[index];
     if (entrant === undefined) return [];
-    return [{ pick: row.pick, entrant, mon: row.mon, rationale: row.rationale, fallback: row.fallback }];
+    return [
+      { pick: row.pick, entrant, mon: row.mon, rationale: row.rationale, fallback: row.fallback },
+    ];
   });
 }
 
@@ -240,40 +254,53 @@ export function loadStoredLeagueRows(
   const playoffs = new Map<number, SeriesRecord>();
   const seen = new Set<number>();
   for (const row of loadSeriesRecords(recordsPath)) {
-    if (row.run_id !== runId || row.mode !== 'draft') continue;
+    if (row.run_id !== runId || row.mode !== "draft") continue;
     const seriesIndex = row.series_index;
-    const plan = seriesIndex === undefined || !Number.isSafeInteger(seriesIndex) ? undefined : plans[seriesIndex];
+    const plan =
+      seriesIndex === undefined || !Number.isSafeInteger(seriesIndex)
+        ? undefined
+        : plans[seriesIndex];
     if (!plan || plan.stage !== row.stage || plan.round !== row.round) {
       throw new Error(
         `run ${runId} series ${String(seriesIndex)} does not match the rebuilt schedule; it cannot resume`,
       );
     }
-    if (seen.has(plan.index)) throw new Error(`run ${runId} repeats scheduled series ${plan.index}; it cannot resume`);
+    if (seen.has(plan.index))
+      throw new Error(`run ${runId} repeats scheduled series ${plan.index}; it cannot resume`);
     seen.add(plan.index);
-    if (row.board !== boardId || row.run_seed !== seed || !isDeepStrictEqual(row.engine_seeds, plan.engineSeeds)) {
-      throw new Error(`run ${runId} series ${plan.index} is not bound to its scheduled entropy and board`);
+    if (
+      row.board !== boardId ||
+      row.run_seed !== seed ||
+      !isDeepStrictEqual(row.engine_seeds, plan.engineSeeds)
+    ) {
+      throw new Error(
+        `run ${runId} series ${plan.index} is not bound to its scheduled entropy and board`,
+      );
     }
-    if (plan.stage === 'roundrobin') roundRobin.set(plan.index, row);
+    if (plan.stage === "roundrobin") roundRobin.set(plan.index, row);
     else playoffs.set(plan.index, row);
     all.push(row);
   }
   return { all, roundRobin, playoffs };
 }
 
-export function draftOnlyPromotionEvidence(runDir: string, rows: readonly SeriesRecord[]): string[] {
-  const evidence = rows.length ? ['stored results'] : [];
-  for (const relative of ['teambuild/teambuild.jsonl', 'coaching.jsonl', 'season.jsonl']) {
+export function draftOnlyPromotionEvidence(
+  runDir: string,
+  rows: readonly SeriesRecord[],
+): string[] {
+  const evidence = rows.length ? ["stored results"] : [];
+  for (const relative of ["teambuild/teambuild.jsonl", "coaching.jsonl", "season.jsonl"]) {
     try {
       if (fs.statSync(path.join(runDir, relative)).size > 0) evidence.push(relative);
     } catch (cause) {
-      if (!isErrnoCode(cause, 'ENOENT')) throw cause;
+      if (!isErrnoCode(cause, "ENOENT")) throw cause;
     }
   }
-  for (const directory of ['series', 'reviews']) {
+  for (const directory of ["series", "reviews"]) {
     try {
       if (fs.readdirSync(path.join(runDir, directory)).length) evidence.push(`${directory}/`);
     } catch (cause) {
-      if (!isErrnoCode(cause, 'ENOENT')) throw cause;
+      if (!isErrnoCode(cause, "ENOENT")) throw cause;
     }
   }
   return evidence;
@@ -282,51 +309,61 @@ export function draftOnlyPromotionEvidence(runDir: string, rows: readonly Series
 export function postWindowEvidence(
   runDir: string,
   rows: readonly SeriesRecord[],
-  plans: readonly Pick<StoredLeaguePlan, 'index' | 'stage' | 'round'>[],
+  plans: readonly Pick<StoredLeaguePlan, "index" | "stage" | "round">[],
   afterWeek: number,
 ): string[] {
   const pastBarrier = new Set(
-    plans.filter((plan) => plan.stage === 'playoff' || plan.round > afterWeek).map((plan) => plan.index),
+    plans
+      .filter((plan) => plan.stage === "playoff" || plan.round > afterWeek)
+      .map((plan) => plan.index),
   );
   const evidence = rows
     .filter((row) => row.series_index !== undefined && pastBarrier.has(row.series_index))
     .map((row) => `result series ${String(row.series_index)}`);
-  const teambuildFile = path.join(runDir, 'teambuild', 'teambuild.jsonl');
+  const teambuildFile = path.join(runDir, "teambuild", "teambuild.jsonl");
   for (const [index, row] of readJsonlObjects(teambuildFile).entries()) {
-    const { seriesIndex } = decodeTeamBuildJournalRow(row, `${teambuildFile} line ${index + 1}`).view;
-    if (pastBarrier.has(seriesIndex)) evidence.push(`teambuild/teambuild.jsonl series ${seriesIndex}`);
+    const { seriesIndex } = decodeTeamBuildJournalRow(
+      row,
+      `${teambuildFile} line ${index + 1}`,
+    ).view;
+    if (pastBarrier.has(seriesIndex))
+      evidence.push(`teambuild/teambuild.jsonl series ${seriesIndex}`);
   }
-  for (const row of readJsonlObjects(path.join(runDir, 'coaching.jsonl'))) {
+  for (const row of readJsonlObjects(path.join(runDir, "coaching.jsonl"))) {
     const seriesIndex = z.number().int().safe().safeParse(row.series_index);
     if (seriesIndex.success && pastBarrier.has(seriesIndex.data))
       evidence.push(`coaching.jsonl series ${seriesIndex.data}`);
   }
-  const seriesRoot = path.join(runDir, 'series');
+  const seriesRoot = path.join(runDir, "series");
   let seriesDirectories: string[] = [];
   try {
     seriesDirectories = fs.readdirSync(seriesRoot);
   } catch (cause) {
-    if (!isErrnoCode(cause, 'ENOENT')) throw cause;
+    if (!isErrnoCode(cause, "ENOENT")) throw cause;
   }
   for (const directory of seriesDirectories) {
     try {
       const meta = storedSeriesMetadataSchema.safeParse(
-        JSON.parse(fs.readFileSync(path.join(seriesRoot, directory, 'series.json'), 'utf8')),
+        JSON.parse(fs.readFileSync(path.join(seriesRoot, directory, "series.json"), "utf8")),
       );
       if (meta.success && meta.data.seriesIndex !== null && pastBarrier.has(meta.data.seriesIndex))
         evidence.push(`series/${directory}`);
     } catch {}
   }
-  if (readJsonlObjects(path.join(runDir, 'season.jsonl')).length) evidence.push('season.jsonl');
+  if (readJsonlObjects(path.join(runDir, "season.jsonl")).length) evidence.push("season.jsonl");
   let reviewFiles: string[] = [];
   try {
-    reviewFiles = fs.readdirSync(path.join(runDir, 'reviews'));
+    reviewFiles = fs.readdirSync(path.join(runDir, "reviews"));
   } catch (cause) {
-    if (!isErrnoCode(cause, 'ENOENT')) throw cause;
+    if (!isErrnoCode(cause, "ENOENT")) throw cause;
   }
   for (const file of reviewFiles) {
     const match = /^week-(\d+)\.jsonl$/u.exec(file);
-    if (match && Number(match[1]) > afterWeek && readJsonlObjects(path.join(runDir, 'reviews', file)).length) {
+    if (
+      match &&
+      Number(match[1]) > afterWeek &&
+      readJsonlObjects(path.join(runDir, "reviews", file)).length
+    ) {
       evidence.push(`reviews/${file}`);
     }
   }
@@ -336,10 +373,10 @@ export function postWindowEvidence(
 export function requireTransactionResultPrefix(
   runId: string,
   rows: readonly SeriesRecord[],
-  plans: readonly Pick<StoredLeaguePlan, 'index' | 'stage' | 'round'>[],
+  plans: readonly Pick<StoredLeaguePlan, "index" | "stage" | "round">[],
   afterWeek: number,
 ): void {
-  const expected = plans.filter((plan) => plan.stage === 'roundrobin' && plan.round <= afterWeek);
+  const expected = plans.filter((plan) => plan.stage === "roundrobin" && plan.round <= afterWeek);
   if (rows.length < expected.length) {
     throw new Error(
       `run ${runId} transaction artifacts have only ${rows.length} results before a ${expected.length}-series pre-window barrier`,
@@ -347,17 +384,21 @@ export function requireTransactionResultPrefix(
   }
   const expectedIndexes = new Set(expected.map((plan) => plan.index));
   const prefix = rows.slice(0, expected.length);
-  const crossed = prefix.find((row) => row.series_index === undefined || !expectedIndexes.has(row.series_index));
+  const crossed = prefix.find(
+    (row) => row.series_index === undefined || !expectedIndexes.has(row.series_index),
+  );
   if (crossed) {
     throw new Error(
       `run ${runId} later-round series ${String(crossed.series_index)} crosses the transaction barrier before the exact pre-window result prefix`,
     );
   }
-  const prefixIndexes = new Set(prefix.flatMap((row) => (row.series_index === undefined ? [] : [row.series_index])));
+  const prefixIndexes = new Set(
+    prefix.flatMap((row) => (row.series_index === undefined ? [] : [row.series_index])),
+  );
   const missing = expected.filter((plan) => !prefixIndexes.has(plan.index));
   if (missing.length || prefixIndexes.size !== expected.length) {
     throw new Error(
-      `run ${runId} transaction artifacts lack the exact pre-window result prefix; missing scheduled series ${missing.map((plan) => plan.index).join(', ') || 'none'}`,
+      `run ${runId} transaction artifacts lack the exact pre-window result prefix; missing scheduled series ${missing.map((plan) => plan.index).join(", ") || "none"}`,
     );
   }
 }
@@ -399,8 +440,8 @@ export function promoteDraftOnlyConfig(
   stored: StoredLeague,
   transactions: Array<{ after_week: number; trades_allowed: number }>,
 ): void {
-  const configPath = path.join(runDir, 'config.json');
-  if (fs.readFileSync(configPath, 'utf8') !== stored.configBytes) {
+  const configPath = path.join(runDir, "config.json");
+  if (fs.readFileSync(configPath, "utf8") !== stored.configBytes) {
     throw new Error(`${configPath} changed while its draft-only promotion was being validated`);
   }
   const activeConfig = Object.fromEntries(
@@ -411,7 +452,7 @@ export function promoteDraftOnlyConfig(
   const nextConfig = { ...activeConfig, draft_only: false, transactions };
   const temporary = `${configPath}.${process.pid}.${randomUUID()}.tmp`;
   try {
-    fs.writeFileSync(temporary, `${JSON.stringify(nextConfig, null, 2)}\n`, 'utf8');
+    fs.writeFileSync(temporary, `${JSON.stringify(nextConfig, null, 2)}\n`, "utf8");
     fs.renameSync(temporary, configPath);
   } finally {
     fs.rmSync(temporary, { force: true });
@@ -426,7 +467,7 @@ export function linkedStoredArtifact(
     format: string;
     psDir: string;
     sheetPolicy: TeamBuildSheetPolicy;
-    stage: 'roundrobin' | 'playoff';
+    stage: "roundrobin" | "playoff";
     seriesIndex: number;
     entrant: number;
     opponent: number;
@@ -443,16 +484,16 @@ export function linkedStoredArtifact(
   const artifact = replayed.artifact;
   const task = artifact.task;
   if (
-    artifact.executionPolicy !== 'league-resilient' ||
-    task.executionPolicy !== 'league-resilient' ||
+    artifact.executionPolicy !== "league-resilient" ||
+    task.executionPolicy !== "league-resilient" ||
     task.model !== context.model ||
     task.format !== context.format ||
     task.sheetPolicy !== context.sheetPolicy ||
-    task.constraint.kind !== 'draft-picks' ||
-    task.objective.kind !== 'matchup' ||
+    task.constraint.kind !== "draft-picks" ||
+    task.objective.kind !== "matchup" ||
     task.objective.stage !== context.stage ||
     task.objective.opponent.model !== context.opponentModel ||
-    task.provenance.source !== 'draft-league' ||
+    task.provenance.source !== "draft-league" ||
     task.provenance.seriesIndex !== context.seriesIndex ||
     task.provenance.entrant !== context.entrant ||
     task.provenance.opponent !== context.opponent ||
@@ -472,7 +513,7 @@ export function linkedStoredArtifact(
 
 export function loadStoredTeambuilds(teambuildDir: string): Map<string, TeamBuildJournalEntry[]> {
   const rowsBySeries = new Map<string, TeamBuildJournalEntry[]>();
-  const file = path.join(teambuildDir, 'teambuild.jsonl');
+  const file = path.join(teambuildDir, "teambuild.jsonl");
   for (const [index, row] of readJsonlObjects(file).entries()) {
     const entry = decodeTeamBuildJournalRow(row, `${file} line ${index + 1}`);
     const { seriesIndex, entrant } = entry.view;
@@ -485,20 +526,22 @@ export function loadStoredTeambuilds(teambuildDir: string): Map<string, TeamBuil
 }
 
 export function loadStoredLeague(runDir: string): StoredLeague | undefined {
-  const configPath = path.join(runDir, 'config.json');
+  const configPath = path.join(runDir, "config.json");
   let configBytes: string;
   try {
-    configBytes = fs.readFileSync(configPath, 'utf8');
+    configBytes = fs.readFileSync(configPath, "utf8");
   } catch (cause) {
-    if (isErrnoCode(cause, 'ENOENT')) throw new Error(`${runDir} holds no draft league config to resume`);
+    if (isErrnoCode(cause, "ENOENT"))
+      throw new Error(`${runDir} holds no draft league config to resume`);
     throw cause;
   }
   const parsedConfig: JsonValue = JSON.parse(configBytes);
-  if (!isRecord(parsedConfig) || parsedConfig.mode !== 'draft') throw new Error(`${runDir} is not a draft league run`);
-  if (!Object.hasOwn(parsedConfig, 'rosters')) return undefined;
+  if (!isRecord(parsedConfig) || parsedConfig.mode !== "draft")
+    throw new Error(`${runDir} is not a draft league run`);
+  if (!Object.hasOwn(parsedConfig, "rosters")) return undefined;
   const parsed = draftLeagueConfigSchema.safeParse(parsedConfig);
   if (!parsed.success) {
-    const windowIssue = parsed.error.issues.some((issue) => issue.path[0] === 'transactions');
+    const windowIssue = parsed.error.issues.some((issue) => issue.path[0] === "transactions");
     throw new Error(
       windowIssue
         ? `${runDir} season config has an invalid transaction window`

@@ -1,47 +1,47 @@
-import { createHash, randomUUID } from 'node:crypto';
-import fs from 'node:fs';
-import path from 'node:path';
+import { createHash, randomUUID } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 
-import { z } from 'zod';
+import { z } from "zod";
 
-import { LLMEngine } from './llm-engine.js';
-import { defaultPsDir, RESULTS_PATH } from './paths.js';
-import type { ReasoningLevel } from './providers.js';
-import { parseSpec, validateReasoning } from './providers.js';
-import { resolveSeed, seededRng } from './random.js';
-import type { SeriesRecord } from './records.js';
-import { appendRow } from './records.js';
-import { ShowdownReference } from './reference.js';
-import { SeatBridge } from './seat.js';
-import { makeEngine, playBo3 } from './series.js';
-import { showdownCommit } from './showdown.js';
-import { loadPool, validatePool } from './teams.js';
-import { DEFAULT_TIMER_SCALE } from './timer.js';
-import type { Pid } from './types.js';
+import { LLMEngine } from "./llm-engine.js";
+import { defaultPsDir, RESULTS_PATH } from "./paths.js";
+import type { ReasoningLevel } from "./providers.js";
+import { parseSpec, validateReasoning } from "./providers.js";
+import { resolveSeed, seededRng } from "./random.js";
+import type { SeriesRecord } from "./records.js";
+import { appendRow } from "./records.js";
+import { ShowdownReference } from "./reference.js";
+import { SeatBridge } from "./seat.js";
+import { makeEngine, playBo3 } from "./series.js";
+import { showdownCommit } from "./showdown.js";
+import { loadPool, validatePool } from "./teams.js";
+import { DEFAULT_TIMER_SCALE } from "./timer.js";
+import type { Pid } from "./types.js";
 
 const EXTERNAL_ADAPTER_MODEL_VISIBLE_VERSION = 1;
 const EXTERNAL_ADAPTER_PROTOCOL = {
   bridge_api: {
-    transport: 'localhost-http-post-json-bearer-v1',
+    transport: "localhost-http-post-json-bearer-v1",
     routes: {
-      '/status': 'status-and-pending-exchange-id-v1',
-      '/poll': 'authorized-exchange-and-status-long-poll-v1',
-      '/messages': 'authorized-pending-exchange-messages-v1',
-      '/context': 'cursor-query-json-v1',
-      '/tools': 'decision-bound-tool-definitions-v1',
-      '/tool': 'decision-bound-lookup-v1',
-      '/submit': 'exchange-id-and-text-v1',
+      "/status": "status-and-pending-exchange-id-v1",
+      "/poll": "authorized-exchange-and-status-long-poll-v1",
+      "/messages": "authorized-pending-exchange-messages-v1",
+      "/context": "cursor-query-json-v1",
+      "/tools": "decision-bound-tool-definitions-v1",
+      "/tool": "decision-bound-lookup-v1",
+      "/submit": "exchange-id-and-text-v1",
     },
   },
-  authorized_view: 'one-seat-only-v1',
-  context: 'cursor-addressable-authorized-series-stream-v1',
-  tools: 'live-decision-bound-lookups-v1',
+  authorized_view: "one-seat-only-v1",
+  context: "cursor-addressable-authorized-series-stream-v1",
+  tools: "live-decision-bound-lookups-v1",
   limits: {
     bridge_poll_wait_ms: 55_000,
     client_poll_wait_ms: 25_000,
     request_body_bytes: 1_000_000,
     invalid_reply_corrections: 1,
-    battle_timer: 'disabled',
+    battle_timer: "disabled",
   },
 } as const;
 
@@ -61,14 +61,18 @@ export interface ExhibitionOptions {
 }
 
 /** Trusted manual bridge. Its HTTP API is seat-private, but the external process is not sandboxed; results are unrated. */
-export async function runExhibition(runDir: string, options: ExhibitionOptions): Promise<SeriesRecord> {
-  const seatSide: Pid = options.seat ?? 'p1';
-  const oppSide: Pid = seatSide === 'p1' ? 'p2' : 'p1';
-  const seatName = options.name ?? 'cli-agent';
-  if (options.opponent !== 'random') validateReasoning(parseSpec(options.opponent), options.reasoning);
+export async function runExhibition(
+  runDir: string,
+  options: ExhibitionOptions,
+): Promise<SeriesRecord> {
+  const seatSide: Pid = options.seat ?? "p1";
+  const oppSide: Pid = seatSide === "p1" ? "p2" : "p1";
+  const seatName = options.name ?? "cli-agent";
+  if (options.opponent !== "random")
+    validateReasoning(parseSpec(options.opponent), options.reasoning);
   const notice = options.onNotice ?? (() => {});
   const psDir = options.psDir ?? defaultPsDir();
-  const pool = loadPool(options.pool ?? 'test');
+  const pool = loadPool(options.pool ?? "test");
   validatePool(pool, psDir);
   const seed = resolveSeed(options.seed);
   const random = seededRng(seed);
@@ -84,55 +88,59 @@ export async function runExhibition(runDir: string, options: ExhibitionOptions):
   ]);
   const engineSeed = Math.floor(random() * Number.MAX_SAFE_INTEGER);
 
-  const seriesId = randomUUID().replaceAll('-', '').slice(0, 12);
-  const seriesDir = path.join(runDir, 'series', seriesId);
+  const seriesId = randomUUID().replaceAll("-", "").slice(0, 12);
+  const seriesDir = path.join(runDir, "series", seriesId);
   fs.mkdirSync(seriesDir, { recursive: true });
-  const players = seatSide === 'p1' ? { p1: seatName, p2: options.opponent } : { p1: options.opponent, p2: seatName };
+  const players =
+    seatSide === "p1"
+      ? { p1: seatName, p2: options.opponent }
+      : { p1: options.opponent, p2: seatName };
   const executionHarnesses = {
     [seatSide]: {
-      adapter: 'trusted-external-bridge',
+      adapter: "trusted-external-bridge",
       version: 4,
       filesystem_isolation: false,
       process_isolation: false,
       network_isolation: false,
-      host_filesystem_access: 'unrestricted-unobserved',
-      host_process_access: 'unrestricted-unobserved',
-      arbitrary_network_access: 'unrestricted-unobserved',
-      workspace_policy: 'fresh-directory-0700-v1',
-      credential_policy: 'exclusive-artifacts-0600-v1',
-      delegation: 'unrestricted-unobserved',
-      context: 'cursor-addressable-authorized-series-stream-v1',
-      tools: 'live-decision-bound-lookups-v1',
+      host_filesystem_access: "unrestricted-unobserved",
+      host_process_access: "unrestricted-unobserved",
+      arbitrary_network_access: "unrestricted-unobserved",
+      workspace_policy: "fresh-directory-0700-v1",
+      credential_policy: "exclusive-artifacts-0600-v1",
+      delegation: "unrestricted-unobserved",
+      context: "cursor-addressable-authorized-series-stream-v1",
+      tools: "live-decision-bound-lookups-v1",
       model_visible_adapter: {
         version: EXTERNAL_ADAPTER_MODEL_VISIBLE_VERSION,
         digest: externalAdapterDigest(),
       },
       evidence_log: {
         version: 1,
-        collection: 'host-side-jsonl-v1',
-        artifacts: ['decisions', 'trace', 'context', 'bridge-tools'],
+        collection: "host-side-jsonl-v1",
+        artifacts: ["decisions", "trace", "context", "bridge-tools"],
         presented_through_adapter: false,
       },
     },
     [oppSide]: {
-      adapter: options.opponent === 'random' ? 'random-engine' : 'llm-engine',
+      adapter: options.opponent === "random" ? "random-engine" : "llm-engine",
       version: 2,
       filesystem_isolation: false,
       process_isolation: false,
       network_isolation: false,
-      host_filesystem_access: 'not-exposed-through-model-api',
-      host_process_access: 'not-exposed-through-model-api',
-      arbitrary_network_access: 'not-exposed-through-model-api',
-      delegation: 'none',
-      context: options.opponent === 'random' ? 'none' : 'bounded-game-timeline-and-series-notebook-v1',
-      tools: options.opponent === 'random' ? 'none' : 'provider-tool-loop-v1',
+      host_filesystem_access: "not-exposed-through-model-api",
+      host_process_access: "not-exposed-through-model-api",
+      arbitrary_network_access: "not-exposed-through-model-api",
+      delegation: "none",
+      context:
+        options.opponent === "random" ? "none" : "bounded-game-timeline-and-series-notebook-v1",
+      tools: options.opponent === "random" ? "none" : "provider-tool-loop-v1",
     },
   };
   fs.writeFileSync(
-    path.join(runDir, 'config.json'),
+    path.join(runDir, "config.json"),
     `${JSON.stringify(
       {
-        mode: 'exhibition',
+        mode: "exhibition",
         seat: seatSide,
         players,
         execution_harnesses: executionHarnesses,
@@ -144,7 +152,7 @@ export async function runExhibition(runDir: string, options: ExhibitionOptions):
       null,
       2,
     )}\n`,
-    'utf8',
+    "utf8",
   );
 
   const reference = new ShowdownReference(pool.format, psDir);
@@ -153,29 +161,31 @@ export async function runExhibition(runDir: string, options: ExhibitionOptions):
   const bridge = new SeatBridge({
     tools: () => seatEngine?.decisionToolDefinitions() ?? [],
     context: (query) => {
-      if (!seatEngine) throw new Error('seat engine is not ready');
+      if (!seatEngine) throw new Error("seat engine is not ready");
       return seatEngine.readContext(query);
     },
     lookup: (name, args) => {
-      if (!seatEngine) throw new Error('seat engine is not ready');
+      if (!seatEngine) throw new Error("seat engine is not ready");
       return seatEngine.lookupDecisionTool(name, args);
     },
     onExchange: (view) =>
-      notice(`seat ${view.phase} exchange ${view.id} pending; the agent should run: node seat.mjs wait`),
+      notice(
+        `seat ${view.phase} exchange ${view.id} pending; the agent should run: node seat.mjs wait`,
+      ),
     onTool: (name, args, result) =>
       fs.appendFileSync(
         toolLog,
         `${JSON.stringify({ timestamp: new Date().toISOString(), name, arguments: args, result })}\n`,
-        'utf8',
+        "utf8",
       ),
   });
 
   try {
     const url = await bridge.listen(options.port ?? 0);
-    const agentDir = options.agentDir ?? path.join(runDir, 'agent');
+    const agentDir = options.agentDir ?? path.join(runDir, "agent");
     writeAgentWorkspace(agentDir, url, bridge.token, seatName);
     bridge.status = {
-      state: 'running',
+      state: "running",
       seat: seatSide,
       players,
       execution_harnesses: executionHarnesses,
@@ -208,7 +218,10 @@ export async function runExhibition(runDir: string, options: ExhibitionOptions):
       reasoning: options.reasoning,
       reference,
     });
-    const engines = seatSide === 'p1' ? { p1: seatEngine, p2: opponentEngine } : { p1: opponentEngine, p2: seatEngine };
+    const engines =
+      seatSide === "p1"
+        ? { p1: seatEngine, p2: opponentEngine }
+        : { p1: opponentEngine, p2: seatEngine };
 
     const result = await playBo3({
       engines,
@@ -227,14 +240,14 @@ export async function runExhibition(runDir: string, options: ExhibitionOptions):
       },
       onGameEnd: (game, winner, turns, score) => {
         bridge.status = { ...bridge.status, game, score };
-        notice(`game ${game}: ${winner ?? 'tie'} (${score.p1}-${score.p2}, ${turns} turns)`);
+        notice(`game ${game}: ${winner ?? "tie"} (${score.p1}-${score.p2}, ${turns} turns)`);
       },
     });
 
     const winnerSide = result.winnerSide;
     const row: SeriesRecord = {
       schema_version: 1,
-      mode: 'exhibition',
+      mode: "exhibition",
       timestamp: new Date().toISOString(),
       run_id: path.basename(runDir),
       series_id: seriesId,
@@ -253,11 +266,13 @@ export async function runExhibition(runDir: string, options: ExhibitionOptions):
       run_seed: seed,
       engine_seeds: { [oppSide]: engineSeed },
       reasoning: options.reasoning ?? null,
-      decision_stats: Object.fromEntries((['p1', 'p2'] as const).map((pid) => [pid, engines[pid].decisionStats()])),
+      decision_stats: Object.fromEntries(
+        (["p1", "p2"] as const).map((pid) => [pid, engines[pid].decisionStats()]),
+      ),
       ps_commit: showdownCommit(psDir),
     };
     appendRow(options.recordsPath ?? RESULTS_PATH, row);
-    bridge.status = { ...bridge.status, state: 'done', winner: row.winner ?? null };
+    bridge.status = { ...bridge.status, state: "done", winner: row.winner ?? null };
     return row;
   } finally {
     bridge.close();
@@ -270,11 +285,12 @@ function writeAgentWorkspace(agentDir: string, url: string, token: string, seatN
     fs.mkdirSync(agentDir, { mode: 0o700 });
   } catch (error) {
     const failure = z.object({ code: z.string().optional() }).safeParse(error);
-    if (failure.success && failure.data.code === 'EEXIST') throw new Error('agent workspace must be freshly created');
+    if (failure.success && failure.data.code === "EEXIST")
+      throw new Error("agent workspace must be freshly created");
     throw error;
   }
 
-  if (process.platform !== 'win32') {
+  if (process.platform !== "win32") {
     const descriptor = fs.openSync(
       agentDir,
       fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW,
@@ -287,11 +303,11 @@ function writeAgentWorkspace(agentDir: string, url: string, token: string, seatN
   }
 
   writePrivateArtifact(
-    path.join(agentDir, 'seat.json'),
+    path.join(agentDir, "seat.json"),
     `${JSON.stringify({ url, token, name: seatName }, null, 2)}\n`,
   );
-  writePrivateArtifact(path.join(agentDir, 'seat.mjs'), SEAT_CLIENT);
-  writePrivateArtifact(path.join(agentDir, 'SEAT.md'), SEAT_INSTRUCTIONS);
+  writePrivateArtifact(path.join(agentDir, "seat.mjs"), SEAT_CLIENT);
+  writePrivateArtifact(path.join(agentDir, "SEAT.md"), SEAT_INSTRUCTIONS);
 }
 
 function writePrivateArtifact(filePath: string, contents: string): void {
@@ -305,13 +321,15 @@ function writePrivateArtifact(filePath: string, contents: string): void {
   } catch (error) {
     const failure = z.object({ code: z.string().optional() }).safeParse(error);
     const code = failure.success ? failure.data.code : undefined;
-    if (code === 'EEXIST' || code === 'ELOOP')
-      throw new Error(`agent workspace artifact must be freshly created: ${path.basename(filePath)}`);
+    if (code === "EEXIST" || code === "ELOOP")
+      throw new Error(
+        `agent workspace artifact must be freshly created: ${path.basename(filePath)}`,
+      );
     throw error;
   }
   try {
-    if (process.platform !== 'win32') fs.fchmodSync(descriptor, 0o600);
-    fs.writeFileSync(descriptor, contents, 'utf8');
+    if (process.platform !== "win32") fs.fchmodSync(descriptor, 0o600);
+    fs.writeFileSync(descriptor, contents, "utf8");
   } finally {
     fs.closeSync(descriptor);
   }
@@ -444,7 +462,7 @@ Notes:
 `;
 
 function externalAdapterDigest(): string {
-  return createHash('sha256')
+  return createHash("sha256")
     .update(
       JSON.stringify({
         version: EXTERNAL_ADAPTER_MODEL_VISIBLE_VERSION,
@@ -453,5 +471,5 @@ function externalAdapterDigest(): string {
         protocol: EXTERNAL_ADAPTER_PROTOCOL,
       }),
     )
-    .digest('hex');
+    .digest("hex");
 }

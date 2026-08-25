@@ -1,11 +1,11 @@
-export type BoundedLineEvent = { kind: 'line'; value: string } | { kind: 'too-large' };
+export type BoundedLineEvent = { kind: "line"; value: string } | { kind: "too-large" };
 
 export async function* readBoundedLines(
   input: AsyncIterable<Uint8Array>,
   maxBytes: number,
 ): AsyncGenerator<BoundedLineEvent> {
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 0)
-    throw new RangeError('maxBytes must be a nonnegative safe integer');
+    throw new RangeError("maxBytes must be a nonnegative safe integer");
 
   let chunks: Buffer[] = [];
   let bytes = 0;
@@ -28,7 +28,7 @@ export async function* readBoundedLines(
         const pendingCrLf = newline < 0 && nextBytes === maxBytes + 1 && nextLastByte === 0x0d;
 
         if (contentBytes > maxBytes && !pendingCrLf) {
-          event = { kind: 'too-large' };
+          event = { kind: "too-large" };
           discarding = newline < 0;
           chunks = [];
           bytes = 0;
@@ -39,8 +39,8 @@ export async function* readBoundedLines(
           lastByte = nextLastByte;
           if (newline >= 0) {
             event = {
-              kind: 'line',
-              value: Buffer.concat(chunks, bytes).subarray(0, contentBytes).toString('utf8'),
+              kind: "line",
+              value: Buffer.concat(chunks, bytes).subarray(0, contentBytes).toString("utf8"),
             };
           }
         }
@@ -61,8 +61,8 @@ export async function* readBoundedLines(
 
   if (discarding || bytes === 0) return;
   if (bytes > maxBytes) {
-    yield { kind: 'too-large' };
+    yield { kind: "too-large" };
     return;
   }
-  yield { kind: 'line', value: Buffer.concat(chunks, bytes).toString('utf8') };
+  yield { kind: "line", value: Buffer.concat(chunks, bytes).toString("utf8") };
 }

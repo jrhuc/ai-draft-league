@@ -1,5 +1,5 @@
-import type { DraftLeagueSeriesPlan } from '../draftleague.js';
-import { buildDraftPlayoffBracket, rankedTable } from '../draftleague.js';
+import type { DraftLeagueSeriesPlan } from "../draftleague.js";
+import { buildDraftPlayoffBracket, rankedTable } from "../draftleague.js";
 import type {
   DraftBoardMonView,
   DraftTableRow,
@@ -8,17 +8,20 @@ import type {
   LeagueResponse,
   LeagueTeambuildView,
   LeagueTradeWindowView,
-} from '../gui/api.js';
-import type { BattleLogEntry } from '../gui/battlelog.js';
+} from "../views.js";
+import type { BattleLogEntry } from "../battlelog.js";
 import {
   type PublicBattleEvent,
   type PublicBuild,
   type PublicMatch,
   type PublicSeasonBundle,
   publicSeasonBundleSchema,
-} from './season-protocol.js';
+} from "./season-protocol.js";
 
-export type PublicSeasonGameInput = Pick<LeagueGameResponse, 'game' | 'winner' | 'log' | 'decisions' | 'reflections'>;
+export type PublicSeasonGameInput = Pick<
+  LeagueGameResponse,
+  "game" | "winner" | "log" | "decisions" | "reflections"
+>;
 
 export interface BuildPublicSeasonBundleOptions {
   league: LeagueResponse;
@@ -38,7 +41,7 @@ function franchiseId(entrant: number): string {
   return `franchise-${entrant}`;
 }
 
-type PublicRosterSlot = PublicSeasonBundle['franchises'][number]['roster'][number];
+type PublicRosterSlot = PublicSeasonBundle["franchises"][number]["roster"][number];
 
 function replayReleasedRosters(
   franchises: readonly LeagueFranchiseView[],
@@ -53,7 +56,7 @@ function replayReleasedRosters(
         name: slot.name,
         spriteId: slot.spriteId,
         cost: slot.cost,
-        acquired: 'draft' as const,
+        acquired: "draft" as const,
         overallPick: slot.pick,
         rationale: slot.rationale,
         fallback: slot.fallback,
@@ -72,28 +75,45 @@ function replayReleasedRosters(
       const giveIndex = from?.findIndex((slot) => slot.id === offer.give) ?? -1;
       const getIndex = to?.findIndex((slot) => slot.id === offer.get) ?? -1;
       if (!from || !to || giveIndex < 0 || getIndex < 0) {
-        throw new Error(`accepted trade after week ${window.afterWeek} does not match the released rosters`);
+        throw new Error(
+          `accepted trade after week ${window.afterWeek} does not match the released rosters`,
+        );
       }
       const given = from[giveIndex]!;
       const received = to[getIndex]!;
-      from[giveIndex] = { ...received, acquired: 'trade', rationale: offer.offerReasoning, fallback: false };
-      to[getIndex] = { ...given, acquired: 'trade', rationale: offer.responseReasoning, fallback: false };
+      from[giveIndex] = {
+        ...received,
+        acquired: "trade",
+        rationale: offer.offerReasoning,
+        fallback: false,
+      };
+      to[getIndex] = {
+        ...given,
+        acquired: "trade",
+        rationale: offer.responseReasoning,
+        fallback: false,
+      };
     }
     for (const decision of window.decisions) {
       const roster = rosters.get(decision.entrant);
-      if (!roster) throw new Error(`transaction after week ${window.afterWeek} references an unknown franchise`);
+      if (!roster)
+        throw new Error(
+          `transaction after week ${window.afterWeek} references an unknown franchise`,
+        );
       for (const swap of decision.swaps) {
         const dropIndex = roster.findIndex((slot) => slot.id === swap.drop);
         const added = boardById.get(swap.add);
         if (dropIndex < 0 || !added) {
-          throw new Error(`free-agent swap after week ${window.afterWeek} does not match the released roster or board`);
+          throw new Error(
+            `free-agent swap after week ${window.afterWeek} does not match the released roster or board`,
+          );
         }
         roster[dropIndex] = {
           id: added.id,
           name: added.name,
           spriteId: added.spriteId,
           cost: added.cost,
-          acquired: 'free-agency',
+          acquired: "free-agency",
           overallPick: null,
           rationale: decision.reasoning,
           fallback: decision.fallback,
@@ -129,7 +149,9 @@ function publicBuild(build: LeagueTeambuildView, revealSets: boolean): PublicBui
 }
 
 /** The projection accepts rich internal DTOs but emits only fields explicitly allowed by the public protocol. */
-export function buildPublicSeasonBundle(options: BuildPublicSeasonBundleOptions): PublicSeasonBundle {
+export function buildPublicSeasonBundle(
+  options: BuildPublicSeasonBundleOptions,
+): PublicSeasonBundle {
   const { league } = options;
   const totalWeeks = league.weeks ?? Math.max(0, ...options.plans.map((plan) => plan.round));
   const playoffRounds = league.playoffRounds;
@@ -145,8 +167,13 @@ export function buildPublicSeasonBundle(options: BuildPublicSeasonBundleOptions)
   }
   const releasedThroughWeek = Math.min(options.releasedThroughWeek, totalWeeks);
   const releasedPlayoffRounds = Math.max(0, options.releasedThroughWeek - totalWeeks);
-  const seasonReleased = releasedPlayoffRounds === playoffRounds && league.phase === 'complete';
-  if (!league.board || !league.format || league.budget === null || league.picksPerEntrant === null) {
+  const seasonReleased = releasedPlayoffRounds === playoffRounds && league.phase === "complete";
+  if (
+    !league.board ||
+    !league.format ||
+    league.budget === null ||
+    league.picksPerEntrant === null
+  ) {
     throw new Error(`league ${league.runId} is missing its public draft identity`);
   }
 
@@ -159,10 +186,16 @@ export function buildPublicSeasonBundle(options: BuildPublicSeasonBundleOptions)
     buildsBySeries.set(build.seriesIndex, list);
   }
   const released = (plan: DraftLeagueSeriesPlan): boolean =>
-    plan.stage === 'roundrobin' ? plan.round <= releasedThroughWeek : plan.round <= releasedPlayoffRounds;
+    plan.stage === "roundrobin"
+      ? plan.round <= releasedThroughWeek
+      : plan.round <= releasedPlayoffRounds;
 
-  const replays: PublicSeasonBundle['replays'] = {};
-  const matchFor = (plan: DraftLeagueSeriesPlan, matchId: string, sides: [number, number]): PublicMatch => {
+  const replays: PublicSeasonBundle["replays"] = {};
+  const matchFor = (
+    plan: DraftLeagueSeriesPlan,
+    matchId: string,
+    sides: [number, number],
+  ): PublicMatch => {
     const ids: [string, string] = [franchiseId(sides[0]), franchiseId(sides[1])];
     const series = seriesByIndex.get(plan.index);
     if (!released(plan)) {
@@ -171,7 +204,7 @@ export function buildPublicSeasonBundle(options: BuildPublicSeasonBundleOptions)
         seriesIndex: plan.index,
         seriesId: null,
         franchises: ids,
-        status: 'scheduled',
+        status: "scheduled",
         score: null,
         winnerId: null,
         games: [],
@@ -196,7 +229,8 @@ export function buildPublicSeasonBundle(options: BuildPublicSeasonBundleOptions)
       franchises: ids,
       games: games.map((game) => {
         const summary = series.games[game.game - 1];
-        if (!summary) throw new Error(`released series ${series.seriesId} has no result for game ${game.game}`);
+        if (!summary)
+          throw new Error(`released series ${series.seriesId} has no result for game ${game.game}`);
         return {
           number: game.game,
           winnerId: game.winner === null ? null : franchiseId(game.winner),
@@ -231,7 +265,7 @@ export function buildPublicSeasonBundle(options: BuildPublicSeasonBundleOptions)
       seriesIndex: plan.index,
       seriesId: series.seriesId,
       franchises: ids,
-      status: 'complete',
+      status: "complete",
       score: series.score,
       winnerId: franchiseId(series.winner),
       games: series.games.map((game, index) => ({
@@ -248,10 +282,12 @@ export function buildPublicSeasonBundle(options: BuildPublicSeasonBundleOptions)
 
   const weeks = Array.from({ length: totalWeeks }, (_, weekIndex) => {
     const number = weekIndex + 1;
-    const plans = options.plans.filter((plan) => plan.stage === 'roundrobin' && plan.round === number);
+    const plans = options.plans.filter(
+      (plan) => plan.stage === "roundrobin" && plan.round === number,
+    );
     return {
       number,
-      status: number <= releasedThroughWeek ? ('released' as const) : ('scheduled' as const),
+      status: number <= releasedThroughWeek ? ("released" as const) : ("scheduled" as const),
       matches: plans.map((plan, matchIndex) => {
         if (!plan.entrants) throw new Error(`round-robin series ${plan.index} has no entrants`);
         return matchFor(plan, `week-${number}-match-${matchIndex + 1}`, plan.entrants);
@@ -267,11 +303,17 @@ export function buildPublicSeasonBundle(options: BuildPublicSeasonBundleOptions)
     gl: 0,
   }));
   for (const series of league.series) {
-    if (series.stage !== 'roundrobin' || series.round > releasedThroughWeek || series.winner === null) continue;
+    if (
+      series.stage !== "roundrobin" ||
+      series.round > releasedThroughWeek ||
+      series.winner === null
+    )
+      continue;
     const [a, b] = series.sides;
     const rowA = table[a];
     const rowB = table[b];
-    if (!rowA || !rowB) throw new Error(`series ${series.seriesIndex} references an unknown franchise`);
+    if (!rowA || !rowB)
+      throw new Error(`series ${series.seriesIndex} references an unknown franchise`);
     if (series.winner === a) {
       rowA.w += 1;
       rowB.l += 1;
@@ -295,34 +337,44 @@ export function buildPublicSeasonBundle(options: BuildPublicSeasonBundleOptions)
     differential: row.gw - row.gl,
   }));
 
-  let playoffs: PublicSeasonBundle['playoffs'] = null;
+  let playoffs: PublicSeasonBundle["playoffs"] = null;
   if (releasedThroughWeek === totalWeeks && releasedPlayoffRounds > 0) {
-    const playoffPlans = options.plans.filter((plan) => plan.stage === 'playoff');
+    const playoffPlans = options.plans.filter((plan) => plan.stage === "playoff");
     const seeding = ranked.map((row) => row.entrant);
     const bracket = buildDraftPlayoffBracket(playoffPlans, seeding);
-    const winnerOf = (seriesIndex: number): number | null => seriesByIndex.get(seriesIndex)?.winner ?? null;
+    const winnerOf = (seriesIndex: number): number | null =>
+      seriesByIndex.get(seriesIndex)?.winner ?? null;
     playoffs = {
       rounds: bracket.map((round, roundIndex) =>
         round.map((entry, matchIndex) => {
           const seriesIndex = entry.seriesIndex;
           if (seriesIndex === null)
-            throw new Error(`playoff round ${roundIndex + 1} match ${matchIndex + 1} has no series`);
+            throw new Error(
+              `playoff round ${roundIndex + 1} match ${matchIndex + 1} has no series`,
+            );
           const plan = playoffPlans.find((candidate) => candidate.index === seriesIndex);
           if (!plan) throw new Error(`playoff series ${seriesIndex} has no plan`);
           let slots: [number | null, number | null] = entry.slots;
           if (roundIndex > 0) {
             const feeders = bracket[roundIndex - 1]!.slice(matchIndex * 2, matchIndex * 2 + 2);
             const feederWinner = (feeder: { seriesIndex: number | null } | undefined) =>
-              feeder?.seriesIndex === null || feeder === undefined ? null : winnerOf(feeder.seriesIndex);
+              feeder?.seriesIndex === null || feeder === undefined
+                ? null
+                : winnerOf(feeder.seriesIndex);
             slots = [feederWinner(feeders[0]), feederWinner(feeders[1])];
           }
           const id = `playoff-${roundIndex + 1}-match-${matchIndex + 1}`;
           const match =
-            slots[0] !== null && slots[1] !== null && released(plan) ? matchFor(plan, id, [slots[0], slots[1]]) : null;
+            slots[0] !== null && slots[1] !== null && released(plan)
+              ? matchFor(plan, id, [slots[0], slots[1]])
+              : null;
           return {
             seriesIndex,
             round: roundIndex + 1,
-            slots: [slots[0] === null ? null : franchiseId(slots[0]), slots[1] === null ? null : franchiseId(slots[1])],
+            slots: [
+              slots[0] === null ? null : franchiseId(slots[0]),
+              slots[1] === null ? null : franchiseId(slots[1]),
+            ],
             match,
           };
         }),
@@ -331,9 +383,10 @@ export function buildPublicSeasonBundle(options: BuildPublicSeasonBundleOptions)
   }
 
   const releasedWindows = league.transactions.filter(
-    (tradeWindow) => tradeWindow.state === 'complete' && tradeWindow.afterWeek <= releasedThroughWeek,
+    (tradeWindow) =>
+      tradeWindow.state === "complete" && tradeWindow.afterWeek <= releasedThroughWeek,
   );
-  const transactions: PublicSeasonBundle['transactions'] = releasedWindows.map((tradeWindow) => ({
+  const transactions: PublicSeasonBundle["transactions"] = releasedWindows.map((tradeWindow) => ({
     afterWeek: tradeWindow.afterWeek,
     order: tradeWindow.order.map(franchiseId),
     offers: tradeWindow.offers.map((offer) => ({
@@ -354,7 +407,7 @@ export function buildPublicSeasonBundle(options: BuildPublicSeasonBundleOptions)
       fallback: decision.fallback,
     })),
   }));
-  const weeklyReviews: PublicSeasonBundle['weeklyReviews'] = league.weeklyReviews
+  const weeklyReviews: PublicSeasonBundle["weeklyReviews"] = league.weeklyReviews
     .filter(
       (review) =>
         review.week <= releasedThroughWeek &&
@@ -374,7 +427,8 @@ export function buildPublicSeasonBundle(options: BuildPublicSeasonBundleOptions)
 
   const franchises = league.franchises.map((franchise) => {
     const roster = releasedRosters.get(franchise.entrant);
-    if (!roster) throw new Error(`league ${league.runId} is missing franchise ${franchise.entrant}`);
+    if (!roster)
+      throw new Error(`league ${league.runId} is missing franchise ${franchise.entrant}`);
     const spent = roster.reduce((total, slot) => total + slot.cost, 0);
     const record = table[franchise.entrant]!;
     return {
@@ -383,7 +437,12 @@ export function buildPublicSeasonBundle(options: BuildPublicSeasonBundleOptions)
       model: franchise.model,
       budget: { total: league.budget!, spent, remaining: league.budget! - spent },
       roster,
-      record: { seriesWins: record.w, seriesLosses: record.l, gameWins: record.gw, gameLosses: record.gl },
+      record: {
+        seriesWins: record.w,
+        seriesLosses: record.l,
+        gameWins: record.gw,
+        gameLosses: record.gl,
+      },
       finish: seasonReleased && franchise.finish ? franchise.finish : null,
     };
   });
@@ -405,11 +464,14 @@ export function buildPublicSeasonBundle(options: BuildPublicSeasonBundleOptions)
   const draftedBy = new Map(picks.map((pick) => [pick.pokemon.id, pick.franchiseId]));
 
   const status = (() => {
-    if (options.releasedThroughWeek === 0) return 'draft' as const;
-    if (seasonReleased) return 'complete' as const;
-    if (releasedPlayoffRounds > 0 || (releasedThroughWeek === totalWeeks && league.phase !== 'roundrobin'))
-      return 'playoffs' as const;
-    return 'regular-season' as const;
+    if (options.releasedThroughWeek === 0) return "draft" as const;
+    if (seasonReleased) return "complete" as const;
+    if (
+      releasedPlayoffRounds > 0 ||
+      (releasedThroughWeek === totalWeeks && league.phase !== "roundrobin")
+    )
+      return "playoffs" as const;
+    return "regular-season" as const;
   })();
   const lastReleased = league.series
     .filter((series) => {
@@ -434,7 +496,7 @@ export function buildPublicSeasonBundle(options: BuildPublicSeasonBundleOptions)
       releasedPlayoffRounds,
       totalWeeks,
       playoffRounds,
-      sheets: options.closedSheets ? 'closed' : 'open',
+      sheets: options.closedSheets ? "closed" : "open",
       swapsAllowed: league.swapsAllowed,
       championId: seasonReleased && league.champion ? franchiseId(league.champion.entrant) : null,
     },

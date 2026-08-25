@@ -1,14 +1,14 @@
-import crypto from 'node:crypto';
+import crypto from "node:crypto";
 
-import type { Battle } from 'pokemon-showdown';
+import type { Battle } from "pokemon-showdown";
 
-import { BaseEngine } from './battle-agent.js';
-import { buildMenus } from './choices.js';
-import { defaultPsDir } from './paths.js';
-import { canonicalJson } from './serialization.js';
-import { loadShowdown } from './showdown.js';
-import { routeUpdateLines } from './sim.js';
-import type { BattleRequest, Pid } from './types.js';
+import { BaseEngine } from "./battle-agent.js";
+import { buildMenus } from "./choices.js";
+import { defaultPsDir } from "./paths.js";
+import { canonicalJson } from "./serialization.js";
+import { loadShowdown } from "./showdown.js";
+import { routeUpdateLines } from "./sim.js";
+import type { BattleRequest, Pid } from "./types.js";
 
 export interface GameSource {
   format: string;
@@ -32,9 +32,9 @@ export interface Position {
 
 export function positionDigest(position: Position, pid: Pid): string {
   return crypto
-    .createHash('sha256')
+    .createHash("sha256")
     .update(JSON.stringify([position.snapshot, position.pending, position.actual, pid]))
-    .digest('hex');
+    .digest("hex");
 }
 
 export interface Replay {
@@ -49,16 +49,16 @@ export interface Replay {
 
 export const ACTION_PROTOCOL = {
   version: 3,
-  canonicalization: 'showdown-choice-v1',
-  concession: 'excluded-stream-command',
-  jointOrder: 'active-slot',
-  candidateGenerator: 'request-derived-menus-v1',
-  acceptanceOracle: 'native-side-choose-on-tojson-fromjson-restart-clone-v1',
-  completeness: 'accepted-candidates-only-not-universal-showdown-completeness',
+  canonicalization: "showdown-choice-v1",
+  concession: "excluded-stream-command",
+  jointOrder: "active-slot",
+  candidateGenerator: "request-derived-menus-v1",
+  acceptanceOracle: "native-side-choose-on-tojson-fromjson-restart-clone-v1",
+  completeness: "accepted-candidates-only-not-universal-showdown-completeness",
   numberBase: 0,
-  numbering: 'dense-after-acceptance-filter',
-  sort: 'canonical-action-utf8-byte-ascending-before-acceptance',
-  label: 'menu-labels-v1',
+  numbering: "dense-after-acceptance-filter",
+  sort: "canonical-action-utf8-byte-ascending-before-acceptance",
+  label: "menu-labels-v1",
 } as const;
 
 const CHOICE_LIMIT = 500;
@@ -71,7 +71,13 @@ interface ReplayRouteState {
   turns: number;
 }
 
-type SnapshotValue = null | string | number | boolean | SnapshotValue[] | { [key: string]: SnapshotValue };
+type SnapshotValue =
+  | null
+  | string
+  | number
+  | boolean
+  | SnapshotValue[]
+  | { [key: string]: SnapshotValue };
 
 interface SerializedBattleSnapshot {
   [key: string]: SnapshotValue | undefined;
@@ -90,7 +96,7 @@ function routeState(): ReplayRouteState {
 }
 
 function comparable(lines: string[]): string[] {
-  return lines.filter((line) => line && !line.startsWith('|t:|') && !line.startsWith('|timer|'));
+  return lines.filter((line) => line && !line.startsWith("|t:|") && !line.startsWith("|timer|"));
 }
 
 export interface LegalActionEntry {
@@ -108,7 +114,7 @@ export function requestActionCandidateEntries(request: BattleRequest): LegalActi
   let combinations: number[][] = [[]];
   for (const menu of menus) {
     combinations = combinations.flatMap((prefix) =>
-      menu.flatMap((item, index) => (item.kind === 'forfeit' ? [] : [[...prefix, index]])),
+      menu.flatMap((item, index) => (item.kind === "forfeit" ? [] : [[...prefix, index]])),
     );
   }
   const actions = new Map<string, LegalActionEntry>();
@@ -119,15 +125,20 @@ export function requestActionCandidateEntries(request: BattleRequest): LegalActi
     } catch {
       continue;
     }
-    const command = request.teamPreview ? `team ${parts.join('')}` : parts.join(', ');
-    const labels = choices.map((choice, slot) => menus[slot]?.[choice]?.label ?? parts[slot] ?? 'pass');
+    const command = request.teamPreview ? `team ${parts.join("")}` : parts.join(", ");
+    const labels = choices.map(
+      (choice, slot) => menus[slot]?.[choice]?.label ?? parts[slot] ?? "pass",
+    );
     const label = request.teamPreview
       ? labels
-          .map((entry, slot) => `${['Lead 1', 'Lead 2', 'Back 1', 'Back 2'][slot] ?? `Slot ${slot + 1}`}: ${entry}`)
-          .join('; ')
+          .map(
+            (entry, slot) =>
+              `${["Lead 1", "Lead 2", "Back 1", "Back 2"][slot] ?? `Slot ${slot + 1}`}: ${entry}`,
+          )
+          .join("; ")
       : labels.length === 1
         ? (labels[0] ?? command)
-        : labels.map((entry, slot) => `Slot ${slot + 1}: ${entry}`).join('; ');
+        : labels.map((entry, slot) => `Slot ${slot + 1}: ${entry}`).join("; ");
     if (!actions.has(command)) actions.set(command, { number: -1, choices, command, label });
   }
   return [...actions.values()]
@@ -136,12 +147,12 @@ export function requestActionCandidateEntries(request: BattleRequest): LegalActi
 }
 
 type NativeBattleConstructor = {
-  fromJSON(serialized: ReturnType<Battle['toJSON']>): Battle;
+  fromJSON(serialized: ReturnType<Battle["toJSON"]>): Battle;
 };
 function nativeBattleConstructor(battle: Battle): NativeBattleConstructor {
   const battleClass = battle.constructor;
-  const fromJSON = Object.getOwnPropertyDescriptor(battleClass, 'fromJSON')?.value;
-  if (!(fromJSON instanceof Function)) throw new Error('Showdown Battle.fromJSON is unavailable');
+  const fromJSON = Object.getOwnPropertyDescriptor(battleClass, "fromJSON")?.value;
+  if (!(fromJSON instanceof Function)) throw new Error("Showdown Battle.fromJSON is unavailable");
   return {
     fromJSON(serialized) {
       return fromJSON.call(battleClass, serialized);
@@ -182,14 +193,22 @@ export function acceptedLegalActionEntries(
   return accepted;
 }
 
-export function acceptedLegalActions(battle: Battle, pid: Pid, candidates: readonly LegalActionEntry[]): string[] {
+export function acceptedLegalActions(
+  battle: Battle,
+  pid: Pid,
+  candidates: readonly LegalActionEntry[],
+): string[] {
   return acceptedLegalActionEntries(battle, pid, candidates).map((entry) => entry.command);
 }
 
 export function acceptedBattleActionEntries(battle: Battle, pid: Pid): LegalActionEntry[] {
   const request = battle.getSide(pid).activeRequest;
   if (!request || request.wait) return [];
-  return acceptedLegalActionEntries(battle, pid, requestActionCandidateEntries(battleRequest(request)));
+  return acceptedLegalActionEntries(
+    battle,
+    pid,
+    requestActionCandidateEntries(battleRequest(request)),
+  );
 }
 
 export function acceptedBattleActions(battle: Battle, pid: Pid): string[] {
@@ -201,29 +220,29 @@ export function acceptedBattleActions(battle: Battle, pid: Pid): string[] {
 export function deterministicBattleSnapshot(battle: Battle): string {
   const serialized: SerializedBattleSnapshot = JSON.parse(JSON.stringify(battle.toJSON()));
   if (serialized.log) {
-    serialized.log = serialized.log.map((line) => (/^\|t:\|\d+$/u.test(line) ? '|t:|' : line));
+    serialized.log = serialized.log.map((line) => (/^\|t:\|\d+$/u.test(line) ? "|t:|" : line));
   }
   return canonicalJson(serialized);
 }
 
-export function requestPhase(request: BattleRequest): 'team_preview' | 'forced_switch' | 'turn' {
-  if (request.teamPreview) return 'team_preview';
-  if (request.forceSwitch) return 'forced_switch';
-  return 'turn';
+export function requestPhase(request: BattleRequest): "team_preview" | "forced_switch" | "turn" {
+  if (request.teamPreview) return "team_preview";
+  if (request.forceSwitch) return "forced_switch";
+  return "turn";
 }
 
 export function newBattle(source: GameSource): Battle {
   const { Battle: BattleClass } = loadShowdown(source.psDir ?? defaultPsDir());
   const [a, b, c, d] = source.seed;
   const battle = new BattleClass({ formatid: source.format, seed: `${a},${b},${c},${d}` });
-  for (const pid of ['p1', 'p2'] as const) {
+  for (const pid of ["p1", "p2"] as const) {
     battle.setPlayer(pid, { name: source.names[pid], team: source.packed[pid] });
   }
   return battle;
 }
 
 export function pendingSides(battle: Battle): Pid[] {
-  return (['p1', 'p2'] as const).filter((pid) => {
+  return (["p1", "p2"] as const).filter((pid) => {
     const request = battle.getSide(pid).activeRequest;
     return Boolean(request) && !request?.wait;
   });
@@ -265,8 +284,8 @@ export function replayGame(source: GameSource, recordedLog?: string[]): Replay {
       turn: battle.turn,
       pending,
       requests: {
-        p1: battleRequest(battle.getSide('p1').activeRequest!),
-        p2: battleRequest(battle.getSide('p2').activeRequest!),
+        p1: battleRequest(battle.getSide("p1").activeRequest!),
+        p2: battleRequest(battle.getSide("p2").activeRequest!),
       },
       actual: Object.fromEntries(decisions),
       choiceIndex: Object.fromEntries(pending.map((pid) => [pid, cursor[pid] - 1])),
@@ -274,7 +293,7 @@ export function replayGame(source: GameSource, recordedLog?: string[]): Replay {
       snapshot: deterministicBattleSnapshot(battle),
     });
     for (const [pid, choice] of decisions) {
-      if (choice.split(', ').includes('forfeit')) {
+      if (choice.split(", ").includes("forfeit")) {
         battle.lose(pid);
         break;
       }
@@ -289,7 +308,9 @@ export function replayGame(source: GameSource, recordedLog?: string[]): Replay {
   drain();
   const expected = recordedLog === undefined ? undefined : comparable(recordedLog);
   const produced = comparable(state.log);
-  const consumedEveryChoice = (['p1', 'p2'] as const).every((pid) => cursor[pid] === source.choices[pid].length);
+  const consumedEveryChoice = (["p1", "p2"] as const).every(
+    (pid) => cursor[pid] === source.choices[pid].length,
+  );
   const verified =
     expected !== undefined &&
     battle.ended &&

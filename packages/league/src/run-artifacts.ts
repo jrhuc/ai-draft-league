@@ -1,7 +1,7 @@
-import fs from 'node:fs';
-import path from 'node:path';
+import fs from "node:fs";
+import path from "node:path";
 
-import { z } from 'zod';
+import { z } from "zod";
 
 import type {
   BattleLogEntryView,
@@ -12,60 +12,65 @@ import type {
   LeagueGameResponse,
   MonView,
   TeambuildSetView,
-} from './gui/api.js';
-import { BattleLog } from './gui/battlelog.js';
-import { readJsonlObjects } from './jsonl.js';
-import { SAFE_SEGMENT } from './path-safety.js';
-import type { SeriesRecord } from './records.js';
-import { runStatusSchema } from './run-status.js';
-import { storedSeriesMetadataSchema } from './series.js';
-import { loadShowdown } from './showdown.js';
-import { BattleState, type MonState } from './state.js';
-import type { JsonValue, Pid } from './types.js';
-import { afterColon, isErrnoCode } from './value.js';
+} from "./views.js";
+import { BattleLog } from "./battlelog.js";
+import { readJsonlObjects } from "./jsonl.js";
+import { SAFE_SEGMENT } from "./path-safety.js";
+import type { SeriesRecord } from "./records.js";
+import { runStatusSchema } from "./run-status.js";
+import { storedSeriesMetadataSchema } from "./series.js";
+import { loadShowdown } from "./showdown.js";
+import { BattleState, type MonState } from "./state.js";
+import type { JsonValue, Pid } from "./types.js";
+import { afterColon, isErrnoCode } from "./value.js";
 
-const pidSchema = z.enum(['p1', 'p2']);
+const pidSchema = z.enum(["p1", "p2"]);
 const runLeaseArtifactSchema = z.looseObject({ pid: z.number().optional().catch(undefined) });
 const decisionLogArtifactSchema = z.looseObject({
-  kind: z.string().catch(''),
+  kind: z.string().catch(""),
   automatic: z.boolean().catch(false),
   game_number: z.number().finite().catch(0),
   turn: z.number().finite().catch(0),
-  phase: z.string().catch('turn'),
+  phase: z.string().catch("turn"),
   latency_ms: z.number().finite().nullable().catch(null),
   total_tokens: z.number().finite().nullable().catch(null),
   reasoning_tokens: z.number().finite().nullable().catch(null),
 });
 const decisionArtifactSchema = z.looseObject({
-  action: z.string().catch(''),
-  adjustment: z.string().catch(''),
+  action: z.string().catch(""),
+  adjustment: z.string().catch(""),
   automatic: z.boolean().catch(false),
   fallback: z.boolean().catch(false),
   game_number: z.number().finite().catch(0),
-  kind: z.string().catch(''),
+  kind: z.string().catch(""),
   latency_ms: z.number().finite().nullable().catch(null),
-  notebook: z.string().catch(''),
-  phase: z.string().catch('turn'),
-  rationale: z.string().catch(''),
+  notebook: z.string().catch(""),
+  phase: z.string().catch("turn"),
+  rationale: z.string().catch(""),
   reasoning_tokens: z.number().finite().nullable().catch(null),
-  result: z.enum(['won', 'lost']).catch('lost'),
+  result: z.enum(["won", "lost"]).catch("lost"),
   selection: z.array(z.json()).catch([]),
   series_over: z.boolean().catch(false),
-  summary: z.string().catch(''),
+  summary: z.string().catch(""),
   total_tokens: z.number().finite().nullable().catch(null),
   turn: z.number().finite().catch(0),
 });
 const gameArtifactSchema = z.looseObject({
-  winner_side: z.enum(['p1', 'p2']).nullable().catch(null),
+  winner_side: z.enum(["p1", "p2"]).nullable().catch(null),
 });
 
 export function count(value: JsonValue | undefined): number {
   return Number.isFinite(value) ? Number(value) : 0;
 }
 
-export function decisionLogPath(runsDir: string, runId: string, seriesId: string, pid: Pid): string | null {
+export function decisionLogPath(
+  runsDir: string,
+  runId: string,
+  seriesId: string,
+  pid: Pid,
+): string | null {
   if (!SAFE_SEGMENT.test(runId) || !SAFE_SEGMENT.test(seriesId)) return null;
-  return path.join(runsDir, runId, 'series', seriesId, `${pid}-decisions.jsonl`);
+  return path.join(runsDir, runId, "series", seriesId, `${pid}-decisions.jsonl`);
 }
 
 export interface DecisionLogRow {
@@ -93,7 +98,7 @@ export function readDecisionLog(file: string): DecisionLogRow[] {
   const cached = logCache.get(file);
   if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.rows;
   const rows: DecisionLogRow[] = [];
-  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+  for (const line of fs.readFileSync(file, "utf8").split("\n")) {
     if (!line.trim()) continue;
     try {
       const parsed = decisionLogArtifactSchema.safeParse(JSON.parse(line));
@@ -123,7 +128,7 @@ export function quantile(sorted: number[], q: number): number {
   return sorted[low]! + (sorted[high]! - sorted[low]!) * (position - low);
 }
 
-export const PIDS: Pid[] = ['p1', 'p2'];
+export const PIDS: Pid[] = ["p1", "p2"];
 
 const spriteIds = new Map<string, string>();
 
@@ -131,8 +136,8 @@ export function spriteIdFor(species: string): string {
   const cached = spriteIds.get(species);
   if (cached !== undefined) return cached;
   const { Dex } = loadShowdown();
-  const resolved = Dex.mod('champions').species.get(species);
-  const id = resolved.exists ? resolved.spriteid : '';
+  const resolved = Dex.mod("champions").species.get(species);
+  const id = resolved.exists ? resolved.spriteid : "";
   spriteIds.set(species, id);
   return id;
 }
@@ -140,7 +145,7 @@ export function spriteIdFor(species: string): string {
 export function viewTeamSheet(packed: string): TeambuildSetView[] {
   const { Teams } = loadShowdown();
   return (Teams.unpack(packed) ?? []).map((set) => {
-    const species = set.species || set.name || 'Pokémon';
+    const species = set.species || set.name || "Pokémon";
     return {
       species,
       spriteId: spriteIdFor(species),
@@ -159,23 +164,23 @@ function snapshotMon(battle: BattleState, pid: Pid, mon: MonState): MonView {
   const boosts = Object.entries(mon.boosts)
     .filter(([, value]) => value)
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([stat, value]) => `${stat} ${value > 0 ? '+' : ''}${value}`)
-    .join(', ');
-  const target = mon.lastMove?.target ? ` → ${afterColon(mon.lastMove.target)}` : '';
+    .map(([stat, value]) => `${stat} ${value > 0 ? "+" : ""}${value}`)
+    .join(", ");
+  const target = mon.lastMove?.target ? ` → ${afterColon(mon.lastMove.target)}` : "";
   const volatiles = [...mon.volatiles]
     .map((volatile) => (/^perish(\d)$/i.test(volatile) ? `Perish ${volatile.slice(-1)}` : volatile))
     .sort()
-    .join(', ');
+    .join(", ");
   return {
     species: mon.species,
     spriteId: spriteIdFor(mon.species),
-    slot: battle.activeSlot(pid, mon)?.toUpperCase() ?? '',
-    hp: mon.fainted ? 'fainted' : (mon.hp ?? ''),
-    status: mon.fainted ? '' : (mon.status ?? ''),
+    slot: battle.activeSlot(pid, mon)?.toUpperCase() ?? "",
+    hp: mon.fainted ? "fainted" : (mon.hp ?? ""),
+    status: mon.fainted ? "" : (mon.status ?? ""),
     fainted: mon.fainted,
     boosts,
     volatiles,
-    lastMove: mon.lastMove ? `${mon.lastMove.name}${target} · T${mon.lastMove.turn}` : '',
+    lastMove: mon.lastMove ? `${mon.lastMove.name}${target} · T${mon.lastMove.turn}` : "",
   };
 }
 
@@ -195,7 +200,8 @@ export function snapshotBattle(
     const timer = battle.timers[pid];
     if (!timer) return null;
     const drained = timer.running ? (Date.now() - timer.at) / 1000 : 0;
-    const remaining = (value: number | null) => (value === null ? null : Math.max(0, Math.round(value - drained)));
+    const remaining = (value: number | null) =>
+      value === null ? null : Math.max(0, Math.round(value - drained));
     return {
       seconds: remaining(timer.seconds),
       turnSeconds: remaining(timer.turnSeconds),
@@ -211,31 +217,31 @@ export function snapshotBattle(
     turn: battle.turn,
     weather: battle.weatherLabel(),
     fields: battle.fieldLabels(),
-    sides: { p1: side('p1'), p2: side('p2') },
-    timers: { p1: timerView('p1'), p2: timerView('p2') },
-    spend: { p1: spendView('p1'), p2: spendView('p2') },
+    sides: { p1: side("p1"), p2: side("p2") },
+    timers: { p1: timerView("p1"), p2: timerView("p2") },
+    spend: { p1: spendView("p1"), p2: spendView("p2") },
     log,
     decisions,
   };
 }
 
 export function isRunLive(runsDir: string, runId: string): boolean {
-  const status = runStatusSchema.safeParse(readRunJson(runsDir, runId, 'status.json'));
-  if (!status.success || status.data.state !== 'running') return false;
-  const lease = runLeaseArtifactSchema.safeParse(readRunJson(runsDir, runId, '.run.lease'));
+  const status = runStatusSchema.safeParse(readRunJson(runsDir, runId, "status.json"));
+  if (!status.success || status.data.state !== "running") return false;
+  const lease = runLeaseArtifactSchema.safeParse(readRunJson(runsDir, runId, ".run.lease"));
   const pid = status.data.pid ?? (lease.success ? lease.data.pid : undefined);
   if (pid === undefined) return false;
   try {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    return isErrnoCode(error, 'EPERM');
+    return isErrnoCode(error, "EPERM");
   }
 }
 
 export function readRunJson(runsDir: string, runId: string, ...segments: string[]): JsonValue {
   try {
-    return JSON.parse(fs.readFileSync(path.join(runsDir, runId, ...segments), 'utf8'));
+    return JSON.parse(fs.readFileSync(path.join(runsDir, runId, ...segments), "utf8"));
   } catch {
     return null;
   }
@@ -254,11 +260,15 @@ export interface UnfinishedSeries {
   players: Record<Pid, string> | null;
 }
 
-export function scanUnfinishedSeries(runsDir: string, runId: string, rows: SeriesRecord[]): UnfinishedSeries[] {
-  const seen = new Set(rows.map((row) => String(row.series_id ?? '')));
+export function scanUnfinishedSeries(
+  runsDir: string,
+  runId: string,
+  rows: SeriesRecord[],
+): UnfinishedSeries[] {
+  const seen = new Set(rows.map((row) => String(row.series_id ?? "")));
   let entries: string[] = [];
   try {
-    entries = fs.readdirSync(path.join(runsDir, runId, 'series'));
+    entries = fs.readdirSync(path.join(runsDir, runId, "series"));
   } catch {
     return [];
   }
@@ -269,7 +279,7 @@ export function scanUnfinishedSeries(runsDir: string, runId: string, rows: Serie
     let game = 0;
     let turn = 0;
     for (const pid of PIDS) {
-      const lines = readRunLines(runsDir, runId, 'series', seriesId, `${pid}-decisions.jsonl`);
+      const lines = readRunLines(runsDir, runId, "series", seriesId, `${pid}-decisions.jsonl`);
       decisions += lines.length;
       const last = lines[lines.length - 1];
       if (last) {
@@ -278,7 +288,7 @@ export function scanUnfinishedSeries(runsDir: string, runId: string, rows: Serie
       }
     }
     const metadata = storedSeriesMetadataSchema.safeParse(
-      readRunJson(runsDir, runId, 'series', seriesId, 'series.json'),
+      readRunJson(runsDir, runId, "series", seriesId, "series.json"),
     );
     const players = metadata.success ? metadata.data.players : null;
     found.push({
@@ -296,7 +306,7 @@ export function scanUnfinishedSeries(runsDir: string, runId: string, rows: Serie
 export interface SeriesSlot {
   seriesId: string;
   sides: [number, number];
-  stage: 'roundrobin' | 'playoff';
+  stage: "roundrobin" | "playoff";
   round: number;
   models: string[];
   labels: string[];
@@ -315,7 +325,7 @@ export function buildSeriesGame(
 
   let seriesFiles: string[];
   try {
-    seriesFiles = fs.readdirSync(path.join(runsDir, runId, 'series', seriesId));
+    seriesFiles = fs.readdirSync(path.join(runsDir, runId, "series", seriesId));
   } catch {
     return null;
   }
@@ -328,15 +338,21 @@ export function buildSeriesGame(
   const decisions: LeagueGameDecisionView[] = [];
   const reflections: LeagueGameReflectionView[] = [];
   for (const [side, pid] of [
-    [0, 'p1'],
-    [1, 'p2'],
+    [0, "p1"],
+    [1, "p2"],
   ] as const) {
-    for (const artifact of readRunLines(runsDir, runId, 'series', seriesId, `${pid}-decisions.jsonl`)) {
+    for (const artifact of readRunLines(
+      runsDir,
+      runId,
+      "series",
+      seriesId,
+      `${pid}-decisions.jsonl`,
+    )) {
       const entry = decisionArtifactSchema.parse(artifact);
       const entryGame = entry.game_number;
       if (entryGame > 0) gameNumbers.add(entryGame);
       if (entryGame !== game) continue;
-      if (entry.kind === 'game_reflection') {
+      if (entry.kind === "game_reflection") {
         reflections.push({
           side,
           result: entry.result,
@@ -348,7 +364,7 @@ export function buildSeriesGame(
         });
         continue;
       }
-      if (entry.kind !== 'decision') continue;
+      if (entry.kind !== "decision") continue;
       decisions.push({
         side,
         turn: entry.turn,
@@ -368,33 +384,48 @@ export function buildSeriesGame(
   if (!gameNumbers.has(game)) return null;
   decisions.sort((first, second) => first.turn - second.turn || first.side - second.side);
 
-  let raw = '';
+  let raw = "";
   try {
-    raw = fs.readFileSync(path.join(runsDir, runId, 'series', seriesId, `game-${game}.log`), 'utf8');
+    raw = fs.readFileSync(
+      path.join(runsDir, runId, "series", seriesId, `game-${game}.log`),
+      "utf8",
+    );
   } catch {
     if (row) return null;
   }
   const battleLog = new BattleLog(10_000);
-  battleLog.feed(raw.split('\n'));
+  battleLog.feed(raw.split("\n"));
   const live = !row && isRunLive(runsDir, runId);
   let snapshot: BattleSnapshot | null = null;
   if (live && !/^\|(?:win\||tie\b)/m.test(raw)) {
-    const state = new BattleState('p1');
-    state.feed(raw.split('\n'));
+    const state = new BattleState("p1");
+    state.feed(raw.split("\n"));
     const spendFor = (side: 0 | 1) => ({
-      ms: decisions.reduce((total, entry) => total + (entry.side === side ? (entry.latencyMs ?? 0) : 0), 0),
-      tokens: decisions.reduce((total, entry) => total + (entry.side === side ? (entry.totalTokens ?? 0) : 0), 0),
+      ms: decisions.reduce(
+        (total, entry) => total + (entry.side === side ? (entry.latencyMs ?? 0) : 0),
+        0,
+      ),
+      tokens: decisions.reduce(
+        (total, entry) => total + (entry.side === side ? (entry.totalTokens ?? 0) : 0),
+        0,
+      ),
     });
-    snapshot = snapshotBattle(state, { p1: slot.models[sides[0]]!, p2: slot.models[sides[1]]! }, [], [], {
-      p1: spendFor(0),
-      p2: spendFor(1),
-    });
+    snapshot = snapshotBattle(
+      state,
+      { p1: slot.models[sides[0]]!, p2: slot.models[sides[1]]! },
+      [],
+      [],
+      {
+        p1: spendFor(0),
+        p2: spendFor(1),
+      },
+    );
   }
 
   const parsedGameRows = z.array(gameArtifactSchema).safeParse(row?.games);
   const gameRows = parsedGameRows.success ? parsedGameRows.data : [];
   const logWinner = (text: string): number | null => {
-    const lines = text.split('\n');
+    const lines = text.split("\n");
     const players = new Map<string, Pid>();
     for (const line of lines) {
       const match = /^\|player\|(p[12])\|([^|]+)\|/.exec(line);
@@ -403,18 +434,23 @@ export function buildSeriesGame(
       const player = z.string().min(1).safeParse(match[2]);
       if (pid.success && player.success) players.set(player.data, pid.data);
     }
-    const winLine = lines.find((line) => line.startsWith('|win|'));
+    const winLine = lines.find((line) => line.startsWith("|win|"));
     const pid = winLine === undefined ? undefined : players.get(winLine.slice(5).trim());
-    return pid === undefined ? null : pid === 'p1' ? sides[0] : sides[1];
+    return pid === undefined ? null : pid === "p1" ? sides[0] : sides[1];
   };
   const winnerOf = (number: number): number | null => {
     const gameRow = gameRows[number - 1];
-    if (gameRow?.winner_side === 'p1') return sides[0];
-    if (gameRow?.winner_side === 'p2') return sides[1];
+    if (gameRow?.winner_side === "p1") return sides[0];
+    if (gameRow?.winner_side === "p2") return sides[1];
     if (row) return null;
     if (number === game) return raw ? logWinner(raw) : null;
     try {
-      return logWinner(fs.readFileSync(path.join(runsDir, runId, 'series', seriesId, `game-${number}.log`), 'utf8'));
+      return logWinner(
+        fs.readFileSync(
+          path.join(runsDir, runId, "series", seriesId, `game-${number}.log`),
+          "utf8",
+        ),
+      );
     } catch {
       return null;
     }
@@ -430,7 +466,10 @@ export function buildSeriesGame(
     games,
     gameWinners: games.map(winnerOf),
     sides,
-    teamNames: [slot.labels[sides[0]] ?? `Seat ${sides[0] + 1}`, slot.labels[sides[1]] ?? `Seat ${sides[1] + 1}`],
+    teamNames: [
+      slot.labels[sides[0]] ?? `Seat ${sides[0] + 1}`,
+      slot.labels[sides[1]] ?? `Seat ${sides[1] + 1}`,
+    ],
     winner: winnerOf(game),
     live,
     snapshot,

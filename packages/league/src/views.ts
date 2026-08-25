@@ -1,5 +1,5 @@
-import type { ExperimentMode, Pid } from '../types.js';
-import type { BattleLogEntry } from './battlelog.js';
+import type { ExperimentMode, Pid } from "./types.js";
+import type { BattleLogEntry } from "./battlelog.js";
 
 export interface ModelInfo {
   id: string;
@@ -11,7 +11,7 @@ export interface ProviderInfo {
   id: string;
   label: string;
   description: string;
-  discovery: 'list' | 'manual' | 'none';
+  discovery: "list" | "manual" | "none";
   requiresKey: boolean;
 }
 
@@ -29,7 +29,7 @@ export interface FormatInfo {
 
 export interface SeriesRowView {
   players: Record<Pid, string>;
-  status: 'queued' | 'running' | 'done';
+  status: "queued" | "running" | "done";
   score: Record<Pid, number>;
   game: number;
   turn: number;
@@ -103,7 +103,7 @@ export interface DraftView {
   teambuilds: TeambuildView[];
   week: number;
   weeks: number;
-  phase: 'draft' | 'roundrobin' | 'window' | 'playoffs' | 'done';
+  phase: "draft" | "roundrobin" | "window" | "playoffs" | "done";
 }
 
 export interface BracketEntrantView {
@@ -138,7 +138,7 @@ export interface PublicTeamSheetSetView {
   moves: string[];
 }
 
-export type RunState = 'running' | 'done' | 'failed' | 'stopped';
+export type RunState = "running" | "done" | "failed" | "stopped";
 
 export interface RunSnapshot {
   runId: string;
@@ -187,7 +187,7 @@ export interface AppState {
   sampleTeams: SampleTeam[];
   boards: BoardInfo[];
   run: RunSnapshot | null;
-  externalRun: { runId: string; mode: 'draft' | 'tournament' } | null;
+  externalRun: { runId: string; mode: "draft" | "tournament" } | null;
 }
 
 export type AppStateResponse = AppState;
@@ -262,7 +262,7 @@ export interface BattleMessage {
 }
 
 export type BattleView = BattleMessage;
-export type ServerEvent = { type: 'run'; run: RunView | null } | ({ type: 'battle' } & BattleView);
+export type ServerEvent = { type: "run"; run: RunView | null } | ({ type: "battle" } & BattleView);
 
 export interface TournamentSummary {
   tournaments: number;
@@ -310,7 +310,7 @@ export interface TournamentArchiveView {
   live: boolean;
   liveSeries: TournamentLiveSeriesView[];
   event: TournamentEventView | null;
-  provenance: 'disclosed' | 'blind' | null;
+  provenance: "disclosed" | "blind" | null;
 }
 
 export interface TournamentsResponse {
@@ -326,8 +326,14 @@ export interface LeagueChampionView {
   team: string;
 }
 
-export type LeaguePhase = 'drafting' | 'building' | 'roundrobin' | 'window' | 'playoffs' | 'complete';
-export type LeagueLifecycle = 'live' | 'complete' | 'failed' | 'stopped' | 'incomplete';
+export type LeaguePhase =
+  | "drafting"
+  | "building"
+  | "roundrobin"
+  | "window"
+  | "playoffs"
+  | "complete";
+export type LeagueLifecycle = "live" | "complete" | "failed" | "stopped" | "incomplete";
 
 export interface LeagueRosterSlotView {
   id: string;
@@ -337,7 +343,7 @@ export interface LeagueRosterSlotView {
   pick: number | null;
   rationale: string;
   fallback: boolean;
-  acquired: 'draft' | 'window';
+  acquired: "draft" | "window";
 }
 
 export interface LeagueRecordView {
@@ -392,7 +398,7 @@ export interface LeagueGameView {
 export interface LeagueSeriesView {
   seriesIndex: number;
   seriesId: string;
-  stage: 'roundrobin' | 'playoff';
+  stage: "roundrobin" | "playoff";
   round: number;
   timestamp: string;
   sides: [number, number];
@@ -462,7 +468,7 @@ export interface LeagueGameDecisionView {
 
 export interface LeagueGameReflectionView {
   side: 0 | 1;
-  result: 'won' | 'lost';
+  result: "won" | "lost";
   summary: string;
   adjustment: string;
   notebook: string;
@@ -474,7 +480,7 @@ export interface LeagueGameResponse {
   runId: string;
   seriesIndex: number;
   seriesId: string;
-  stage: 'roundrobin' | 'playoff';
+  stage: "roundrobin" | "playoff";
   round: number;
   game: number;
   /** Game numbers with a stored log or logged decisions for this series, ascending. */
@@ -495,7 +501,7 @@ export interface LeagueGameResponse {
 export interface LeagueLiveSeriesView {
   seriesId: string;
   seriesIndex: number | null;
-  stage: 'roundrobin' | 'playoff' | null;
+  stage: "roundrobin" | "playoff" | null;
   round: number | null;
   game: number;
   turn: number;
@@ -525,7 +531,7 @@ export interface LeagueTradeOfferView {
 
 export interface LeagueTradeWindowView {
   afterWeek: number;
-  state: 'scheduled' | 'in-progress' | 'complete';
+  state: "scheduled" | "in-progress" | "complete";
   order: number[];
   offers: LeagueTradeOfferView[];
   decisions: LeagueTradeWindowDecisionView[];
@@ -533,7 +539,7 @@ export interface LeagueTradeWindowView {
 
 export interface LeagueWeeklyReviewView {
   week: number;
-  stage: 'week' | 'transactions';
+  stage: "week" | "transactions";
   entrant: number;
   rosterVersion: number;
   reasoning: string;

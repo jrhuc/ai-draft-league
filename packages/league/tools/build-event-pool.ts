@@ -1,26 +1,26 @@
 #!/usr/bin/env node
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { z } from 'zod';
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { z } from "zod";
 
-import { defaultPsDir } from '../src/paths.js';
-import { loadShowdown } from '../src/showdown.js';
-import { packTeam, validateTeam } from '../src/teams.js';
-import type { JsonObject } from '../src/types.js';
-import { text } from '../src/value.js';
-import { jsonObjectSchema, publishPool } from './pool-output.js';
+import { defaultPsDir } from "../src/paths.js";
+import { loadShowdown } from "../src/showdown.js";
+import { packTeam, validateTeam } from "../src/teams.js";
+import type { JsonObject } from "../src/types.js";
+import { text } from "../src/value.js";
+import { jsonObjectSchema, publishPool } from "./pool-output.js";
 
-type Stat = 'hp' | 'atk' | 'def' | 'spa' | 'spd' | 'spe';
+type Stat = "hp" | "atk" | "def" | "spa" | "spd" | "spe";
 
-const STATS = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'] as const satisfies readonly Stat[];
+const STATS = ["hp", "atk", "def", "spa", "spd", "spe"] as const satisfies readonly Stat[];
 const STAT_LABELS = {
-  hp: 'HP',
-  atk: 'Atk',
-  def: 'Def',
-  spa: 'SpA',
-  spd: 'SpD',
-  spe: 'Spe',
+  hp: "HP",
+  atk: "Atk",
+  def: "Def",
+  spa: "SpA",
+  spd: "SpD",
+  spe: "Spe",
 } as const satisfies Record<Stat, string>;
 
 interface Spread {
@@ -59,31 +59,36 @@ interface ResolvedSpread {
 }
 
 function slug(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
 function spreadText(evs: Spread): string {
   return (
     STATS.filter((stat) => evs[stat] > 0)
       .map((stat) => `${evs[stat]} ${STAT_LABELS[stat]}`)
-      .join(' / ') || '0 HP'
+      .join(" / ") || "0 HP"
   );
 }
 
 function checkSpread(evs: Spread, label: string): void {
   const total = STATS.reduce((sum, stat) => sum + evs[stat], 0);
-  if (total > 66) throw new Error(`${label}: ${total} stat points exceeds the Champions limit of 66`);
+  if (total > 66)
+    throw new Error(`${label}: ${total} stat points exceeds the Champions limit of 66`);
   for (const stat of STATS) {
-    if (evs[stat] > 32) throw new Error(`${label}: ${evs[stat]} ${STAT_LABELS[stat]} exceeds the per-stat cap of 32`);
+    if (evs[stat] > 32)
+      throw new Error(`${label}: ${evs[stat]} ${STAT_LABELS[stat]} exceeds the per-stat cap of 32`);
   }
 }
 
 function parseSpread(value: string, label: string) {
   const evs = { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 };
-  for (const part of value.split('/')) {
+  for (const part of value.split("/")) {
     const match = /^\s*(\d+)\s+([A-Za-z]+)\s*$/.exec(part);
-    if (!match) throw new Error(`${label}: could not read stat points from ${JSON.stringify(part)}`);
-    const stat = STATS.find((candidate) => STAT_LABELS[candidate].toLowerCase() === match[2]!.toLowerCase());
+    if (!match)
+      throw new Error(`${label}: could not read stat points from ${JSON.stringify(part)}`);
+    const stat = STATS.find(
+      (candidate) => STAT_LABELS[candidate].toLowerCase() === match[2]!.toLowerCase(),
+    );
     if (!stat) throw new Error(`${label}: unknown stat ${JSON.stringify(match[2])}`);
     evs[stat] = Number(match[1]);
   }
@@ -93,21 +98,25 @@ function parseSpread(value: string, label: string) {
 
 async function fetchText(url: string, accept: string): Promise<string> {
   const response = await fetch(url, {
-    headers: { 'user-agent': 'vgc-model-league-pool-builder', accept },
+    headers: { "user-agent": "vgc-model-league-pool-builder", accept },
     signal: AbortSignal.timeout(30_000),
   });
-  if (!response.ok) throw new Error(`could not fetch ${url}: ${response.status} ${response.statusText}`);
+  if (!response.ok)
+    throw new Error(`could not fetch ${url}: ${response.status} ${response.statusText}`);
   return response.text();
 }
 
 async function fetchOpenList(url: string): Promise<OpenSet[]> {
-  const id = url.replace(/\/$/, '').split('/').pop() ?? '';
+  const id = url.replace(/\/$/, "").split("/").pop() ?? "";
   if (!/^[A-Za-z0-9_-]+$/.test(id)) throw new Error(`could not read a paste id from ${url}`);
   const record = jsonObjectSchema
     .catch({})
     .parse(
       JSON.parse(
-        await fetchText(`https://vrpaste-backend.vercel.app/api/paste/${id}?lang=english`, 'application/json'),
+        await fetchText(
+          `https://vrpaste-backend.vercel.app/api/paste/${id}?lang=english`,
+          "application/json",
+        ),
       ),
     );
   const sets = jsonObjectListSchema.parse(record.teams);
@@ -124,15 +133,15 @@ async function fetchOpenList(url: string): Promise<OpenSet[]> {
 
 async function fetchCorpus(csvUrl: string, psDir: string): Promise<CorpusSet[]> {
   const { Teams } = loadShowdown(psDir);
-  const csv = await fetchText(csvUrl, 'text/csv');
+  const csv = await fetchText(csvUrl, "text/csv");
   const pastes = [...new Set(csv.match(/https:\/\/pokepast\.es\/[0-9a-f]+/g) ?? [])].sort();
   if (!pastes.length) throw new Error(`no pokepaste links found in ${csvUrl}`);
   const raw = await Promise.all(
     pastes.map(async (paste) => {
       try {
-        return { paste, body: await fetchText(`${paste}/raw`, 'text/plain') };
+        return { paste, body: await fetchText(`${paste}/raw`, "text/plain") };
       } catch {
-        return { paste, body: '' };
+        return { paste, body: "" };
       }
     }),
   );
@@ -144,10 +153,10 @@ async function fetchCorpus(csvUrl: string, psDir: string): Promise<CorpusSet[]> 
       for (const stat of STATS) evs[stat] = set.evs?.[stat] ?? 0;
       if (STATS.every((stat) => evs[stat] === 0)) continue;
       corpus.push({
-        species: set.species || set.name || '',
-        item: set.item ?? '',
-        ability: set.ability ?? '',
-        nature: set.nature ?? '',
+        species: set.species || set.name || "",
+        item: set.item ?? "",
+        ability: set.ability ?? "",
+        nature: set.nature ?? "",
         level: set.level ?? 50,
         moves: set.moves ?? [],
         evs,
@@ -155,7 +164,9 @@ async function fetchCorpus(csvUrl: string, psDir: string): Promise<CorpusSet[]> 
       });
     }
   }
-  console.log(`corpus: ${corpus.length} sets with stat points from ${raw.filter((entry) => entry.body).length} pastes`);
+  console.log(
+    `corpus: ${corpus.length} sets with stat points from ${raw.filter((entry) => entry.body).length} pastes`,
+  );
   return corpus;
 }
 
@@ -164,7 +175,8 @@ function chooseSpread(target: OpenSet, corpus: CorpusSet[]): ResolvedSpread | nu
   const candidates = sameSpecies.filter((entry) => slug(entry.nature) === slug(target.nature));
   if (!candidates.length) return null;
   const moves = new Set(target.moves.map(slug));
-  const overlapOf = (entry: CorpusSet): number => entry.moves.filter((move) => moves.has(slug(move))).length;
+  const overlapOf = (entry: CorpusSet): number =>
+    entry.moves.filter((move) => moves.has(slug(move))).length;
   const score = (entry: CorpusSet): number =>
     (slug(entry.item) === slug(target.item) ? 100 : 0) +
     overlapOf(entry) * 10 +
@@ -178,14 +190,16 @@ function chooseSpread(target: OpenSet, corpus: CorpusSet[]): ResolvedSpread | nu
     if (seen) seen.count += 1;
     else counts.set(key, { count: 1, entry });
   }
-  const winnerPair = [...counts.entries()].sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0]))[0];
+  const winnerPair = [...counts.entries()].sort(
+    (a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0]),
+  )[0];
   if (!winnerPair) return null;
   const [spread, winner] = winnerPair;
   const itemMatched = slug(winner.entry.item) === slug(target.item);
   const shared = overlapOf(winner.entry);
   return {
     evs: winner.entry.evs,
-    basis: `${winner.count}/${closest.length} closest ${target.nature} ${target.species} sets ran ${spread}; matched ${shared}/${target.moves.length} moves${itemMatched ? ' and the item' : ` on corpus item ${winner.entry.item || 'none'}`}`,
+    basis: `${winner.count}/${closest.length} closest ${target.nature} ${target.species} sets ran ${spread}; matched ${shared}/${target.moves.length} moves${itemMatched ? " and the item" : ` on corpus item ${winner.entry.item || "none"}`}`,
     from: winner.entry.paste,
     itemMatched,
     shared,
@@ -194,20 +208,20 @@ function chooseSpread(target: OpenSet, corpus: CorpusSet[]): ResolvedSpread | nu
 
 function exportSet(set: OpenSet, evs: Spread): string {
   const lines = [
-    `${set.species}${set.item ? ` @ ${set.item}` : ''}`,
+    `${set.species}${set.item ? ` @ ${set.item}` : ""}`,
     `Ability: ${set.ability}`,
     `Level: ${set.level}`,
     `EVs: ${spreadText(evs)}`,
     `${set.nature} Nature`,
     ...set.moves.map((move) => `- ${move}`),
   ];
-  return lines.join('\n');
+  return lines.join("\n");
 }
 
 async function buildEventPool(manifestFile: string): Promise<string> {
   const manifestPath = path.resolve(manifestFile);
   const poolDir = path.dirname(manifestPath);
-  const data = jsonObjectSchema.safeParse(JSON.parse(fs.readFileSync(manifestPath, 'utf8')));
+  const data = jsonObjectSchema.safeParse(JSON.parse(fs.readFileSync(manifestPath, "utf8")));
   if (!data.success) throw new Error(`invalid manifest ${manifestPath}`);
   const manifest = data.data;
   const poolId = text(manifest.id);
@@ -216,7 +230,8 @@ async function buildEventPool(manifestFile: string): Promise<string> {
   const event = eventResult.success ? eventResult.data : null;
   const spreads = jsonObjectSchema.catch({}).parse(manifest.spreads);
   const sources = jsonObjectListSchema.parse(manifest.teams);
-  if (!poolId || !format || !event || !sources.length) throw new Error(`invalid manifest ${manifestPath}`);
+  if (!poolId || !format || !event || !sources.length)
+    throw new Error(`invalid manifest ${manifestPath}`);
 
   const psDir = defaultPsDir();
   const corpus = await fetchCorpus(text(spreads.corpus), psDir);
@@ -226,7 +241,7 @@ async function buildEventPool(manifestFile: string): Promise<string> {
 
   for (const source of sources) {
     const id = text(source.id);
-    if (!id) throw new Error('every source team needs an id');
+    if (!id) throw new Error("every source team needs an id");
     const overrides = new Map<string, JsonObject>();
     for (const override of jsonObjectListSchema.parse(source.overrides)) {
       overrides.set(slug(text(override.species)), override);
@@ -237,20 +252,35 @@ async function buildEventPool(manifestFile: string): Promise<string> {
       const override = overrides.get(slug(set.species));
       if (override) {
         const evs = parseSpread(text(override.evs), label);
-        return { set, evs, basis: text(override.why), from: 'authored', itemMatched: true, shared: set.moves.length };
+        return {
+          set,
+          evs,
+          basis: text(override.why),
+          from: "authored",
+          itemMatched: true,
+          shared: set.moves.length,
+        };
       }
       const choice = chooseSpread(set, corpus);
-      if (!choice) throw new Error(`${label}: no ${set.nature} ${set.species} in the corpus and no override supplied`);
+      if (!choice)
+        throw new Error(
+          `${label}: no ${set.nature} ${set.species} in the corpus and no override supplied`,
+        );
       checkSpread(choice.evs, label);
       if (!choice.itemMatched || choice.shared < set.moves.length)
         flagged.push(`${label} @ ${set.item}: ${choice.basis}`);
       return { set, ...choice };
     });
     for (const species of overrides.keys()) {
-      if (!open.some((set) => slug(set.species) === species)) throw new Error(`${id}: override for absent ${species}`);
+      if (!open.some((set) => slug(set.species) === species))
+        throw new Error(`${id}: override for absent ${species}`);
     }
 
-    const packed = packTeam(resolved.map((entry) => exportSet(entry.set, entry.evs)).join('\n\n'), psDir, format);
+    const packed = packTeam(
+      resolved.map((entry) => exportSet(entry.set, entry.evs)).join("\n\n"),
+      psDir,
+      format,
+    );
     validateTeam(packed, format, psDir);
     const { id: _id, overrides: _overrides, ...metadata } = source;
     let entry: JsonObject;
@@ -290,7 +320,7 @@ async function buildEventPool(manifestFile: string): Promise<string> {
     spreads: { ...spreads, reconstructed: true },
     teams: teams.map((team) => team.entry),
     files: Object.fromEntries(teams.map((team) => [`${team.id}.team`, `${team.packed}\n`])),
-    extra: { 'spreads.json': `${JSON.stringify({ pool: poolId, teams: audit }, null, 2)}\n` },
+    extra: { "spreads.json": `${JSON.stringify({ pool: poolId, teams: audit }, null, 2)}\n` },
   });
   console.log(`wrote ${output} with ${teams.length} teams`);
   return output;
@@ -299,6 +329,6 @@ async function buildEventPool(manifestFile: string): Promise<string> {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const manifest = process.argv[2];
   if (!manifest || process.argv.length !== 3)
-    throw new Error('Usage: pnpm run build-event-pool -- teams/<pool>/sources.json');
+    throw new Error("Usage: pnpm run build-event-pool -- teams/<pool>/sources.json");
   await buildEventPool(manifest);
 }

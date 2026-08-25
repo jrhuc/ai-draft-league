@@ -1,4 +1,4 @@
-import type { JsonObject, JsonValue } from './types.js';
+import type { JsonObject, JsonValue } from "./types.js";
 
 export function isRecord(value: JsonValue | undefined): value is JsonObject {
   return value instanceof Object && !Array.isArray(value);
@@ -20,28 +20,28 @@ export function asStrings(value: JsonValue | undefined): string[] {
   return Array.isArray(value) ? value.filter(isText) : [];
 }
 
-export function text(value: JsonValue | undefined, fallback = ''): string {
+export function text(value: JsonValue | undefined, fallback = ""): string {
   return isText(value) ? value : fallback;
 }
 
 export function isErrnoCode(cause: unknown, code: string): cause is Error & { code: string } {
-  return cause instanceof Error && 'code' in cause && cause.code === code;
+  return cause instanceof Error && "code" in cause && cause.code === code;
 }
 
 export function afterColon(value: string): string {
-  const separator = value.indexOf(': ');
+  const separator = value.indexOf(": ");
   return separator < 0 ? value : value.slice(separator + 2);
 }
 
 export function ordinal(rank: number): string {
   const suffix =
     rank % 10 === 1 && rank !== 11
-      ? 'st'
+      ? "st"
       : rank % 10 === 2 && rank !== 12
-        ? 'nd'
+        ? "nd"
         : rank % 10 === 3 && rank !== 13
-          ? 'rd'
-          : 'th';
+          ? "rd"
+          : "th";
   return `${rank}${suffix}`;
 }
 

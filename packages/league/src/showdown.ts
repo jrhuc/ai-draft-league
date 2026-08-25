@@ -1,12 +1,12 @@
-import { execFileSync } from 'node:child_process';
-import fs from 'node:fs';
-import { createRequire } from 'node:module';
-import path from 'node:path';
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
 
-import type { Battle, BattleStream, Dex, Teams, TeamValidator } from 'pokemon-showdown';
-import { z } from 'zod';
+import type { Battle, BattleStream, Dex, Teams, TeamValidator } from "pokemon-showdown";
+import { z } from "zod";
 
-import { defaultPsDir, PINNED_PS_DIR, REPO_ROOT } from './paths.js';
+import { defaultPsDir, PINNED_PS_DIR, REPO_ROOT } from "./paths.js";
 
 export interface ShowdownApi {
   Battle: typeof Battle;
@@ -27,12 +27,16 @@ const showdownLockSchema = z.looseObject({
 const requireFromHere = createRequire(import.meta.url);
 const cache = new Map<string, ShowdownApi>();
 const revisionCache = new Map<string, string>();
-const requiredBuildFiles = ['dist/sim/index.js', 'dist/sim/index.d.ts', 'dist/server/room-battle.js'];
+const requiredBuildFiles = [
+  "dist/sim/index.js",
+  "dist/sim/index.d.ts",
+  "dist/server/room-battle.js",
+];
 const lockResult = showdownLockSchema.safeParse(
-  JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'showdown.lock.json'), 'utf8')),
+  JSON.parse(fs.readFileSync(path.join(REPO_ROOT, "showdown.lock.json"), "utf8")),
 );
 if (!lockResult.success) {
-  throw new Error('showdown.lock.json must contain a repository URL and full commit SHA');
+  throw new Error("showdown.lock.json must contain a repository URL and full commit SHA");
 }
 const lock: ShowdownLock = lockResult.data;
 export const SHOWDOWN_LOCK: Readonly<ShowdownLock> = lock;
@@ -54,11 +58,11 @@ function physicalPinnedRuntime(resolved: string): boolean {
 /** The harness revision a run was produced from; null outside a git checkout. */
 export function harnessCommit(): string | null {
   try {
-    return execFileSync('git', ['rev-parse', 'HEAD'], {
+    return execFileSync("git", ["rev-parse", "HEAD"], {
       cwd: REPO_ROOT,
-      encoding: 'utf8',
+      encoding: "utf8",
       timeout: 5_000,
-      stdio: ['ignore', 'pipe', 'ignore'],
+      stdio: ["ignore", "pipe", "ignore"],
     }).trim();
   } catch {
     return null;
@@ -75,19 +79,21 @@ export function showdownCommit(psDir = defaultPsDir()): string {
     revisionCache.set(cacheKey, SHOWDOWN_LOCK.commit);
     return SHOWDOWN_LOCK.commit;
   }
-  let revision = '';
+  let revision = "";
   try {
-    revision = execFileSync('git', ['-C', resolved, 'rev-parse', 'HEAD'], {
-      encoding: 'utf8',
+    revision = execFileSync("git", ["-C", resolved, "rev-parse", "HEAD"], {
+      encoding: "utf8",
       timeout: 5_000,
     }).trim();
   } catch {}
   if (!revision) {
     try {
-      revision = fs.readFileSync(path.join(resolved, 'dist', '.vgc-model-league-revision'), 'utf8').trim();
+      revision = fs
+        .readFileSync(path.join(resolved, "dist", ".vgc-model-league-revision"), "utf8")
+        .trim();
     } catch {}
   }
-  const result = revision || 'unknown';
+  const result = revision || "unknown";
   revisionCache.set(cacheKey, result);
   return result;
 }
@@ -98,13 +104,15 @@ function assertShowdownInstallation(resolved: string): void {
     throw new Error(`Pokémon Showdown is not built at ${resolved}; run pnpm run setup:showdown`);
   }
   if (physicalPinnedRuntime(resolved)) {
-    let builtRevision = '';
+    let builtRevision = "";
     try {
-      builtRevision = fs.readFileSync(path.join(resolved, 'dist', '.vgc-model-league-revision'), 'utf8').trim();
+      builtRevision = fs
+        .readFileSync(path.join(resolved, "dist", ".vgc-model-league-revision"), "utf8")
+        .trim();
     } catch {}
     if (builtRevision !== SHOWDOWN_LOCK.commit) {
       throw new Error(
-        `Pokémon Showdown build is at ${builtRevision || 'unknown'}; expected ${SHOWDOWN_LOCK.commit}. Run pnpm run setup:showdown`,
+        `Pokémon Showdown build is at ${builtRevision || "unknown"}; expected ${SHOWDOWN_LOCK.commit}. Run pnpm run setup:showdown`,
       );
     }
     if (showdownCommit(resolved) !== SHOWDOWN_LOCK.commit) {
@@ -120,19 +128,19 @@ export function loadShowdown(psDir = defaultPsDir()): ShowdownApi {
   const existing = cache.get(resolved);
   if (existing) return existing;
   assertShowdownInstallation(resolved);
-  const api: ShowdownApi = requireFromHere(path.join(resolved, 'dist', 'sim'));
+  const api: ShowdownApi = requireFromHere(path.join(resolved, "dist", "sim"));
   api.Dex.includeModData();
   cache.set(resolved, api);
   return api;
 }
 
 export interface TimerPlayer {
-  slot: 'p1' | 'p2';
+  slot: "p1" | "p2";
   name: string;
   active: boolean;
   knownActive: boolean;
   eliminated: boolean;
-  request: { isWait: boolean | 'cantUndo' };
+  request: { isWait: boolean | "cantUndo" };
   secondsLeft?: number;
   turnSecondsLeft?: number;
   dcSecondsLeft?: number;
@@ -179,15 +187,15 @@ interface RoomBattleTimerConstructor {
 
 export function loadRoomBattleTimer(psDir = defaultPsDir()): RoomBattleTimerConstructor {
   const resolved = path.resolve(psDir);
-  const config = Object.getOwnPropertyDescriptor(globalThis, 'Config')?.value;
-  const monitor = Object.getOwnPropertyDescriptor(globalThis, 'Monitor')?.value;
+  const config = Object.getOwnPropertyDescriptor(globalThis, "Config")?.value;
+  const monitor = Object.getOwnPropertyDescriptor(globalThis, "Monitor")?.value;
   Object.assign(globalThis, {
     Config: config ?? {},
     Monitor: monitor ?? { crashlog() {}, slow() {} },
     Dex: loadShowdown(resolved).Dex,
   });
   const module: { RoomBattleTimer: RoomBattleTimerConstructor } = requireFromHere(
-    path.join(resolved, 'dist', 'server', 'room-battle.js'),
+    path.join(resolved, "dist", "server", "room-battle.js"),
   );
   return module.RoomBattleTimer;
 }

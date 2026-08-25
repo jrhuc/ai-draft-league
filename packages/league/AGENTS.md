@@ -6,7 +6,7 @@ The primary league format is the pinned Pokémon Champions Reg M-B mod, not a Sc
 
 Pokémon Showdown is the authority for team legality, accepted battle actions, randomness, transitions, timers, and results. Keep the pin at a full official commit and keep installation checks intact.
 
-The pinned Champions format has no Terastallization. Do not expose a Tera type in prompts, team sheets, APIs, artifacts, or either UI because generic Gen 9 structures contain one.
+The pinned Champions format has no Terastallization. Do not expose a Tera type in prompts, team sheets, APIs, artifacts, or the UI because generic Gen 9 structures contain one.
 
 ## Code
 

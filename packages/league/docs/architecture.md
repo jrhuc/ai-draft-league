@@ -75,4 +75,3 @@ standings, legality, or outcomes.
 - User cancellation is the run-level abort mechanism. Provider adapters own
   external-call timeouts and error classification. The optional Showdown timer
   owns gameplay deadlines.
-

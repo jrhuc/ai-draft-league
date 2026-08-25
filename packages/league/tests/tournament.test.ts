@@ -1,12 +1,12 @@
-import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import test from 'node:test';
-import type { BracketView } from '../src/gui/api.js';
-import { loadSeriesRecords } from '../src/records.js';
-import { loadPool } from '../src/teams.js';
-import type { TournamentEvent } from '../src/tournament.js';
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import type { BracketView } from "../src/views.js";
+import { loadSeriesRecords } from "../src/records.js";
+import { loadPool } from "../src/teams.js";
+import type { TournamentEvent } from "../src/tournament.js";
 import {
   applyBracketOutcome,
   briefEvent,
@@ -14,20 +14,24 @@ import {
   runTournament,
   seedPositions,
   tournamentConfigSchema,
-} from '../src/tournament.js';
-import type { JsonObject } from '../src/types.js';
-import { asRecord, asRecords } from '../src/value.js';
+} from "../src/tournament.js";
+import type { JsonObject } from "../src/types.js";
+import { asRecord, asRecords } from "../src/value.js";
 
-test('seed order spreads byes across distinct first-round matches', () => {
+test("seed order spreads byes across distinct first-round matches", () => {
   assert.deepEqual(seedPositions(4), [0, 3, 1, 2]);
   assert.deepEqual(seedPositions(8), [0, 7, 3, 4, 1, 6, 2, 5]);
 });
 
-test('every bracket size plays exactly n-1 series and byes auto-advance', () => {
+test("every bracket size plays exactly n-1 series and byes auto-advance", () => {
   for (let count = 2; count <= 9; count += 1) {
     const rounds = buildBracket(count);
     const matches = rounds.flat();
-    assert.equal(matches.filter((match) => match.seriesIndex !== null).length, count - 1, `${count} entrants`);
+    assert.equal(
+      matches.filter((match) => match.seriesIndex !== null).length,
+      count - 1,
+      `${count} entrants`,
+    );
     const indices = matches
       .filter((match) => match.seriesIndex !== null)
       .map((match) => match.seriesIndex)
@@ -37,57 +41,69 @@ test('every bracket size plays exactly n-1 series and byes auto-advance', () => 
       Array.from({ length: count - 1 }, (_, index) => index),
     );
     for (const match of rounds[0]!) {
-      assert.ok(match.slots[0] !== null || match.slots[1] !== null, 'no empty first-round match');
+      assert.ok(match.slots[0] !== null || match.slots[1] !== null, "no empty first-round match");
       if (match.seriesIndex === null) {
-        assert.equal(match.winner, match.slots[0] ?? match.slots[1], 'a bye advances its only entrant');
+        assert.equal(
+          match.winner,
+          match.slots[0] ?? match.slots[1],
+          "a bye advances its only entrant",
+        );
       }
     }
-    assert.equal(rounds[rounds.length - 1]!.length, 1, 'a single final');
+    assert.equal(rounds[rounds.length - 1]!.length, 1, "a single final");
   }
 });
 
-test('bracket outcomes are exact immutable atomic transitions', () => {
+test("bracket outcomes are exact immutable atomic transitions", () => {
   const initial = buildBracket(4);
   const untouched = structuredClone(initial);
   const semifinal = initial[0]![0]!;
   const otherSemifinal = initial[0]![1]!;
   const final = initial[1]![0]!;
 
-  assert.throws(() => applyBracketOutcome(initial, final, 'p1'), /unresolved prerequisites/);
+  assert.throws(() => applyBracketOutcome(initial, final, "p1"), /unresolved prerequisites/);
   assert.throws(
-    () => applyBracketOutcome(initial, { ...semifinal, slots: [semifinal.slots[1], semifinal.slots[0]] }, 'p1'),
+    () =>
+      applyBracketOutcome(
+        initial,
+        { ...semifinal, slots: [semifinal.slots[1], semifinal.slots[0]] },
+        "p1",
+      ),
     /stale or is not scheduled/,
   );
   const occupied = structuredClone(initial);
   occupied[1]![0]!.slots[0] = 99;
   const beforeOccupied = structuredClone(occupied);
-  assert.throws(() => applyBracketOutcome(occupied, occupied[0]![0]!, 'p1'), /dependent slot already/);
+  assert.throws(
+    () => applyBracketOutcome(occupied, occupied[0]![0]!, "p1"),
+    /dependent slot already/,
+  );
   assert.deepEqual(occupied, beforeOccupied);
-  assert.deepEqual(initial, untouched, 'rejections do not mutate the bracket');
+  assert.deepEqual(initial, untouched, "rejections do not mutate the bracket");
 
-  const afterFirst = applyBracketOutcome(initial, semifinal, 'p2');
-  assert.deepEqual(initial, untouched, 'a successful transition does not mutate its input');
+  const afterFirst = applyBracketOutcome(initial, semifinal, "p2");
+  assert.deepEqual(initial, untouched, "a successful transition does not mutate its input");
   assert.equal(afterFirst[0]![0]!.winner, semifinal.slots[1]);
   assert.equal(afterFirst[1]![0]!.slots[0], semifinal.slots[1]);
-  assert.equal(afterFirst[1]![0]!.slots[1], null, 'only the dependent finalist slot advances');
+  assert.equal(afterFirst[1]![0]!.slots[1], null, "only the dependent finalist slot advances");
 
   const beforeDuplicate = structuredClone(afterFirst);
-  assert.throws(() => applyBracketOutcome(afterFirst, semifinal, 'p2'), /already has an outcome/);
-  assert.throws(() => applyBracketOutcome(afterFirst, semifinal, 'p1'), /already has an outcome/);
-  assert.deepEqual(afterFirst, beforeDuplicate, 'duplicate and contradictory outcomes are atomic');
+  assert.throws(() => applyBracketOutcome(afterFirst, semifinal, "p2"), /already has an outcome/);
+  assert.throws(() => applyBracketOutcome(afterFirst, semifinal, "p1"), /already has an outcome/);
+  assert.deepEqual(afterFirst, beforeDuplicate, "duplicate and contradictory outcomes are atomic");
 
-  const afterSemifinals = applyBracketOutcome(afterFirst, otherSemifinal, 'p1');
+  const afterSemifinals = applyBracketOutcome(afterFirst, otherSemifinal, "p1");
   const resolvedFinal = afterSemifinals[1]![0]!;
-  const complete = applyBracketOutcome(afterSemifinals, resolvedFinal, 'p1');
+  const complete = applyBracketOutcome(afterSemifinals, resolvedFinal, "p1");
   assert.equal(complete.at(-1)![0]!.winner, resolvedFinal.slots[0]);
 });
 
-test('a tournament crowns a champion and records rounds coherently', async (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vgc-model-league-tournament-'));
+test("a tournament crowns a champion and records rounds coherently", async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-model-league-tournament-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  const recordsPath = path.join(directory, 'results.jsonl');
+  const recordsPath = path.join(directory, "results.jsonl");
   const events: TournamentEvent[] = [];
-  const rows = await runTournament(['random', 'random', 'random', 'random', 'random'], directory, {
+  const rows = await runTournament(["random", "random", "random", "random", "random"], directory, {
     seed: 11,
     concurrency: 2,
     recordsPath,
@@ -99,46 +115,55 @@ test('a tournament crowns a champion and records rounds coherently', async (t) =
     rows.map((row) => row.series_index),
     [0, 1, 2, 3],
   );
-  const config = tournamentConfigSchema.parse(JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8')));
-  assert.equal(config.mode, 'tournament');
+  const config = tournamentConfigSchema.parse(
+    JSON.parse(fs.readFileSync(path.join(directory, "config.json"), "utf8")),
+  );
+  assert.equal(config.mode, "tournament");
   assert.equal(config.entrants.length, 5);
 
   const planned = events[0];
-  assert.equal(planned?.type, 'plans');
-  if (planned?.type === 'plans') {
-    assert.equal(planned.mode, 'tournament');
+  assert.equal(planned?.type, "plans");
+  if (planned?.type === "plans") {
+    assert.equal(planned.mode, "tournament");
     assert.equal(planned.plans.length, 4);
   }
-  const firstEnd = events.findIndex((event) => event.type === 'series-end');
+  const firstEnd = events.findIndex((event) => event.type === "series-end");
   assert.deepEqual(
     events
       .slice(0, firstEnd)
-      .filter((event): event is Extract<TournamentEvent, { type: 'series-start' }> => event.type === 'series-start')
+      .filter(
+        (event): event is Extract<TournamentEvent, { type: "series-start" }> =>
+          event.type === "series-start",
+      )
       .map((event) => event.index),
     [0, 2],
-    'a post-bye semifinal starts without waiting for the unrelated first-round match',
+    "a post-bye semifinal starts without waiting for the unrelated first-round match",
   );
 
   const brackets = events.filter(
-    (event): event is Extract<TournamentEvent, { type: 'bracket' }> => event.type === 'bracket',
+    (event): event is Extract<TournamentEvent, { type: "bracket" }> => event.type === "bracket",
   );
-  assert.ok(brackets.length >= 2, 'bracket updates stream during the run');
+  assert.ok(brackets.length >= 2, "bracket updates stream during the run");
   const final: BracketView = brackets[brackets.length - 1]!.bracket;
   assert.notEqual(final.champion, null);
   assert.equal(final.entrants.length, 5);
-  assert.equal(new Set(final.entrants.map((entrant) => entrant.team)).size, 5, 'every entrant has a distinct team');
+  assert.equal(
+    new Set(final.entrants.map((entrant) => entrant.team)).size,
+    5,
+    "every entrant has a distinct team",
+  );
 
   const persisted = loadSeriesRecords(recordsPath);
   assert.equal(persisted.length, 4);
   for (const match of final.rounds.flat()) {
     if (match.seriesIndex === null) continue;
     const record = persisted.find((row) => row.series_index === match.seriesIndex)!;
-    assert.equal(record.mode, 'tournament');
-    assert.equal(record.pool, 'test');
+    assert.equal(record.mode, "tournament");
+    assert.equal(record.pool, "test");
     assert.deepEqual(
       record.teams,
       { p1: final.entrants[match.slots[0]!]!.team, p2: final.entrants[match.slots[1]!]!.team },
-      'recorded teams follow the entrants through the bracket',
+      "recorded teams follow the entrants through the bracket",
     );
     assert.notEqual(match.winner, null);
   }
@@ -146,84 +171,99 @@ test('a tournament crowns a champion and records rounds coherently', async (t) =
   assert.equal(final.champion, championSeries.winner);
 
   const replayEvents: TournamentEvent[] = [];
-  const replayed = await runTournament(['random', 'random', 'random', 'random', 'random'], directory, {
-    seed: 11,
-    concurrency: 2,
-    recordsPath,
-    resume: true,
-    onEvent: (event) => replayEvents.push(event),
-  });
+  const replayed = await runTournament(
+    ["random", "random", "random", "random", "random"],
+    directory,
+    {
+      seed: 11,
+      concurrency: 2,
+      recordsPath,
+      resume: true,
+      onEvent: (event) => replayEvents.push(event),
+    },
+  );
   const replayBracket = replayEvents.filter(
-    (event): event is Extract<TournamentEvent, { type: 'bracket' }> => event.type === 'bracket',
+    (event): event is Extract<TournamentEvent, { type: "bracket" }> => event.type === "bracket",
   )[0]!.bracket;
   assert.deepEqual(replayed, rows);
-  assert.deepEqual(replayBracket, final, 'live completion and stored adoption produce the same bracket');
+  assert.deepEqual(
+    replayBracket,
+    final,
+    "live completion and stored adoption produce the same bracket",
+  );
 });
 
-test('inline teams pair to models by index and record no pool', async (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vgc-model-league-tournament-inline-'));
+test("inline teams pair to models by index and record no pool", async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-model-league-tournament-inline-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  const recordsPath = path.join(directory, 'results.jsonl');
-  const pool = loadPool('test');
-  const rows = await runTournament(['random', 'random'], directory, {
+  const recordsPath = path.join(directory, "results.jsonl");
+  const pool = loadPool("test");
+  const rows = await runTournament(["random", "random"], directory, {
     seed: 3,
     concurrency: 1,
     recordsPath,
     format: pool.format,
     teams: [
-      { id: 'alpha', packed: pool.teams[0]!.packed },
-      { id: 'beta', packed: pool.teams[1]!.packed },
+      { id: "alpha", packed: pool.teams[0]!.packed },
+      { id: "beta", packed: pool.teams[1]!.packed },
     ],
   });
   assert.equal(rows.length, 1);
   const record = rows[0]!;
-  assert.equal(record.mode, 'tournament');
+  assert.equal(record.mode, "tournament");
   assert.equal(record.pool, undefined);
   assert.equal(record.format, pool.format);
-  assert.deepEqual(Object.values(record.teams ?? {}).sort(), ['alpha', 'beta']);
-  assert.ok(fs.existsSync(path.join(directory, 'teams.json')), 'inline teams are captured for provenance');
+  assert.deepEqual(Object.values(record.teams ?? {}).sort(), ["alpha", "beta"]);
+  assert.ok(
+    fs.existsSync(path.join(directory, "teams.json")),
+    "inline teams are captured for provenance",
+  );
 });
 
-test('inline teams must cover every model', async () => {
-  const pool = loadPool('test');
+test("inline teams must cover every model", async () => {
+  const pool = loadPool("test");
   await assert.rejects(
-    runTournament(['random', 'random', 'random'], fs.mkdtempSync(path.join(os.tmpdir(), 'vgc-tournament-bad-')), {
-      format: pool.format,
-      teams: [{ id: 'only', packed: pool.teams[0]!.packed }],
-    }),
+    runTournament(
+      ["random", "random", "random"],
+      fs.mkdtempSync(path.join(os.tmpdir(), "vgc-tournament-bad-")),
+      {
+        format: pool.format,
+        teams: [{ id: "only", packed: pool.teams[0]!.packed }],
+      },
+    ),
     /one team per model/,
   );
 });
 
-test('a seeded pool keeps the real bracket order and briefs both sides on it', async (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vgc-model-league-tournament-seeded-'));
+test("a seeded pool keeps the real bracket order and briefs both sides on it", async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-model-league-tournament-seeded-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  const pool = loadPool('vr-aug26-top8');
-  assert.ok(pool.event, 'the pool carries its event');
+  const pool = loadPool("vr-aug26-top8");
+  assert.ok(pool.event, "the pool carries its event");
   assert.equal(pool.teams.length, 8);
 
   const events: TournamentEvent[] = [];
   await runTournament(
-    Array.from({ length: 8 }, () => 'random'),
+    Array.from({ length: 8 }, () => "random"),
     directory,
     {
       seed: 5,
       concurrency: 4,
-      pool: 'vr-aug26-top8',
-      recordsPath: path.join(directory, 'results.jsonl'),
+      pool: "vr-aug26-top8",
+      recordsPath: path.join(directory, "results.jsonl"),
       onEvent: (event) => events.push(event),
     },
   );
 
   const bracket = events.filter(
-    (event): event is Extract<TournamentEvent, { type: 'bracket' }> => event.type === 'bracket',
+    (event): event is Extract<TournamentEvent, { type: "bracket" }> => event.type === "bracket",
   )[0]!.bracket;
   const placementOf = (slot: number): number =>
     pool.teams.find((team) => team.id === bracket.entrants[slot]!.team)!.seed!;
   assert.deepEqual(
     bracket.entrants.map((_, index) => placementOf(index)),
     [1, 2, 3, 4, 5, 6, 7, 8],
-    'bracket positions follow the finishing order the event published',
+    "bracket positions follow the finishing order the event published",
   );
   assert.deepEqual(
     bracket.rounds[0]!.map((match) => [placementOf(match.slots[0]!), placementOf(match.slots[1]!)]),
@@ -233,19 +273,21 @@ test('a seeded pool keeps the real bracket order and briefs both sides on it', a
       [2, 7],
       [3, 6],
     ],
-    'the quarterfinals pair the standard seeding',
+    "the quarterfinals pair the standard seeding",
   );
 
-  const config: JsonObject = JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8'));
-  assert.equal(config.provenance, 'disclosed');
+  const config: JsonObject = JSON.parse(
+    fs.readFileSync(path.join(directory, "config.json"), "utf8"),
+  );
+  assert.equal(config.provenance, "disclosed");
   assert.equal(config.event, pool.event!.name);
 });
 
-test('a stopped bracket resumes on its records and replays the interrupted series', async (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vgc-model-league-tournament-resume-'));
+test("a stopped bracket resumes on its records and replays the interrupted series", async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-model-league-tournament-resume-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  const recordsPath = path.join(directory, 'results.jsonl');
-  const models = Array.from({ length: 4 }, () => 'random');
+  const recordsPath = path.join(directory, "results.jsonl");
+  const models = Array.from({ length: 4 }, () => "random");
   const controller = new AbortController();
   const stopped = await runTournament(models, directory, {
     seed: 7,
@@ -253,13 +295,13 @@ test('a stopped bracket resumes on its records and replays the interrupted serie
     recordsPath,
     signal: controller.signal,
     onEvent: (event) => {
-      if (event.type === 'game-end') controller.abort();
+      if (event.type === "game-end") controller.abort();
     },
   });
-  assert.equal(stopped.length, 0, 'the bracket stops inside its first series');
-  const interrupted = fs.readdirSync(path.join(directory, 'series'));
-  assert.equal(interrupted.length, 1, 'the interrupted series left one directory behind');
-  const config = fs.readFileSync(path.join(directory, 'config.json'), 'utf8');
+  assert.equal(stopped.length, 0, "the bracket stops inside its first series");
+  const interrupted = fs.readdirSync(path.join(directory, "series"));
+  assert.equal(interrupted.length, 1, "the interrupted series left one directory behind");
+  const config = fs.readFileSync(path.join(directory, "config.json"), "utf8");
 
   const resumed = await runTournament(models, directory, {
     seed: 7,
@@ -268,39 +310,43 @@ test('a stopped bracket resumes on its records and replays the interrupted serie
     resume: true,
   });
 
-  assert.equal(resumed.length, 3, 'the resumed bracket plays every series once');
+  assert.equal(resumed.length, 3, "the resumed bracket plays every series once");
   assert.deepEqual(
     resumed.map((row) => row.series_index),
     [0, 1, 2],
   );
-  assert.equal(loadSeriesRecords(recordsPath).length, 3, 'no series is recorded twice');
-  const played = fs.readdirSync(path.join(directory, 'series'));
-  assert.equal(played.length, 3, 'the interrupted series reuses its directory');
-  assert.ok(played.includes(interrupted[0]!), 'and keeps the one it already opened');
+  assert.equal(loadSeriesRecords(recordsPath).length, 3, "no series is recorded twice");
+  const played = fs.readdirSync(path.join(directory, "series"));
+  assert.equal(played.length, 3, "the interrupted series reuses its directory");
+  assert.ok(played.includes(interrupted[0]!), "and keeps the one it already opened");
   const first = resumed.find((row) => row.series_index === 0)!;
   assert.equal(
     asRecords(first.games)[0]?.resumed,
     undefined,
-    'adoption preserves the exact completed game result instead of adding resume metadata',
+    "adoption preserves the exact completed game result instead of adding resume metadata",
   );
-  assert.equal(fs.readFileSync(path.join(directory, 'config.json'), 'utf8'), config, 'a resume rewrites no provenance');
+  assert.equal(
+    fs.readFileSync(path.join(directory, "config.json"), "utf8"),
+    config,
+    "a resume rewrites no provenance",
+  );
 });
 
-test('a resume refuses a tournament result whose defaults diverge from canonical series evidence', async (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vgc-model-league-tournament-mismatch-'));
+test("a resume refuses a tournament result whose defaults diverge from canonical series evidence", async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-model-league-tournament-mismatch-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  const models = ['random', 'random'];
-  const recordsPath = path.join(directory, 'results.jsonl');
+  const models = ["random", "random"];
+  const recordsPath = path.join(directory, "results.jsonl");
   await runTournament(models, directory, { seed: 3, concurrency: 1, recordsPath });
   const rows = fs
-    .readFileSync(recordsPath, 'utf8')
+    .readFileSync(recordsPath, "utf8")
     .trim()
-    .split('\n')
+    .split("\n")
     .map((line): JsonObject => JSON.parse(line));
   const game = asRecords(rows[0]!.games)[0]!;
   const defaults = asRecord(game.timer_autodefaults);
   defaults.p1 = Number(defaults.p1) + 1;
-  fs.writeFileSync(recordsPath, `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`, 'utf8');
+  fs.writeFileSync(recordsPath, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`, "utf8");
 
   await assert.rejects(
     runTournament(models, directory, { seed: 3, concurrency: 1, recordsPath, resume: true }),
@@ -308,14 +354,22 @@ test('a resume refuses a tournament result whose defaults diverge from canonical
   );
 });
 
-test('a briefing establishes the cut without ranking anyone inside it', () => {
-  const pool = loadPool('vr-aug26-top8');
+test("a briefing establishes the cut without ranking anyone inside it", () => {
+  const pool = loadPool("vr-aug26-top8");
   const brief = briefEvent(pool.event!, 8);
   assert.match(brief, /Victory Road August Challenge #1/);
   assert.match(brief, /top 8/);
   assert.match(brief, /took to that top cut/i);
   assert.match(brief, /placed where is not disclosed/i);
-  assert.match(brief, /no stat points/i, 'the seat is told the spreads are not the players own');
-  assert.doesNotMatch(brief, /\b(1st|2nd|3rd|[4-8]th)\b/, 'no seat learns which team outplaced which');
-  assert.doesNotMatch(brief, /Kazuki|Jonathan|Markl/, 'player names stay out of competitive context');
+  assert.match(brief, /no stat points/i, "the seat is told the spreads are not the players own");
+  assert.doesNotMatch(
+    brief,
+    /\b(1st|2nd|3rd|[4-8]th)\b/,
+    "no seat learns which team outplaced which",
+  );
+  assert.doesNotMatch(
+    brief,
+    /Kazuki|Jonathan|Markl/,
+    "player names stay out of competitive context",
+  );
 });

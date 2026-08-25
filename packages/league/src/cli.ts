@@ -1,48 +1,50 @@
 #!/usr/bin/env node
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { parseArgs } from 'node:util';
-import { z } from 'zod';
-import type { DraftLeagueOptions } from './draftleague.js';
-import type { ExhibitionOptions } from './exhibition.js';
-import { exportSeasonBundle } from './export-season.js';
-import { GuiServer } from './gui/server.js';
-import { draftLeagueConfigSchema } from './league-store.js';
-import { makeRunDirectory, prepareDataDirectories, RESULTS_PATH, RUNS_DIR } from './paths.js';
-import type { ReasoningLevel } from './providers.js';
-import { isReasoningLevel, nitroSpec } from './providers.js';
-import type { SeriesRecord } from './records.js';
-import { loadSeriesRecords, scopeRows, TEST_POOL } from './records.js';
-import { writeReport } from './report.js';
-import { runRotation } from './rotation.js';
-import { withRunStatus } from './run-status.js';
-import type { ExperimentOptions } from './series.js';
-import type { Team } from './teams.js';
-import { parseTimerScale } from './timer.js';
-import type { TournamentOptions } from './tournament.js';
-import { tournamentConfigSchema } from './tournament.js';
-import type { TimerScale } from './types.js';
-import { asRecord, text } from './value.js';
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
+import { z } from "zod";
+import type { DraftLeagueOptions } from "./draftleague.js";
+import type { ExhibitionOptions } from "./exhibition.js";
+import { exportSeasonBundle } from "./export-season.js";
+import { draftLeagueConfigSchema } from "./league-store.js";
+import { makeRunDirectory, prepareDataDirectories, RESULTS_PATH, RUNS_DIR } from "./paths.js";
+import type { ReasoningLevel } from "./providers.js";
+import { isReasoningLevel, nitroSpec } from "./providers.js";
+import type { SeriesRecord } from "./records.js";
+import { loadSeriesRecords, scopeRows, TEST_POOL } from "./records.js";
+import { writeReport } from "./report.js";
+import { runRotation } from "./rotation.js";
+import { withRunStatus } from "./run-status.js";
+import type { ExperimentOptions } from "./series.js";
+import type { Team } from "./teams.js";
+import { parseTimerScale } from "./timer.js";
+import type { TournamentOptions } from "./tournament.js";
+import { tournamentConfigSchema } from "./tournament.js";
+import type { TimerScale } from "./types.js";
+import { asRecord, text } from "./value.js";
 
 const EXPERIMENT_CLI_OPTIONS = {
-  models: { type: 'string', multiple: true },
-  seed: { type: 'string' },
-  concurrency: { type: 'string', default: '4' },
-  reasoning: { type: 'string' },
-  'timer-scale': { type: 'string' },
-  nitro: { type: 'boolean', default: false },
+  models: { type: "string", multiple: true },
+  seed: { type: "string" },
+  concurrency: { type: "string", default: "4" },
+  reasoning: { type: "string" },
+  "timer-scale": { type: "string" },
+  nitro: { type: "boolean", default: false },
 } as const;
 
 interface ExperimentCliValues {
   seed?: string;
   concurrency: string;
   reasoning?: string;
-  'timer-scale'?: string;
+  "timer-scale"?: string;
   nitro: boolean;
 }
 
-type ExperimentExecutionOptions = Pick<ExperimentOptions, 'seed' | 'reasoning' | 'reasoningByModel' | 'timerScale'> & {
+type ExperimentExecutionOptions = Pick<
+  ExperimentOptions,
+  "seed" | "reasoning" | "reasoningByModel" | "timerScale"
+> & {
   recordsPath: string;
 };
 
@@ -90,7 +92,7 @@ const storedTeamSchema = z.looseObject({
 function loadStoredTeams(file: string): Team[] {
   return z
     .array(storedTeamSchema)
-    .parse(JSON.parse(fs.readFileSync(file, 'utf8')))
+    .parse(JSON.parse(fs.readFileSync(file, "utf8")))
     .map((stored) => {
       const team: Team = {
         id: stored.id,
@@ -106,7 +108,6 @@ function loadStoredTeams(file: string): Team[] {
 const HELP = `Usage: vgcleague <command>
 
 Commands:
-  gui [--port <n>] [--host <address>]  serve the browser GUI
   selfcheck                           run one random-vs-random series through the simulator
   rotation --models <spec> <spec>...  run the controlled team-rotation protocol
       [--series-per-pair <n>] [--pool <name>] [--seed <n>] [--concurrency <n>] [--reasoning <level>]
@@ -163,13 +164,15 @@ and are never aggregated into a ranking.`;
 
 function positiveInteger(name: string, value: string): number {
   const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed < 1) throw new Error(`--${name} must be an integer of at least 1`);
+  if (!Number.isSafeInteger(parsed) || parsed < 1)
+    throw new Error(`--${name} must be an integer of at least 1`);
   return parsed;
 }
 
 function nonnegativeInteger(name: string, value: string): number {
   const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed < 0) throw new Error(`--${name} must be a nonnegative integer`);
+  if (!Number.isSafeInteger(parsed) || parsed < 0)
+    throw new Error(`--${name} must be a nonnegative integer`);
   return parsed;
 }
 
@@ -182,7 +185,8 @@ function optionalInteger(name: string, value: string | undefined): number | unde
 
 function reasoningLevel(value: string | undefined): ReasoningLevel | undefined {
   if (value === undefined) return undefined;
-  if (!isReasoningLevel(value)) throw new Error('--reasoning must be one of: minimal, low, medium, high, xhigh');
+  if (!isReasoningLevel(value))
+    throw new Error("--reasoning must be one of: minimal, low, medium, high, xhigh");
   return value;
 }
 
@@ -209,99 +213,75 @@ function experimentModels(
 function experimentExecution(values: ExperimentCliValues): ExperimentExecutionOptions {
   return {
     recordsPath: RESULTS_PATH,
-    seed: optionalInteger('seed', values.seed),
+    seed: optionalInteger("seed", values.seed),
     reasoning: reasoningLevel(values.reasoning),
-    timerScale: timerScaleOption(values['timer-scale']),
+    timerScale: timerScaleOption(values["timer-scale"]),
   };
 }
 
 export async function main(argv = process.argv.slice(2)): Promise<number> {
   prepareDataDirectories();
   const [command, ...rest] = argv;
-  if (command === 'selfcheck') return selfcheck();
-  if (command === 'gui') {
-    const { values } = parseArgs({
-      args: rest,
-      options: {
-        port: { type: 'string', default: process.env.PORT ?? '8484' },
-        host: { type: 'string' },
-      },
-    });
-    const host = values.host ?? process.env.VGC_LEAGUE_HOST;
-    const gui = new GuiServer(host ? { host } : {});
-    const url = await gui.listen(positiveInteger('port', values.port));
-    console.log(`VGC Model League GUI at ${url} (Ctrl-C to stop)`);
-    let stopping = false;
-    const shutdown = (signal: string) => {
-      if (stopping) return;
-      stopping = true;
-      void (async () => {
-        try {
-          await gui.shutdown();
-        } catch (error) {
-          console.error(`shutdown error (${signal}): ${error instanceof Error ? error.message : String(error)}`);
-          process.exitCode = 1;
-        } finally {
-          /** A wedged run task must not outlive the server: exit instead of draining the event loop. */
-          process.exit(process.exitCode ?? 0);
-        }
-      })();
-    };
-    process.once('SIGTERM', () => shutdown('SIGTERM'));
-    process.once('SIGINT', () => shutdown('SIGINT'));
-    return 0;
-  }
-  if (command === 'rotation') {
+  if (command === "selfcheck") return selfcheck();
+  if (command === "rotation") {
     const { values, positionals } = parseArgs({
       args: rest,
       allowPositionals: true,
       options: {
         ...EXPERIMENT_CLI_OPTIONS,
-        'series-per-pair': { type: 'string', default: '2' },
-        pool: { type: 'string', default: 'test' },
+        "series-per-pair": { type: "string", default: "2" },
+        pool: { type: "string", default: "test" },
       },
     });
     const models = experimentModels(command, values.models, positionals, values.nitro);
     const execution = experimentExecution(values);
     const runDir = makeRunDirectory();
     const rows = await withRunStatus(runDir, () =>
-      runRotation(models, positiveInteger('series-per-pair', values['series-per-pair']), runDir, {
+      runRotation(models, positiveInteger("series-per-pair", values["series-per-pair"]), runDir, {
         pool: values.pool,
-        concurrency: positiveInteger('concurrency', values.concurrency),
+        concurrency: positiveInteger("concurrency", values.concurrency),
         ...execution,
       }),
     );
     printResults(rows);
     return 0;
   }
-  if (command === 'tournament') {
+  if (command === "tournament") {
     const { values, positionals } = parseArgs({
       args: rest,
       allowPositionals: true,
       options: {
         ...EXPERIMENT_CLI_OPTIONS,
-        pool: { type: 'string', default: 'test' },
-        provenance: { type: 'string' },
-        resume: { type: 'string' },
+        pool: { type: "string", default: "test" },
+        provenance: { type: "string" },
+        resume: { type: "string" },
       },
     });
-    const { runTournament, DEFAULT_PROVENANCE } = await import('./tournament.js');
+    const { runTournament, DEFAULT_PROVENANCE } = await import("./tournament.js");
     const resumeDir = values.resume ? path.resolve(values.resume) : undefined;
     const storedConfig = resumeDir
-      ? tournamentResumeConfigSchema.parse(JSON.parse(fs.readFileSync(path.join(resumeDir, 'config.json'), 'utf8')))
+      ? tournamentResumeConfigSchema.parse(
+          JSON.parse(fs.readFileSync(path.join(resumeDir, "config.json"), "utf8")),
+        )
       : undefined;
     const storedTeams =
-      resumeDir && storedConfig && !storedConfig.pool ? loadStoredTeams(path.join(resumeDir, 'teams.json')) : undefined;
+      resumeDir && storedConfig && !storedConfig.pool
+        ? loadStoredTeams(path.join(resumeDir, "teams.json"))
+        : undefined;
     const models = storedConfig
       ? storedConfig.models
       : experimentModels(command, values.models, positionals, values.nitro);
     let execution: ExperimentExecutionOptions;
     if (storedConfig) {
-      const storedReasoning = storedConfig.reasoning ? reasoningLevel(storedConfig.reasoning) : undefined;
-      const storedByModel = Object.entries(storedConfig.reasoning_by_model ?? {}).flatMap(([model, level]) => {
-        const parsed = reasoningLevel(level);
-        return parsed === undefined ? [] : [[model, parsed] as const];
-      });
+      const storedReasoning = storedConfig.reasoning
+        ? reasoningLevel(storedConfig.reasoning)
+        : undefined;
+      const storedByModel = Object.entries(storedConfig.reasoning_by_model ?? {}).flatMap(
+        ([model, level]) => {
+          const parsed = reasoningLevel(level);
+          return parsed === undefined ? [] : [[model, parsed] as const];
+        },
+      );
       execution = {
         recordsPath: RESULTS_PATH,
         seed: storedConfig.seed,
@@ -313,12 +293,12 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       execution = experimentExecution(values);
     }
     const provenance = storedConfig?.provenance ?? values.provenance ?? DEFAULT_PROVENANCE;
-    if (provenance !== 'disclosed' && provenance !== 'blind')
+    if (provenance !== "disclosed" && provenance !== "blind")
       throw new Error('--provenance must be "disclosed" or "blind"');
     const runDir = resumeDir ?? makeRunDirectory();
     const tournamentOptions: TournamentOptions = {
       provenance,
-      concurrency: storedConfig?.concurrency ?? positiveInteger('concurrency', values.concurrency),
+      concurrency: storedConfig?.concurrency ?? positiveInteger("concurrency", values.concurrency),
       ...execution,
     };
     if (storedTeams) {
@@ -328,46 +308,52 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       tournamentOptions.pool = storedConfig?.pool ?? values.pool;
     }
     if (resumeDir) tournamentOptions.resume = true;
-    const rows = await withRunStatus(runDir, () => runTournament(models, runDir, tournamentOptions));
+    const rows = await withRunStatus(runDir, () =>
+      runTournament(models, runDir, tournamentOptions),
+    );
     printResults(rows);
     const champion = rows[rows.length - 1];
     if (champion) console.log(`Champion: ${String(champion.advanced ?? champion.winner)}`);
     return 0;
   }
-  if (command === 'draft') {
+  if (command === "draft") {
     const { values, positionals } = parseArgs({
       args: rest,
       allowPositionals: true,
       options: {
         ...EXPERIMENT_CLI_OPTIONS,
-        board: { type: 'string', default: 'regmb-202607' },
-        'through-week': { type: 'string' },
-        resume: { type: 'string' },
-        'sequential-weeks': { type: 'boolean', default: false },
-        'closed-sheets': { type: 'boolean', default: false },
-        transactions: { type: 'string' },
-        swaps: { type: 'string' },
-        'draft-only': { type: 'boolean', default: false },
-        rosters: { type: 'string' },
+        board: { type: "string", default: "regmb-202607" },
+        "through-week": { type: "string" },
+        resume: { type: "string" },
+        "sequential-weeks": { type: "boolean", default: false },
+        "closed-sheets": { type: "boolean", default: false },
+        transactions: { type: "string" },
+        swaps: { type: "string" },
+        "draft-only": { type: "boolean", default: false },
+        rosters: { type: "string" },
       },
     });
-    const { runDraftLeague } = await import('./draftleague.js');
-    const { loadRosterPreset } = await import('./roster-preset.js');
+    const { runDraftLeague } = await import("./draftleague.js");
+    const { loadRosterPreset } = await import("./roster-preset.js");
     if (values.rosters && values.resume)
-      throw new Error('--rosters applies to a new league; resume reads stored rosters');
+      throw new Error("--rosters applies to a new league; resume reads stored rosters");
     const preset = values.rosters ? loadRosterPreset(path.resolve(values.rosters)) : undefined;
-    const { draftLeagueTopology } = await import('./draftleague-topology.js');
-    const { parseTransactionWeeks } = await import('./trade-window.js');
+    const { draftLeagueTopology } = await import("./draftleague-topology.js");
+    const { parseTransactionWeeks } = await import("./trade-window.js");
     const resumeDir = values.resume ? path.resolve(values.resume) : undefined;
     const storedConfig = resumeDir
-      ? draftResumeConfigSchema.parse(JSON.parse(fs.readFileSync(path.join(resumeDir, 'config.json'), 'utf8')))
+      ? draftResumeConfigSchema.parse(
+          JSON.parse(fs.readFileSync(path.join(resumeDir, "config.json"), "utf8")),
+        )
       : undefined;
     const models = storedConfig
       ? storedConfig.models
       : experimentModels(command, values.models, positionals, values.nitro);
     let execution: ExperimentExecutionOptions;
     if (storedConfig) {
-      const storedReasoning = storedConfig.reasoning ? reasoningLevel(storedConfig.reasoning) : undefined;
+      const storedReasoning = storedConfig.reasoning
+        ? reasoningLevel(storedConfig.reasoning)
+        : undefined;
       execution = {
         recordsPath: RESULTS_PATH,
         seed: storedConfig.seed,
@@ -378,7 +364,9 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       execution = experimentExecution(values);
     }
     const throughWeek =
-      values['through-week'] === undefined ? undefined : positiveInteger('through-week', values['through-week']);
+      values["through-week"] === undefined
+        ? undefined
+        : positiveInteger("through-week", values["through-week"]);
     const storedSchedule =
       storedConfig && storedConfig.draft_only !== true
         ? (storedConfig.transactions ?? []).map((window) => ({
@@ -395,14 +383,16 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     let lastTeambuilds = 0;
     const draftOptions: DraftLeagueOptions = {
       board: storedConfig ? storedConfig.board : values.board,
-      concurrency: storedConfig?.concurrency ?? positiveInteger('concurrency', values.concurrency),
+      concurrency: storedConfig?.concurrency ?? positiveInteger("concurrency", values.concurrency),
       ...execution,
       onEvent: (event) => {
-        if (event.type !== 'draft') return;
-        if (event.draft.phase === 'draft' && event.draft.picks.length > 0) {
+        if (event.type !== "draft") return;
+        if (event.draft.phase === "draft" && event.draft.picks.length > 0) {
           const pick = event.draft.picks[event.draft.picks.length - 1]!;
           const coach = event.draft.teamNames[pick.entrant] || event.draft.entrants[pick.entrant];
-          console.log(`pick ${pick.pick}: ${coach} takes ${pick.mon}${pick.fallback ? ' (fallback)' : ''}`);
+          console.log(
+            `pick ${pick.pick}: ${coach} takes ${pick.mon}${pick.fallback ? " (fallback)" : ""}`,
+          );
         }
         if (event.draft.teambuilds.length > lastTeambuilds) {
           lastTeambuilds = event.draft.teambuilds.length;
@@ -411,58 +401,61 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
           console.log(
             `teambuild: ${event.draft.teamNames[build.entrant] || event.draft.entrants[build.entrant]} vs ` +
               `${event.draft.teamNames[build.opponent] || event.draft.entrants[build.opponent]} — ` +
-              `${build.brought.join(', ')}${repaired ? ` (${repaired} repaired)` : ''}`,
+              `${build.brought.join(", ")}${repaired ? ` (${repaired} repaired)` : ""}`,
           );
         }
       },
       throughWeek,
       resume: Boolean(resumeDir),
-      sequentialWeeks: storedConfig ? storedConfig.sequential_weeks === true : values['sequential-weeks'],
-      closedSheets: storedConfig ? storedConfig.closed_sheets === true : values['closed-sheets'],
+      sequentialWeeks: storedConfig
+        ? storedConfig.sequential_weeks === true
+        : values["sequential-weeks"],
+      closedSheets: storedConfig ? storedConfig.closed_sheets === true : values["closed-sheets"],
       transactions,
-      swapsAllowed: values.swaps === undefined ? undefined : nonnegativeInteger('swaps', values.swaps),
-      draftOnly: values['draft-only'],
+      swapsAllowed:
+        values.swaps === undefined ? undefined : nonnegativeInteger("swaps", values.swaps),
+      draftOnly: values["draft-only"],
       preset,
     };
     const rows = await withRunStatus(runDir, () => runDraftLeague(models, runDir, draftOptions));
     printResults(rows);
     const totalSeries = draftLeagueTopology(models.length).totalSeries;
-    if (values['draft-only']) {
-      console.log(`Draft complete; no games played. Rosters: ${path.join(runDir, 'rosters.json')}`);
+    if (values["draft-only"]) {
+      console.log(`Draft complete; no games played. Rosters: ${path.join(runDir, "rosters.json")}`);
       console.log(`Play the season later with: vgcleague draft --resume ${runDir}`);
     } else if (rows.length < totalSeries) {
       console.log(`League stopped after ${rows.length} of ${totalSeries} series.`);
       console.log(`Resume with: vgcleague draft --resume ${runDir}`);
     } else {
       const champion = text(rows[rows.length - 1]?.advanced);
-      if (!champion) throw new Error('draft final did not identify a champion');
+      if (!champion) throw new Error("draft final did not identify a champion");
       console.log(`Champion: ${champion}`);
     }
-    console.log(`Draft logs: ${path.join(runDir, 'draft')}`);
-    console.log(`Teambuild logs: ${path.join(runDir, 'teambuild')}`);
+    console.log(`Draft logs: ${path.join(runDir, "draft")}`);
+    console.log(`Teambuild logs: ${path.join(runDir, "teambuild")}`);
     return 0;
   }
-  if (command === 'exhibition') {
+  if (command === "exhibition") {
     const { values } = parseArgs({
       args: rest,
       options: {
-        opponent: { type: 'string' },
-        seat: { type: 'string', default: 'p1' },
-        name: { type: 'string', default: 'cli-agent' },
-        pool: { type: 'string', default: 'test' },
-        seed: { type: 'string' },
-        port: { type: 'string' },
-        reasoning: { type: 'string' },
-        'agent-dir': { type: 'string' },
+        opponent: { type: "string" },
+        seat: { type: "string", default: "p1" },
+        name: { type: "string", default: "cli-agent" },
+        pool: { type: "string", default: "test" },
+        seed: { type: "string" },
+        port: { type: "string" },
+        reasoning: { type: "string" },
+        "agent-dir": { type: "string" },
       },
     });
-    if (!values.opponent) throw new Error('exhibition requires --opponent <spec|random>');
-    if (values.seat !== 'p1' && values.seat !== 'p2') throw new Error('--seat must be p1 or p2');
+    if (!values.opponent) throw new Error("exhibition requires --opponent <spec|random>");
+    if (values.seat !== "p1" && values.seat !== "p2") throw new Error("--seat must be p1 or p2");
     const opponent = values.opponent;
     const seat = values.seat;
     const reasoning = reasoningLevel(values.reasoning);
-    const seed = optionalInteger('seed', values.seed);
-    const { runExhibition } = await import('./exhibition.js');
+    const seed = optionalInteger("seed", values.seed);
+    const { runExhibition } = await import("./exhibition.js");
     const runDir = makeRunDirectory();
     const exhibitionOptions: ExhibitionOptions = {
       opponent,
@@ -474,34 +467,38 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       onReady: ({ url, agentDir }) => {
         console.log(`Seat bridge listening at ${url}`);
         console.log(`Agent workspace: ${agentDir}`);
-        console.log('Start the terminal agent with that directory as its working directory and have it read SEAT.md.');
+        console.log(
+          "Start the terminal agent with that directory as its working directory and have it read SEAT.md.",
+        );
       },
       seed,
-      port: values.port === undefined ? undefined : positiveInteger('port', values.port),
+      port: values.port === undefined ? undefined : positiveInteger("port", values.port),
       reasoning,
-      agentDir: values['agent-dir'],
+      agentDir: values["agent-dir"],
     };
     const row = await withRunStatus(runDir, () => runExhibition(runDir, exhibitionOptions));
     printResults([row]);
     return 0;
   }
-  if (command === 'export-season') {
+  if (command === "export-season") {
     const { values } = parseArgs({
       args: rest,
       options: {
-        out: { type: 'string' },
-        run: { type: 'string' },
-        title: { type: 'string', default: 'AI Draft League' },
-        'through-week': { type: 'string' },
+        out: { type: "string" },
+        run: { type: "string" },
+        title: { type: "string", default: "AI Draft League" },
+        "through-week": { type: "string" },
       },
     });
-    if (!values.run) throw new Error('export-season requires --run <id>');
-    if (values['through-week'] === undefined) {
-      throw new Error('export-season requires --through-week <n> so publication never advances implicitly');
+    if (!values.run) throw new Error("export-season requires --run <id>");
+    if (values["through-week"] === undefined) {
+      throw new Error(
+        "export-season requires --through-week <n> so publication never advances implicitly",
+      );
     }
-    const releasedThroughWeek = nonnegativeInteger('through-week', values['through-week']);
+    const releasedThroughWeek = nonnegativeInteger("through-week", values["through-week"]);
     const out = path.resolve(
-      values.out ?? path.join('artifacts', 'public', 'seasons', values.run, 'season-bundle.json'),
+      values.out ?? path.join("artifacts", "public", "seasons", values.run, "season-bundle.json"),
     );
     const bundle = exportSeasonBundle({
       out,
@@ -513,38 +510,41 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     });
     console.log(
       `${bundle.season.title} exported through week ${bundle.season.releasedThroughWeek}` +
-        (bundle.season.releasedPlayoffRounds > 0 ? ` + ${bundle.season.releasedPlayoffRounds} playoff round(s)` : '') +
+        (bundle.season.releasedPlayoffRounds > 0
+          ? ` + ${bundle.season.releasedPlayoffRounds} playoff round(s)`
+          : "") +
         ` to ${out}`,
     );
     return 0;
   }
-  if (command === 'outcomes' || command === 'report') {
+  if (command === "outcomes" || command === "report") {
     const { values } = parseArgs({
       args: rest,
       options: {
-        pool: { type: 'string' },
-        out: { type: 'string', default: path.join(path.dirname(RESULTS_PATH), 'report.html') },
+        pool: { type: "string" },
+        out: { type: "string", default: path.join(path.dirname(RESULTS_PATH), "report.html") },
       },
     });
-    if (command === 'report') {
+    if (command === "report") {
       console.log(writeReport(RESULTS_PATH, values.out, values.pool));
       return 0;
     }
-    if (values.pool === undefined) console.log(`All pools except ${JSON.stringify(TEST_POOL)}; use --pool for one.\n`);
+    if (values.pool === undefined)
+      console.log(`All pools except ${JSON.stringify(TEST_POOL)}; use --pool for one.\n`);
     printOutcomes(scopeRows(loadSeriesRecords(RESULTS_PATH), values.pool));
     return 0;
   }
   console.error(HELP);
-  return command === undefined || command === 'help' || command === '--help' ? 0 : 2;
+  return command === undefined || command === "help" || command === "--help" ? 0 : 2;
 }
 
 async function selfcheck(): Promise<number> {
   const directory = makeRunDirectory();
   try {
-    const rows = await runRotation(['random', 'random'], 1, directory, {
+    const rows = await runRotation(["random", "random"], 1, directory, {
       seed: 1,
       concurrency: 1,
-      recordsPath: path.join(directory, 'results.jsonl'),
+      recordsPath: path.join(directory, "results.jsonl"),
     });
     printResults(rows);
     return 0;
@@ -559,16 +559,19 @@ function printResults(rows: SeriesRecord[]): void {
     const score = asRecord(row.score);
     const games = Array.isArray(row.games) ? row.games : [];
     console.log(
-      `${row.players.p1} vs ${row.players.p2}: ${row.winner ?? 'tie'} (${String(score.p1)}-${String(score.p2)}, ${games.length} games, ${row.turns} turns)`,
+      `${row.players.p1} vs ${row.players.p2}: ${row.winner ?? "tie"} (${String(score.p1)}-${String(score.p2)}, ${games.length} games, ${row.turns} turns)`,
     );
   }
 }
 
 function renderTable(head: string[], rows: string[][]): string {
-  const widths = head.map((title, column) => Math.max(title.length, ...rows.map((row) => row[column]!.length)));
-  const line = (cells: string[]) => `| ${cells.map((cell, column) => cell.padEnd(widths[column]!)).join(' | ')} |`;
-  const rule = `|${widths.map((width) => '-'.repeat(width + 2)).join('|')}|`;
-  return [line(head), rule, ...rows.map(line)].join('\n');
+  const widths = head.map((title, column) =>
+    Math.max(title.length, ...rows.map((row) => row[column]!.length)),
+  );
+  const line = (cells: string[]) =>
+    `| ${cells.map((cell, column) => cell.padEnd(widths[column]!)).join(" | ")} |`;
+  const rule = `|${widths.map((width) => "-".repeat(width + 2)).join("|")}|`;
+  return [line(head), rule, ...rows.map(line)].join("\n");
 }
 
 function printOutcomes(rows: SeriesRecord[]): void {
@@ -578,19 +581,19 @@ function printOutcomes(rows: SeriesRecord[]): void {
   if (!rows.length) return;
   console.log(
     renderTable(
-      ['Mode', 'Pool', 'Clock', 'p1', 'p2', 'Score', 'Winner', 'Run / series'],
+      ["Mode", "Pool", "Clock", "p1", "p2", "Score", "Winner", "Run / series"],
       rows.map((row) => {
         const score = row.score === undefined ? undefined : asRecord(row.score);
-        const clock = row.timer_scale === 'off' ? 'off' : `${row.timer_scale ?? 1}x`;
+        const clock = row.timer_scale === "off" ? "off" : `${row.timer_scale ?? 1}x`;
         return [
-          row.mode ?? 'legacy',
-          row.pool ?? 'unrecorded',
+          row.mode ?? "legacy",
+          row.pool ?? "unrecorded",
           clock,
           row.players.p1,
           row.players.p2,
-          score ? `${String(score.p1 ?? '?')}-${String(score.p2 ?? '?')}` : '?',
-          row.winner ?? 'tie',
-          `${String(row.run_id ?? '?')} / ${String(row.series_id ?? '?')}`,
+          score ? `${String(score.p1 ?? "?")}-${String(score.p2 ?? "?")}` : "?",
+          row.winner ?? "tie",
+          `${String(row.run_id ?? "?")} / ${String(row.series_id ?? "?")}`,
         ];
       }),
     ),
