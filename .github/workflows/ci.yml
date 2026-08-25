@@ -21,3 +21,24 @@ jobs:
       - run: vp check
       - run: vp test
       - run: vp build
+
+  deploy:
+    # Deploys only land from main after verification. Requires the
+    # CLOUDFLARE_API_TOKEN repository secret (the "Edit Cloudflare Workers"
+    # token template covers an assets-only Worker).
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 24
+          cache: true
+      - run: vp install
+      - run: vp build
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy

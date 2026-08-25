@@ -73,6 +73,10 @@ wrangler login   # once
 pnpm deploy      # vp build && wrangler deploy
 ```
 
+Pushes to `main` also auto-deploy through GitHub Actions once the repository
+has a `CLOUDFLARE_API_TOKEN` secret (the "Edit Cloudflare Workers" token
+template); deploys run only after the verify job passes.
+
 A deployment never fetches or builds harness source.
 
 ## Asset attribution
