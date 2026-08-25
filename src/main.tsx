@@ -7,6 +7,7 @@ import { SeasonProvider } from "@/lib/season-context";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 import "./styles/globals.css";
+import "./styles/motion.css";
 import "./styles/draft.css";
 import "./styles/teams.css";
 import "./styles/matches.css";

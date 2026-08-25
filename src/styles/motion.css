@@ -1,0 +1,254 @@
+/* Motion layer: additive polish over the static design. Everything here is
+   decorative only — layout, spacing, and content are unchanged — and the whole
+   file is disabled under prefers-reduced-motion. No animation libraries; this
+   mirrors the reference stacks (voidzero.dev, vite.dev, opencode.ai), which
+   ship pure CSS keyframes and gradients with no motion dependencies. */
+
+/* ---------- Route transitions (browser View Transitions via react-router) ---------- */
+
+::view-transition-old(root) {
+  animation: vt-fade-out 120ms ease-in both;
+}
+
+::view-transition-new(root) {
+  animation: vt-fade-in 180ms ease-out 60ms both;
+}
+
+@keyframes vt-fade-out {
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes vt-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* ---------- Scroll reveal ---------- */
+
+/* Applied by the shared observer in App to each direct child of .page. */
+.reveal {
+  opacity: 0;
+  transform: translateY(14px);
+}
+
+.reveal.in {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+
+.no-io .reveal {
+  opacity: 1;
+  transform: none;
+}
+
+/* ---------- Hover micro-interactions ---------- */
+
+.card {
+  transition:
+    border-color 150ms,
+    background 150ms,
+    transform 150ms ease-out,
+    box-shadow 150ms ease-out;
+}
+
+a.card:hover,
+a.card:focus-visible,
+.hoverable:hover {
+  border-color: var(--line-2);
+  background: var(--card-2);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px -18px rgb(0 0 0 / 90%);
+}
+
+.match-row .go,
+.bracket-match .go {
+  transition: transform 150ms ease-out;
+}
+
+a:hover > * > .go,
+a:hover .go,
+.bracket-match a:hover .go {
+  transform: translateX(3px);
+}
+
+.sprite {
+  transition: transform 160ms ease-out;
+}
+
+a:hover .sprite-row .sprite,
+.team-card:hover .sprite {
+  transform: scale(1.1) translateY(-1px);
+}
+
+.top nav a {
+  transition:
+    color 120ms ease-out,
+    background-color 120ms ease-out;
+}
+
+.wordmark-dot {
+  animation: dot-breathe 4s ease-in-out infinite;
+}
+
+@keyframes dot-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+
+/* ---------- Hero ambience ---------- */
+
+/* Slow drift on the existing hero glow so the top of every page feels alive
+   without introducing any new element or layout. */
+.hero::before {
+  animation: glow-drift 14s ease-in-out infinite alternate;
+}
+
+@keyframes glow-drift {
+  from {
+    opacity: 0.75;
+    transform: translateX(0) scale(1);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(4%) scale(1.06);
+  }
+}
+
+/* Shimmer sweep across the champion banner, echoing the reference sites'
+   "shine" keyframes. */
+.champion {
+  position: relative;
+  overflow: hidden;
+}
+
+.champion::after {
+  content: "";
+  position: absolute;
+  inset: -40% auto -40% -30%;
+  width: 24%;
+  background: linear-gradient(105deg, transparent, rgb(255 255 255 / 9%), transparent);
+  transform: skewX(-18deg);
+  animation: shine-sweep 5.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes shine-sweep {
+  0%,
+  55% {
+    left: -30%;
+  }
+  85%,
+  100% {
+    left: 130%;
+  }
+}
+
+/* ---------- Replay playback feel ---------- */
+
+.hp i {
+  transition: width 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.slot.fainted {
+  transition:
+    opacity 240ms ease-out,
+    filter 240ms ease-out;
+}
+
+.game-tabs button,
+.transport button {
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out,
+    border-color 120ms ease-out,
+    transform 100ms ease-out;
+}
+
+.transport button:not(:disabled):active {
+  transform: scale(0.94);
+}
+
+/* ---------- Boot state ---------- */
+
+.boot .dot {
+  animation: boot-pulse 1.1s ease-in-out infinite;
+}
+
+.boot {
+  display: grid;
+  place-items: center;
+  gap: 0.75rem;
+  padding: 8rem 0;
+  color: var(--t3);
+  font-size: 0.9rem;
+}
+
+.boot .dot {
+  display: inline-block;
+  margin-right: 0.5rem;
+  background: var(--accent);
+}
+
+@keyframes boot-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ---------- Tables ---------- */
+
+tbody tr {
+  transition: background-color 120ms ease-out;
+}
+
+tbody tr:hover {
+  background: color-mix(in srgb, var(--card-2) 70%, transparent);
+}
+
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r);
+}
+
+/* ---------- Reduced motion: switch it all off ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+}

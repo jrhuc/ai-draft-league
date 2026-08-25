@@ -4,7 +4,7 @@ export function NavLink({ href, children }: { href: string; children: React.Reac
   const { pathname } = useLocation();
   const current = href === "/" ? pathname === "/" : pathname.startsWith(href);
   return (
-    <Link to={href} aria-current={current ? "page" : undefined}>
+    <Link to={href} aria-current={current ? "page" : undefined} viewTransition>
       {children}
     </Link>
   );

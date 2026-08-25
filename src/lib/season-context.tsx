@@ -7,18 +7,24 @@ import type { SeasonBundle } from "./season";
  * file remains independently cacheable across site releases.
  */
 
-const bundlePromise: Promise<SeasonBundle> = fetch("/season-bundle.json").then((response) => {
-  if (!response.ok) throw new Error(`season-bundle.json responded ${response.status}`);
-  // SAFETY: the producer validates the bundle shape before export; the site renders it verbatim.
-  return response.json() as Promise<SeasonBundle>;
-});
+let bundlePromise: Promise<SeasonBundle> | null = null;
+
+/** Single-flight load: every consumer awaits the same request, started on first mount. */
+function loadBundle(): Promise<SeasonBundle> {
+  bundlePromise ??= fetch("/season-bundle.json").then((response) => {
+    if (!response.ok) throw new Error(`season-bundle.json responded ${response.status}`);
+    // SAFETY: the producer validates the bundle shape before export; the site renders it verbatim.
+    return response.json() as Promise<SeasonBundle>;
+  });
+  return bundlePromise;
+}
 
 function useBundle(): SeasonBundle | null {
   const [bundle, setBundle] = useState<SeasonBundle | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     let live = true;
-    bundlePromise.then(
+    loadBundle().then(
       (value) => {
         if (live) setBundle(value);
       },

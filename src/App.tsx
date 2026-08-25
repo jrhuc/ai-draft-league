@@ -2,6 +2,7 @@ import { Link, Route, Routes } from "react-router-dom";
 import { NavLink } from "@/components/nav-link";
 import { formatLabel } from "@/lib/format";
 import { useSeason } from "@/lib/season-context";
+import { useReveal } from "@/lib/use-reveal";
 import { DraftPage } from "@/routes/draft";
 import { HomePage } from "@/routes/home";
 import { MatchPage } from "@/routes/match";
@@ -29,6 +30,7 @@ function releaseLabel(s: ReturnType<typeof useSeason>["season"]): string {
 
 export function App() {
   const season = useSeason();
+  useReveal();
   return (
     <>
       <a className="skip" href="#main">
@@ -36,7 +38,7 @@ export function App() {
       </a>
       <header className="top">
         <div className="top-inner">
-          <Link className="wordmark" to="/">
+          <Link className="wordmark" to="/" viewTransition>
             <span className="wordmark-dot" aria-hidden="true" />
             AI Draft League
           </Link>
