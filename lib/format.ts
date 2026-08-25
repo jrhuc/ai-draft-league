@@ -1,3 +1,5 @@
+import type { CSSProperties } from "react";
+
 const FAMILIES: Array<[RegExp, string]> = [
   [/muse/, "muse"],
   [/claude|anthropic/, "claude"],
@@ -32,6 +34,9 @@ export const FRANCHISE_TONES = ["#F0B35B", "#9ECBFF", "#7ED4A6", "#F29E8E", "#C9
 export function tone(index: number): string {
   return FRANCHISE_TONES[((index % FRANCHISE_TONES.length) + FRANCHISE_TONES.length) % FRANCHISE_TONES.length]!;
 }
+export function toneStyle(color: string): CSSProperties & { "--tone": string } {
+  return { "--tone": color };
+}
 
 export function seconds(ms: number | null): string {
   if (ms === null) return "";
@@ -65,9 +70,17 @@ export function spriteKey(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+const STATUS_LABELS = new Map([
+  ["brn", "burned"],
+  ["par", "paralyzed"],
+  ["slp", "asleep"],
+  ["frz", "frozen"],
+  ["psn", "poisoned"],
+  ["tox", "poisoned"],
+]);
+
 export function statusLabel(code: string | null | undefined): string {
-  const labels: { [code: string]: string } = { brn: "burned", par: "paralyzed", slp: "asleep", frz: "frozen", psn: "poisoned", tox: "poisoned" };
-  return code ? (labels[code] ?? code) : "";
+  return code ? (STATUS_LABELS.get(code) ?? code) : "";
 }
 
 export function formatLabel(id: string): string {

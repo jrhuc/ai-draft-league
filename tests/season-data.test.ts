@@ -1,9 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import bundleJson from "../public/season-bundle.json" with { type: "json" };
-import type { Match, SeasonBundle } from "../lib/season.ts";
-
-const season = bundleJson as unknown as SeasonBundle;
+import { season } from "../lib/load.ts";
+import type { Match } from "../lib/season.ts";
 
 function matches(): Match[] {
   return [

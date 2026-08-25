@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Sprite } from "@/components/sprite";
-import { tone } from "@/lib/format";
+import { tone, toneStyle } from "@/lib/format";
 import type { TeamRef } from "@/components/pick-path";
 import type { BoardMon } from "@/lib/season";
 
@@ -62,7 +62,7 @@ export function BoardGrid({ board, franchises }: { board: BoardMon[]; franchises
       <div className="grid grid-6">
         {rows.map((mon) => {
           const owner = mon.draftedBy;
-          const style = owner ? ({ ["--tone" as string]: tone(index.get(owner) ?? 0) } as React.CSSProperties) : undefined;
+          const style = owner ? toneStyle(tone(index.get(owner) ?? 0)) : undefined;
           return (
             <article key={mon.id} className={`card hoverable board-mon${owner ? " taken" : ""}`} style={style}>
               <Sprite id={mon.spriteId} name={mon.name} size={48} />

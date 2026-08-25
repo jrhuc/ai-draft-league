@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Sprite } from "@/components/sprite";
-import { tone } from "@/lib/format";
+import { tone, toneStyle } from "@/lib/format";
 import type { DraftPick } from "@/lib/season";
 
 export type TeamRef = { id: string; name: string };
@@ -39,7 +39,7 @@ export function PickPath({ picks, franchises }: { picks: DraftPick[]; franchises
             </li>
           ))}
           {picks.map((pick) => {
-            const style = { ["--tone" as string]: tone(index.get(pick.franchiseId) ?? 0) } as React.CSSProperties;
+            const style = toneStyle(tone(index.get(pick.franchiseId) ?? 0));
             const on = focus === pick.franchiseId && hover !== null;
             return (
               <li key={pick.overall} style={{ gridRow: pick.round, gridColumn: column(pick) }}>
@@ -67,14 +67,14 @@ export function PickPath({ picks, franchises }: { picks: DraftPick[]; franchises
         </ol>
       </div>
       {current && team ? (
-        <article className="card pick-detail" style={{ ["--tone" as string]: tone(index.get(team.id) ?? 0) } as React.CSSProperties}>
+        <article className="card pick-detail" style={toneStyle(tone(index.get(team.id) ?? 0))}>
           <Sprite id={current.pokemon.spriteId} name={current.pokemon.name} size={96} />
           <div>
             <div className="meta">
               <span className="label">
                 Pick {current.overall} · Round {current.round} · {current.pokemon.cost} pts
               </span>
-              <Link className="team-tag" href={`/teams/${team.id}/`} style={{ ["--tone" as string]: tone(index.get(team.id) ?? 0) } as React.CSSProperties}>
+              <Link className="team-tag" href={`/teams/${team.id}/`} style={toneStyle(tone(index.get(team.id) ?? 0))}>
                 <span className="swatch" aria-hidden="true" />
                 {team.name}
               </Link>

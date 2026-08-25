@@ -1,7 +1,8 @@
-import bundleJson from "@/public/season-bundle.json";
-import type { Franchise, Match, SeasonBundle, Week } from "@/lib/season";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import type { Franchise, Match, SeasonBundle, Week } from "./season";
 
-export const season: SeasonBundle = bundleJson as unknown as SeasonBundle;
+export const season: SeasonBundle = JSON.parse(readFileSync(join(process.cwd(), "public/season-bundle.json"), "utf8"));
 
 const franchiseMap = new Map(season.franchises.map((franchise) => [franchise.id, franchise]));
 

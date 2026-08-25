@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Sprite } from "@/components/sprite";
-import { displaySpecies, seconds, spriteKey, statusLabel, tokens } from "@/lib/format";
+import { displaySpecies, seconds, spriteKey, statusLabel, toneStyle, tokens } from "@/lib/format";
 import type { Decision, Replay, ReplayEvent, ReplayGame } from "@/lib/season";
 
 type Team = { id: string; name: string; tone: string };
@@ -81,7 +81,7 @@ function DecisionRow({ decision, team, position }: { decision: Decision; team: T
   const context = decision.turn === 0 ? "team preview" : `turn ${decision.turn}`;
   const rationaleLabel = `${team.name} rationale for ${choice}, ${context}, decision ${position + 1}`;
   return (
-    <div className="dec" style={{ ["--tone" as string]: team.tone } as React.CSSProperties}>
+    <div className="dec" style={toneStyle(team.tone)}>
       <span className="who">{team.name}</span>
       <span className="act">{decision.action || decision.phase}</span>
       <span className="meta">
@@ -144,9 +144,9 @@ function Game({ game, teams, sprite }: { game: ReplayGame; teams: [Team, Team]; 
         {sides.map((side, index) => {
           const team = teams[index]!;
           return (
-            <section key={team.id} className="card field-side" style={{ ["--tone" as string]: team.tone } as React.CSSProperties} aria-label={`${team.name} field`}>
+            <section key={team.id} className="card field-side" style={toneStyle(team.tone)} aria-label={`${team.name} field`}>
               <div className="who">
-                <span className="team-tag" style={{ ["--tone" as string]: team.tone } as React.CSSProperties}>
+                <span className="team-tag" style={toneStyle(team.tone)}>
                   <span className="swatch" aria-hidden="true" />
                   {team.name}
                 </span>
@@ -213,9 +213,9 @@ function Game({ game, teams, sprite }: { game: ReplayGame; teams: [Team, Team]; 
           {game.reflections.map((reflection) => {
             const team = teamFor(reflection.franchiseId);
             return (
-              <article key={reflection.franchiseId} className="card reflection" style={{ ["--tone" as string]: team.tone } as React.CSSProperties}>
+              <article key={reflection.franchiseId} className="card reflection" style={toneStyle(team.tone)}>
                 <div className="who" style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
-                  <span className="team-tag" style={{ ["--tone" as string]: team.tone } as React.CSSProperties}>
+                  <span className="team-tag" style={toneStyle(team.tone)}>
                     <span className="swatch" aria-hidden="true" />
                     {team.name}
                   </span>

@@ -76,29 +76,33 @@ export default async function MatchPage({ params }: { params: Promise<{ seriesId
           <p>Six registered before the series, four brought to each game. Each card lists the games it played.</p>
         </div>
         <div className="two-col">
-          {match.builds.map((build, side) => (
-            <div key={build.franchiseId} className="build" style={teamStyle(build.franchiseId)}>
-              <div className="build-head">
-                <TeamTag id={build.franchiseId} />
-                {build.attempts > 1 ? <span className="chip chip-warn">{build.attempts} attempts</span> : null}
-              </div>
-              <details>
-                <summary>Why this team</summary>
-                <p className="rationale">{build.rationale || "No build reasoning recorded."}</p>
-              </details>
-              {build.sets ? (
-                <div className="grid grid-2">
-                  {build.sets.map((set, index) => {
-                    const draftId = build.prepared[index];
-                    if (!draftId) throw new Error(`build ${build.franchiseId} has a set without a draft pick`);
-                    return <SetCard key={draftId} set={set} games={fieldedGames(match, side as 0 | 1, draftId)} />;
-                  })}
+          {([0, 1] as const).map((side) => {
+            const build = match.builds[side];
+            if (!build) throw new Error(`match ${match.id} has no build for side ${side}`);
+            return (
+              <div key={build.franchiseId} className="build" style={teamStyle(build.franchiseId)}>
+                <div className="build-head">
+                  <TeamTag id={build.franchiseId} />
+                  {build.attempts > 1 ? <span className="chip chip-warn">{build.attempts} attempts</span> : null}
                 </div>
-              ) : (
-                <p className="closed-note">Registered: {build.prepared.map(monName).join(", ")}. Full sets are published when the season ends.</p>
-              )}
-            </div>
-          ))}
+                <details>
+                  <summary>Why this team</summary>
+                  <p className="rationale">{build.rationale || "No build reasoning recorded."}</p>
+                </details>
+                {build.sets ? (
+                  <div className="grid grid-2">
+                    {build.sets.map((set, index) => {
+                      const draftId = build.prepared[index];
+                      if (!draftId) throw new Error(`build ${build.franchiseId} has a set without a draft pick`);
+                      return <SetCard key={draftId} set={set} games={fieldedGames(match, side, draftId)} />;
+                    })}
+                  </div>
+                ) : (
+                  <p className="closed-note">Registered: {build.prepared.map(monName).join(", ")}. Full sets are published when the season ends.</p>
+                )}
+              </div>
+            );
+          })}
         </div>
       </section>
 

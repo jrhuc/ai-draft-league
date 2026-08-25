@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { tone } from "@/lib/format";
+import { tone, toneStyle } from "@/lib/format";
 import { franchise, franchiseIndex } from "@/lib/load";
 
 export function teamStyle(id: string): React.CSSProperties {
-  return { ["--tone" as string]: tone(franchiseIndex(id)) } as React.CSSProperties;
+  return toneStyle(tone(franchiseIndex(id)));
 }
 
 export function TeamTag({ id, link = true, muted = false }: { id: string; link?: boolean; muted?: boolean }) {

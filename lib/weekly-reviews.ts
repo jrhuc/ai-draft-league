@@ -6,10 +6,10 @@ type WeeklyReviewPresentation = WeeklyReview & {
   reasoningText: string;
 };
 
-const STAGE_ORDER: Record<WeeklyReview["stage"], number> = {
+const STAGE_ORDER = {
   week: 0,
   transactions: 1,
-};
+} satisfies Record<WeeklyReview["stage"], number>;
 
 
 export function weeklyReviewsForFranchise(reviews: readonly WeeklyReview[], franchiseId: string): WeeklyReviewPresentation[] {
