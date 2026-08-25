@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Link, Route, Routes } from "react-router-dom";
 import { NavLink } from "@/components/nav-link";
 import { formatLabel } from "@/lib/format";
@@ -11,6 +12,8 @@ import { PlayoffsPage } from "@/routes/playoffs";
 import { TeamPage } from "@/routes/team";
 import { TeamsPage } from "@/routes/teams";
 import { TransactionsPage } from "@/routes/transactions";
+
+const WatchPage = import.meta.env.DEV ? lazy(() => import("@/routes/watch")) : null;
 
 const NAV: Array<[string, string]> = [
   ["/", "Standings"],
@@ -48,6 +51,7 @@ export function App() {
                 {label}
               </NavLink>
             ))}
+            {WatchPage ? <NavLink href="/watch">Watch</NavLink> : null}
           </nav>
           <span className="release mono">
             <span className="dot" aria-hidden="true" />
@@ -64,6 +68,16 @@ export function App() {
           <Route path="/matches/:seriesId" element={<MatchPage />} />
           <Route path="/transactions" element={<TransactionsPage />} />
           <Route path="/playoffs" element={<PlayoffsPage />} />
+          {WatchPage ? (
+            <Route
+              path="/watch"
+              element={
+                <Suspense fallback={null}>
+                  <WatchPage />
+                </Suspense>
+              }
+            />
+          ) : null}
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </main>

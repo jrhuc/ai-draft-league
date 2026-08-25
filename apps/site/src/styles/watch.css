@@ -1,0 +1,45 @@
+.watch h1 {
+  margin: 0.25rem 0 0.5rem;
+}
+
+.watch-table {
+  margin-top: 1rem;
+  overflow-x: auto;
+}
+
+.watch-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.watch-table th,
+.watch-table td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  border-top: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.watch-table thead th {
+  color: var(--t4);
+  border-top: 0;
+}
+
+.watch-running {
+  color: var(--good);
+}
+
+.watch-live,
+.watch-notice {
+  margin: 0.75rem 0 0;
+  font-size: 0.85rem;
+}
+
+.watch-live {
+  color: var(--good);
+}
+
+.watch-notice {
+  color: var(--warn);
+}

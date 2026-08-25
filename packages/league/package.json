@@ -11,6 +11,10 @@
     "./protocol": {
       "types": "./dist/src/public/index.d.ts",
       "default": "./dist/src/public/index.js"
+    },
+    "./server": {
+      "types": "./dist/src/server-entry.d.ts",
+      "default": "./dist/src/server-entry.js"
     }
   },
   "scripts": {

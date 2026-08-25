@@ -30,6 +30,8 @@ jobs:
       - run: vp test
       - run: vp run league#build
       - run: vp run site#build
+      # The live-watch surface is dev-only; fail if any trace ships.
+      - run: "! grep -rl 'api/watch' apps/site/dist/"
 
   deploy:
     # Deploys only land from main after verification. Requires the

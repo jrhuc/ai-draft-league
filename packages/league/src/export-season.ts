@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { buildLeague, buildLeagueGame } from "./archive.js";
 import { describeBoardMon, loadBoard } from "./draft.js";
-import { buildDraftLeagueSchedule } from "./draftleague.js";
+import { buildDraftLeagueSchedule, type DraftLeagueSeriesPlan } from "./draftleague.js";
 import { SAFE_SEGMENT } from "./path-safety.js";
 import {
   type BuildPublicSeasonBundleOptions,
@@ -22,7 +22,8 @@ export interface ExportSeasonOptions {
   runsDir: string;
   runId: string;
   title: string;
-  releasedThroughWeek: number;
+  /** "all" releases every played series — live watching only, never publication. */
+  releasedThroughWeek: number | "all";
   generatedAt?: string;
 }
 
@@ -61,7 +62,29 @@ function storedLeagueConfig(runsDir: string, runId: string): StoredLeagueConfig 
   return { seed: seed.data, closedSheets: closedSheets.data, showdownCommit };
 }
 
-export function exportSeasonBundle(options: ExportSeasonOptions): PublicSeasonBundle {
+function lastCompleteRound(
+  series: { seriesIndex: number; winner: unknown }[],
+  plans: DraftLeagueSeriesPlan[],
+  totalWeeks: number,
+  playoffRounds: number,
+): number {
+  const finished = new Set(
+    series.filter((row) => row.winner !== null).map((row) => row.seriesIndex),
+  );
+  const planRound = (plan: DraftLeagueSeriesPlan): number =>
+    plan.stage === "roundrobin" ? plan.round : totalWeeks + plan.round;
+  let released = 0;
+  for (let round = 1; round <= totalWeeks + playoffRounds; round += 1) {
+    const complete = plans
+      .filter((plan) => planRound(plan) === round)
+      .every((plan) => finished.has(plan.index));
+    if (!complete) break;
+    released = round;
+  }
+  return released;
+}
+
+export function buildSeasonExport(options: Omit<ExportSeasonOptions, "out">): PublicSeasonBundle {
   if (!SAFE_SEGMENT.test(options.runId))
     throw new Error(`invalid run id ${JSON.stringify(options.runId)}`);
   const rows = loadSeriesRecords(options.recordsPath);
@@ -73,10 +96,14 @@ export function exportSeasonBundle(options: ExportSeasonOptions): PublicSeasonBu
   const board = loadBoard(league.board);
   const boardView = board.mons.map((mon) => describeBoardMon(mon, undefined, board.format));
   const totalWeeks = league.weeks ?? 0;
+  const releasedThroughWeek =
+    options.releasedThroughWeek === "all"
+      ? lastCompleteRound(league.series, schedule.plans, totalWeeks, schedule.playoffRounds)
+      : options.releasedThroughWeek;
   const games = new Map<string, PublicSeasonGameInput[]>();
   for (const series of league.series) {
     const releasedRound = series.stage === "roundrobin" ? series.round : totalWeeks + series.round;
-    if (releasedRound > options.releasedThroughWeek || series.winner === null) continue;
+    if (releasedRound > releasedThroughWeek || series.winner === null) continue;
     games.set(
       series.seriesId,
       series.games.map((_, gameIndex) => {
@@ -101,12 +128,16 @@ export function exportSeasonBundle(options: ExportSeasonOptions): PublicSeasonBu
     board: boardView,
     games,
     title: options.title,
-    releasedThroughWeek: options.releasedThroughWeek,
+    releasedThroughWeek,
     closedSheets: config.closedSheets,
     showdownCommit: config.showdownCommit,
     generatedAt: options.generatedAt,
   };
-  const bundle = buildPublicSeasonBundle(bundleOptions);
+  return buildPublicSeasonBundle(bundleOptions);
+}
+
+export function exportSeasonBundle(options: ExportSeasonOptions): PublicSeasonBundle {
+  const bundle = buildSeasonExport(options);
   const directory = path.dirname(options.out);
   const suffix = `${process.pid}.${randomUUID()}.tmp`;
   const bundleStaged = `${options.out}.${suffix}`;

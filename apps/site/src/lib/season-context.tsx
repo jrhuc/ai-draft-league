@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { liveRunId } from "./live";
 import type { SeasonBundle } from "./season";
 
 /**
@@ -9,13 +10,23 @@ import type { SeasonBundle } from "./season";
 
 let bundlePromise: Promise<SeasonBundle> | null = null;
 
-/** Single-flight load: every consumer awaits the same request, started on first mount. */
-function loadBundle(): Promise<SeasonBundle> {
-  bundlePromise ??= fetch("/season-bundle.json").then((response) => {
-    if (!response.ok) throw new Error(`season-bundle.json responded ${response.status}`);
+function bundleUrl(): string {
+  if (!import.meta.env.DEV) return "/season-bundle.json";
+  const live = liveRunId();
+  return live ? `/api/watch/runs/${live}/bundle` : "/season-bundle.json";
+}
+
+function fetchBundle(): Promise<SeasonBundle> {
+  return fetch(bundleUrl()).then((response) => {
+    if (!response.ok) throw new Error(`${bundleUrl()} responded ${response.status}`);
     // SAFETY: the producer validates the bundle shape before export; the site renders it verbatim.
     return response.json() as Promise<SeasonBundle>;
   });
+}
+
+/** Single-flight load: every consumer awaits the same request, started on first mount. */
+function loadBundle(): Promise<SeasonBundle> {
+  bundlePromise ??= fetchBundle();
   return bundlePromise;
 }
 
@@ -32,8 +43,22 @@ function useBundle(): SeasonBundle | null {
         if (live) setFailed(true);
       },
     );
+    if (!import.meta.env.DEV || !liveRunId()) {
+      return () => {
+        live = false;
+      };
+    }
+    const timer = setInterval(() => {
+      void fetchBundle().then(
+        (value) => {
+          if (live) setBundle(value);
+        },
+        () => undefined,
+      );
+    }, 10_000);
     return () => {
       live = false;
+      clearInterval(timer);
     };
   }, []);
   if (failed) throw new Error("The season data could not be loaded. Refresh to try again.");
