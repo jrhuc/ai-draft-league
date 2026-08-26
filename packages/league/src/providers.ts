@@ -112,38 +112,6 @@ export function parseSpec(value: string): ProviderSpec {
   throw new Error(USAGE);
 }
 
-export interface ProviderRoute {
-  spec: string;
-  provider: ProviderSpec["provider"];
-  base_url: string | null;
-  model: string;
-  api: OpenCodeApi;
-  reasoning: ReasoningLevel | null;
-  routing: JsonObject | null;
-}
-
-/** One manifest row per seat: where its calls go and with what settings, so the route is frozen in the
- * run rather than reconstructed from whatever the environment holds later. */
-export function describeProviderRoute(
-  spec: string,
-  reasoning: ReasoningLevel | undefined,
-  openRouterRouting: JsonObject,
-): ProviderRoute {
-  const parsed = parseSpec(spec);
-  return {
-    spec,
-    provider: parsed.provider,
-    base_url: providerOption(parsed.provider)?.baseUrl ?? null,
-    model: parsed.model,
-    api:
-      parsed.provider === "opencode-go" || parsed.provider === "opencode-zen"
-        ? opencodeApi(parsed.provider, parsed.model)
-        : "chat",
-    reasoning: reasoning ?? null,
-    routing: parsed.provider === "openrouter" ? openRouterRouting : null,
-  };
-}
-
 export function validateReasoning(spec: ProviderSpec, level?: string): void {
   if (!level) return;
   if (!isReasoningLevel(level)) throw new Error(`invalid reasoning level ${JSON.stringify(level)}`);
@@ -933,19 +901,4 @@ export function makeProvider(
   validateReasoning(spec, options.reasoning);
   if (spec.provider === "random") throw new Error("random provider is handled separately");
   return new SdkProvider(spec, options);
-}
-
-export type AgentModel = ReturnType<SdkProvider["agentModel"]>;
-
-export function makeAgentModel(
-  spec: ProviderSpec,
-  options: {
-    apiKey?: string | undefined;
-    reasoning?: ReasoningLevel | undefined;
-    fetch?: FetchRequest | undefined;
-  } = {},
-): AgentModel {
-  validateReasoning(spec, options.reasoning);
-  if (spec.provider === "random") throw new Error("random provider is handled separately");
-  return new SdkProvider(spec, options).agentModel();
 }
