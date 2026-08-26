@@ -152,8 +152,6 @@ export function scopeRows<Row extends SeriesRecord>(rows: Row[], pool?: string):
 
 const rowCache = new Map<string, { mtimeMs: number; size: number; rows: ParsedSeriesRecord[] }>();
 
-export class RecordsBusyError extends Error {}
-
 interface RecordsMutation {
   load: () => ParsedSeriesRecord[];
   append: (row: JsonObject) => void;
@@ -166,7 +164,7 @@ export function mutateRecords<T>(file: string, task: (mutation: RecordsMutation)
   try {
     release = acquireLease(`${file}.lease`);
   } catch (error) {
-    if (error instanceof LeaseBusyError) throw new RecordsBusyError(error.message);
+    if (error instanceof LeaseBusyError) throw new Error(error.message);
     throw error;
   }
   const mutation: RecordsMutation = {

@@ -1,9 +1,3 @@
-export const MECHANICS_TOOL_CAPABILITY_PROTOCOL = {
-  version: 1,
-  available: "interactive-showdown-dex-tools-v1",
-  unavailable: "prompt-evidence-only-no-interactive-tools-v1",
-} as const;
-
 export type MechanicsToolAvailability = "available" | "unavailable";
 
 export const NO_INTERACTIVE_MECHANICS_TOOLS_NOTICE = [
