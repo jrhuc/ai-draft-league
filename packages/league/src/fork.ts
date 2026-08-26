@@ -1,5 +1,3 @@
-import crypto from "node:crypto";
-
 import type { Battle } from "pokemon-showdown";
 
 import { BaseEngine } from "./battle-agent.js";
@@ -30,13 +28,6 @@ export interface Position {
   snapshot: string;
 }
 
-export function positionDigest(position: Position, pid: Pid): string {
-  return crypto
-    .createHash("sha256")
-    .update(JSON.stringify([position.snapshot, position.pending, position.actual, pid]))
-    .digest("hex");
-}
-
 export interface Replay {
   verified: boolean;
   positions: Position[];
@@ -46,20 +37,6 @@ export interface Replay {
   winner: string | null;
   ranOutOfChoices: boolean;
 }
-
-export const ACTION_PROTOCOL = {
-  version: 3,
-  canonicalization: "showdown-choice-v1",
-  concession: "excluded-stream-command",
-  jointOrder: "active-slot",
-  candidateGenerator: "request-derived-menus-v1",
-  acceptanceOracle: "native-side-choose-on-tojson-fromjson-restart-clone-v1",
-  completeness: "accepted-candidates-only-not-universal-showdown-completeness",
-  numberBase: 0,
-  numbering: "dense-after-acceptance-filter",
-  sort: "canonical-action-utf8-byte-ascending-before-acceptance",
-  label: "menu-labels-v1",
-} as const;
 
 const CHOICE_LIMIT = 500;
 interface ReplayRouteState {
@@ -193,14 +170,6 @@ export function acceptedLegalActionEntries(
   return accepted;
 }
 
-export function acceptedLegalActions(
-  battle: Battle,
-  pid: Pid,
-  candidates: readonly LegalActionEntry[],
-): string[] {
-  return acceptedLegalActionEntries(battle, pid, candidates).map((entry) => entry.command);
-}
-
 export function acceptedBattleActionEntries(battle: Battle, pid: Pid): LegalActionEntry[] {
   const request = battle.getSide(pid).activeRequest;
   if (!request || request.wait) return [];
@@ -211,10 +180,6 @@ export function acceptedBattleActionEntries(battle: Battle, pid: Pid): LegalActi
   );
 }
 
-export function acceptedBattleActions(battle: Battle, pid: Pid): string[] {
-  return acceptedBattleActionEntries(battle, pid).map((entry) => entry.command);
-}
-
 /** Removes exact Showdown wall-clock messages without treating lookalike text as time. Recursive
  * canonical serialization defines new snapshot bytes; older noncanonical snapshots remain restorable. */
 export function deterministicBattleSnapshot(battle: Battle): string {
@@ -223,12 +188,6 @@ export function deterministicBattleSnapshot(battle: Battle): string {
     serialized.log = serialized.log.map((line) => (/^\|t:\|\d+$/u.test(line) ? "|t:|" : line));
   }
   return canonicalJson(serialized);
-}
-
-export function requestPhase(request: BattleRequest): "team_preview" | "forced_switch" | "turn" {
-  if (request.teamPreview) return "team_preview";
-  if (request.forceSwitch) return "forced_switch";
-  return "turn";
 }
 
 export function newBattle(source: GameSource): Battle {
