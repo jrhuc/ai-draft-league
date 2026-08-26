@@ -88,9 +88,14 @@ function writeLeagueFixture(runsDir: string): void {
       path.join(seriesDir, "p1-decisions.jsonl"),
       `${JSON.stringify({
         kind: "decision",
+        automatic: false,
+        fallback: false,
+        action: "move 1",
         game_number: 1,
         turn: 1,
         phase: "turn",
+        selection: [],
+        rationale: "",
         latency_ms: 5000,
         total_tokens: tokens,
         reasoning_tokens: 40,
@@ -377,6 +382,8 @@ test("live league games expose battlefield sprites before the series is recorded
       adjustment: "Keep the matchup notes for a rematch.",
       notebook: "Protect turn one.",
       series_over: true,
+      fallback: false,
+      total_tokens: 0,
     })}\n`,
   );
   try {

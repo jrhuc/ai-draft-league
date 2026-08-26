@@ -845,7 +845,7 @@ export function buildLeague(
           tokens += entry.totalTokens;
           tokensSeen = true;
         }
-        if (entry.reasoningTokens !== null) {
+        if (entry.reasoningTokens !== undefined && entry.reasoningTokens !== null) {
           reasoning += entry.reasoningTokens;
           reasoningSeen = true;
         }

@@ -27,34 +27,43 @@ import { afterColon, isErrnoCode } from "./value.js";
 const pidSchema = z.enum(["p1", "p2"]);
 const runLeaseArtifactSchema = z.looseObject({ pid: z.number().optional().catch(undefined) });
 const decisionLogArtifactSchema = z.looseObject({
-  kind: z.string().catch(""),
-  automatic: z.boolean().catch(false),
-  game_number: z.number().finite().catch(0),
-  turn: z.number().finite().catch(0),
-  phase: z.string().catch("turn"),
-  latency_ms: z.number().finite().nullable().catch(null),
-  total_tokens: z.number().finite().nullable().catch(null),
-  reasoning_tokens: z.number().finite().nullable().catch(null),
+  kind: z.string(),
+  automatic: z.boolean(),
+  latency_ms: z.number().finite(),
+  total_tokens: z.number().finite(),
+  reasoning_tokens: z.number().finite().optional(),
 });
 const decisionArtifactSchema = z.looseObject({
-  action: z.string().catch(""),
-  adjustment: z.string().catch(""),
-  automatic: z.boolean().catch(false),
-  fallback: z.boolean().catch(false),
-  game_number: z.number().finite().catch(0),
-  kind: z.string().catch(""),
-  latency_ms: z.number().finite().nullable().catch(null),
-  notebook: z.string().catch(""),
-  phase: z.string().catch("turn"),
-  rationale: z.string().catch(""),
-  reasoning_tokens: z.number().finite().nullable().catch(null),
-  result: z.enum(["won", "lost"]).catch("lost"),
-  selection: z.array(z.json()).catch([]),
-  series_over: z.boolean().catch(false),
-  summary: z.string().catch(""),
-  total_tokens: z.number().finite().nullable().catch(null),
-  turn: z.number().finite().catch(0),
+  kind: z.literal("decision"),
+  action: z.string(),
+  automatic: z.boolean(),
+  fallback: z.boolean(),
+  game_number: z.number().finite(),
+  turn: z.number().finite(),
+  phase: z.string(),
+  selection: z.array(z.json()),
+  rationale: z.string(),
+  notebook: z.string().optional(),
+  latency_ms: z.number().finite(),
+  total_tokens: z.number().finite(),
+  reasoning_tokens: z.number().finite().optional(),
 });
+const reflectionArtifactSchema = z.looseObject({
+  kind: z.literal("game_reflection"),
+  fallback: z.boolean(),
+  game_number: z.number().finite(),
+  result: z.enum(["won", "lost"]),
+  series_over: z.boolean(),
+  summary: z.string(),
+  adjustment: z.string(),
+  notebook: z.string().optional(),
+  total_tokens: z.number().finite(),
+  reasoning_tokens: z.number().finite().optional(),
+});
+const decisionArtifactUnion = z.discriminatedUnion("kind", [
+  decisionArtifactSchema,
+  reflectionArtifactSchema,
+]);
 const gameArtifactSchema = z.looseObject({
   winner_side: z.enum(["p1", "p2"]).nullable().catch(null),
 });
@@ -76,12 +85,9 @@ export function decisionLogPath(
 export interface DecisionLogRow {
   kind: string;
   automatic: boolean;
-  game: number;
-  turn: number;
-  phase: string;
-  latencyMs: number | null;
-  totalTokens: number | null;
-  reasoningTokens: number | null;
+  latencyMs: number;
+  totalTokens: number;
+  reasoningTokens?: number | undefined;
 }
 
 const logCache = new Map<string, { mtimeMs: number; size: number; rows: DecisionLogRow[] }>();
@@ -107,9 +113,6 @@ export function readDecisionLog(file: string): DecisionLogRow[] {
       rows.push({
         kind: entry.kind,
         automatic: entry.automatic,
-        game: entry.game_number,
-        turn: entry.turn,
-        phase: entry.phase,
         latencyMs: entry.latency_ms,
         totalTokens: entry.total_tokens,
         reasoningTokens: entry.reasoning_tokens,
@@ -348,7 +351,9 @@ export function buildSeriesGame(
       seriesId,
       `${pid}-decisions.jsonl`,
     )) {
-      const entry = decisionArtifactSchema.parse(artifact);
+      const parsed = decisionArtifactUnion.safeParse(artifact);
+      if (!parsed.success) continue;
+      const entry = parsed.data;
       const entryGame = entry.game_number;
       if (entryGame > 0) gameNumbers.add(entryGame);
       if (entryGame !== game) continue;
@@ -358,13 +363,12 @@ export function buildSeriesGame(
           result: entry.result,
           summary: entry.summary,
           adjustment: entry.adjustment,
-          notebook: entry.notebook,
+          notebook: entry.notebook ?? "",
           fallback: entry.fallback,
           seriesOver: entry.series_over,
         });
         continue;
       }
-      if (entry.kind !== "decision") continue;
       decisions.push({
         side,
         turn: entry.turn,
@@ -372,12 +376,12 @@ export function buildSeriesGame(
         selection: entry.selection.map(String),
         action: entry.action,
         rationale: entry.rationale,
-        notebook: entry.notebook,
+        notebook: entry.notebook ?? "",
         fallback: entry.fallback,
         automatic: entry.automatic,
         latencyMs: entry.latency_ms,
         totalTokens: entry.total_tokens,
-        reasoningTokens: entry.reasoning_tokens,
+        reasoningTokens: entry.reasoning_tokens ?? null,
       });
     }
   }
