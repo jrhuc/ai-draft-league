@@ -21,6 +21,14 @@ export interface TeamProvenance {
   paste: string;
 }
 
+export const teamProvenanceSchema: z.ZodType<TeamProvenance> = z.strictObject({
+  placement: z.number().nullable(),
+  player: z.string(),
+  handle: z.string(),
+  swiss: z.string(),
+  paste: z.string(),
+});
+
 export interface PoolEvent {
   name: string;
   game: string;

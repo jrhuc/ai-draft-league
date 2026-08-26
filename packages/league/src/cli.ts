@@ -17,7 +17,7 @@ import { writeReport } from "./report.js";
 import { runRotation } from "./rotation.js";
 import { withRunStatus } from "./run-status.js";
 import type { ExperimentOptions } from "./series.js";
-import type { Team } from "./teams.js";
+import { teamProvenanceSchema, type Team } from "./teams.js";
 import { parseTimerScale } from "./timer.js";
 import type { TournamentOptions } from "./tournament.js";
 import { tournamentConfigSchema } from "./tournament.js";
@@ -77,15 +77,7 @@ const storedTeamSchema = z.looseObject({
   id: z.string(),
   packed: z.string(),
   seed: z.number().optional(),
-  provenance: z
-    .strictObject({
-      placement: z.number().nullable(),
-      player: z.string(),
-      handle: z.string(),
-      swiss: z.string(),
-      paste: z.string(),
-    })
-    .optional(),
+  provenance: teamProvenanceSchema.optional(),
   source: z.record(z.string(), z.json()).optional(),
 });
 
