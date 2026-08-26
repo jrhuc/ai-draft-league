@@ -18,9 +18,7 @@ interface RoundRobinOperations {
   reconcileWindow: (index: number) => Promise<void>;
 }
 
-type RoundRobinPhaseResult =
-  | { status: "complete" }
-  | { status: "paused"; results: SeriesRecord[] };
+type RoundRobinPhaseResult = { status: "complete" } | { status: "paused"; results: SeriesRecord[] };
 
 export async function runTransactionPhase(
   context: DraftLeagueContext,

@@ -2,6 +2,8 @@ import react from "@vitejs/plugin-react";
 import type { Plugin } from "vite";
 import { defineConfig } from "vite-plus";
 
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
 /**
  * Dev-only live watch: lists local league runs and serves freshly built season
  * bundles for them, so the regular spectator pages can render a run as it
@@ -15,7 +17,7 @@ function liveWatch(): Plugin {
     configureServer(server) {
       server.middlewares.use("/api/watch", (req, res) => {
         void (async () => {
-          const respond = (code: number, body: unknown): void => {
+          const respond = (code: number, body: JsonValue): void => {
             res.statusCode = code;
             res.setHeader("content-type", "application/json");
             res.end(JSON.stringify(body));

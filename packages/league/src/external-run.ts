@@ -41,13 +41,13 @@ const summaryConfigSchema = z
   .nullable()
   .catch(null);
 
-export interface ExternalRunSummary {
+export type ExternalRunSummary = {
   runId: string;
   mode: string;
   state: "running" | "done" | "unknown";
   error: string | null;
   startTime: string | null;
-}
+};
 
 export function listExternalRuns(runsDir: string): ExternalRunSummary[] {
   let entries: fs.Dirent[];

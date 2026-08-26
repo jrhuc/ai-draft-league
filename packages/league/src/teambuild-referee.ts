@@ -10,10 +10,7 @@ import {
   type TeamBuildSubmissionValidation,
   type TeamBuildTask,
 } from "./teambuild-protocol.js";
-import {
-  actionForCandidateTeam,
-  validateCandidate,
-} from "./teambuild-validation.js";
+import { actionForCandidateTeam, validateCandidate } from "./teambuild-validation.js";
 
 function refereeArtifact(
   task: TeamBuildTask,

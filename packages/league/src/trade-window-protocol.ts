@@ -148,23 +148,23 @@ export interface TradeWindowDecision extends JsonObject {
   fallback: boolean;
 }
 
-export interface TradeWindowRoster {
+export type TradeWindowRoster = {
   entrant: number;
   model: string;
   team_name: string;
   budget_left: number;
   spent: number;
   roster: Array<{ id: string; name: string; cost: number }>;
-}
+};
 
-export interface TradeWindowArtifact {
+export type TradeWindowArtifact = {
   after_week: number;
   order: number[];
   offers: TradeOffer[];
   decisions: TradeWindowDecision[];
   rosters: TradeWindowRoster[];
   swaps_used?: number[] | undefined;
-}
+};
 
 export interface TradeWindowResult {
   entrant: number;

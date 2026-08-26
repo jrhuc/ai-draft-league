@@ -8,6 +8,7 @@ import type { DraftBoard, DraftBoardMon } from "./draft.js";
 import { draftTranscriptRowSchema, snakeOrder } from "./draft.js";
 import type { DraftPickView, TeamBuildView } from "./views.js";
 import { appendJsonlObject, readJsonlObjects } from "./jsonl.js";
+import type { ReasoningLevel } from "./providers.js";
 import { seededRng, shuffle } from "./random.js";
 import type { SeriesRecord } from "./records.js";
 import { loadSeriesRecords } from "./records.js";
@@ -114,8 +115,8 @@ interface DraftLeagueConfig {
   entrants: readonly string[];
   seed: number;
   concurrency: number;
-  reasoning: unknown;
-  reasoningByModel: unknown;
+  reasoning: ReasoningLevel | null;
+  reasoningByModel: Readonly<Record<string, ReasoningLevel>> | null;
   timerScale: TimerScale;
   board: Pick<DraftBoard, "id" | "format">;
   sequentialWeeks: boolean;

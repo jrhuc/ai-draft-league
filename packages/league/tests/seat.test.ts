@@ -7,7 +7,7 @@ import { runExhibition } from "../src/exhibition.js";
 import type { SeriesRecord } from "../src/records.js";
 import { loadSeriesRecords, scopeRows } from "../src/records.js";
 import { SeatBridge } from "../src/seat.js";
-import type { JsonObject } from "../src/types.js";
+import type { JsonObject, JsonValue } from "../src/types.js";
 import { asRecord } from "../src/value.js";
 
 test("unscoped play data includes exhibitions without turning them into a ranking", () => {
@@ -30,7 +30,7 @@ test("seat bridge keeps a pending exchange, tools, and private context behind on
   });
   const url = await bridge.listen(0);
   const headers = { "content-type": "application/json", authorization: `Bearer ${bridge.token}` };
-  const post = (route: string, body: unknown) =>
+  const post = (route: string, body: JsonValue) =>
     fetch(`${url}${route}`, { method: "POST", headers, body: JSON.stringify(body) });
   try {
     assert.equal(

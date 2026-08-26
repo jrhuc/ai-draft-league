@@ -373,12 +373,12 @@ test("compatible HTTP and in-band stream failures preserve retry classification 
   });
   await assert.rejects(
     failed.complete("system", [{ role: "user", content: "hello" }]),
-    (error: unknown) => {
-      assert.ok(error instanceof ApiError);
-      assert.equal(error.status, 503);
-      assert.doesNotMatch(error.message, /prime-secret/);
-      assert.match(error.message, /\[redacted\]/);
-      assert.deepEqual(classifyProviderFailure(error, "prime:failed-model"), {
+    (cause: unknown) => {
+      assert.ok(cause instanceof ApiError);
+      assert.equal(cause.status, 503);
+      assert.doesNotMatch(cause.message, /prime-secret/);
+      assert.match(cause.message, /\[redacted\]/);
+      assert.deepEqual(classifyProviderFailure(cause, "prime:failed-model"), {
         kind: "upstream",
         summary: "Prime Inference API is temporarily unavailable (503).",
         terminal: false,
@@ -394,9 +394,9 @@ test("compatible HTTP and in-band stream failures preserve retry classification 
   });
   await assert.rejects(
     inBand.complete("system", [{ role: "user", content: "hello" }]),
-    (error: unknown) => {
-      assert.ok(error instanceof ApiError);
-      assert.equal(error.status, 502);
+    (cause: unknown) => {
+      assert.ok(cause instanceof ApiError);
+      assert.equal(cause.status, 502);
       return true;
     },
   );
@@ -443,10 +443,10 @@ test("adapter redacts thrown transport and malformed stream failures", async () 
       });
       await assert.rejects(
         provider.complete("system", [{ role: "user", content: "hello" }]),
-        (error: unknown) => {
-          assert.ok(error instanceof Error, failure.label);
+        (cause: unknown) => {
+          assert.ok(cause instanceof Error, failure.label);
           assert.doesNotMatch(
-            error.message,
+            cause.message,
             new RegExp(`${suppliedKey}|${environmentKey}`),
             failure.label,
           );

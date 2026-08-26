@@ -15,12 +15,14 @@ export const runStatusSchema = z.looseObject({
   pid: z.number().optional(),
 });
 export type StoredRunStatus = z.infer<typeof runStatusSchema>;
-export interface RunStatus extends StoredRunStatus {
+export type RunStatus = {
+  state: "running" | "done" | "failed" | "stopped";
   error: string | null;
   notices: string[];
   start_time: string;
   end_time: string | null;
-}
+  pid?: number | undefined;
+};
 
 interface LeaseOwner {
   id: string;

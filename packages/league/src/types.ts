@@ -8,11 +8,11 @@ export interface JsonObject {
 }
 export type ExperimentMode = "rotation" | "exhibition" | "tournament" | "draft";
 
-export interface ContributorAttribution {
+export type ContributorAttribution = {
   provider: "github";
   subject: string;
   login: string;
-}
+};
 
 export interface PlayerOptions {
   name: string;
