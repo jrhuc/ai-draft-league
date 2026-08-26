@@ -2,7 +2,6 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { z } from "zod";
-import type { PoolInfo } from "./views.js";
 import { defaultPsDir, TEAMS_DIR } from "./paths.js";
 import { loadShowdown, type ShowdownApi } from "./showdown.js";
 import type { JsonObject, JsonValue } from "./types.js";
@@ -45,34 +44,6 @@ export interface Team {
   seed?: number;
   provenance?: TeamProvenance;
   source?: JsonObject;
-}
-
-export function listPools(teamsDir = TEAMS_DIR): PoolInfo[] {
-  const pools: PoolInfo[] = [];
-  for (const name of fs.existsSync(teamsDir)
-    ? fs
-        .readdirSync(teamsDir)
-        .filter((entry) => POOL_SLUG.test(entry))
-        .sort()
-    : []) {
-    try {
-      const manifest = z
-        .object({
-          id: z.string().optional(),
-          format: z.string().optional(),
-          teams: z.array(z.json()).optional(),
-        })
-        .passthrough()
-        .parse(JSON.parse(fs.readFileSync(path.join(teamsDir, name, "pool.json"), "utf8")));
-      pools.push({
-        name,
-        id: manifest.id ?? name,
-        format: manifest.format ?? "?",
-        teamCount: Array.isArray(manifest.teams) ? manifest.teams.length : 0,
-      });
-    } catch {}
-  }
-  return pools;
 }
 
 /** The manifest blocks a pool cannot be rebuilt from its team files alone. */
@@ -273,14 +244,6 @@ export function packTeam(exportText: string, psDir = defaultPsDir(), format?: st
   return packed;
 }
 
-export function exportTeam(packed: string, format: string, psDir = defaultPsDir()): string {
-  const { Teams } = loadShowdown(psDir);
-  const sets = Teams.unpack(packed);
-  if (!sets) throw new Error("packed team does not unpack");
-  removeUnsupportedMetadata(sets, format, psDir);
-  return Teams.export(sets);
-}
-
 export function validateTeam(packed: string, format: string, psDir = defaultPsDir()): void {
   const { Dex, Teams, TeamValidator } = loadShowdown(psDir);
   const sets = Teams.unpack(packed) ?? [];
@@ -310,61 +273,6 @@ export interface TeamDraft {
 
 export interface PoolContents extends PoolMetadata {
   teams: TeamDraft[];
-}
-
-interface TeamMember {
-  species: string;
-  item: string;
-  ability: string;
-  moves: string[];
-}
-
-interface TeamInspection {
-  species: string[];
-  problems: string[];
-  members: TeamMember[];
-}
-
-function unpackTeam(packed: string, psDir: string) {
-  const { Teams } = loadShowdown(psDir);
-  const sets = Teams.unpack(packed) ?? [];
-  const species: string[] = [];
-  const members: TeamMember[] = [];
-  for (const set of sets) {
-    const memberSpecies = set.species || set.name || "Pokémon";
-    species.push(memberSpecies);
-    members.push({
-      species: memberSpecies,
-      item: set.item,
-      ability: set.ability,
-      moves: set.moves,
-    });
-  }
-  return { species, members };
-}
-
-export function inspectTeam(paste: string, format: string, psDir = defaultPsDir()): TeamInspection {
-  let packed: string;
-  try {
-    packed = packTeam(paste, psDir, format);
-  } catch (error) {
-    return {
-      species: [],
-      problems: [error instanceof Error ? error.message : String(error)],
-      members: [],
-    };
-  }
-  const { species, members } = unpackTeam(packed, psDir);
-  try {
-    validateTeam(packed, format, psDir);
-    return { species, problems: [], members };
-  } catch (error) {
-    return {
-      species,
-      problems: (error instanceof Error ? error.message : String(error)).split("\n"),
-      members,
-    };
-  }
 }
 
 export function createPool(
