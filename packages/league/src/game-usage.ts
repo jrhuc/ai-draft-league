@@ -1,5 +1,5 @@
 import type { DraftBoardMon } from "./draft.js";
-import type { TeambuildView } from "./views.js";
+import type { TeamBuildView } from "./views.js";
 import { readCompletedSeriesGameLogs } from "./series.js";
 import { isErrnoCode } from "./value.js";
 
@@ -18,7 +18,7 @@ export interface GameSummary {
 type Side = 0 | 1;
 
 /** The six each side registered, in entrant order; an absent build leaves that side unresolved. */
-type RegisteredBuilds = readonly [TeambuildView | undefined, TeambuildView | undefined];
+type RegisteredBuilds = readonly [TeamBuildView | undefined, TeamBuildView | undefined];
 type DraftMon = Pick<DraftBoardMon, "id" | "species" | "forme">;
 
 interface Entry {
@@ -52,7 +52,7 @@ function gameSummaries(
 ): GameSummary[] {
   const byName = new Map<string, DraftMon[]>();
   const byId = new Map(mons.map((mon) => [mon.id, mon] as const));
-  const registeredMons = (build: TeambuildView | undefined): DraftMon[] =>
+  const registeredMons = (build: TeamBuildView | undefined): DraftMon[] =>
     (build?.brought ?? []).flatMap((id) => {
       const mon = byId.get(id);
       return mon ? [mon] : [];

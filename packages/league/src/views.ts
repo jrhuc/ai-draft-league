@@ -73,19 +73,19 @@ export interface DraftTableRow {
   gl: number;
 }
 
-export interface TeambuildSetView extends PublicTeamSheetSetView {
+export interface TeamBuildSetView extends PublicTeamSheetSetView {
   evs: Record<string, number>;
   note?: string;
   repaired: boolean;
   repairs: string[];
 }
 
-export interface TeambuildView {
+export interface TeamBuildView {
   seriesIndex: number;
   entrant: number;
   opponent: number;
   brought: string[];
-  sets: TeambuildSetView[];
+  sets: TeamBuildSetView[];
   rationale: string;
   attempts: number;
 }
@@ -100,7 +100,7 @@ export interface DraftView {
   rosters: string[][];
   budgets: number[];
   table: DraftTableRow[] | null;
-  teambuilds: TeambuildView[];
+  teambuilds: TeamBuildView[];
   week: number;
   weeks: number;
   phase: "draft" | "roundrobin" | "window" | "playoffs" | "done";
@@ -113,7 +113,7 @@ export interface BracketEntrantView {
   placement?: number | null;
   player?: string;
   paste?: string;
-  teamSheet?: TeambuildSetView[];
+  teamSheet?: TeamBuildSetView[];
 }
 
 export interface BracketMatchView {
@@ -413,7 +413,7 @@ export interface LeagueTeambuildView {
   entrant: number;
   opponent: number;
   brought: string[];
-  sets: TeambuildSetView[];
+  sets: TeamBuildSetView[];
   rationale: string;
   notebook: string;
   attempts: number;

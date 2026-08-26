@@ -9,7 +9,7 @@ import {
   requireTransactionResultPrefix,
 } from "./league-store.js";
 import type { SeriesRecord } from "./records.js";
-import type { TeambuildView } from "./views.js";
+import type { TeamBuildView } from "./views.js";
 import { applyBracketOutcome } from "./tournament.js";
 import {
   describeTransactionHistory,
@@ -21,7 +21,7 @@ import type { Pid } from "./types.js";
 
 interface StoredBuild {
   packed: string;
-  view: TeambuildView;
+  view: TeamBuildView;
 }
 
 export interface DraftLeagueResumeOperations {

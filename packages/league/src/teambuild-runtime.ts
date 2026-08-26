@@ -22,13 +22,12 @@ import {
   type TeamBuildArtifact,
   type TeamBuildCandidate,
   type TeamBuildExecutionPolicy,
+  type LeagueTeamBuildResult,
   type TeamBuildObjective,
   type TeamBuildOptions,
+  type TeamBuildRequest,
   type TeamBuildResult,
   type TeamBuildTask,
-  type TeambuildOptions,
-  type TeambuildRequest,
-  type TeambuildResult,
   validateTeamBuildTask,
 } from "./teambuild-protocol.js";
 import {
@@ -45,7 +44,7 @@ import {
 import { normalizePackedTeam, validateTeam } from "./teams.js";
 import type { JsonObject, ProviderMessage } from "./types.js";
 import { fileSlug } from "./value.js";
-import type { TeambuildSetView, TeambuildView } from "./views.js";
+import type { TeamBuildSetView, TeamBuildView } from "./views.js";
 
 interface TeamBuildAttemptTraceHeader {
   series?: number;
@@ -83,7 +82,7 @@ function fallbackEvidence(rationale: string, notebook: string): StageEvidence {
 async function runLeagueTeamBuild(
   task: TeamBuildTask,
   options: TeamBuildOptions,
-): Promise<TeamBuildResult> {
+): Promise<LeagueTeamBuildResult> {
   validateTeamBuildTask(task);
   if (task.executionPolicy !== "league-resilient") {
     throw new Error("provider orchestration is reserved for league-resilient team building");
@@ -239,7 +238,7 @@ async function runLeagueTeamBuild(
       evidence: fallbackEvidence(noParseRationale, task.notebook),
     } satisfies ParsedTeamBuild);
   const taken = new Set<string>();
-  const views: TeambuildSetView[] = [];
+  const views: TeamBuildSetView[] = [];
   let repaired: Array<{ mon: TeamBuildCandidate; set: RawSet; repairs: string[] }> =
     chosen.sets.map((raw) => {
       const mon = owned.get(raw.id)!;
@@ -330,9 +329,9 @@ async function runLeagueTeamBuild(
 }
 
 export async function runTeambuild(
-  request: TeambuildRequest,
-  options: TeambuildOptions,
-): Promise<TeambuildResult> {
+  request: TeamBuildRequest,
+  options: TeamBuildOptions,
+): Promise<TeamBuildResult> {
   const task: TeamBuildTask = {
     id: `draft-series-${request.seriesIndex + 1}-entrant-${request.entrant}`,
     model: request.model,
@@ -364,7 +363,7 @@ export async function runTeambuild(
   if (!result.packed || !action) {
     throw new Error("league-resilient team building ended without a valid team");
   }
-  const view: TeambuildView = {
+  const view: TeamBuildView = {
     seriesIndex: request.seriesIndex,
     entrant: request.entrant,
     opponent: request.opponent,

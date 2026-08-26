@@ -19,11 +19,11 @@ import {
 import { packCandidateTeam } from "./teambuild-validation.js";
 import { normalizePackedTeam, validateTeam } from "./teams.js";
 import type { JsonValue } from "./types.js";
-import type { TeambuildView } from "./views.js";
+import type { TeamBuildView } from "./views.js";
 
 export interface TeamBuildJournalEntry {
   artifact: TeamBuildArtifact;
-  view: TeambuildView;
+  view: TeamBuildView;
   notebook: string;
 }
 

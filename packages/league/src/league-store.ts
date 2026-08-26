@@ -6,7 +6,7 @@ import { z } from "zod";
 import { writeAtomicJson } from "./atomic-json.js";
 import type { DraftBoard, DraftBoardMon } from "./draft.js";
 import { draftTranscriptRowSchema, snakeOrder } from "./draft.js";
-import type { DraftPickView, TeambuildView } from "./views.js";
+import type { DraftPickView, TeamBuildView } from "./views.js";
 import { appendJsonlObject, readJsonlObjects } from "./jsonl.js";
 import { seededRng, shuffle } from "./random.js";
 import type { SeriesRecord } from "./records.js";
@@ -460,7 +460,7 @@ export function linkedStoredArtifact(
     rosterIds: string[];
     opponentRosterIds: string[];
   },
-): { packed: string; view: TeambuildView } | undefined {
+): { packed: string; view: TeamBuildView } | undefined {
   let replayed: { artifact: TeamBuildArtifact; packed: string };
   try {
     replayed = replayTeamBuildArtifact(entry.artifact, { psDir: context.psDir });

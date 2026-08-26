@@ -20,7 +20,7 @@ import {
   type StoredSeriesOutcome,
 } from "./draftleague-state.js";
 import { cloneMemory, emptyMemory } from "./franchise-memory.js";
-import type { DraftView, TeambuildView } from "./views.js";
+import type { DraftView, TeamBuildView } from "./views.js";
 import {
   appendStoredCoaching,
   draftOnlyPromotionEvidence,
@@ -40,7 +40,7 @@ import { appendRow } from "./records.js";
 import type { RecordedSeriesContext } from "./series.js";
 import { playRecordedSeries, readCompletedSeriesEvidence } from "./series.js";
 import { showdownCommit } from "./showdown.js";
-import { runTeambuild, type TeamBuildSheetPolicy, type TeambuildOptions } from "./teambuild.js";
+import { runTeambuild, type TeamBuildSheetPolicy, type TeamBuildOptions } from "./teambuild.js";
 import { validateTeam } from "./teams.js";
 import { DEFAULT_TIMER_SCALE } from "./timer.js";
 import {
@@ -61,7 +61,7 @@ import {
   type WeeklyReviewSeries,
 } from "./weekly-review.js";
 
-function builtTeamSummary(build: TeambuildView): string {
+function builtTeamSummary(build: TeamBuildView): string {
   const sets = build.sets.map((set) => {
     const evs = Object.entries(set.evs)
       .filter(([, value]) => Number(value) > 0)
@@ -72,11 +72,11 @@ function builtTeamSummary(build: TeambuildView): string {
   return `Plan: ${build.rationale || "(none)"} Registered sets: ${sets.join(" | ")}`;
 }
 
-function initialBattleNotebook(build: TeambuildView): string {
+function initialBattleNotebook(build: TeamBuildView): string {
   return `Matchup build carried from teambuilding. ${builtTeamSummary(build)}`;
 }
 
-function draftRosterSummary(roster: readonly DraftBoardMon[], build: TeambuildView): string {
+function draftRosterSummary(roster: readonly DraftBoardMon[], build: TeamBuildView): string {
   const registered = new Set(build.brought);
   const names = (mons: readonly DraftBoardMon[]) =>
     mons.map((mon) => mon.name).join(", ") || "(none)";
@@ -88,7 +88,7 @@ function draftRosterSummary(roster: readonly DraftBoardMon[], build: TeambuildVi
 
 export function draftLeaguePlayoffReview(
   summary: string,
-  build: TeambuildView,
+  build: TeamBuildView,
   notebook: string,
 ): string {
   return `${summary}. ${builtTeamSummary(build)} Final private battle note: ${notebook || "(empty)"}`;
@@ -273,7 +273,7 @@ export async function runDraftLeague(
     entrant: number,
     opponent: number,
     rosterState: readonly DraftBoardMon[][],
-  ): { packed: string; view: TeambuildView } => {
+  ): { packed: string; view: TeamBuildView } => {
     const rows = storedTeambuilds.get(`${plan.index}:${entrant}`) ?? [];
     const row = rows.at(-1);
     const linked = row
@@ -302,7 +302,7 @@ export async function runDraftLeague(
     row: SeriesRecord,
     plan: DraftLeagueSeriesPlan,
     pair: [number, number],
-    builds: Record<Pid, { packed: string; view: TeambuildView }>,
+    builds: Record<Pid, { packed: string; view: TeamBuildView }>,
     rosterState: readonly DraftBoardMon[][],
   ): StoredSeriesOutcome => {
     const players = { p1: entrants[pair[0]]!, p2: entrants[pair[1]]! };
@@ -399,7 +399,7 @@ export async function runDraftLeague(
     signal: AbortSignal,
   ) => {
     const storedRows = storedTeambuilds.get(`${plan.index}:${entrant}`) ?? [];
-    let reused: { packed: string; view: TeambuildView } | undefined;
+    let reused: { packed: string; view: TeamBuildView } | undefined;
     for (let index = storedRows.length - 1; index >= 0 && !reused; index -= 1) {
       const row = storedRows[index]!;
       reused = linkedStoredArtifact(row, {
@@ -440,7 +440,7 @@ export async function runDraftLeague(
       format: board.format,
       sheetPolicy,
     };
-    const teambuildOptions: TeambuildOptions = {
+    const teambuildOptions: TeamBuildOptions = {
       psDir,
       logDir: path.join(runDir, "teambuild"),
       rng: seededRng(`${seed}:tb:${plan.index}:${entrant}`),
@@ -536,7 +536,7 @@ export async function runDraftLeague(
 
   const applyOutcome = (
     plan: DraftLeagueSeriesPlan,
-    coaching?: Record<Pid, { build: TeambuildView; notebook: string }>,
+    coaching?: Record<Pid, { build: TeamBuildView; notebook: string }>,
   ): void => {
     const [a, b] = plan.entrants!;
     const { winnerSide, score } = outcomeFor(plan);

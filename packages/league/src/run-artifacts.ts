@@ -11,7 +11,7 @@ import type {
   LeagueGameReflectionView,
   LeagueGameResponse,
   MonView,
-  TeambuildSetView,
+  TeamBuildSetView,
 } from "./views.js";
 import { BattleLog } from "./battlelog.js";
 import { readJsonlObjects } from "./jsonl.js";
@@ -142,7 +142,7 @@ export function spriteIdFor(species: string): string {
   return id;
 }
 
-export function viewTeamSheet(packed: string): TeambuildSetView[] {
+export function viewTeamSheet(packed: string): TeamBuildSetView[] {
   const { Teams } = loadShowdown();
   return (Teams.unpack(packed) ?? []).map((set) => {
     const species = set.species || set.name || "Pokémon";

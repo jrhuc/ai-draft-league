@@ -4,7 +4,7 @@ import type { ModelReasoningConfig, ReasoningLevel } from "./providers.js";
 import type { Rng } from "./random.js";
 import { normalizeStageEvidence, type StageEvidence } from "./stage-evidence.js";
 import type { JsonValue, Provider } from "./types.js";
-import type { TeambuildSetView, TeambuildView } from "./views.js";
+import type { TeamBuildSetView, TeamBuildView } from "./views.js";
 
 export const TEAMBUILD_RATIONALE_LIMIT = 2_000;
 export const TEAMBUILD_NOTEBOOK_LIMIT = 4_000;
@@ -110,7 +110,7 @@ export interface TeamBuildTask {
 export interface TeamBuildAction {
   selected: string[];
   packed: string;
-  sets: TeambuildSetView[];
+  sets: TeamBuildSetView[];
 }
 
 export interface TeamBuildArtifact {
@@ -132,7 +132,7 @@ export interface TeamBuildArtifact {
   createdAt: string;
 }
 
-export interface TeamBuildResult {
+export interface LeagueTeamBuildResult {
   packed: string | null;
   artifact: TeamBuildArtifact;
 }
@@ -152,10 +152,10 @@ export type TeamBuildSubmissionValidation =
       artifact: TeamBuildArtifact;
     };
 
-export interface TeambuildResult {
+export interface TeamBuildResult {
   packed: string;
   artifact: TeamBuildArtifact;
-  view: TeambuildView;
+  view: TeamBuildView;
 }
 
 export interface TeamBuildOptions extends ModelReasoningConfig {
@@ -173,9 +173,7 @@ export interface TeamBuildOptions extends ModelReasoningConfig {
   memory?: FranchiseMemory;
 }
 
-export type TeambuildOptions = TeamBuildOptions;
-
-export interface TeambuildRequest {
+export interface TeamBuildRequest {
   seriesIndex: number;
   entrant: number;
   opponent: number;

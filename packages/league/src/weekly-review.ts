@@ -17,7 +17,7 @@ import {
   renderMemory,
 } from "./franchise-memory.js";
 import { type GameSummary, seriesGameSummaries } from "./game-usage.js";
-import type { DraftTableRow, TeambuildView } from "./views.js";
+import type { DraftTableRow, TeamBuildView } from "./views.js";
 import { BattleLog } from "./battlelog.js";
 import { appendJsonlObject, readJsonlObjects } from "./jsonl.js";
 import { FORMAT_AUTHORITY_NOTICE, MANAGER_CHARGE, renderPromptTemplate } from "./prompts.js";
@@ -100,7 +100,7 @@ export interface WeeklyReviewSeries {
   score: [number, number];
   winner: number | null;
   context: Record<number, string>;
-  builds: Record<number, TeambuildView | undefined>;
+  builds: Record<number, TeamBuildView | undefined>;
   /** Each entrant's roster at the version the series was played under, not its current one. */
   rosters: Record<number, readonly DraftBoardMon[]>;
 }

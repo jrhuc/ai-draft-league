@@ -8,7 +8,7 @@ import type { SeriesRecord } from "./records.js";
 import type { BracketMatch } from "./tournament.js";
 import type { TradeWindowArtifact, TransactionSchedule } from "./trade-window.js";
 import type { Pid, TimerScale } from "./types.js";
-import type { DraftTableRow, DraftView, TeambuildView } from "./views.js";
+import type { DraftTableRow, DraftView, TeamBuildView } from "./views.js";
 
 type LeagueRunState =
   | { phase: "draft"; completedPicks: number }
@@ -64,7 +64,7 @@ export class DraftLeagueRuntime {
   readonly completed = new Map<number, SeriesRecord>();
   readonly storedOutcomes = new Map<number, StoredSeriesOutcome>();
   readonly table: DraftTableRow[];
-  readonly teambuilds: TeambuildView[] = [];
+  readonly teambuilds: TeamBuildView[] = [];
   readonly resultSummaries: Array<Map<number, string>>;
   readonly windowArtifacts: TradeWindowArtifact[] = [];
   readonly rosterHistory: DraftBoardMon[][][] = [];
