@@ -18,8 +18,8 @@ import {
 import { ShowdownReference } from "./reference.js";
 import { mapLimit } from "./series.js";
 import type { TradeWindowArtifact } from "./trade-window.js";
-import type { JsonObject, JsonValue, Provider, ProviderMessage } from "./types.js";
-import { clip, fileSlug, isRecord } from "./value.js";
+import type { JsonObject, Provider, ProviderMessage } from "./types.js";
+import { clip, fileSlug, replyJsonObject } from "./value.js";
 
 const SEASON_REVIEW_PROMPT_POLICY = {
   systemTemplate: [
@@ -125,16 +125,9 @@ const seasonReviewReplySchema = z.looseObject({
 });
 
 function parseSeasonReviewResult(response: string): ParsedSeasonReviewResult {
-  const match = /\{[\s\S]*\}/.exec(response);
-  if (!match) return { error: "the reply contained no JSON object" };
-  let object: JsonValue;
-  try {
-    object = JSON.parse(match[0]);
-  } catch {
-    return { error: "the JSON object did not parse" };
-  }
-  if (!isRecord(object)) return { error: "the reply must be one JSON object" };
-  const parsed = seasonReviewReplySchema.safeParse(object);
+  const json = replyJsonObject(response);
+  if (typeof json === "string") return { error: json };
+  const parsed = seasonReviewReplySchema.safeParse(json);
   if (!parsed.success)
     return { error: `"${String(parsed.error.issues[0]?.path[0])}" must be a non-empty string` };
   return { value: parsed.data };

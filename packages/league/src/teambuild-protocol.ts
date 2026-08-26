@@ -3,7 +3,8 @@ import type { FranchiseMemory } from "./franchise-memory.js";
 import type { ModelReasoningConfig, ReasoningLevel } from "./providers.js";
 import type { Rng } from "./random.js";
 import { normalizeStageEvidence, type StageEvidence } from "./stage-evidence.js";
-import type { JsonValue, Provider } from "./types.js";
+import { replyJsonObject } from "./value.js";
+import type { Provider } from "./types.js";
 import type { TeamBuildSetView, TeamBuildView } from "./views.js";
 
 export const TEAMBUILD_RATIONALE_LIMIT = 2_000;
@@ -393,14 +394,8 @@ export function parseTeamBuildResponse(
   response: string,
   task: TeamBuildTask,
 ): ParsedTeamBuildResult {
-  const match = /\{[\s\S]*\}/.exec(response);
-  if (!match) return { status: "rejected", error: "the reply contained no JSON object" };
-  let json: JsonValue;
-  try {
-    json = JSON.parse(match[0]);
-  } catch {
-    return { status: "rejected", error: "the JSON object did not parse" };
-  }
+  const json = replyJsonObject(response);
+  if (typeof json === "string") return { status: "rejected", error: json };
   const reply = teamBuildReplySchema.safeParse(json);
   if (!reply.success)
     return { status: "rejected", error: replyIssueMessage(reply.error.issues[0]!) };

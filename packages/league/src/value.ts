@@ -20,6 +20,18 @@ export function count(value: JsonValue | undefined, fallback = 0): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+export function replyJsonObject(response: string): JsonObject | string {
+  const match = /\{[\s\S]*\}/.exec(response);
+  if (!match) return "the reply contained no JSON object";
+  let parsed: JsonValue;
+  try {
+    parsed = JSON.parse(match[0]);
+  } catch {
+    return "the JSON object did not parse";
+  }
+  return isRecord(parsed) ? parsed : "the reply must be one JSON object";
+}
+
 export function asStrings(value: JsonValue | undefined): string[] {
   return Array.isArray(value) ? value.filter(isText) : [];
 }

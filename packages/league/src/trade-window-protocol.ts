@@ -10,7 +10,7 @@ import type { MechanicsToolAvailability } from "./prompt-capabilities.js";
 import { FORMAT_AUTHORITY_NOTICE, MANAGER_CHARGE } from "./prompts.js";
 import type { ModelReasoningConfig, ReasoningLevel } from "./providers.js";
 import type { JsonObject, JsonValue, Provider } from "./types.js";
-import { clip, fileSlug, text } from "./value.js";
+import { clip, fileSlug, replyJsonObject, text } from "./value.js";
 import type { DraftTableRow } from "./views.js";
 
 export const DEFAULT_TRANSACTION_WEEKS = [1, 2, 3] as const;
@@ -443,8 +443,6 @@ export function ownerMap(state: TradeWindowState): Map<string, number> {
   return owners;
 }
 
-const jsonValueSchema = z.json();
-const replyRecordSchema = z.record(z.string(), jsonValueSchema);
 const swapReplySchema = z.object({ drop: z.string().catch(""), add: z.string().catch("") });
 const offerReplySchema = z.object({
   to: z.number().catch(Number.NaN),
@@ -516,16 +514,7 @@ export function rationaleOf(value: JsonValue | undefined, limit: number): string
 }
 
 function parsedReply(response: string): JsonObject | string {
-  const match = /\{[\s\S]*\}/.exec(response);
-  if (!match) return "the reply contained no JSON object";
-  let parsed: JsonValue;
-  try {
-    parsed = JSON.parse(match[0]);
-  } catch {
-    return "the JSON object did not parse";
-  }
-  const record = replyRecordSchema.safeParse(parsed);
-  return record.success ? record.data : "the reply must be one JSON object";
+  return replyJsonObject(response);
 }
 
 export function parseTradeDecision(
