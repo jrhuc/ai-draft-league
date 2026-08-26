@@ -13,7 +13,11 @@ export function asRecords(value: JsonValue | undefined): JsonObject[] {
 }
 
 export function isText(value: JsonValue | undefined): value is string {
-  return String(value) === value;
+  return typeof value === "string";
+}
+
+export function count(value: JsonValue | undefined, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
 export function asStrings(value: JsonValue | undefined): string[] {

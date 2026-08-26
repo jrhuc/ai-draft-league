@@ -24,8 +24,8 @@ export function normalizeStageEvidence(
   notebook: JsonValue | undefined,
   options: StageEvidenceOptions,
 ): StageEvidence {
-  const hasRationale = String(rationale) === rationale;
-  const hasNotebook = String(notebook) === notebook;
+  const hasRationale = typeof rationale === "string";
+  const hasNotebook = typeof notebook === "string";
   return {
     rationale: hasRationale ? clip(rationale.trim(), options.rationaleLimit) : "",
     notebook: hasNotebook ? clip(notebook.trim(), options.notebookLimit) : options.currentNotebook,

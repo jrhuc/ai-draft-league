@@ -36,7 +36,7 @@ import {
 } from "./series.js";
 import type { JsonObject, JsonValue, Provider, ProviderMessage } from "./types.js";
 import { fileSlug } from "./value.js";
-import { clip, isRecord, isText } from "./value.js";
+import { clip, count, isRecord, isText, text } from "./value.js";
 
 const MEMORY_NOTICE = `- Your memory is yours to organise: a notebook page that every later prompt of yours shows in full, plus up to ${MEMORY_LIMITS.pages - 1} named pages that later prompts list by name and that you or your later selves fetch with read_memory_page. Each page holds at most ${MEMORY_LIMITS.pageChars} characters, ${MEMORY_LIMITS.totalChars} in all. It is the only state that carries from week to week; nothing else you write here is kept.`;
 
@@ -365,21 +365,24 @@ export function narrateOwnSeries(
   const seriesDir = path.join(runDir, "series", series.seriesId);
   const rows = readCompletedSeriesDecisionRows(seriesDir, series.seriesId, pid);
   const lines: string[] = [`Series ${series.index}, week ${series.week}, your seat ${pid}.`];
-  let game = "";
+  let game = -1;
   for (const row of rows) {
-    if (String(row.game_number) !== game) {
-      game = String(row.game_number);
+    const gameNumber = count(row.game_number, -1);
+    if (gameNumber !== game) {
+      game = gameNumber;
       lines.push("", `Game ${game}:`);
     }
     if (row.kind === "decision") {
       const rationale = z.string().safeParse(row.rationale);
       const why = rationale.success && rationale.data ? ` — ${rationale.data}` : "";
+      const action = text(row.action);
       lines.push(
-        `${row.phase === "team_preview" ? "Preview" : `T${String(row.turn)}`}: ${String(row.action)}${why}`,
+        `${row.phase === "team_preview" ? "Preview" : `T${count(row.turn)}`}: ${action}${why}`,
       );
     } else if (row.kind === "game_reflection") {
+      const adjustment = text(row.adjustment);
       lines.push(
-        `After the game (${String(row.result)}): ${String(row.summary ?? "")}${row.adjustment ? ` Adjustment: ${String(row.adjustment)}` : ""}`,
+        `After the game (${text(row.result)}): ${text(row.summary)}${adjustment ? ` Adjustment: ${adjustment}` : ""}`,
       );
     }
   }

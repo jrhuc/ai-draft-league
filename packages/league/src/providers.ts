@@ -179,7 +179,7 @@ export function opencodeApi(provider: "opencode-go" | "opencode-zen", model: str
 
 function parseToolArguments(value: JsonValue): JsonObject {
   if (isRecord(value)) return value;
-  if (String(value) !== value || !value.trim()) return {};
+  if (typeof value !== "string" || !value.trim()) return {};
   try {
     const parsed = JSON.parse(value);
     return isRecord(parsed) ? parsed : {};

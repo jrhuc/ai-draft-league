@@ -41,10 +41,8 @@ export default defineConfig({
     options: { typeAware: true, typeCheck: true },
     overrides: [
       {
-        // The engine predates these type-aware suggestions (450+ existing
-        // idioms). Ratchet: everything else stays clean; league cleanup is
-        // incremental, not a bulk rewrite.
-        files: ["packages/league/**"],
+        // Test assertion idioms only; src and tools pass every rule outright.
+        files: ["packages/league/tests/**"],
         rules: {
           "typescript/no-floating-promises": "off",
           "typescript/no-base-to-string": "off",

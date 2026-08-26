@@ -2,6 +2,7 @@ import type { GameEnd } from "./battle-agent.js";
 import { extractReflection } from "./llm-engine-support.js";
 import { classifyProviderFailure } from "./providers.js";
 import type { Completion, Pid, ProviderMessage } from "./types.js";
+import { count } from "./value.js";
 
 export function reflectionPrompt(input: {
   seriesId: string | undefined;
@@ -26,7 +27,7 @@ export function reflectionPrompt(input: {
         ]
       : []),
     ...(input.draftRoster ? [`Your full draft roster this season: ${input.draftRoster}`] : []),
-    `Turns: ${String(input.outcome.turns ?? "?")}. Decision errors: ${String(input.outcome.errors ?? 0)}. Model-choice defaults: ${String(input.outcome.model_choice_fallbacks ?? 0)}. Simulator substitutions: ${String(input.outcome.simulator_substitutions ?? 0)}. Timer autodefaults: ${String(input.outcome.timer_autodefaults ?? 0)}.`,
+    `Turns: ${input.outcome.turns === undefined ? "?" : count(input.outcome.turns)}. Decision errors: ${count(input.outcome.errors)}. Model-choice defaults: ${count(input.outcome.model_choice_fallbacks)}. Simulator substitutions: ${count(input.outcome.simulator_substitutions)}. Timer autodefaults: ${count(input.outcome.timer_autodefaults)}.`,
     "",
     "Final authoritative state:",
     input.finalState,

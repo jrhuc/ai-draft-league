@@ -265,7 +265,7 @@ export function scanUnfinishedSeries(
   runId: string,
   rows: SeriesRecord[],
 ): UnfinishedSeries[] {
-  const seen = new Set(rows.map((row) => String(row.series_id ?? "")));
+  const seen = new Set(rows.map((row) => row.series_id ?? ""));
   let entries: string[] = [];
   try {
     entries = fs.readdirSync(path.join(runsDir, runId, "series"));

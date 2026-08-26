@@ -22,7 +22,7 @@ import { parseTimerScale } from "./timer.js";
 import type { TournamentOptions } from "./tournament.js";
 import { tournamentConfigSchema } from "./tournament.js";
 import type { TimerScale } from "./types.js";
-import { asRecord, text } from "./value.js";
+import { asRecord, count, text } from "./value.js";
 
 const EXPERIMENT_CLI_OPTIONS = {
   models: { type: "string", multiple: true },
@@ -313,7 +313,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     );
     printResults(rows);
     const champion = rows[rows.length - 1];
-    if (champion) console.log(`Champion: ${String(champion.advanced ?? champion.winner)}`);
+    if (champion) console.log(`Champion: ${champion.advanced ?? champion.winner ?? "?"}`);
     return 0;
   }
   if (command === "draft") {
@@ -559,7 +559,7 @@ function printResults(rows: SeriesRecord[]): void {
     const score = asRecord(row.score);
     const games = Array.isArray(row.games) ? row.games : [];
     console.log(
-      `${row.players.p1} vs ${row.players.p2}: ${row.winner ?? "tie"} (${String(score.p1)}-${String(score.p2)}, ${games.length} games, ${row.turns} turns)`,
+      `${row.players.p1} vs ${row.players.p2}: ${row.winner ?? "tie"} (${count(score.p1)}-${count(score.p2)}, ${games.length} games, ${row.turns} turns)`,
     );
   }
 }

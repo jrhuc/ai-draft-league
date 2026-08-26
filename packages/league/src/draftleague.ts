@@ -606,7 +606,7 @@ export async function runDraftLeague(
       list.push({
         index: plan.index,
         week: plan.round,
-        seriesId: String(row.series_id),
+        seriesId: row.series_id ?? "",
         entrants: [a, b],
         score: [score.p1, score.p2],
         winner: winnerSide === undefined ? null : winnerSide === "p1" ? a : b,

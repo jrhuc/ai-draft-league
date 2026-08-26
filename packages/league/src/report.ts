@@ -4,6 +4,7 @@ import path from "node:path";
 import type { ParsedSeriesRecord } from "./records.js";
 
 import { loadSeriesRecords, scopeRows, TEST_POOL } from "./records.js";
+import { text } from "./value.js";
 const CSS = `
 :root { color-scheme: light dark; --line: #8884; --accent: #d33682; }
 body { font-family: system-ui, sans-serif; max-width: 72rem; margin: 2rem auto; padding: 0 1rem; }
@@ -51,7 +52,7 @@ function gamesTable(rows: ParsedSeriesRecord[], limit = 80): string {
     .reverse()
     .map(({ series, game }) => {
       const side = game.winner_side;
-      return `<tr class='${side === "p1" ? "winner-a" : side === "p2" ? "winner-b" : ""}'><td class=meta>${escapeHtml(series.series_id)}</td><td class=num>${game.number}</td><td class=a>${escapeHtml(series.players.p1)}</td><td class=b>${escapeHtml(series.players.p2)}</td><td>${escapeHtml(game.winner ?? "tie")}</td><td class=num>${game.turns}</td><td class=meta>${escapeHtml(String(game.log ?? ""))}</td></tr>`;
+      return `<tr class='${side === "p1" ? "winner-a" : side === "p2" ? "winner-b" : ""}'><td class=meta>${escapeHtml(series.series_id)}</td><td class=num>${game.number}</td><td class=a>${escapeHtml(series.players.p1)}</td><td class=b>${escapeHtml(series.players.p2)}</td><td>${escapeHtml(game.winner ?? "tie")}</td><td class=num>${game.turns}</td><td class=meta>${escapeHtml(text(game.log))}</td></tr>`;
     })
     .join("");
   return `<h3>Games</h3><div class=wrap><table>${head}${body}</table></div>`;

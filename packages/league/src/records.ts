@@ -8,6 +8,7 @@ import type { ExperimentMode, JsonObject, JsonValue, Pid, TimerScale } from "./t
 export interface SeriesRecord extends JsonObject {
   mode?: ExperimentMode | undefined;
   run_id?: string | undefined;
+  series_id?: string | undefined;
   series_index?: number | undefined;
   entrants?: [number, number] | undefined;
   pool?: string | undefined;
@@ -15,6 +16,7 @@ export interface SeriesRecord extends JsonObject {
   transactions?: Array<{ after_week: number; trades_allowed: number }> | undefined;
   roster_version?: number | undefined;
   contributor?: { provider: "github"; subject: string; login: string } | undefined;
+  advanced?: string | undefined;
   players: Record<Pid, string>;
   winner?: string | null | undefined;
   score?: Record<Pid, number> | undefined;

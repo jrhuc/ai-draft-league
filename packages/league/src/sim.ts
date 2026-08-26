@@ -225,9 +225,9 @@ export class SimBattle {
 
     const start: StartCommand = { formatid: this.format };
     if (this.seed) start.seed = this.seed;
-    stream.write(`>start ${JSON.stringify(start)}`);
+    void stream.write(`>start ${JSON.stringify(start)}`);
     for (const pid of ["p1", "p2"] as const)
-      stream.write(`>player ${pid} ${JSON.stringify(this.players[pid])}`);
+      void stream.write(`>player ${pid} ${JSON.stringify(this.players[pid])}`);
     const timer = new TimerAdapter(this.format, stream, timerEvent, this.psDir, this.timerScale);
     for (const pid of ["p1", "p2"] as const) timer.setPlayer(pid, this.players[pid].name);
 
