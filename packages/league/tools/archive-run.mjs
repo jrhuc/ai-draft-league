@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const USAGE = `Usage: pnpm run archive-run -- <run-id> [<run-id>...]
 
@@ -11,8 +12,9 @@ Packs runs/<run-id> (every trace, log, and config) into a compressed tarball
 under $VGC_RUN_ARCHIVE_DIR (default ~/vgc-run-archive) with a manifest and
 checksum, then verifies the tarball reads back. Never deletes the source run.`;
 
-const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
-const runsDir = path.join(repoRoot, "runs");
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const dataDir = path.resolve(process.env.VGC_LEAGUE_DATA_DIR ?? repoRoot);
+const runsDir = path.join(dataDir, "runs");
 const destDir = path.resolve(
   process.env.VGC_RUN_ARCHIVE_DIR ?? path.join(os.homedir(), "vgc-run-archive"),
 );
@@ -27,7 +29,10 @@ fs.mkdirSync(destDir, { recursive: true });
 let failures = 0;
 for (const runId of runIds) {
   const source = path.join(runsDir, runId);
-  if (!/^[A-Za-z0-9._-]+$/.test(runId) || !fs.existsSync(path.join(source, "config.json"))) {
+  if (
+    !/^(?!\.{1,2}$)[A-Za-z0-9._-]+$/u.test(runId) ||
+    !fs.existsSync(path.join(source, "config.json"))
+  ) {
     console.error(`skip ${runId}: not a run directory with a config.json`);
     failures += 1;
     continue;

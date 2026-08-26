@@ -6,7 +6,7 @@ import path from "node:path";
 import type { Battle, BattleStream, Dex, Teams, TeamValidator } from "pokemon-showdown";
 import { z } from "zod";
 
-import { defaultPsDir, PINNED_PS_DIR, REPO_ROOT } from "./paths.js";
+import { defaultPsDir, PINNED_PS_DIR, LEAGUE_ROOT } from "./paths.js";
 
 export interface ShowdownApi {
   Battle: typeof Battle;
@@ -33,7 +33,7 @@ const requiredBuildFiles = [
   "dist/server/room-battle.js",
 ];
 const lockResult = showdownLockSchema.safeParse(
-  JSON.parse(fs.readFileSync(path.join(REPO_ROOT, "showdown.lock.json"), "utf8")),
+  JSON.parse(fs.readFileSync(path.join(LEAGUE_ROOT, "showdown.lock.json"), "utf8")),
 );
 if (!lockResult.success) {
   throw new Error("showdown.lock.json must contain a repository URL and full commit SHA");
@@ -59,7 +59,7 @@ function physicalPinnedRuntime(resolved: string): boolean {
 export function harnessCommit(): string | null {
   try {
     return execFileSync("git", ["rev-parse", "HEAD"], {
-      cwd: REPO_ROOT,
+      cwd: LEAGUE_ROOT,
       encoding: "utf8",
       timeout: 5_000,
       stdio: ["ignore", "pipe", "ignore"],

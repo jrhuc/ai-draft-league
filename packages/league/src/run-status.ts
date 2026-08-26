@@ -4,6 +4,8 @@ import path from "node:path";
 
 import { z } from "zod";
 
+import { writeAtomicJson } from "./atomic-json.js";
+
 export const runStatusSchema = z.looseObject({
   state: z.enum(["running", "done", "failed", "stopped"]),
   error: z.string().nullable().optional(),
@@ -129,12 +131,11 @@ export function writeRunStatus(runDir: string, status: RunStatus): void {
   const active = status.state === "running";
   if (active && !runLeases.has(leasePath)) holdRunLease(runDir);
   try {
-    fs.writeFileSync(
-      path.join(runDir, "status.json"),
-      `${JSON.stringify(status, null, 1)}\n`,
-      "utf8",
-    );
-  } catch {}
+    writeAtomicJson(path.join(runDir, "status.json"), status, 1);
+  } catch (cause) {
+    runLeases.get(leasePath)?.();
+    throw cause;
+  }
   if (!active) runLeases.get(leasePath)?.();
 }
 

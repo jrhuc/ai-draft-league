@@ -1,6 +1,6 @@
 # Architecture
 
-VGC Model League separates season orchestration, model calls, battle simulation, persistence, and publication. This page shows which component owns each job and how data crosses those boundaries.
+The harness separates season orchestration, model calls, battle simulation, persistence, and publication. This page shows which component owns each job and how data crosses those boundaries.
 
 <figure class="doc-diagram">
   <img src="assets/system-architecture.svg" alt="System architecture: the CLI starts runDraftLeague, which runs manager stages, recorded series, and run-file persistence. Manager stages and battle pilots call the model provider. Recorded series use Pokémon Showdown. buildLeague joins run files for local inspection or public export." loading="lazy">
@@ -44,7 +44,7 @@ The pin lives in `showdown.lock.json`, which names a full official commit. Setup
 
 Live inspection is the spectator app's dev-only watch surface, which reads run directories through the dev server and renders them with the normal season pages.
 
-Public league browsing belongs to [AI Draft League](https://github.com/jrhuc/ai-draft-league), which reads only the exported bundle.
+Public league browsing belongs to the sibling [spectator site](../../../apps/site), which reads only the exported bundle.
 
 ## Publication boundary
 

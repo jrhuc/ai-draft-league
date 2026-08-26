@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildDraftLeagueSchedule, type DraftLeagueSeriesPlan } from "../src/draftleague.js";
+import {
+  buildDraftLeagueSchedule,
+  type DraftLeagueSeriesPlan,
+} from "../src/draftleague-protocol.js";
 import type { LeagueFranchiseView, LeagueResponse, LeagueSeriesView } from "../src/views.js";
 import {
   buildPublicSeasonBundle,
@@ -83,6 +86,30 @@ function completedSeries(
         brought: [[`pokemon-${sides[0]}`], [`pokemon-${sides[1]}`]],
         megaEvolved: [null, null],
         faints: [{}, { [`pokemon-${sides[1]}`]: 1 }],
+      },
+    ],
+  };
+}
+
+function drawnSeries(
+  seriesIndex: number,
+  round: number,
+  sides: [number, number],
+): LeagueSeriesView {
+  const completed = completedSeries(seriesIndex, round, sides, sides[0]);
+  return {
+    ...completed,
+    score: [1, 1],
+    winner: null,
+    games: [
+      completed.games[0]!,
+      { ...completed.games[1]!, winner: sides[1] },
+      {
+        ...completed.games[0]!,
+        winner: null,
+        turns: 4,
+        megaEvolved: [null, null],
+        faints: [{}, {}],
       },
     ],
   };
@@ -302,6 +329,34 @@ test("the season bundle publishes one complete week with its public evidence and
     "weekly reviews release with their week",
   );
   assert.equal(bundle.playoffs, null);
+});
+
+test("a completed round-robin draw releases its replay and game record without a match result", () => {
+  const { league, plans } = fixture();
+  const plan = plans[0]!;
+  assert.ok(plan.entrants);
+  const draw = drawnSeries(plan.index, plan.round, plan.entrants);
+  league.series[0] = draw;
+  const bundle = buildPublicSeasonBundle({
+    ...COMMON,
+    league,
+    plans,
+    releasedThroughWeek: 1,
+    games: gamesFor(league.series.slice(0, 2)),
+  });
+
+  const match = bundle.weeks[0]?.matches.find((candidate) => candidate.seriesIndex === plan.index);
+  assert.equal(match?.status, "complete");
+  assert.equal(match?.winnerId, null);
+  assert.deepEqual(match?.score, [1, 1]);
+  assert.equal(bundle.replays[draw.seriesId]?.games.length, 3);
+  assert.deepEqual(
+    plan.entrants.map((entrant) => bundle.franchises[entrant]?.record),
+    [
+      { seriesWins: 0, seriesLosses: 0, gameWins: 1, gameLosses: 1 },
+      { seriesWins: 0, seriesLosses: 0, gameWins: 1, gameLosses: 1 },
+    ],
+  );
 });
 
 test("a historical release replays only transactions inside its boundary", () => {

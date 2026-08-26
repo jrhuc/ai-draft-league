@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { summarizeBattleEvents } from "../src/battle-transcript.js";
-import { REPO_ROOT } from "../src/paths.js";
+import { LEAGUE_ROOT } from "../src/paths.js";
 import { ShowdownReference } from "../src/reference.js";
 import { BattleState } from "../src/state.js";
 import type { BattleRequest } from "../src/types.js";
@@ -11,7 +11,7 @@ import { asRecord } from "../src/value.js";
 
 test("own requests render known sets and stats", () => {
   const request: BattleRequest = JSON.parse(
-    fs.readFileSync(path.join(REPO_ROOT, "tests/data/showdown_requests/turn.json"), "utf8"),
+    fs.readFileSync(path.join(LEAGUE_ROOT, "tests/data/showdown_requests/turn.json"), "utf8"),
   );
   const rendered = new BattleState("p1").render(request);
   const first = request.side!.pokemon![0]!;

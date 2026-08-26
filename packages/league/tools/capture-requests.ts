@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { RandomEngine } from "../src/battle-agent.js";
-import { REPO_ROOT } from "../src/paths.js";
+import { LEAGUE_ROOT } from "../src/paths.js";
 import { SimBattle } from "../src/sim.js";
 import { loadPool } from "../src/teams.js";
 import type { AgentContext, BattleRequest, Pid } from "../src/types.js";
@@ -63,7 +63,7 @@ async function captureRequests(): Promise<void> {
     else missing.push(kind);
   }
   if (missing.length) throw new Error(`could not capture request kinds: ${missing.join(", ")}`);
-  const output = path.join(REPO_ROOT, "tests", "data", "showdown_requests");
+  const output = path.join(LEAGUE_ROOT, "tests", "data", "showdown_requests");
   fs.mkdirSync(output, { recursive: true });
   for (const { name, request } of files)
     fs.writeFileSync(path.join(output, name), `${JSON.stringify(request, null, 1)}\n`);

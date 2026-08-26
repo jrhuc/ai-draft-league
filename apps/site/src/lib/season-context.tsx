@@ -1,12 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { publicSeasonBundleSchema } from "league/protocol";
 import { liveRunId } from "./live";
 import type { SeasonBundle } from "./season";
-
-/**
- * The bundle is fetched once per page load from `/season-bundle.json`, the same
- * public artifact the producer exports. It stays out of the JS bundle so the
- * file remains independently cacheable across site releases.
- */
 
 let bundlePromise: Promise<SeasonBundle> | null = null;
 
@@ -16,15 +11,14 @@ function bundleUrl(): string {
   return live ? `/api/watch/runs/${live}/bundle` : "/season-bundle.json";
 }
 
-function fetchBundle(): Promise<SeasonBundle> {
-  return fetch(bundleUrl()).then((response) => {
-    if (!response.ok) throw new Error(`${bundleUrl()} responded ${response.status}`);
-    // SAFETY: the producer validates the bundle shape before export; the site renders it verbatim.
-    return response.json() as Promise<SeasonBundle>;
-  });
+async function fetchBundle(): Promise<SeasonBundle> {
+  const url = bundleUrl();
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`${url} responded ${response.status}`);
+  const value: unknown = await response.json();
+  return publicSeasonBundleSchema.parse(value);
 }
 
-/** Single-flight load: every consumer awaits the same request, started on first mount. */
 function loadBundle(): Promise<SeasonBundle> {
   bundlePromise ??= fetchBundle();
   return bundlePromise;

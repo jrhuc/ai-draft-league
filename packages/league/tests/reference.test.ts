@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { REPO_ROOT } from "../src/paths.js";
+import { LEAGUE_ROOT } from "../src/paths.js";
 import { DEX_TOOLS, ShowdownReference } from "../src/reference.js";
 import { SHOWDOWN_LOCK, showdownCommit } from "../src/showdown.js";
 import { asRecord, isRecord, text } from "../src/value.js";
@@ -193,7 +193,7 @@ test("reference render revision binds the versioned executed module bytes", () =
 
 test("missing Showdown checkout fails immediately", () => {
   assert.throws(
-    () => new ShowdownReference("test", path.join(REPO_ROOT, "missing-showdown")),
+    () => new ShowdownReference("test", path.join(LEAGUE_ROOT, "missing-showdown")),
     /Pokémon Showdown is not built.*setup:showdown/,
   );
 });

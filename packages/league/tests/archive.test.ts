@@ -165,7 +165,6 @@ test("a finished draft-only run loads and stops being draft-only once it plays",
       board: "test-board",
       format: "gen9testformat",
       draft_only: true,
-      trade_window: null,
     }),
   );
   fs.writeFileSync(
@@ -536,6 +535,105 @@ test("buildLeague joins config, rosters, draft, teambuilds, results, and spend",
   );
   assert.equal(buildLeague(LEAGUE_ROWS, runsDir, "unknown-run"), null);
   fs.rmSync(runsDir, { recursive: true, force: true });
+});
+
+test("archive counts games from a completed round-robin draw without a match result", () => {
+  const runsDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-archive-draw-"));
+  try {
+    writeLeagueFixture(runsDir);
+    const draw = leagueRow({
+      series_index: 0,
+      series_id: "draw11",
+      stage: "roundrobin",
+      round: 1,
+      timestamp: "2026-07-20T10:00:00.000Z",
+      teams: { p1: "Alpha Aces wk1", p2: "Beta Bandits wk1" },
+      winner: null,
+      winner_side: null,
+      score: { p1: 1, p2: 1 },
+      turns: 18,
+      games: [
+        { number: 1, winner: "openai:alpha", winner_side: "p1", turns: 6 },
+        { number: 2, winner: "openai:beta", winner_side: "p2", turns: 6 },
+        { number: 3, winner: null, winner_side: null, turns: 6 },
+      ],
+    });
+    const league = buildLeague([draw], runsDir, RUN_ID)!;
+
+    assert.equal(league.series[0]?.winner, null);
+    assert.deepEqual(
+      league.franchises.map((entry) => entry.roundRobinRecord),
+      [
+        { w: 0, l: 0, gw: 1, gl: 1 },
+        { w: 0, l: 0, gw: 1, gl: 1 },
+      ],
+    );
+    assert.deepEqual(
+      league.franchises.map((entry) => entry.overallRecord),
+      [
+        { w: 0, l: 0, gw: 1, gl: 1 },
+        { w: 0, l: 0, gw: 1, gl: 1 },
+      ],
+    );
+  } finally {
+    fs.rmSync(runsDir, { recursive: true, force: true });
+  }
+});
+
+test("archive round-robin finishes use the canonical game-win tiebreak", () => {
+  const runsDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-archive-ranking-"));
+  const runId = "20260826T120000.000000Z-rank0001";
+  const runDir = path.join(runsDir, runId);
+  const models = [0, 1, 2, 3].map((entrant) => `openai:model${entrant}`);
+  fs.mkdirSync(runDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(runDir, "config.json"),
+    JSON.stringify({
+      mode: "draft",
+      entrants: models,
+      team_names: ["Aces", "Bandits", "Comets", "Dodgers"],
+      weeks: 3,
+      board: "test-board",
+      format: "gen9testformat",
+    }),
+  );
+  const row = (
+    seriesIndex: number,
+    stage: "roundrobin" | "playoff",
+    entrants: [number, number],
+    score: [number, number],
+  ) =>
+    leagueRow({
+      run_id: runId,
+      series_index: seriesIndex,
+      series_id: `rank-${seriesIndex}`,
+      stage,
+      round: 1,
+      timestamp: `2026-08-26T12:0${seriesIndex}:00.000Z`,
+      players: { p1: models[entrants[0]], p2: models[entrants[1]] },
+      entrants,
+      teams: { p1: `Team ${entrants[0]}`, p2: `Team ${entrants[1]}` },
+      winner: models[entrants[0]],
+      winner_side: "p1",
+      score: { p1: score[0], p2: score[1] },
+      games: [],
+    });
+  try {
+    const league = buildLeague(
+      [
+        row(0, "roundrobin", [0, 2], [2, 1]),
+        row(1, "roundrobin", [1, 3], [3, 2]),
+        row(6, "playoff", [2, 3], [2, 0]),
+      ],
+      runsDir,
+      runId,
+    )!;
+
+    assert.equal(league.franchises[1]?.finish, "1st in the round robin");
+    assert.equal(league.franchises[0]?.finish, "2nd in the round robin");
+  } finally {
+    fs.rmSync(runsDir, { recursive: true, force: true });
+  }
 });
 
 test("direct entrants keep identical packed teams owned by the recorded sides", () => {

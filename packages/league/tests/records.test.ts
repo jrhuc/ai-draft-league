@@ -71,7 +71,7 @@ test("scoping keeps the test pool out of overall views but selectable", () => {
 });
 
 test("generic journals remain JSON objects while result authority requires the current series schema", (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-model-league-record-types-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-record-types-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const journal = path.join(directory, "draft.jsonl");
   fs.writeFileSync(journal, '{"kind":"draft_pick","pick":1}\n');
@@ -87,7 +87,7 @@ test("generic journals remain JSON objects while result authority requires the c
 });
 
 test("record loading ignores whitespace-only lines", (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-model-league-records-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-records-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const records = path.join(directory, "results.jsonl");
   fs.writeFileSync(records, `${JSON.stringify(row("a", "b", "a"))}\n   \n`);
@@ -95,7 +95,7 @@ test("record loading ignores whitespace-only lines", (t) => {
 });
 
 test("record loading retains valid rows before a torn final JSONL fragment", (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-model-league-records-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-records-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const records = path.join(directory, "results.jsonl");
   const first = row("a", "b", "a");
@@ -108,7 +108,7 @@ test("record loading retains valid rows before a torn final JSONL fragment", (t)
 });
 
 test("record append removes a torn tail before committing the new row", (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-model-league-records-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-records-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const records = path.join(directory, "results.jsonl");
   const first = row("a", "b", "a");
@@ -122,7 +122,7 @@ test("record append removes a torn tail before committing the new row", (t) => {
 });
 
 test("record append preserves a valid unterminated object with a separator", (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-model-league-records-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-records-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const records = path.join(directory, "results.jsonl");
   const first = row("a", "b", "a");
@@ -135,7 +135,7 @@ test("record append preserves a valid unterminated object with a separator", (t)
 });
 
 test("record append rejects committed malformed rows without changing the journal", (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-model-league-records-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-records-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const records = path.join(directory, "results.jsonl");
   const malformed = `${JSON.stringify(row("a", "b", "a"))}\n{"players":\n`;
@@ -146,7 +146,7 @@ test("record append rejects committed malformed rows without changing the journa
 });
 
 test("record append rejects malformed interior rows without changing the journal", (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-model-league-records-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-records-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const records = path.join(directory, "results.jsonl");
   const malformed = `${JSON.stringify(row("a", "b", "a"))}\n{"players":\n${JSON.stringify(row("c", "d", "c"))}`;
@@ -157,7 +157,7 @@ test("record append rejects malformed interior rows without changing the journal
 });
 
 test("record append refuses a semantic-invalid unterminated tail", (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-model-league-records-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-records-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const records = path.join(directory, "results.jsonl");
   fs.writeFileSync(records, "42");
@@ -167,7 +167,7 @@ test("record append refuses a semantic-invalid unterminated tail", (t) => {
 });
 
 test("record loading rejects a terminated malformed final JSONL row", (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-model-league-records-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-records-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const records = path.join(directory, "results.jsonl");
   fs.writeFileSync(records, `${JSON.stringify(row("a", "b", "a"))}\n{"players":\n`);
@@ -175,7 +175,7 @@ test("record loading rejects a terminated malformed final JSONL row", (t) => {
 });
 
 test("record loading rejects a malformed interior JSONL row with its line number", (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-model-league-records-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-records-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const records = path.join(directory, "results.jsonl");
   fs.writeFileSync(
@@ -186,7 +186,7 @@ test("record loading rejects a malformed interior JSONL row with its line number
 });
 
 test("record loading invalidates a cached torn tail after it is completed by an append", (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-model-league-records-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-records-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const records = path.join(directory, "results.jsonl");
   const first = row("a", "b", "a");
@@ -210,7 +210,7 @@ test("record loading invalidates a cached torn tail after it is completed by an 
 });
 
 test("HTML reports include nested games and filter pools", (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-model-league-records-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-records-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const records = path.join(directory, "results.jsonl");
   appendRow(records, {
@@ -246,7 +246,7 @@ test("HTML reports include nested games and filter pools", (t) => {
   const report = path.join(directory, "report.html");
   writeReport(records, report, "alpha");
   const html = fs.readFileSync(report, "utf8");
-  assert.match(html, /VGC Model League records/);
+  assert.match(html, /AI Draft League records/);
   assert.match(html, /1 completed series for pool alpha/);
   assert.match(html, /series-1/);
   assert.match(html, /game-1\.log/);

@@ -45,6 +45,16 @@ export function ordinal(rank: number): string {
   return `${rank}${suffix}`;
 }
 
+export function fileSlug(value: string): string {
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 48) || "model"
+  );
+}
+
 /** Doom-loop backstop, not a content budget: limits should be set far above real traffic, and any
  * clipping must stay visible to the model and in traces rather than silently amputating content. */
 export function clip(value: string, limit: number): string {

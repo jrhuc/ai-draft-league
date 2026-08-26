@@ -5,13 +5,13 @@ import test from "node:test";
 import { BaseEngine } from "../src/battle-agent.js";
 import type { SlotMenu } from "../src/choices.js";
 import { buildMenus } from "../src/choices.js";
-import { REPO_ROOT } from "../src/paths.js";
+import { LEAGUE_ROOT } from "../src/paths.js";
 import type { BattleRequest } from "../src/types.js";
 import { asRecords } from "../src/value.js";
 
 function fixture(name: string): BattleRequest {
   return JSON.parse(
-    fs.readFileSync(path.join(REPO_ROOT, "tests", "data", "showdown_requests", name), "utf8"),
+    fs.readFileSync(path.join(LEAGUE_ROOT, "tests", "data", "showdown_requests", name), "utf8"),
   );
 }
 

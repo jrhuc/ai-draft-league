@@ -6,7 +6,7 @@ import type { Battle, Side } from "pokemon-showdown";
 
 import { buildMenus } from "../src/choices.js";
 import { acceptedBattleActionEntries } from "../src/fork.js";
-import { REPO_ROOT } from "../src/paths.js";
+import { LEAGUE_ROOT } from "../src/paths.js";
 import { loadShowdown } from "../src/showdown.js";
 import type { BattleRequest, Pid } from "../src/types.js";
 import { activeRequest, requestActionCandidates } from "./fixtures/fork.js";
@@ -48,7 +48,7 @@ const ORACLE_TEAM: PokemonSet[] = [
 
 const ORACLE_PACKED = Showdown.Teams.pack(ORACLE_TEAM);
 const MEGA_PACKED = fs
-  .readFileSync(path.join(REPO_ROOT, "teams", "test", "rios-mega-raichu-x-venusaur.team"), "utf8")
+  .readFileSync(path.join(LEAGUE_ROOT, "teams", "test", "rios-mega-raichu-x-venusaur.team"), "utf8")
   .trim();
 
 function newBattle(format = FORMAT, packed = ORACLE_PACKED): Battle {

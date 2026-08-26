@@ -3,12 +3,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const BUNDLED_TEAMS_DIR = path.join(REPO_ROOT, "teams");
-export const DATA_DIR = path.resolve(process.env.VGC_LEAGUE_DATA_DIR ?? REPO_ROOT);
-export const PINNED_PS_DIR = path.join(REPO_ROOT, "pokemon-showdown");
+export const LEAGUE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const BUNDLED_TEAMS_DIR = path.join(LEAGUE_ROOT, "teams");
+export const DATA_DIR = path.resolve(process.env.VGC_LEAGUE_DATA_DIR ?? LEAGUE_ROOT);
+export const PINNED_PS_DIR = path.join(LEAGUE_ROOT, "pokemon-showdown");
 export const TEAMS_DIR = path.join(DATA_DIR, "teams");
-export const BOARDS_DIR = path.join(REPO_ROOT, "boards");
+export const BOARDS_DIR = path.join(LEAGUE_ROOT, "boards");
 export const RUNS_DIR = path.join(DATA_DIR, "runs");
 export const RESULTS_PATH = path.join(DATA_DIR, "records", "results.jsonl");
 

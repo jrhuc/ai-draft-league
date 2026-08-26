@@ -20,5 +20,5 @@
     "sourceMap": true
   },
   "include": ["src/**/*.ts", "tools/**/*.ts", "tests/**/*.ts"],
-  "exclude": ["dist", "node_modules", "pokemon-showdown", "tools/oxlint/anti-slop"]
+  "exclude": ["dist", "node_modules", "pokemon-showdown"]
 }

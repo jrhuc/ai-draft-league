@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { z } from "zod";
 
+import { writeAtomicJson } from "./atomic-json.js";
 import { LLMEngine } from "./llm-engine.js";
 import { defaultPsDir, RESULTS_PATH } from "./paths.js";
 import type { ReasoningLevel } from "./providers.js";
@@ -136,23 +137,19 @@ export async function runExhibition(
       tools: options.opponent === "random" ? "none" : "provider-tool-loop-v1",
     },
   };
-  fs.writeFileSync(
+  writeAtomicJson(
     path.join(runDir, "config.json"),
-    `${JSON.stringify(
-      {
-        mode: "exhibition",
-        seat: seatSide,
-        players,
-        execution_harnesses: executionHarnesses,
-        seed,
-        reasoning: options.reasoning ?? null,
-        pool: pool.id,
-        format: pool.format,
-      },
-      null,
-      2,
-    )}\n`,
-    "utf8",
+    {
+      mode: "exhibition",
+      seat: seatSide,
+      players,
+      execution_harnesses: executionHarnesses,
+      seed,
+      reasoning: options.reasoning ?? null,
+      pool: pool.id,
+      format: pool.format,
+    },
+    2,
   );
 
   const reference = new ShowdownReference(pool.format, psDir);

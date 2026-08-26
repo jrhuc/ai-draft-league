@@ -27,7 +27,7 @@ pnpm run update:showdown
 
 The update command builds and tests the candidate and restores the previous
 revision if either fails. A pin update is reviewed against the format rules in
-[AGENTS.md](https://github.com/jrhuc/vgc-model-league/blob/main/AGENTS.md)
+[AGENTS.md](../AGENTS.md)
 before it is kept.
 
 ## Point runs at providers
@@ -40,17 +40,17 @@ Models are specified in one of these exact forms:
 - `opencode-go:<model-id>` / `opencode-zen:<model-id>` (OpenCode)
 - `random`, the legal-action baseline
 
-CLI runs read `OPENROUTER_API_KEY`, `PRIME_API_KEY`, `AI_GATEWAY_API_KEY`, or `OPENCODE_API_KEY` from the environment. Credentials entered in the GUI remain in server memory for that run only.
+CLI runs read `OPENROUTER_API_KEY`, `PRIME_API_KEY`, `AI_GATEWAY_API_KEY`, or `OPENCODE_API_KEY` from the environment.
 
 Endpoints are fixed, and model specs never take a base URL:
 
 | Spec            | Endpoint                           | Model IDs                           |
 | --------------- | ---------------------------------- | ----------------------------------- |
-| `openrouter:`   | `https://openrouter.ai/api/v1`     | listed in the GUI catalog           |
+| `openrouter:`   | `https://openrouter.ai/api/v1`     | listed in the OpenRouter catalog    |
 | `prime:`        | `https://api.pinference.ai/api/v1` | entered manually                    |
 | `gateway:`      | `https://ai-gateway.vercel.sh/v1`  | entered manually as `creator/model` |
-| `opencode-go:`  | `https://opencode.ai/zen/go/v1`    | listed in the GUI catalog           |
-| `opencode-zen:` | `https://opencode.ai/zen/v1`       | listed in the GUI catalog           |
+| `opencode-go:`  | `https://opencode.ai/zen/go/v1`    | listed by OpenCode                  |
+| `opencode-zen:` | `https://opencode.ai/zen/v1`       | listed by OpenCode                  |
 
 OpenCode serves each model through one API shape. The harness follows OpenCode's endpoint tables: GPT, Grok, and Muse use the Responses API; Claude, Qwen, and MiniMax on Go use the Anthropic Messages API; Kimi, GLM, DeepSeek, MiMo, Hy3, and MiniMax on Zen use chat completions. Gemini requires the Google API and is rejected, so route it through OpenRouter instead.
 
@@ -71,7 +71,6 @@ that break their answer contract. User cancellation aborts any run.
 ## Pick a mode and run it
 
 ```sh
-pnpm run vgcleague gui          # local operator workspace
 pnpm run vgcleague selfcheck    # one random-vs-random series
 
 pnpm run vgcleague rotation   --models <spec> <spec> --pool regmb-202607 --series-per-pair 4
@@ -82,7 +81,6 @@ pnpm run vgcleague exhibition --opponent <spec>
 
 | Mode       | What happens                                        | Comparison role                  |
 | ---------- | --------------------------------------------------- | -------------------------------- |
-| GUI match  | one best-of-three                                   | contextual only                  |
 | Tournament | single-elimination bracket, one team per entrant    | contextual only                  |
 | Draft      | shared draft, matchup builds, round robin, playoffs | contextual only                  |
 | Rotation   | mirrored assignments across a fixed pool            | controlled/contextual; no rating |
@@ -151,7 +149,7 @@ pnpm run build-event-pool teams/<pool>/sources.json
 pnpm run build-board
 ```
 
-`build-pool` reads Poképaste sources. The GUI pool manager also accepts Showdown teambuilder exports. The pinned simulator validates both. The current board builder uses its fixed Regulation MB cost source and takes no pool.
+`build-pool` reads Poképaste sources and Showdown teambuilder exports. The pinned simulator validates both. The current board builder uses its fixed Regulation MB cost source and takes no pool.
 
 ## Inspect evidence
 
@@ -165,7 +163,7 @@ Without `--pool`, outcomes and reports exclude only the disposable `test` pool. 
 
 Decision and context logs record authorized observations and submitted model evidence, but they do not prove Showdown accepted a transition. Join them with game and referee logs to establish legality, substitutions, timer defaults, and outcomes.
 
-The GUI has **Live**, **Tournaments**, and **New run**. It launches and cancels runs and shows current battles, failures, and raw operational evidence. Public league browsing belongs to [AI Draft League](https://github.com/jrhuc/ai-draft-league). GitHub Pages remains a separate static docs build. [Architecture](architecture.md) defines the operator, filesystem, provider, simulator, and publication boundaries.
+Public league browsing belongs to the spectator app in [`apps/site`](../../../apps/site). [Architecture](architecture.md) defines the operator, filesystem, provider, simulator, and publication boundaries.
 
 ## Archive and publish
 
@@ -175,7 +173,7 @@ Archive full run directories to verified tarballs without deleting the sources:
 pnpm run archive-run <run-id> [<run-id>...]
 ```
 
-Output goes to `$VGC_RUN_ARCHIVE_DIR` or `~/vgc-run-archive`. Copy it offsite with operator-managed tooling, then remove source runs manually if needed.
+Runs are read from `$VGC_LEAGUE_DATA_DIR/runs` when configured. Output goes to `$VGC_RUN_ARCHIVE_DIR` or `~/vgc-run-archive`. Copy it offsite with operator-managed tooling, then remove source runs manually if needed.
 
 To publish a spectator release, build first, then export one explicit boundary:
 
@@ -186,13 +184,11 @@ pnpm run export:season \
   --title "AI Draft League"
 ```
 
-The release boundary is mandatory. Export never infers it from the newest local result. `--through-week 0` publishes a completed draft before any match result. A value past the last regular-season week releases playoff rounds. `--out <file>` chooses the destination. Export fails if a named released week is incomplete or lacks verified replay evidence.
+The release boundary is mandatory. Export never infers it from the newest local result. `--through-week 0` publishes a completed draft before any match result. A value past the last regular-season week releases playoff rounds. `--out <file>` chooses the destination — pass `--out ../../apps/site/public/season-bundle.json` to write the spectator app's committed artifact directly (see [Deployment](deployment.md)). Export fails if a named released week is incomplete or lacks verified replay evidence.
 
 `season-bundle.json` carries released public evidence: draft picks with stated rationales, the board, rosters and acquisitions, builds and plans, standings, results, canonical game summaries, structured battle events, submitted decisions, reflections, transactions, weekly review and reconciliation reasoning with memory sizes, the bracket, and end-of-season reviews. It excludes notebooks, traces, prompts, provider responses, credentials, and future results.
 
 [Deployment](deployment.md) covers the release process. [Publication boundary](architecture.md#publication-boundary) defines the bundle's content and authority.
-
-Build the technical documentation with `pnpm run build:docs`. GitHub Actions deploys it to Pages when documentation changes. That artifact contains no run data or GUI assets.
 
 ## Use the Exhibition seat
 

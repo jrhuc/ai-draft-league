@@ -35,7 +35,7 @@ test("default pool loads in manifest order and validates", () => {
 });
 
 test("pool loader uses custom directories and rejects invalid manifests", (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-model-league-teams-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-teams-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const poolDir = path.join(root, "snapshot");
   fs.mkdirSync(poolDir);
@@ -86,7 +86,7 @@ test("pool loader uses custom directories and rejects invalid manifests", (t) =>
 });
 
 test("a created pool keeps the event and the placements a bracket reads seeds from", (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-model-league-createpool-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-createpool-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   createPool(
     "vr-import",

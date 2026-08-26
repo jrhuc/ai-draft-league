@@ -27,7 +27,6 @@
     "check": "pnpm run check:comments",
     "check:comments": "node tools/check-comments.mjs",
     "typecheck": "node tools/setup-showdown.mjs --check && tsc -p tsconfig.json --noEmit",
-    "build:docs": "node tools/build-docs.mjs",
     "export:season": "node dist/src/cli.js export-season",
     "test:unit": "node -e 'for (const d of [\"runs\", \"records\"]) require(\"node:fs\").mkdirSync(d, { recursive: true })' && node --test --test-concurrency=4 --test-timeout=300000 dist/tests/*.test.js",
     "test": "pnpm run check && pnpm run build && pnpm run test:unit",
@@ -49,7 +48,6 @@
   "devDependencies": {
     "@babel/parser": "8.0.4",
     "@types/node": "24.13.3",
-    "marked": "18.0.9",
     "typescript": "7.0.2"
   },
   "engines": {

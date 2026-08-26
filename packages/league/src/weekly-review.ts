@@ -20,7 +20,7 @@ import { type GameSummary, seriesGameSummaries } from "./game-usage.js";
 import type { DraftTableRow, TeambuildView } from "./views.js";
 import { BattleLog } from "./battlelog.js";
 import { appendJsonlObject, readJsonlObjects } from "./jsonl.js";
-import { FORMAT_AUTHORITY_NOTICE, MANAGER_CHARGE } from "./prompts.js";
+import { FORMAT_AUTHORITY_NOTICE, MANAGER_CHARGE, renderPromptTemplate } from "./prompts.js";
 import type { ModelReasoningConfig, ReasoningLevel } from "./providers.js";
 import {
   classifyProviderFailure,
@@ -35,6 +35,7 @@ import {
   readCompletedSeriesGameLogs,
 } from "./series.js";
 import type { JsonObject, JsonValue, Provider, ProviderMessage } from "./types.js";
+import { fileSlug } from "./value.js";
 import { clip, isRecord, isText } from "./value.js";
 
 const MEMORY_NOTICE = `- Your memory is yours to organise: a notebook page that every later prompt of yours shows in full, plus up to ${MEMORY_LIMITS.pages - 1} named pages that later prompts list by name and that you or your later selves fetch with read_memory_page. Each page holds at most ${MEMORY_LIMITS.pageChars} characters, ${MEMORY_LIMITS.totalChars} in all. It is the only state that carries from week to week; nothing else you write here is kept.`;
@@ -164,16 +165,6 @@ interface ReviewSeatLog {
   error?: string;
 }
 
-function slug(value: string): string {
-  return (
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")
-      .slice(0, 48) || "model"
-  );
-}
-
 export function reviewArtifactPaths(runDir: string, week: number, stage: ReviewStage = "week") {
   const name = stage === "week" ? `week-${week}` : `week-${week}-transactions`;
   return {
@@ -223,20 +214,6 @@ export function parseWeeklyReview(
   return "error" in result ? result.error : result.value;
 }
 
-function renderTemplate(
-  lines: readonly string[],
-  values: Readonly<Record<string, string>>,
-): string {
-  return lines
-    .map((line) =>
-      Object.entries(values).reduce(
-        (rendered, [name, value]) => rendered.replaceAll(`{{${name}}}`, value),
-        line,
-      ),
-    )
-    .join("\n");
-}
-
 function windowNotice(state: WeeklyReviewState): string {
   if (state.nextWindowWeek === null) return "Rosters are now locked for the rest of the season.";
   if (state.nextWindowWeek === state.week && state.stage === "week") {
@@ -250,13 +227,13 @@ function systemPrompt(state: WeeklyReviewState, entrant: number): string {
     state.stage === "week"
       ? WEEKLY_REVIEW_PROMPT_POLICY.systemTemplate
       : WEEKLY_REVIEW_PROMPT_POLICY.reconcileSystemTemplate;
-  return renderTemplate(template, {
-    model: state.models[entrant]!,
-    format: state.board.format,
-    week: String(state.week),
-    weeks: String(state.weeks),
-    windowNotice: windowNotice(state),
-  });
+  return renderPromptTemplate(template, [
+    ["model", state.models[entrant]!],
+    ["format", state.board.format],
+    ["week", String(state.week)],
+    ["weeks", String(state.weeks)],
+    ["windowNotice", windowNotice(state)],
+  ]);
 }
 
 function rosterLine(roster: readonly DraftBoardMon[]): string {
@@ -668,7 +645,7 @@ export async function runWeeklyReview(
       if (provider) {
         const system = systemPrompt(state, entrant);
         const messages: ProviderMessage[] = [{ role: "user", content: userPrompt(state, entrant) }];
-        const seatLog = path.join(logDir, `seat-${entrant}-${slug(model)}.jsonl`);
+        const seatLog = path.join(logDir, `seat-${entrant}-${fileSlug(model)}.jsonl`);
         const reference = new ShowdownReference(state.board.format, options.psDir);
         const boardSearch = createBoardSearch(state.board, options.psDir);
         const extraTools = reviewTools(state, entrant, options);

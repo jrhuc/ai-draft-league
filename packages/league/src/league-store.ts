@@ -1,9 +1,9 @@
-import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 
+import { writeAtomicJson } from "./atomic-json.js";
 import type { DraftBoard, DraftBoardMon } from "./draft.js";
 import { draftTranscriptRowSchema, snakeOrder } from "./draft.js";
 import type { DraftPickView, TeambuildView } from "./views.js";
@@ -137,36 +137,32 @@ export function writeDraftLeagueConfig(
   config: DraftLeagueConfig,
   outcome: Partial<DraftLeagueCompletion> = {},
 ): void {
-  fs.writeFileSync(
+  writeAtomicJson(
     path.join(config.runDir, "config.json"),
-    `${JSON.stringify(
-      {
-        mode: "draft",
-        harness_commit: harnessCommit(),
-        showdown_commit: config.showdownCommit,
-        models: config.models,
-        entrants: config.entrants,
-        seed: config.seed,
-        board: config.board.id,
-        format: config.board.format,
-        concurrency: config.concurrency,
-        reasoning: config.reasoning,
-        reasoning_by_model: config.reasoningByModel,
-        timer_scale: config.timerScale,
-        closed_sheets: config.closedSheets,
-        sequential_weeks: config.sequentialWeeks,
-        draft_only: config.draftOnly,
-        preset: config.preset,
-        transactions: config.transactions,
-        swaps_allowed: config.swapsAllowed,
-        team_names: config.teamNames,
-        weeks: config.weeks,
-        ...outcome,
-      },
-      null,
-      2,
-    )}\n`,
-    "utf8",
+    {
+      mode: "draft",
+      harness_commit: harnessCommit(),
+      showdown_commit: config.showdownCommit,
+      models: config.models,
+      entrants: config.entrants,
+      seed: config.seed,
+      board: config.board.id,
+      format: config.board.format,
+      concurrency: config.concurrency,
+      reasoning: config.reasoning,
+      reasoning_by_model: config.reasoningByModel,
+      timer_scale: config.timerScale,
+      closed_sheets: config.closedSheets,
+      sequential_weeks: config.sequentialWeeks,
+      draft_only: config.draftOnly,
+      preset: config.preset,
+      transactions: config.transactions,
+      swaps_allowed: config.swapsAllowed,
+      team_names: config.teamNames,
+      weeks: config.weeks,
+      ...outcome,
+    },
+    2,
   );
 }
 
@@ -178,21 +174,17 @@ export function writeDraftLeagueRosters(
   budgets: readonly number[],
   rosters: readonly (readonly DraftBoardMon[])[],
 ): void {
-  fs.writeFileSync(
+  writeAtomicJson(
     path.join(runDir, "rosters.json"),
-    `${JSON.stringify(
-      entrants.map((model, entrant) => ({
-        entrant,
-        model,
-        team_name: teamNames[entrant],
-        budget_left: budgets[entrant],
-        spent: boardBudget - budgets[entrant]!,
-        roster: rosters[entrant]!.map((mon) => ({ id: mon.id, name: mon.name, cost: mon.cost })),
-      })),
-      null,
-      2,
-    )}\n`,
-    "utf8",
+    entrants.map((model, entrant) => ({
+      entrant,
+      model,
+      team_name: teamNames[entrant],
+      budget_left: budgets[entrant],
+      spent: boardBudget - budgets[entrant]!,
+      roster: rosters[entrant]!.map((mon) => ({ id: mon.id, name: mon.name, cost: mon.cost })),
+    })),
+    2,
   );
 }
 
@@ -450,13 +442,7 @@ export function promoteDraftOnlyConfig(
     ),
   );
   const nextConfig = { ...activeConfig, draft_only: false, transactions };
-  const temporary = `${configPath}.${process.pid}.${randomUUID()}.tmp`;
-  try {
-    fs.writeFileSync(temporary, `${JSON.stringify(nextConfig, null, 2)}\n`, "utf8");
-    fs.renameSync(temporary, configPath);
-  } finally {
-    fs.rmSync(temporary, { force: true });
-  }
+  writeAtomicJson(configPath, nextConfig, 2);
 }
 
 export function linkedStoredArtifact(

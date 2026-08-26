@@ -98,7 +98,7 @@ function parseSpread(value: string, label: string) {
 
 async function fetchText(url: string, accept: string): Promise<string> {
   const response = await fetch(url, {
-    headers: { "user-agent": "vgc-model-league-pool-builder", accept },
+    headers: { "user-agent": "ai-draft-league-pool-builder", accept },
     signal: AbortSignal.timeout(30_000),
   });
   if (!response.ok)

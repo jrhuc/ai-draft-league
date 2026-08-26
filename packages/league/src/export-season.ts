@@ -1,11 +1,11 @@
-import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 
 import { buildLeague, buildLeagueGame } from "./archive.js";
+import { writeAtomicJson } from "./atomic-json.js";
 import { describeBoardMon, loadBoard } from "./draft.js";
-import { buildDraftLeagueSchedule, type DraftLeagueSeriesPlan } from "./draftleague.js";
+import { buildDraftLeagueSchedule, type DraftLeagueSeriesPlan } from "./draftleague-protocol.js";
 import { SAFE_SEGMENT } from "./path-safety.js";
 import {
   type BuildPublicSeasonBundleOptions,
@@ -63,14 +63,12 @@ function storedLeagueConfig(runsDir: string, runId: string): StoredLeagueConfig 
 }
 
 function lastCompleteRound(
-  series: { seriesIndex: number; winner: unknown }[],
+  series: { seriesIndex: number }[],
   plans: DraftLeagueSeriesPlan[],
   totalWeeks: number,
   playoffRounds: number,
 ): number {
-  const finished = new Set(
-    series.filter((row) => row.winner !== null).map((row) => row.seriesIndex),
-  );
+  const finished = new Set(series.map((row) => row.seriesIndex));
   const planRound = (plan: DraftLeagueSeriesPlan): number =>
     plan.stage === "roundrobin" ? plan.round : totalWeeks + plan.round;
   let released = 0;
@@ -103,7 +101,7 @@ export function buildSeasonExport(options: Omit<ExportSeasonOptions, "out">): Pu
   const games = new Map<string, PublicSeasonGameInput[]>();
   for (const series of league.series) {
     const releasedRound = series.stage === "roundrobin" ? series.round : totalWeeks + series.round;
-    if (releasedRound > releasedThroughWeek || series.winner === null) continue;
+    if (releasedRound > releasedThroughWeek) continue;
     games.set(
       series.seriesId,
       series.games.map((_, gameIndex) => {
@@ -138,15 +136,7 @@ export function buildSeasonExport(options: Omit<ExportSeasonOptions, "out">): Pu
 
 export function exportSeasonBundle(options: ExportSeasonOptions): PublicSeasonBundle {
   const bundle = buildSeasonExport(options);
-  const directory = path.dirname(options.out);
-  const suffix = `${process.pid}.${randomUUID()}.tmp`;
-  const bundleStaged = `${options.out}.${suffix}`;
-  fs.mkdirSync(directory, { recursive: true });
-  try {
-    fs.writeFileSync(bundleStaged, `${JSON.stringify(bundle)}\n`, { encoding: "utf8", flag: "wx" });
-    fs.renameSync(bundleStaged, options.out);
-  } finally {
-    fs.rmSync(bundleStaged, { force: true });
-  }
+  fs.mkdirSync(path.dirname(options.out), { recursive: true });
+  writeAtomicJson(options.out, bundle);
   return bundle;
 }

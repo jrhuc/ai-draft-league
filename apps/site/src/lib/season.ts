@@ -1,223 +1,37 @@
-export type SeasonStatus = "draft" | "regular-season" | "playoffs" | "complete";
+import type {
+  PublicBattleEvent,
+  PublicBuild,
+  PublicMatch,
+  PublicSeasonBundle,
+  PublicWeeklyReview,
+} from "league/protocol";
 
-export type Pokemon = { id: string; name: string; spriteId: string; cost: number };
+export type SeasonBundle = PublicSeasonBundle;
+export type Match = PublicMatch;
+export type Build = PublicBuild;
+export type WeeklyReview = PublicWeeklyReview;
 
-export type RosterSlot = Pokemon & {
-  acquired: "draft" | "trade" | "free-agency";
-  overallPick: number | null;
-  rationale: string;
-  fallback: boolean;
-};
+type Season = SeasonBundle["season"];
+type FranchiseRow = SeasonBundle["franchises"][number];
 
-export type Record = {
-  seriesWins: number;
-  seriesLosses: number;
-  gameWins: number;
-  gameLosses: number;
-};
-
-export type Franchise = {
-  id: string;
-  name: string;
-  model: string;
-  budget: { total: number; spent: number; remaining: number };
-  roster: RosterSlot[];
-  record: Record;
-  finish: string | null;
-};
-
-export type BoardMon = Pokemon & {
-  types: string[];
-  abilities: string[];
-  baseStats: { [stat: string]: number };
-  megaStone: string | null;
-  draftedBy: string | null;
-};
-
-export type DraftPick = {
-  overall: number;
-  round: number;
-  franchiseId: string;
-  pokemon: Pokemon;
-  rationale: string;
-  fallback: boolean;
-};
-
-export type Standing = Record & { rank: number; franchiseId: string; differential: number };
-
-export type BuildSet = {
-  species: string;
-  spriteId: string;
-  item: string;
-  ability: string;
-  nature: string;
-  moves: string[];
-  evs: { [stat: string]: number };
-};
-
-export type Build = {
-  franchiseId: string;
-  prepared: string[];
-  sets: BuildSet[] | null;
-  rationale: string;
-  attempts: number;
-};
-
-export type GameSummary = {
-  number: number;
-  winnerId: string | null;
-  turns: number;
-  brought: [string[], string[]];
-  megaEvolved: [string | null, string | null];
-  faints: [{ [draftId: string]: number }, { [draftId: string]: number }];
-};
-
-export type Match = {
-  id: string;
-  seriesIndex: number;
-  seriesId: string | null;
-  franchises: [string, string];
-  status: "scheduled" | "complete";
-  score: [number, number] | null;
-  winnerId: string | null;
-  games: GameSummary[];
-  builds: Build[];
-};
-
-export type Week = { number: number; status: "released" | "scheduled"; matches: Match[] };
-
-export type SlotRef = { side: 0 | 1; slot: number };
-
-export type ReplayEvent = {
-  turn: number;
-  kind:
-    | "turn"
-    | "move"
-    | "switch"
-    | "faint"
-    | "status"
-    | "field"
-    | "win"
-    | "timer"
-    | "detail"
-    | "preview";
-  text: string;
-  actor?: SlotRef;
-  target?: SlotRef;
-  species?: string;
-  hp?: number;
-  status?: string | null;
-};
-
-export type Decision = {
-  franchiseId: string;
-  turn: number;
-  phase: string;
-  action: string;
-  rationale: string;
-  fallback: boolean;
-  automatic: boolean;
-  latencyMs: number | null;
-  reasoningTokens: number | null;
-};
-
-export type Reflection = {
-  franchiseId: string;
-  result: "won" | "lost";
-  summary: string;
-  adjustment: string;
-  fallback: boolean;
-};
-
-export type ReplayGame = GameSummary & {
-  events: ReplayEvent[];
-  decisions: Decision[];
-  reflections: Reflection[];
-};
-
-export type Replay = { seriesId: string; franchises: [string, string]; games: ReplayGame[] };
-
-export type TradeOffer = {
-  from: string;
-  to: string | null;
-  give: string | null;
-  get: string | null;
-  message: string | null;
-  accepted: boolean | null;
-  offerReasoning: string;
-  responseReasoning: string;
-};
-
-export type TransactionWindow = {
-  afterWeek: number;
-  order: string[];
-  offers: TradeOffer[];
-  moves: Array<{
-    franchiseId: string;
-    swaps: Array<{ drop: string; add: string }>;
-    swapsRemaining: number | null;
-    reasoning: string;
-    fallback: boolean;
-  }>;
-};
-
-export type BracketSlot = {
-  seriesIndex: number;
-  round: number;
-  slots: [string | null, string | null];
-  match: Match | null;
-};
-
-export type Review = {
-  franchiseId: string;
-  outcome: string;
-  summary: string;
-  didWell: string;
-  didPoorly: string;
-  wouldChange: string;
-  fallback: boolean;
-};
-
-export type WeeklyReview = {
-  week: number;
-  stage: "week" | "transactions";
-  franchiseId: string;
-  rosterVersion: number;
-  reasoning: string;
-  memoryPages: number;
-  memoryCharacters: number;
-  fallback: boolean;
-};
-
-export type SeasonBundle = {
-  generatedAt: string;
-  season: {
-    id: string;
-    title: string;
-    format: string;
-    board: { id: string; budget: number; picksPerFranchise: number };
-    startedAt: string;
-    status: SeasonStatus;
-    releasedThroughWeek: number;
-    releasedPlayoffRounds: number;
-    totalWeeks: number;
-    playoffRounds: number;
-    sheets: "open" | "closed";
-    swapsAllowed: number | null;
-    championId: string | null;
-  };
-  provenance: {
-    showdownCommit: string | null;
-    models: Array<{ franchiseId: string; spec: string }>;
-  };
-  franchises: Franchise[];
-  board: BoardMon[];
-  draft: { picks: DraftPick[] };
-  standings: Standing[];
-  weeks: Week[];
-  transactions: TransactionWindow[];
-  weeklyReviews: WeeklyReview[];
-  playoffs: { rounds: BracketSlot[][] } | null;
-  replays: { [seriesId: string]: Replay };
-  reviews: Review[];
-};
+export type SeasonStatus = Season["status"];
+export type Franchise = FranchiseRow;
+export type Record = Franchise["record"];
+export type RosterSlot = Franchise["roster"][number];
+export type Pokemon = Pick<RosterSlot, "id" | "name" | "spriteId" | "cost">;
+export type BoardMon = SeasonBundle["board"][number];
+export type DraftPick = SeasonBundle["draft"]["picks"][number];
+export type Standing = SeasonBundle["standings"][number];
+export type BuildSet = NonNullable<Build["sets"]>[number];
+export type GameSummary = Match["games"][number];
+export type Week = SeasonBundle["weeks"][number];
+export type ReplayEvent = PublicBattleEvent;
+export type SlotRef = NonNullable<ReplayEvent["actor"]>;
+export type Replay = NonNullable<SeasonBundle["replays"][string]>;
+export type ReplayGame = Replay["games"][number];
+export type Decision = ReplayGame["decisions"][number];
+export type Reflection = ReplayGame["reflections"][number];
+export type TransactionWindow = SeasonBundle["transactions"][number];
+export type TradeOffer = TransactionWindow["offers"][number];
+export type BracketSlot = NonNullable<SeasonBundle["playoffs"]>["rounds"][number][number];
+export type Review = SeasonBundle["reviews"][number];

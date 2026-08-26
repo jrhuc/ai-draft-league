@@ -4,14 +4,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { z } from "zod";
-import type { DraftLeagueOptions } from "./draftleague.js";
+import type { DraftLeagueOptions } from "./draftleague-protocol.js";
 import type { ExhibitionOptions } from "./exhibition.js";
 import { exportSeasonBundle } from "./export-season.js";
 import { draftLeagueConfigSchema } from "./league-store.js";
 import { makeRunDirectory, prepareDataDirectories, RESULTS_PATH, RUNS_DIR } from "./paths.js";
 import type { ReasoningLevel } from "./providers.js";
 import { isReasoningLevel, nitroSpec } from "./providers.js";
-import type { SeriesRecord } from "./records.js";
+import type { ParsedSeriesRecord, SeriesRecord } from "./records.js";
 import { loadSeriesRecords, scopeRows, TEST_POOL } from "./records.js";
 import { writeReport } from "./report.js";
 import { runRotation } from "./rotation.js";
@@ -574,7 +574,7 @@ function renderTable(head: string[], rows: string[][]): string {
   return [line(head), rule, ...rows.map(line)].join("\n");
 }
 
-function printOutcomes(rows: SeriesRecord[]): void {
+function printOutcomes(rows: ParsedSeriesRecord[]): void {
   console.log(
     `${rows.length} contextual series records. Outcomes are not aggregated into a model ranking; compare only like-for-like run settings.`,
   );
@@ -583,17 +583,17 @@ function printOutcomes(rows: SeriesRecord[]): void {
     renderTable(
       ["Mode", "Pool", "Clock", "p1", "p2", "Score", "Winner", "Run / series"],
       rows.map((row) => {
-        const score = row.score === undefined ? undefined : asRecord(row.score);
+        const score = row.score;
         const clock = row.timer_scale === "off" ? "off" : `${row.timer_scale ?? 1}x`;
         return [
-          row.mode ?? "legacy",
+          row.mode,
           row.pool ?? "unrecorded",
           clock,
           row.players.p1,
           row.players.p2,
-          score ? `${String(score.p1 ?? "?")}-${String(score.p2 ?? "?")}` : "?",
+          `${score.p1}-${score.p2}`,
           row.winner ?? "tie",
-          `${String(row.run_id ?? "?")} / ${String(row.series_id ?? "?")}`,
+          `${row.run_id} / ${row.series_id}`,
         ];
       }),
     ),

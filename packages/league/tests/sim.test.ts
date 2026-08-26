@@ -397,7 +397,7 @@ test("stream termination rejects an incomplete split triple", () => {
 });
 
 test("Rotation writes one completed best-of-three record", async (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-model-league-run-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-run-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const records = path.join(directory, "results.jsonl");
   const rows = await runRotation(["random", "random"], 1, path.join(directory, "run"), {

@@ -4,11 +4,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { defaultPsDir, REPO_ROOT } from "../src/paths.js";
+import { defaultPsDir, LEAGUE_ROOT } from "../src/paths.js";
 import { loadShowdown } from "../src/showdown.js";
 
 /** Sprites feed the spectator app; the league keeps no client of its own. */
-const CLIENT_PUBLIC = path.join(REPO_ROOT, "..", "..", "apps", "site", "public");
+const CLIENT_PUBLIC = path.join(LEAGUE_ROOT, "..", "..", "apps", "site", "public");
 const SPRITE_DIR = path.join(CLIENT_PUBLIC, "sprites");
 const SOURCE = "https://play.pokemonshowdown.com/sprites/gen5";
 const ITEM_SHEET_SOURCE = "https://play.pokemonshowdown.com/sprites/itemicons-sheet.png";
@@ -17,7 +17,7 @@ const FORMAT = "gen9championsvgc2026regmbbo3";
 
 async function download(spriteId: string): Promise<Buffer | undefined> {
   const response = await fetch(`${SOURCE}/${spriteId}.png`, {
-    headers: { "user-agent": "vgc-model-league-sprite-fetch" },
+    headers: { "user-agent": "ai-draft-league-sprite-fetch" },
     signal: AbortSignal.timeout(20_000),
   });
   if (!response.ok) return undefined;
@@ -84,7 +84,7 @@ async function fetchItemIcons(
   psDir = defaultPsDir(),
 ): Promise<{ items: number; sheet: string }> {
   const response = await fetch(ITEM_SHEET_SOURCE, {
-    headers: { "user-agent": "vgc-model-league-sprite-fetch" },
+    headers: { "user-agent": "ai-draft-league-sprite-fetch" },
     signal: AbortSignal.timeout(20_000),
   });
   if (!response.ok) throw new Error(`item sheet fetch failed: ${response.status}`);

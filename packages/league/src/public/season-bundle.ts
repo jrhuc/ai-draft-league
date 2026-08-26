@@ -1,5 +1,8 @@
-import type { DraftLeagueSeriesPlan } from "../draftleague.js";
-import { buildDraftPlayoffBracket, rankedTable } from "../draftleague.js";
+import {
+  buildDraftPlayoffBracket,
+  type DraftLeagueSeriesPlan,
+  rankedTable,
+} from "../draftleague-protocol.js";
 import type {
   DraftBoardMonView,
   DraftTableRow,
@@ -27,10 +30,8 @@ export interface BuildPublicSeasonBundleOptions {
   league: LeagueResponse;
   plans: readonly DraftLeagueSeriesPlan[];
   board: readonly DraftBoardMonView[];
-  /** Every completed game of every series the release boundary admits, keyed by series id. */
   games: ReadonlyMap<string, readonly PublicSeasonGameInput[]>;
   title: string;
-  /** Weeks beyond `totalWeeks` release playoff rounds: totalWeeks + 1 releases the semifinals, + 2 the final. */
   releasedThroughWeek: number;
   closedSheets: boolean;
   showdownCommit: string | null;
@@ -148,7 +149,6 @@ function publicBuild(build: LeagueTeambuildView, revealSets: boolean): PublicBui
   };
 }
 
-/** The projection accepts rich internal DTOs but emits only fields explicitly allowed by the public protocol. */
 export function buildPublicSeasonBundle(
   options: BuildPublicSeasonBundleOptions,
 ): PublicSeasonBundle {
@@ -211,7 +211,7 @@ export function buildPublicSeasonBundle(
         builds: [],
       };
     }
-    if (!series || series.winner === null) {
+    if (!series) {
       throw new Error(`${matchId} cannot be released before series ${plan.index} is complete`);
     }
     const games = options.games.get(series.seriesId);
@@ -267,7 +267,7 @@ export function buildPublicSeasonBundle(
       franchises: ids,
       status: "complete",
       score: series.score,
-      winnerId: franchiseId(series.winner),
+      winnerId: series.winner === null ? null : franchiseId(series.winner),
       games: series.games.map((game, index) => ({
         number: index + 1,
         winnerId: game.winner === null ? null : franchiseId(game.winner),
@@ -303,23 +303,20 @@ export function buildPublicSeasonBundle(
     gl: 0,
   }));
   for (const series of league.series) {
-    if (
-      series.stage !== "roundrobin" ||
-      series.round > releasedThroughWeek ||
-      series.winner === null
-    )
-      continue;
+    if (series.stage !== "roundrobin" || series.round > releasedThroughWeek) continue;
     const [a, b] = series.sides;
     const rowA = table[a];
     const rowB = table[b];
     if (!rowA || !rowB)
       throw new Error(`series ${series.seriesIndex} references an unknown franchise`);
-    if (series.winner === a) {
-      rowA.w += 1;
-      rowB.l += 1;
-    } else {
-      rowB.w += 1;
-      rowA.l += 1;
+    if (series.winner !== null) {
+      if (series.winner === a) {
+        rowA.w += 1;
+        rowB.l += 1;
+      } else {
+        rowB.w += 1;
+        rowA.l += 1;
+      }
     }
     rowA.gw += series.score[0];
     rowA.gl += series.score[1];

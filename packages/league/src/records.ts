@@ -12,7 +12,6 @@ export interface SeriesRecord extends JsonObject {
   entrants?: [number, number] | undefined;
   pool?: string | undefined;
   timer_scale?: TimerScale | undefined;
-  trade_window?: { after_week: number; trades_allowed?: number | undefined } | null | undefined;
   transactions?: Array<{ after_week: number; trades_allowed: number }> | undefined;
   roster_version?: number | undefined;
   contributor?: { provider: "github"; subject: string; login: string } | undefined;
@@ -98,13 +97,6 @@ const seriesRecordSchema = z.object({
       subject: z.string().min(1),
       login: z.string().min(1),
     })
-    .optional(),
-  trade_window: z
-    .strictObject({
-      after_week: z.number().int().nonnegative(),
-      trades_allowed: z.number().int().nonnegative().optional(),
-    })
-    .nullable()
     .optional(),
   transactions: z
     .array(

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { writeAtomicJson } from "./atomic-json.js";
 import { defaultPsDir, RESULTS_PATH } from "./paths.js";
 import { validateModelExecution } from "./providers.js";
 import type { Rng } from "./random.js";
@@ -79,26 +80,22 @@ export async function runRotation(
     pool: pool.id,
     seed,
   });
-  fs.writeFileSync(
+  writeAtomicJson(
     path.join(runDir, "config.json"),
-    `${JSON.stringify(
-      {
-        mode: "rotation",
-        models,
-        series_per_pair: seriesPerPair,
-        seed,
-        concurrency: options.concurrency ?? 4,
-        reasoning: options.reasoning ?? null,
-        reasoning_by_model: options.reasoningByModel ?? null,
-        timer_scale: timerScale,
-        pool: pool.id,
-        format: pool.format,
-        contributor: options.contributor ?? null,
-      },
-      null,
-      2,
-    )}\n`,
-    "utf8",
+    {
+      mode: "rotation",
+      models,
+      series_per_pair: seriesPerPair,
+      seed,
+      concurrency: options.concurrency ?? 4,
+      reasoning: options.reasoning ?? null,
+      reasoning_by_model: options.reasoningByModel ?? null,
+      timer_scale: timerScale,
+      pool: pool.id,
+      format: pool.format,
+      contributor: options.contributor ?? null,
+    },
+    2,
   );
 
   return mapLimit(plans, options.concurrency ?? 4, options.signal, async (plan, signal) => {

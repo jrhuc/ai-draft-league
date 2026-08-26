@@ -3,6 +3,7 @@ import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 
+import { writeAtomicJson } from "./atomic-json.js";
 import type { BracketView } from "./views.js";
 import { defaultPsDir, RESULTS_PATH } from "./paths.js";
 import type { ModelReasoningConfig } from "./providers.js";
@@ -310,33 +311,29 @@ export async function runTournament(
   });
 
   if (!stored)
-    fs.writeFileSync(
+    writeAtomicJson(
       path.join(runDir, "config.json"),
-      `${JSON.stringify(
-        {
-          mode: "tournament",
-          models,
-          seed,
-          concurrency: options.concurrency ?? 4,
-          reasoning: options.reasoning ?? null,
-          pool: poolId,
-          reasoning_by_model: options.reasoningByModel ?? null,
-          timer_scale: timerScale,
-          format,
-          provenance,
-          event: event?.name ?? null,
-          entrants: entrants.map((entrant) => ({
-            model: entrant.model,
-            team: entrant.team.id,
-            seed: entrant.team.seed ?? null,
-            placement: entrant.team.provenance?.placement ?? null,
-          })),
-          contributor: options.contributor ?? null,
-        },
-        null,
-        2,
-      )}\n`,
-      "utf8",
+      {
+        mode: "tournament",
+        models,
+        seed,
+        concurrency: options.concurrency ?? 4,
+        reasoning: options.reasoning ?? null,
+        pool: poolId,
+        reasoning_by_model: options.reasoningByModel ?? null,
+        timer_scale: timerScale,
+        format,
+        provenance,
+        event: event?.name ?? null,
+        entrants: entrants.map((entrant) => ({
+          model: entrant.model,
+          team: entrant.team.id,
+          seed: entrant.team.seed ?? null,
+          placement: entrant.team.provenance?.placement ?? null,
+        })),
+        contributor: options.contributor ?? null,
+      },
+      2,
     );
 
   const playersFor = (match: BracketMatch) => ({

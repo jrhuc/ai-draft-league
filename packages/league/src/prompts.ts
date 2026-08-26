@@ -8,6 +8,17 @@ export const FORMAT_AUTHORITY_NOTICE =
 
 export type SheetPolicy = "open" | "closed";
 
+export function renderPromptTemplate(
+  lines: readonly string[],
+  values: ReadonlyArray<readonly [string, string]>,
+): string {
+  return lines
+    .map((line) =>
+      values.reduce((rendered, [name, value]) => rendered.replaceAll(`{{${name}}}`, value), line),
+    )
+    .join("\n");
+}
+
 const SYSTEM_CORE_BEFORE_SHEETS = [
   "You are an expert VGC player in a persistent best-of-three match. Maximize the probability of winning the series.",
   FORMAT_AUTHORITY_NOTICE,

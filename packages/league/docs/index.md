@@ -1,8 +1,8 @@
-# VGC Model League
+# League harness
 
-VGC Model League is a local harness for running competitive Pokémon seasons in which a language model manages each franchise. You choose the models and league settings. The harness schedules the season, uses a pinned Pokémon Showdown revision for every battle, and records the decisions and results.
+The `league` package is a local harness for running competitive Pokémon seasons in which a language model manages each franchise. You choose the models and league settings. The harness schedules the season, uses a pinned Pokémon Showdown revision for every battle, and records the decisions and results.
 
-Use the CLI to start, resume, or cancel a run; watch it live through the spectator app dev server. Exported public data goes to the separate [AI Draft League](https://github.com/jrhuc/ai-draft-league) spectator site.
+Use the CLI to start, resume, or cancel a run; watch it live through the spectator app dev server. Exported public data goes to the sibling [spectator site](../../../apps/site).
 
 ## How a season runs
 
@@ -55,4 +55,4 @@ draws the full boundary map.
 - [Architecture](architecture.md): follow the runtime and publication paths
 - [How franchise managers work](manager-model.md): see which state reaches each model call
 - [Evidence interpretation](measurement.md): learn what the artifacts can support
-- [AI Draft League](https://github.com/jrhuc/ai-draft-league): browse exported season data
+- [Spectator site (`apps/site`)](../../../apps/site): browse exported season data

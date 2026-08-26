@@ -7,7 +7,7 @@ import { completeWithDexTools } from "./dex-lookups.js";
 import type { DraftBoard, DraftBoardMon } from "./draft.js";
 import type { DraftPickView, DraftTableRow } from "./views.js";
 import { appendJsonlObject, readJsonlObjects } from "./jsonl.js";
-import { FORMAT_AUTHORITY_NOTICE, MANAGER_CHARGE } from "./prompts.js";
+import { FORMAT_AUTHORITY_NOTICE, MANAGER_CHARGE, renderPromptTemplate } from "./prompts.js";
 import type { ModelReasoningConfig, ReasoningLevel } from "./providers.js";
 import {
   classifyProviderFailure,
@@ -19,7 +19,7 @@ import { ShowdownReference } from "./reference.js";
 import { mapLimit } from "./series.js";
 import type { TradeWindowArtifact } from "./trade-window.js";
 import type { JsonObject, JsonValue, Provider, ProviderMessage } from "./types.js";
-import { clip, isRecord } from "./value.js";
+import { clip, fileSlug, isRecord } from "./value.js";
 
 const SEASON_REVIEW_PROMPT_POLICY = {
   systemTemplate: [
@@ -112,16 +112,6 @@ interface SeasonSeatLog {
   error?: string;
 }
 
-function slug(value: string): string {
-  return (
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")
-      .slice(0, 48) || "model"
-  );
-}
-
 const reviewField = z
   .string()
   .trim()
@@ -156,19 +146,10 @@ export function parseSeasonReview(response: string): ParsedSeasonReview | string
 }
 
 function systemPrompt(state: SeasonReviewState, entrant: number): string {
-  const values = {
-    model: state.models[entrant]!,
-    format: state.board.format,
-  };
-  return SEASON_REVIEW_PROMPT_POLICY.systemTemplate
-    .map((line) => {
-      let rendered = String(line);
-      for (const [name, value] of Object.entries(values)) {
-        rendered = rendered.replaceAll(`{{${name}}}`, value);
-      }
-      return rendered;
-    })
-    .join("\n");
+  return renderPromptTemplate(SEASON_REVIEW_PROMPT_POLICY.systemTemplate, [
+    ["model", state.models[entrant]!],
+    ["format", state.board.format],
+  ]);
 }
 
 function userPrompt(state: SeasonReviewState, entrant: number, outcome: string): string {
@@ -336,7 +317,7 @@ export async function runSeasonReview(
         const messages: ProviderMessage[] = [
           { role: "user", content: userPrompt(state, entrant, outcome) },
         ];
-        const seatLog = path.join(logDir, `seat-${entrant}-${slug(model)}.jsonl`);
+        const seatLog = path.join(logDir, `seat-${entrant}-${fileSlug(model)}.jsonl`);
         for (
           let attempt = 1;
           attempt <= SEASON_REVIEW_PROMPT_POLICY.attempts && !parsed;

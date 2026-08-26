@@ -20,7 +20,7 @@ interface BuiltTeam {
 
 async function fetchPaste(url: string): Promise<string> {
   const response = await fetch(`${url.replace(/^http:/, "https:").replace(/\/$/, "")}/raw`, {
-    headers: { "user-agent": "vgc-model-league-pool-builder" },
+    headers: { "user-agent": "ai-draft-league-pool-builder" },
     signal: AbortSignal.timeout(30_000),
   });
   if (!response.ok)

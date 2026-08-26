@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="900" viewBox="0 0 1280 900" role="img" aria-labelledby="title desc">
-  <title id="title">VGC Model League system architecture</title>
-  <desc id="desc">The CLI or local GUI starts runDraftLeague. The orchestrator runs manager stages, recorded battle series, and run-file persistence. Model stages call the configured provider. Recorded series use the provider for battle choices and Pokémon Showdown for game authority. Run files are joined by buildLeague for local inspection or export to a season bundle consumed by AI Draft League.</desc>
+  <title id="title">League system architecture</title>
+  <desc id="desc">The CLI starts runDraftLeague. The orchestrator runs manager stages, recorded battle series, and run-file persistence. Model stages call the configured provider. Recorded series use the provider for battle choices and Pokémon Showdown for game authority. Run files are joined by buildLeague for local inspection or export to a season bundle consumed by AI Draft League.</desc>
   <defs>
     <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto" markerUnits="strokeWidth">
       <path d="M0 0 9 4.5 0 9Z" fill="#718078"/>
@@ -23,7 +23,7 @@
   <rect width="1280" height="900" rx="18" fill="#fff"/>
 
   <rect class="box" x="430" y="32" width="420" height="68" rx="10"/>
-  <text class="title" x="640" y="62" text-anchor="middle">CLI or local operator GUI</text>
+  <text class="title" x="640" y="62" text-anchor="middle">CLI</text>
   <text class="small" x="640" y="82" text-anchor="middle">start, resume, inspect, cancel, export</text>
 
   <rect class="group" x="50" y="140" width="1180" height="350" rx="16"/>
@@ -73,7 +73,7 @@
 
   <rect class="box" x="682" y="724" width="244" height="76" rx="10"/>
   <text class="title" x="804" y="756" text-anchor="middle">Local inspection</text>
-  <text class="small" x="804" y="778" text-anchor="middle">GUI and CLI archive views</text>
+  <text class="small" x="804" y="778" text-anchor="middle">CLI archive views</text>
 
   <rect class="primary" x="964" y="724" width="244" height="76" rx="10"/>
   <text class="title" x="1086" y="756" text-anchor="middle">exportSeasonBundle</text>

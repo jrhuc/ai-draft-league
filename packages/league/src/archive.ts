@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { readArchivedTeambuilds } from "./archive-teambuilds.js";
 import { type DraftBoardMon, draftTranscriptRowSchema, loadBoard } from "./draft.js";
+import { rankedTable } from "./draftleague-protocol.js";
 import { draftLeagueTopology } from "./draftleague-topology.js";
 import { seriesGameSummaries } from "./game-usage.js";
 import type {
@@ -53,9 +54,7 @@ import {
 import { isErrnoCode, isRecord, ordinal, text } from "./value.js";
 
 const runModeSchema = z.looseObject({ mode: z.enum(["draft", "tournament"]) });
-const leagueConfigSchema = draftLeagueConfigSchema
-  .partial()
-  .extend({ trade_window: z.looseObject({ after_week: z.number() }).nullable().optional() });
+const leagueConfigSchema = draftLeagueConfigSchema.partial();
 const archivedPickSchema = draftTranscriptRowSchema.partial().required({ pick: true });
 type ArchivedPick = z.infer<typeof archivedPickSchema>;
 
@@ -288,7 +287,6 @@ function leaguePhase(
     return "window";
   if (liveSeries.some((series) => series.stage === "playoff")) return "playoffs";
   if (rows.length > 0) return progress.phase;
-  /** A draft-only run ends at a full board of picks, so it is complete rather than mid-draft. */
   if (completedDraftOnlyRun(runsDir, runId)) return "complete";
   return preSeasonPhase(runsDir, runId);
 }
@@ -297,12 +295,7 @@ function isDraftOnly(runsDir: string, runId: string): boolean {
 }
 
 function completedDraftOnlyRun(runsDir: string, runId: string): boolean {
-  if (!isDraftOnly(runsDir, runId)) return false;
-  const status = readRunStatus(runsDir, runId);
-  if (status?.state === "done") return true;
-  /** Legacy draft-only runs predate status files but persisted complete rosters into config. */
-  const config = readLeagueConfig(runsDir, runId);
-  return (config?.rosters?.length ?? 0) >= 2;
+  return isDraftOnly(runsDir, runId) && readRunStatus(runsDir, runId)?.state === "done";
 }
 
 function leagueLifecycle(
@@ -323,9 +316,7 @@ function leagueSwapsAllowed(runsDir: string, runId: string): number | null {
 }
 
 function transactionWeeks(runsDir: string, runId: string): number[] {
-  const config = readLeagueConfig(runsDir, runId);
-  const windows = config?.transactions ?? (config?.trade_window ? [config.trade_window] : []);
-  return windows
+  return (readLeagueConfig(runsDir, runId)?.transactions ?? [])
     .map((window) => window.after_week)
     .filter((afterWeek) => Number.isSafeInteger(afterWeek) && afterWeek > 0);
 }
@@ -557,19 +548,21 @@ function recordedSides(row: ParsedSeriesRecord, entrantCount: number): [number, 
   return entrants;
 }
 
-function recordCompletedSeries(
+function recordSeries(
   recordA: LeagueRecordView,
   recordB: LeagueRecordView,
-  winner: number,
+  winner: number | null,
   entrantA: number,
   score: { p1?: number | undefined; p2?: number | undefined } | undefined,
 ): void {
-  if (winner === entrantA) {
-    recordA.w += 1;
-    recordB.l += 1;
-  } else {
-    recordB.w += 1;
-    recordA.l += 1;
+  if (winner !== null) {
+    if (winner === entrantA) {
+      recordA.w += 1;
+      recordB.l += 1;
+    } else {
+      recordB.w += 1;
+      recordA.l += 1;
+    }
   }
   recordA.gw += count(score?.p1);
   recordA.gl += count(score?.p2);
@@ -585,11 +578,9 @@ export function buildLeague(
   if (!SAFE_SEGMENT.test(runId)) return null;
   const live = isRunLive(runsDir, runId);
   const rows = draftRuns(allRows).get(runId) ?? [];
-  /** A finished draft-only run has no series and is not live, and its draft is the whole point of it. */
   if (rows.length === 0 && !live && !isDraftOnly(runsDir, runId)) return null;
   const identity = leagueIdentity(runsDir, runId, rows);
   if (identity.models.length < 2) return null;
-  /** Board mons give game summaries the exact species/forme names to resolve against. */
   let boardMons: DraftBoardMon[] = [];
   if (identity.board) {
     try {
@@ -707,11 +698,9 @@ export function buildLeague(
         faints,
       };
     });
-    if (winner !== null) {
-      recordCompletedSeries(overallRecords[a]!, overallRecords[b]!, winner, a, score);
-      if (row.stage === "roundrobin") {
-        recordCompletedSeries(roundRobinRecords[a]!, roundRobinRecords[b]!, winner, a, score);
-      }
+    recordSeries(overallRecords[a]!, overallRecords[b]!, winner, a, score);
+    if (row.stage === "roundrobin") {
+      recordSeries(roundRobinRecords[a]!, roundRobinRecords[b]!, winner, a, score);
     }
     series.push({
       seriesIndex: count(row.series_index),
@@ -727,13 +716,9 @@ export function buildLeague(
     });
   }
 
-  const ranks = identity.models
-    .map((_, entrant) => entrant)
-    .sort((first, second) => {
-      const a = roundRobinRecords[first]!;
-      const b = roundRobinRecords[second]!;
-      return b.w - a.w || b.gw - b.gl - (a.gw - a.gl) || first - second;
-    });
+  const ranks = rankedTable(
+    roundRobinRecords.map((record, entrant) => ({ entrant, ...record })),
+  ).map((record) => record.entrant);
   const rankOf = new Map(ranks.map((entrant, index) => [entrant, index + 1]));
   const playoffsSeen = rows.some((row) => row.stage === "playoff");
 

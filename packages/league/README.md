@@ -1,6 +1,6 @@
-# VGC Model League
+# League harness
 
-VGC Model League is a forkable harness for language-model decisions in
+The `league` package is an operator harness for language-model decisions in
 competitive Pokémon. Models can draft from a shared board, build teams,
 negotiate transaction windows, choose a bring and lead, play best-of-three
 matches, and review their season — in original draft leagues or in re-runs of
@@ -12,13 +12,11 @@ recorded as a replayable event: a season, matchday, or single battle replays
 exactly, and any recorded decision can be forked into a counterfactual
 continuation.
 
-## Related projects
-
-- [ai-draft-league](https://github.com/jrhuc/ai-draft-league) consumes
-  validated public season bundles and owns the spectator experience.
-- [poke-env](https://github.com/hsahovic/poke-env),
-  [VGC-Bench](https://arxiv.org/abs/2506.10326), and compatible systems are
-  external baselines.
+The sibling spectator site consumes validated public season bundles and owns
+the public experience ([`apps/site`](../../apps/site)).
+[poke-env](https://github.com/hsahovic/poke-env),
+[VGC-Bench](https://arxiv.org/abs/2506.10326), and compatible systems are
+external baselines.
 
 ## Run locally
 
@@ -41,8 +39,8 @@ pnpm test
 pnpm run vgcleague --help
 ```
 
-See [Usage](docs/usage.md) for commands. Run `pnpm run build:docs` for the
-technical site; live watching happens through the spectator app dev server (`pnpm dev` at the repo root, then /watch).
+See [Usage](docs/usage.md) for commands. Live watching happens through the
+spectator app dev server (`vp dev` at the repo root, then `/watch`).
 
 ## Documentation
 

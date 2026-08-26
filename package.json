@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "vp run site#dev",
     "build": "vp run site#build",
-    "test": "vp test",
+    "test": "vp run site#test && vp run league#test:unit",
     "check": "vp check",
     "lint": "vp lint",
     "fmt": "vp fmt",

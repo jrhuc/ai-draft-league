@@ -26,9 +26,12 @@ jobs:
           key: showdown-${{ hashFiles('packages/league/showdown.lock.json') }}
       - run: node tools/setup-showdown.mjs
         working-directory: packages/league
-      - run: vp check
-      - run: vp test
+      # Site typechecks resolve league/server and league/protocol against
+      # dist/, so the league must build before any cross-package check.
       - run: vp run league#build
+      - run: vp check
+      - run: vp run league#check
+      - run: pnpm test
       - run: vp run site#build
       # The live-watch surface is dev-only; fail if any trace ships.
       - run: "! grep -rl 'api/watch' apps/site/dist/"

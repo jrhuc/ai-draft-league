@@ -99,7 +99,7 @@ test("bracket outcomes are exact immutable atomic transitions", () => {
 });
 
 test("a tournament crowns a champion and records rounds coherently", async (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-model-league-tournament-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-tournament-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const recordsPath = path.join(directory, "results.jsonl");
   const events: TournamentEvent[] = [];
@@ -194,7 +194,7 @@ test("a tournament crowns a champion and records rounds coherently", async (t) =
 });
 
 test("inline teams pair to models by index and record no pool", async (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-model-league-tournament-inline-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-tournament-inline-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const recordsPath = path.join(directory, "results.jsonl");
   const pool = loadPool("test");
@@ -236,7 +236,7 @@ test("inline teams must cover every model", async () => {
 });
 
 test("a seeded pool keeps the real bracket order and briefs both sides on it", async (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-model-league-tournament-seeded-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-tournament-seeded-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const pool = loadPool("vr-aug26-top8");
   assert.ok(pool.event, "the pool carries its event");
@@ -284,7 +284,7 @@ test("a seeded pool keeps the real bracket order and briefs both sides on it", a
 });
 
 test("a stopped bracket resumes on its records and replays the interrupted series", async (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-model-league-tournament-resume-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-tournament-resume-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const recordsPath = path.join(directory, "results.jsonl");
   const models = Array.from({ length: 4 }, () => "random");
@@ -333,7 +333,7 @@ test("a stopped bracket resumes on its records and replays the interrupted serie
 });
 
 test("a resume refuses a tournament result whose defaults diverge from canonical series evidence", async (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-model-league-tournament-mismatch-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-tournament-mismatch-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const models = ["random", "random"];
   const recordsPath = path.join(directory, "results.jsonl");

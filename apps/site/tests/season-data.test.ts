@@ -1,12 +1,11 @@
 import { readFileSync } from "node:fs";
+import { publicSeasonBundleSchema } from "league/protocol";
 import { expect, test } from "vite-plus/test";
-import type { Match, SeasonBundle } from "../src/lib/season";
+import type { Match } from "../src/lib/season";
 
-// SAFETY: season-bundle.json is the producer's exported artifact; SeasonBundle declares its
-// shape, and these assertions are exactly what verify that declaration holds.
-const season = JSON.parse(
-  readFileSync(new URL("../public/season-bundle.json", import.meta.url), "utf8"),
-) as SeasonBundle;
+const season = publicSeasonBundleSchema.parse(
+  JSON.parse(readFileSync(new URL("../public/season-bundle.json", import.meta.url), "utf8")),
+);
 
 function matches(): Match[] {
   return [
