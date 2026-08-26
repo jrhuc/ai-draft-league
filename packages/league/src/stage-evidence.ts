@@ -1,7 +1,7 @@
 import type { JsonValue } from "./types.js";
 import { clip } from "./value.js";
 
-export interface EvidenceSupplied {
+interface EvidenceSupplied {
   rationale: boolean;
   notebookUpdate: boolean;
 }
@@ -12,7 +12,7 @@ export interface StageEvidence {
   supplied: EvidenceSupplied;
 }
 
-export interface StageEvidenceOptions {
+interface StageEvidenceOptions {
   currentNotebook: string;
   rationaleLimit: number;
   notebookLimit: number;

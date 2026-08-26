@@ -10,7 +10,7 @@ import type { TradeWindowArtifact, TransactionSchedule } from "./trade-window.js
 import type { Pid, TimerScale } from "./types.js";
 import type { DraftTableRow, DraftView, TeambuildView } from "./views.js";
 
-export type LeagueRunState =
+type LeagueRunState =
   | { phase: "draft"; completedPicks: number }
   | { phase: "roundrobin"; week: number; rosterVersion: number }
   | { phase: "window"; week: number; rosterVersion: number }

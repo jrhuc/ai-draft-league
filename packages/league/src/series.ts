@@ -1,6 +1,4 @@
 export type {
-  ChanceEventCounts,
-  ChanceEventCountsBySide,
   EngineSetup,
   ExperimentOptions,
   GameSeed,
@@ -17,7 +15,6 @@ export {
   SINGLE_ELIMINATION_GAME_LIMIT,
 } from "./series-core.js";
 export type {
-  CompletedDecisionAttempt,
   CompletedSeriesFields,
   RecordedSeries,
   RecordedSeriesContext,

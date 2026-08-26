@@ -28,15 +28,7 @@ import type { BattleRequest, JsonObject, Pid } from "./types.js";
 
 import { afterColon, asRecord, asRecords, asStrings, text } from "./value.js";
 
-export {
-  type LastMove,
-  MonState,
-  PROTECT_MOVES,
-  type ProtectReducedSlots,
-  type SideTimer,
-  SideState,
-  type TimedEffect,
-} from "./state-model.js";
+export { MonState, PROTECT_MOVES } from "./state-model.js";
 
 const STAT_LABELS = new Map([
   ["atk", "Attack"],

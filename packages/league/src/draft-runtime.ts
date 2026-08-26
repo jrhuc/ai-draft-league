@@ -270,7 +270,7 @@ async function nameFranchises(
   );
 }
 
-export interface DraftOutcome {
+interface DraftOutcome {
   rosters: DraftBoardMon[][];
   picks: DraftPickView[];
   budgets: number[];

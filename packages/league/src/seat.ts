@@ -22,7 +22,7 @@ import { isRecord, text } from "./value.js";
 
 type SeatPhase = "decision" | "reflection";
 
-export interface SeatExchangeView extends JsonObject {
+interface SeatExchangeView extends JsonObject {
   id: number;
   phase: SeatPhase;
   system: string;
@@ -39,7 +39,7 @@ interface PendingExchange {
   reject: (error: Error) => void;
 }
 
-export interface SeatBridgeOptions {
+interface SeatBridgeOptions {
   lookup: (name: string, args: JsonObject) => string;
   tools?: () => readonly ToolDefinition[];
   context?: (query: AgentContextQuery) => JsonObject;

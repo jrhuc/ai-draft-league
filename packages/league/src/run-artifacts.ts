@@ -184,7 +184,7 @@ function snapshotMon(battle: BattleState, pid: Pid, mon: MonState): MonView {
   };
 }
 
-export function snapshotBattle(
+function snapshotBattle(
   battle: BattleState,
   players: Record<Pid, string> | undefined,
   log: BattleLogEntryView[],

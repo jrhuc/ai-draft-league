@@ -31,7 +31,7 @@ function textToolCall(reply: string): { name: string; arguments: JsonObject } | 
   return name && isRecord(args) ? { name, arguments: args } : undefined;
 }
 
-export interface DexToolPolicy {
+interface DexToolPolicy {
   maxTokens: number;
   toolRounds: number;
   maxCallsPerRound: number;

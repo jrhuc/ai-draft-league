@@ -18,7 +18,7 @@ export interface AgentContextQuery {
 
 /** The stream commits only after the sink returns; it cannot roll back output from a custom
  * sink that partially writes and then throws. */
-export type AgentContextSink = (event: AgentContextEvent) => void;
+type AgentContextSink = (event: AgentContextEvent) => void;
 
 function sequenceOf(cursor: string | undefined, fallback: number): number {
   if (cursor === undefined) return fallback;

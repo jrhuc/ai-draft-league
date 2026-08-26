@@ -87,7 +87,7 @@ class DecisionAbandonedError extends Error {
   }
 }
 
-export interface LLMEngineOptions {
+interface LLMEngineOptions {
   provider?: Provider;
   apiKey?: string;
   decisionLog?: DecisionLog;

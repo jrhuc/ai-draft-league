@@ -11,12 +11,12 @@ import type { Pid } from "./types.js";
 import { ordinal } from "./value.js";
 import type { BracketView } from "./views.js";
 
-export type PlayDraftLeagueSeries = (
+type PlayDraftLeagueSeries = (
   plan: DraftLeagueSeriesPlan,
   signal: AbortSignal,
 ) => Promise<SeriesRecord>;
 
-export type ApplyDraftLeagueOutcome = (plan: DraftLeagueSeriesPlan) => void;
+type ApplyDraftLeagueOutcome = (plan: DraftLeagueSeriesPlan) => void;
 
 interface FinishedEntrant {
   entrant: number;

@@ -22,4 +22,4 @@ export {
   type DraftState,
   type DraftTranscriptRow,
 } from "./draft-protocol.js";
-export { type DraftOutcome, runDraft, type RunDraftOptions } from "./draft-runtime.js";
+export { runDraft, type RunDraftOptions } from "./draft-runtime.js";

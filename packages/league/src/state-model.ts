@@ -1,6 +1,6 @@
 import type { Pid } from "./types.js";
 
-export interface MoveState {
+interface MoveState {
   name: string;
   used: number;
   pp?: number;

@@ -1,7 +1,7 @@
 import type { Pid } from "./types.js";
 import { afterColon } from "./value.js";
 
-export type BattleLogKind =
+type BattleLogKind =
   | "turn"
   | "move"
   | "switch"
@@ -13,7 +13,7 @@ export type BattleLogKind =
   | "detail"
   | "preview";
 
-export interface BattleSlotRef {
+interface BattleSlotRef {
   side: 0 | 1;
   slot: number;
 }

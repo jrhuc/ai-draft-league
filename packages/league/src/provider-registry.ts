@@ -19,12 +19,6 @@ export interface ProviderOption {
   readonly requiresKey: boolean;
 }
 
-export interface DiscoveredModel {
-  readonly id: string;
-  readonly displayName?: string;
-  readonly supportsReasoning?: boolean;
-}
-
 export const PROVIDER_OPTIONS: readonly ProviderOption[] = [
   {
     id: "openrouter",

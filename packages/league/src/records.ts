@@ -23,7 +23,7 @@ export interface SeriesRecord extends JsonObject {
   turns?: number | undefined;
 }
 
-export const SERIES_RECORD_SCHEMA_VERSION = 1 as const;
+const SERIES_RECORD_SCHEMA_VERSION = 1 as const;
 
 const pidTextSchema = z.strictObject({ p1: z.string().min(1), p2: z.string().min(1) });
 const pidCountSchema = z.strictObject({
@@ -159,7 +159,7 @@ interface RecordsMutation {
 }
 
 /** Holds the one records journal lease across a complete append, import, or removal transaction. */
-export function mutateRecords<T>(file: string, task: (mutation: RecordsMutation) => T): T {
+function mutateRecords<T>(file: string, task: (mutation: RecordsMutation) => T): T {
   let release: () => void;
   try {
     release = acquireLease(`${file}.lease`);

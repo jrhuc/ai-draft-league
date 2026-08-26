@@ -56,7 +56,7 @@ export function validateMemory(memory: FranchiseMemory): string | undefined {
   return undefined;
 }
 
-export interface MemoryReply {
+interface MemoryReply {
   memory: FranchiseMemory;
 }
 

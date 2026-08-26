@@ -18,7 +18,7 @@ interface RoundRobinOperations {
   reconcileWindow: (index: number) => Promise<void>;
 }
 
-export type RoundRobinPhaseResult =
+type RoundRobinPhaseResult =
   | { status: "complete" }
   | { status: "paused"; results: SeriesRecord[] };
 

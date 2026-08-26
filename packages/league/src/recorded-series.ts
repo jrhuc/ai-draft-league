@@ -113,7 +113,7 @@ export interface RecordedSeries {
   fields: RecordedSeriesFields;
 }
 
-export interface AdoptedSeries {
+interface AdoptedSeries {
   seriesId: string;
   seriesDir: string;
   started: string | undefined;
@@ -182,7 +182,7 @@ export const storedSeriesMetadataSchema = z
     seriesIndex: stored.identity?.series_index ?? null,
   }));
 
-export type RecordedSeriesIdentity = z.infer<typeof recordedSeriesIdentitySchema>;
+type RecordedSeriesIdentity = z.infer<typeof recordedSeriesIdentitySchema>;
 type RecordedSeriesMetadata = z.infer<typeof recordedSeriesMetadataSchema>;
 
 export function recordedSeriesIdentity(context: RecordedSeriesContext): RecordedSeriesIdentity {
@@ -654,7 +654,7 @@ export function resolveAttemptLineage(
   return reverse.reverse();
 }
 
-export interface CompletedDecisionAttempt {
+interface CompletedDecisionAttempt {
   gameNumber: number;
   attemptId: string;
 }

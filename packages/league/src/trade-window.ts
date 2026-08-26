@@ -1,6 +1,5 @@
 export {
   readCurrentRosterArtifact,
-  readTradeWindow,
   readTransactionEpochs,
   readValidatedTradeWindow,
   storedRosterSchema,

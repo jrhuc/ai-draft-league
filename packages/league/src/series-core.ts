@@ -88,14 +88,14 @@ export function makeEngine(setup: EngineSetup): RandomEngine | LLMEngine {
   });
 }
 
-export interface ChanceEventCounts extends JsonObject {
+interface ChanceEventCounts extends JsonObject {
   misses: number;
   crits_taken: number;
   flinched_turns: number;
   full_paralysis: number;
 }
 
-export interface ChanceEventCountsBySide {
+interface ChanceEventCountsBySide {
   p1: ChanceEventCounts;
   p2: ChanceEventCounts;
 }

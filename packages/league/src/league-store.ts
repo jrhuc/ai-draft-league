@@ -36,7 +36,7 @@ export interface StoredLeague {
   swapsAllowed: number;
   preset: string | null;
 }
-export interface StoredCoaching {
+interface StoredCoaching {
   playoffContext: Array<Map<number, string>>;
   reflectionNotes: Array<Map<number, string>>;
 }
@@ -94,7 +94,7 @@ const DRAFT_CONFIG_FIELDS = [
   "contributor",
 ] as const;
 
-export interface StoredLeaguePlan {
+interface StoredLeaguePlan {
   index: number;
   stage: "roundrobin" | "playoff";
   round: number;
@@ -107,7 +107,7 @@ export interface StoredLeagueRows {
   playoffs: Map<number, SeriesRecord>;
 }
 
-export interface DraftLeagueConfig {
+interface DraftLeagueConfig {
   runDir: string;
   showdownCommit: string;
   models: readonly string[];

@@ -45,7 +45,7 @@ function nickname(ident: string): string {
  * registered candidates share (the base forme and its Mega both drafted) stays open until a
  * `-mega` event names it, then falls back to the base forme if neither happened.
  */
-export function gameSummaries(
+function gameSummaries(
   games: readonly (readonly string[])[],
   mons: readonly Pick<DraftBoardMon, "id" | "species" | "forme">[],
   builds: RegisteredBuilds,

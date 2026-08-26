@@ -1,7 +1,7 @@
 import type { ModelMessage, ToolCallPart } from "ai";
 
 export type Pid = "p1" | "p2";
-export type JsonPrimitive = string | number | boolean | null;
+type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | readonly JsonValue[];
 export interface JsonObject {
   [key: string]: JsonValue | undefined;

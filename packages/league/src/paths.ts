@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 export const LEAGUE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const BUNDLED_TEAMS_DIR = path.join(LEAGUE_ROOT, "teams");
-export const DATA_DIR = path.resolve(process.env.VGC_LEAGUE_DATA_DIR ?? LEAGUE_ROOT);
+const DATA_DIR = path.resolve(process.env.VGC_LEAGUE_DATA_DIR ?? LEAGUE_ROOT);
 export const PINNED_PS_DIR = path.join(LEAGUE_ROOT, "pokemon-showdown");
 export const TEAMS_DIR = path.join(DATA_DIR, "teams");
 export const BOARDS_DIR = path.join(LEAGUE_ROOT, "boards");

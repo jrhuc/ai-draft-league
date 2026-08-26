@@ -31,7 +31,7 @@ export interface TradeOfferLogRow extends TradeOffer {
   model: string;
 }
 
-export interface WindowReplay {
+interface WindowReplay {
   offers: TradeOffer[];
   offerRows: TradeOfferLogRow[];
   decisions: TradeWindowDecision[];
@@ -620,7 +620,7 @@ export function writeTradeWindowArtifact(epochDir: string, artifact: TradeWindow
   return artifactFile;
 }
 
-export function readTradeWindow(epochDir: string): TradeWindowArtifact | undefined {
+function readTradeWindow(epochDir: string): TradeWindowArtifact | undefined {
   epochArtifactPaths(epochDir);
   let parsed: JsonValue;
   try {
