@@ -8,6 +8,8 @@ const FAMILIES: Array<[RegExp, string]> = [
   [/grok|xai/, "grok"],
   [/kimi|moonshot/, "kimi"],
   [/deepseek/, "deepseek"],
+  [/minimax/, "minimax"],
+  [/laguna|poolside/, "poolside"],
   [/qwen|qwq|alibaba/, "qwen"],
   [/glm|z-ai|zhipu/, "glm"],
   [/llama|meta/, "llama"],
