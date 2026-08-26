@@ -533,15 +533,16 @@ export class LLMEngine extends BaseEngine {
         maxTokens = Math.max(tokenFloor, decisionTokenBudget(remainingMs(), pace()));
         let completion: Completion;
         try {
+          const attemptOptions: CompleteOptions = {
+            maxTokens,
+            tools: this.decisionTools,
+            toolChoice: finalRound ? "none" : "auto",
+          };
+          if (finalRound) attemptOptions.prefillResponse = DECISION_PREFILL;
+          if (request.timer) attemptOptions.failFast = true;
           completion = await this.completeOnce(
             messages,
-            {
-              maxTokens,
-              tools: this.decisionTools,
-              toolChoice: finalRound ? "none" : "auto",
-              ...(finalRound ? { prefillResponse: DECISION_PREFILL } : {}),
-              ...(request.timer ? { failFast: true } : {}),
-            },
+            attemptOptions,
             this.briefed(
               battleSystemPrompt({ sheets: this.sheets, timed: Boolean(request.timer) }),
             ),

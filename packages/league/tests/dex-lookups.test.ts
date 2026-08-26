@@ -24,10 +24,11 @@ function scriptedProvider(
 ): Provider {
   return {
     complete: (_system, messages, options) => {
-      calls.push({
+      const call: (typeof calls)[number] = {
         messages: messages.map((m) => ({ ...m })),
-        ...(options === undefined ? {} : { options }),
-      });
+      };
+      if (options !== undefined) call.options = options;
+      calls.push(call);
       const next = replies.shift();
       if (!next) throw new Error("scripted provider ran out of replies");
       return Promise.resolve(next);

@@ -800,8 +800,9 @@ class SdkProvider implements Provider {
       };
       const stream = streamText({
         model,
-        ...(cacheBreakpoints ? {} : { system }),
-        messages: cacheBreakpoints ? [systemMessage, ...converted] : converted,
+        ...(cacheBreakpoints
+          ? { messages: [systemMessage, ...converted] }
+          : { system, messages: converted }),
         ...toolOptions,
         ...reasoningOptions,
         maxOutputTokens: options.maxTokens ?? 1200,

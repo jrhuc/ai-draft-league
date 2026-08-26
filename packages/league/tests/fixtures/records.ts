@@ -24,11 +24,11 @@ export function seriesRecordFixture(overrides: JsonObject): ParsedSeriesRecord {
       run_seed: 1,
       ps_commit: "unknown",
       ...overrides,
-      games: games.map((game) => ({
-        winner: null,
-        seed: [0, 0, 0, 0],
-        ...(game instanceof Object ? game : {}),
-      })),
+      games: games.map((game) => {
+        const row: JsonObject = { winner: null, seed: [0, 0, 0, 0] };
+        if (game instanceof Object) Object.assign(row, game);
+        return row;
+      }),
     },
     "fixture",
   );

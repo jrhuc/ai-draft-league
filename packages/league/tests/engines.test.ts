@@ -10,7 +10,13 @@ import {
 import { ApiError } from "../src/providers.js";
 import { SimBattle } from "../src/sim.js";
 import { loadPool } from "../src/teams.js";
-import type { AgentContext, BattleRequest, Completion, JsonObject } from "../src/types.js";
+import type {
+  AgentContext,
+  BattleRequest,
+  Completion,
+  JsonObject,
+  SubmissionContext,
+} from "../src/types.js";
 import { asRecord, asRecords } from "../src/value.js";
 import {
   acceptedAct,
@@ -170,11 +176,12 @@ test("transitive replay preserves accepted prefixes, rejected retries, and a liv
     [["|turn|2"], "rejected", "|error|[Invalid choice] retry"],
     [[], "accepted", undefined],
   ] as const) {
-    const replayed = await attemptC.submit(request(), {
+    const context: SubmissionContext = {
       povLines: [...povLines],
-      ...(error ? { error } : {}),
       submissionId: `C:p1:${povLines.join()}:${outcome}`,
-    });
+    };
+    if (error) context.error = error;
+    const replayed = await attemptC.submit(request(), context);
     assert.ok(replayed);
     attemptC.resolveSubmission(replayed, outcome, error);
   }
