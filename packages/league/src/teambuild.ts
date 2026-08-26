@@ -26,9 +26,5 @@ export {
   connectedTeamBuildPromptRevision,
   renderStrictTeamBuildPrompt,
 } from "./teambuild-prompts.js";
-export {
-  deterministicTeamBuildFallback,
-  type DeterministicTeamBuildFallback,
-  validateTeamBuildSubmission,
-} from "./teambuild-referee.js";
+export { validateTeamBuildSubmission } from "./teambuild-referee.js";
 export { runTeambuild } from "./teambuild-runtime.js";
