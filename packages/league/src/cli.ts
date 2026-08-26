@@ -150,8 +150,7 @@ Commands:
 Model specs are exactly openrouter:<model-id>, prime:<model-id>, gateway:<model-id>,
 opencode-go:<model-id>, opencode-zen:<model-id>, or random.
 CLI calls read OPENROUTER_API_KEY, PRIME_API_KEY, AI_GATEWAY_API_KEY, or OPENCODE_API_KEY
-for the selected provider. Prime and gateway model IDs are entered manually; OpenRouter
-and OpenCode model discovery is available in the GUI.
+for the selected provider. Model IDs are entered manually.
 
 
 --nitro adds the :nitro throughput-routing variant to every OpenRouter spec that
