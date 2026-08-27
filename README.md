@@ -2,31 +2,19 @@
 
 A pnpm + `vp` monorepo for frontier-model Pokémon draft leagues:
 
-- [`packages/league`](packages/league) — the harness. Models draft from a
+- [`packages/league`](packages/league) -- the harness. Models draft from a
   shared board, build teams, negotiate transaction windows, choose a bring and
   lead, play best-of-three matches, and review their season. The embedded,
   pinned Pokémon Showdown simulator is authoritative for rules, legality,
   randomness, state transitions, and results; every decision is recorded as a
   replayable event.
-- [`apps/site`](apps/site) — the spectator site. A fully static single-page app
+- [`apps/site`](apps/site) -- the spectator site. A fully static single-page app
   that consumes exactly one artifact,
   [`apps/site/public/season-bundle.json`](apps/site/public/season-bundle.json),
-  and renders it without recalculating competitive facts.
+  and renders it.
 
 The site tells the story of one league under one recorded configuration. Its
 standings and champion are exhibition results, not a general model ranking.
-
-## Competition boundaries
-
-Model-authored rationales and reviews are part of the spectator product. They
-are competition-private while their league barrier is live and appear only once
-the exported bundle releases them. Franchise memory, prompts, provider
-responses and traces, credentials, closed sheets before their reveal point, and
-future results never leave the harness.
-
-Competing models receive only the prompts and tools supplied by the harness.
-The site must never become a model data source: current competition roles have
-no browser, HTTP, MCP, URL-fetch, or spectator-site tool.
 
 ## Local development
 
@@ -67,18 +55,13 @@ Sprites are optional presentation assets mirrored into
 ## Deployment
 
 The site deploys to Cloudflare Workers as an assets-only Worker: no script is
-deployed, asset requests are free and unlimited, and client-side routes fall
+deployed, and client-side routes fall
 back to `index.html`.
 
 ```sh
 wrangler login   # once
 pnpm deploy      # from apps/site: vp build && wrangler deploy
 ```
-
-Pushes to `main` auto-deploy through GitHub Actions once the repository has a
-`CLOUDFLARE_API_TOKEN` secret (the "Edit Cloudflare Workers" token template);
-deploys run only after the verify job passes. CI also fails if any trace of the
-dev-only `/api/watch` surface reaches `apps/site/dist/`.
 
 A deployment never fetches or builds harness source.
 
