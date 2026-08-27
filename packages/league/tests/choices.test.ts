@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import test from "node:test";
+import { test } from "vite-plus/test";
 import { BaseEngine } from "../src/battle-agent.js";
 import type { SlotMenu } from "../src/choices.js";
 import { buildMenus } from "../src/choices.js";

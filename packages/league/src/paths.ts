@@ -3,7 +3,19 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const LEAGUE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+/** The league package directory, identified by its showdown.lock.json regardless of whether this
+ * module runs compiled from dist or straight from src under the test runner. */
+function findLeagueRoot(from: string): string {
+  let directory = from;
+  while (!fs.existsSync(path.join(directory, "showdown.lock.json"))) {
+    const parent = path.dirname(directory);
+    if (parent === directory) throw new Error("no showdown.lock.json above " + from);
+    directory = parent;
+  }
+  return directory;
+}
+
+export const LEAGUE_ROOT = findLeagueRoot(path.dirname(fileURLToPath(import.meta.url)));
 const BUNDLED_TEAMS_DIR = path.join(LEAGUE_ROOT, "teams");
 const DATA_DIR = path.resolve(process.env.VGC_LEAGUE_DATA_DIR ?? LEAGUE_ROOT);
 export const PINNED_PS_DIR = path.join(LEAGUE_ROOT, "pokemon-showdown");

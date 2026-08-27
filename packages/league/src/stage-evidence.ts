@@ -1,5 +1,5 @@
 import type { JsonValue } from "./types.js";
-import { clip } from "./value.js";
+import { clip, isText } from "./value.js";
 
 interface EvidenceSupplied {
   rationale: boolean;
@@ -24,8 +24,8 @@ export function normalizeStageEvidence(
   notebook: JsonValue | undefined,
   options: StageEvidenceOptions,
 ): StageEvidence {
-  const hasRationale = typeof rationale === "string";
-  const hasNotebook = typeof notebook === "string";
+  const hasRationale = isText(rationale);
+  const hasNotebook = isText(notebook);
   return {
     rationale: hasRationale ? clip(rationale.trim(), options.rationaleLimit) : "",
     notebook: hasNotebook ? clip(notebook.trim(), options.notebookLimit) : options.currentNotebook,

@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import { test } from "vite-plus/test";
 import { readJsonlObjects } from "../src/jsonl.js";
 import { seededRng } from "../src/random.js";
 import { loadShowdown } from "../src/showdown.js";
 import { runTeambuild } from "../src/teambuild.js";
 import type { Completion, JsonObject } from "../src/types.js";
-import { asRecord } from "../src/value.js";
+import { asRecord, text } from "../src/value.js";
 import {
   assertFormatAuthority,
   GOOD_TEAM,
@@ -20,7 +20,7 @@ import {
 
 test("malformed set shapes and EV values are compliance rejections before a canonical noted team", async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-teambuild-compliance-"));
-  t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(logDir, { recursive: true, force: true }));
   const malformed: { sets: unknown[] } = JSON.parse(GOOD_TEAM);
   malformed.sets[0] = null;
   const stringEv: { sets: Array<{ evs: JsonObject }> } = JSON.parse(GOOD_TEAM);
@@ -52,9 +52,9 @@ test("malformed set shapes and EV values are compliance rejections before a cano
   assert.equal(result.artifact.action?.sets[0]?.note, "Fast Ground pressure and spread damage.");
   const attempts = readJsonlObjects(path.join(logDir, "series-1-e0-fake-model.jsonl"));
   assert.equal(attempts.length, 5);
-  assert.match(String(attempts[0]!.error), /set 1 must be an object/);
+  assert.match(text(attempts[0]!.error), /set 1 must be an object/);
   for (const attempt of attempts.slice(1, 4)) {
-    assert.match(String(attempt.error), /finite, safe, non-negative integer/);
+    assert.match(text(attempt.error), /finite, safe, non-negative integer/);
   }
   const stored = readJsonlObjects(path.join(logDir, "teambuild.jsonl"))[0]!;
   const artifact = asRecord(stored.artifact);
@@ -65,7 +65,7 @@ test("malformed set shapes and EV values are compliance rejections before a cano
 
 test("a legal teambuild is accepted as written and packs the base forme", async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-teambuild-"));
-  t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(logDir, { recursive: true, force: true }));
   const { view, packed } = await runTeambuild(teambuildRequest(), {
     logDir,
     rng: seededRng(1),
@@ -88,7 +88,7 @@ test("a legal teambuild is accepted as written and packs the base forme", async 
 
 test("canonical packing delegates punctuation handling to Showdown Teams.pack", async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-teambuild-showdown-pack-"));
-  t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(logDir, { recursive: true, force: true }));
   const team: { sets: Array<{ moves: string[] }> } = JSON.parse(GOOD_TEAM);
   const { packed } = await runTeambuild(teambuildRequest(), {
     logDir,
@@ -102,7 +102,7 @@ test("canonical packing delegates punctuation handling to Showdown Teams.pack", 
 
 test("an accepted teambuild preserves fewer than four legal moves", async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-teambuild-three-moves-"));
-  t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(logDir, { recursive: true, force: true }));
   const team: { sets: Array<{ moves: string[] }> } = JSON.parse(GOOD_TEAM);
   team.sets[0]!.moves = team.sets[0]!.moves.slice(0, 3);
   const { view } = await runTeambuild(teambuildRequest(), {
@@ -116,7 +116,7 @@ test("an accepted teambuild preserves fewer than four legal moves", async (t) =>
 
 test("the teambuild prompt uses coach identities and never franchise names", async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-teambuild-prompt-"));
-  t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(logDir, { recursive: true, force: true }));
   let prompt = "";
   await runTeambuild(
     teambuildRequest({ stage: "playoff", playoffContext: ["Week 1: beat fake:rival 2-0"] }),
@@ -160,7 +160,7 @@ test("the teambuild prompt uses coach identities and never franchise names", asy
 
 test("closed-sheet teambuilding states and binds the hidden-information policy", async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-teambuild-closed-sheets-"));
-  t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(logDir, { recursive: true, force: true }));
   let system = "";
   const result = await runTeambuild(teambuildRequest({ sheetPolicy: "closed" }), {
     logDir,
@@ -180,7 +180,7 @@ test("closed-sheet teambuilding states and binds the hidden-information policy",
 
 test("round-robin teambuilds receive the coach’s season so far and the rebuild notice", async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-teambuild-season-context-"));
-  t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(logDir, { recursive: true, force: true }));
   let prompt = "";
   await runTeambuild(
     teambuildRequest({
@@ -214,7 +214,7 @@ test("round-robin teambuilds receive the coach’s season so far and the rebuild
 
 test("the system prompt lists the Champions item list, which Gen 9 knowledge gets wrong", async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-teambuild-items-"));
-  t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(logDir, { recursive: true, force: true }));
   let system = "";
   await runTeambuild(teambuildRequest({ roster: [...TEAMBUILD_ROSTER, mon("annihilape")] }), {
     logDir,
@@ -255,7 +255,7 @@ test("the system prompt lists the Champions item list, which Gen 9 knowledge get
 
 test("an illegal team is rejected with Showdown’s own errors, then repaired", async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-teambuild-repair-"));
-  t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(logDir, { recursive: true, force: true }));
   const broken: { sets: Array<JsonObject> } = JSON.parse(GOOD_TEAM);
   broken.sets[0]!.moves = ["Earthquake", "Bounce", "Rock Slide", "Protect"];
   broken.sets[0]!.evs = { hp: 60, atk: 60, def: 60, spa: 60, spd: 60, spe: 60 };
@@ -284,7 +284,7 @@ test("an illegal team is rejected with Showdown’s own errors, then repaired", 
     .trim()
     .split("\n")
     .map((line): JsonObject => JSON.parse(line));
-  assert.match(String(errors[0]!.error), /Bounce|Stat Points|Charizardite/);
+  assert.match(text(errors[0]!.error), /Bounce|Stat Points|Charizardite/);
 
   const { Teams } = loadShowdown();
   assert.equal((Teams.unpack(packed) ?? []).length, 6, "the repaired team still packs");
@@ -292,7 +292,7 @@ test("an illegal team is rejected with Showdown’s own errors, then repaired", 
 
 test("a team that survives repair still illegal is rebuilt rather than aborting the league", async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-teambuild-rebuild-"));
-  t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(logDir, { recursive: true, force: true }));
   const broken: { sets: Array<JsonObject> } = JSON.parse(GOOD_TEAM);
   for (const set of broken.sets) {
     set.moves = [];

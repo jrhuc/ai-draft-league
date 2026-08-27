@@ -513,16 +513,12 @@ export function rationaleOf(value: JsonValue | undefined, limit: number): string
   return clip(text(value).trim(), limit);
 }
 
-function parsedReply(response: string): JsonObject | string {
-  return replyJsonObject(response);
-}
-
 export function parseTradeDecision(
   response: string,
   state: TradeWindowState,
   entrant: number,
 ): ParsedTradeDecision | string {
-  const reply = parsedReply(response);
+  const reply = replyJsonObject(response);
   if (isRejection(reply)) return reply;
   if (!Array.isArray(reply.swaps)) return '"swaps" must be an array, including when it is empty';
 
@@ -592,7 +588,7 @@ export function parseTradeOffer(
   state: TradeWindowState,
   entrant: number,
 ): ParsedTradeOffer | string {
-  const reply = parsedReply(response);
+  const reply = replyJsonObject(response);
   if (isRejection(reply)) return reply;
   const reasoning = rationaleOf(reply.reasoning, TRADE_OFFER_PROMPT_POLICY.rationaleLimit);
   if (reply.offer === null) return { offer: null, reasoning };
@@ -612,7 +608,7 @@ export function parseTradeOffer(
 }
 
 export function parseTradeResponse(response: string): ParsedTradeResponse | string {
-  const reply = parsedReply(response);
+  const reply = replyJsonObject(response);
   if (isRejection(reply)) return reply;
   const { accept } = reply;
   if (accept !== true && accept !== false) return '"accept" must be true or false';

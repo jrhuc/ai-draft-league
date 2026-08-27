@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import { test } from "vite-plus/test";
 import type { DraftLeagueEvent } from "../src/draftleague-protocol.js";
 import { runDraftLeague } from "../src/draftleague.js";
 import { roundRobinWeeks } from "../src/draftleague-topology.js";
@@ -15,13 +15,13 @@ import { canonicalJson } from "../src/serialization.js";
 import { decodeTeamBuildJournalRow } from "../src/teambuild.js";
 import { parseTradeDecision, runTradeWindow, type TradeWindowState } from "../src/trade-window.js";
 import type { JsonObject } from "../src/types.js";
-import { asRecord, asStrings } from "../src/value.js";
+import { asRecord, asStrings, text } from "../src/value.js";
 import { runWeeklyReview } from "../src/weekly-review.js";
 import { BOARD } from "./draft-test-helpers.js";
 
 test("a full draft league drafts, plays weekly rounds, and crowns a champion", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-draft-league-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const recordsPath = path.join(directory, "results.jsonl");
   const events: DraftLeagueEvent[] = [];
   const rows = await runDraftLeague(["random", "random", "random", "random"], directory, {
@@ -141,7 +141,7 @@ test("a full draft league drafts, plays weekly rounds, and crowns a champion", a
     rows.length * 2,
     "each coach receives resumable private playoff context",
   );
-  assert.ok(coaching.every((entry) => String(entry.context).includes("Registered sets:")));
+  assert.ok(coaching.every((entry) => text(entry.context).includes("Registered sets:")));
 
   const draftEvents = events.filter(
     (event): event is Extract<DraftLeagueEvent, { type: "draft" }> => event.type === "draft",
@@ -185,7 +185,7 @@ test("a full draft league drafts, plays weekly rounds, and crowns a champion", a
 
 test("a four-seed draft playoff advances and replays the same exact bracket", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-draft-league-playoff-bracket-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const recordsPath = path.join(directory, "results.jsonl");
   const models = Array.from({ length: 5 }, () => "random");
   const liveEvents: DraftLeagueEvent[] = [];
@@ -225,7 +225,7 @@ test("a four-seed draft playoff advances and replays the same exact bracket", as
 
 test("a draft league checkpoints after a week and resumes to a champion", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-draft-league-resume-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const recordsPath = path.join(directory, "results.jsonl");
   const models = ["random", "random", "random", "random"];
   const first = await runDraftLeague(models, directory, {
@@ -267,7 +267,7 @@ test("a draft league checkpoints after a week and resumes to a champion", async 
 
 test("the real league window updates the outer roster used by later construction", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-window-outer-roster-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const recordsPath = path.join(directory, "results.jsonl");
   const models = ["random", "random"];
   await runDraftLeague(models, directory, {
@@ -344,7 +344,7 @@ test("the real league window updates the outer roster used by later construction
         state,
         first,
       );
-      if (typeof parsed === "string") continue;
+      if (!(parsed instanceof Object)) continue;
       replayed = {
         drop: parsed.swaps[0]!.drop,
         add: parsed.swaps[0]!.add,

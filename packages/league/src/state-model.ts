@@ -56,6 +56,7 @@ export class MonState {
   preview = false;
   brought: boolean | undefined;
   formes = new Set<string>();
+  /** Successful consecutive Protect-like stalls; 0 means next Protect is full odds. */
   protectSuccessStreak = 0;
 
   constructor(public ident: string) {}

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import test from "node:test";
+import { test } from "vite-plus/test";
 import { fileURLToPath } from "node:url";
 
 import { LEAGUE_ROOT } from "../src/paths.js";
@@ -171,7 +171,7 @@ test("default Showdown checkout matches the pinned revision", () => {
 });
 
 test("reference render revision binds the versioned executed module bytes", () => {
-  const modulePath = fileURLToPath(new URL("../src/reference.js", import.meta.url));
+  const modulePath = fileURLToPath(new URL("../src/reference.ts", import.meta.url));
   const moduleBytes = fs.readFileSync(modulePath);
   const revisionFor = (content: Buffer): string =>
     createHash("sha256")

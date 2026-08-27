@@ -18,7 +18,7 @@ export function useReveal(): void {
   useLayoutEffect(() => {
     const page = document.querySelector(".page");
     if (!page) return;
-    if (typeof IntersectionObserver === "undefined") {
+    if (!("IntersectionObserver" in window)) {
       document.documentElement.classList.add("no-io");
       return;
     }

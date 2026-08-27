@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import { test } from "vite-plus/test";
 import type { BracketView } from "../src/views.js";
 import { loadSeriesRecords } from "../src/records.js";
 import { loadPool } from "../src/teams.js";
@@ -16,7 +16,7 @@ import {
   tournamentConfigSchema,
 } from "../src/tournament.js";
 import type { JsonObject } from "../src/types.js";
-import { asRecord, asRecords } from "../src/value.js";
+import { asRecord, asRecords, text } from "../src/value.js";
 
 test("seed order spreads byes across distinct first-round matches", () => {
   assert.deepEqual(seedPositions(4), [0, 3, 1, 2]);
@@ -100,7 +100,7 @@ test("bracket outcomes are exact immutable atomic transitions", () => {
 
 test("a tournament crowns a champion and records rounds coherently", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-tournament-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const recordsPath = path.join(directory, "results.jsonl");
   const events: TournamentEvent[] = [];
   const rows = await runTournament(["random", "random", "random", "random", "random"], directory, {
@@ -195,7 +195,7 @@ test("a tournament crowns a champion and records rounds coherently", async (t) =
 
 test("inline teams pair to models by index and record no pool", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-tournament-inline-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const recordsPath = path.join(directory, "results.jsonl");
   const pool = loadPool("test");
   const rows = await runTournament(["random", "random"], directory, {
@@ -213,7 +213,10 @@ test("inline teams pair to models by index and record no pool", async (t) => {
   assert.equal(record.mode, "tournament");
   assert.equal(record.pool, undefined);
   assert.equal(record.format, pool.format);
-  assert.deepEqual(Object.values(record.teams ?? {}).sort(), ["alpha", "beta"]);
+  assert.deepEqual(
+    Object.values(record.teams ?? {}).sort((a, b) => text(a).localeCompare(text(b))),
+    ["alpha", "beta"],
+  );
   assert.ok(
     fs.existsSync(path.join(directory, "teams.json")),
     "inline teams are captured for provenance",
@@ -237,7 +240,7 @@ test("inline teams must cover every model", async () => {
 
 test("a seeded pool keeps the real bracket order and briefs both sides on it", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-tournament-seeded-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const pool = loadPool("vr-aug26-top8");
   assert.ok(pool.event, "the pool carries its event");
   assert.equal(pool.teams.length, 8);
@@ -285,7 +288,7 @@ test("a seeded pool keeps the real bracket order and briefs both sides on it", a
 
 test("a stopped bracket resumes on its records and replays the interrupted series", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-tournament-resume-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const recordsPath = path.join(directory, "results.jsonl");
   const models = Array.from({ length: 4 }, () => "random");
   const controller = new AbortController();
@@ -334,7 +337,7 @@ test("a stopped bracket resumes on its records and replays the interrupted serie
 
 test("a resume refuses a tournament result whose defaults diverge from canonical series evidence", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-tournament-mismatch-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const models = ["random", "random"];
   const recordsPath = path.join(directory, "results.jsonl");
   await runTournament(models, directory, { seed: 3, concurrency: 1, recordsPath });

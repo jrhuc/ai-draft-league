@@ -287,20 +287,25 @@ async function completeTradePhase<T extends object>(request: {
   entrant: number;
   system: string;
   user: string;
-  phase: "offer" | "response";
+  phase: "offer" | "response" | "free_agency";
   seatLog: string;
   reference: ShowdownReference;
   boardSearch: BoardSearch;
   options: RunTradeWindowOptions;
+  policy: {
+    attempts: number;
+    maxTokens: number;
+    toolRounds: number;
+    maxCallsPerRound: number;
+    truncatedTemplate: string;
+    rejectionTemplate: string;
+  };
+  cutoff: string;
   parse: (response: string) => T | string;
 }): Promise<T | undefined> {
   const messages: ProviderMessage[] = [{ role: "user", content: request.user }];
   let parsed: T | undefined;
-  for (
-    let attempt = 1;
-    attempt <= TRADE_OFFER_PROMPT_POLICY.attempts && parsed === undefined;
-    attempt += 1
-  ) {
+  for (let attempt = 1; attempt <= request.policy.attempts && parsed === undefined; attempt += 1) {
     const promptForAttempt = messages[messages.length - 1]!.content ?? "";
     let response = "";
     let usage: Record<string, number> | undefined;
@@ -316,7 +321,7 @@ async function completeTradePhase<T extends object>(request: {
         reference: request.reference,
         boardSearch: request.boardSearch,
         extraTools: [memoryPageTool(() => request.state.memories[request.entrant]!)],
-        policy: TRADE_OFFER_PROMPT_POLICY,
+        policy: request.policy,
         onLookup: (call) => lookups.push(call),
         signal: request.options.signal,
       };
@@ -325,10 +330,7 @@ async function completeTradePhase<T extends object>(request: {
       usage = completion.usage;
       const candidate = request.parse(response || completion.reasoning || "");
       if (isRejection(candidate)) {
-        error =
-          completion.finishReason === "length"
-            ? "the reply was cut off before completing the trade reply"
-            : candidate;
+        error = completion.finishReason === "length" ? request.cutoff : candidate;
         messages.push({
           role: "assistant",
           content: response || "[the reply contained no visible text]",
@@ -337,11 +339,11 @@ async function completeTradePhase<T extends object>(request: {
           role: "user",
           content:
             completion.finishReason === "length"
-              ? TRADE_OFFER_PROMPT_POLICY.truncatedTemplate.replace(
+              ? request.policy.truncatedTemplate.replace(
                   "{{budget}}",
-                  String(TRADE_OFFER_PROMPT_POLICY.maxTokens),
+                  String(request.policy.maxTokens),
                 )
-              : TRADE_OFFER_PROMPT_POLICY.rejectionTemplate.replace("{{error}}", candidate),
+              : request.policy.rejectionTemplate.replace("{{error}}", candidate),
         });
       } else {
         parsed = candidate;
@@ -445,6 +447,8 @@ export async function runTradeWindow(
             reference,
             boardSearch,
             options,
+            policy: TRADE_OFFER_PROMPT_POLICY,
+            cutoff: "the reply was cut off before completing the trade reply",
             parse: (response) => parseTradeOffer(response, liveState, entrant),
           });
           proposerFallback = completed === undefined;
@@ -472,6 +476,8 @@ export async function runTradeWindow(
               reference,
               boardSearch,
               options,
+              policy: TRADE_OFFER_PROMPT_POLICY,
+              cutoff: "the reply was cut off before completing the trade reply",
               parse: parseTradeResponse,
             });
             responderFallback = completed === undefined;
@@ -525,97 +531,26 @@ export async function runTradeWindow(
     const provider = providers[entrant];
     let parsed: ParsedTradeDecision | undefined;
     let fallback = false;
-    const system = systemPrompt(liveState, entrant, windowPosition);
     if (provider) {
-      const messages: ProviderMessage[] = [
-        { role: "user", content: userPrompt(liveState, entrant, options.psDir) },
-      ];
       const seatLog = path.join(
         logDir,
         `seat-${entrant}-${fileSlug(liveState.models[entrant]!)}.jsonl`,
       );
-      for (
-        let attempt = 1;
-        attempt <= TRADE_WINDOW_PROMPT_POLICY.attempts && !parsed;
-        attempt += 1
-      ) {
-        const promptForAttempt = messages[messages.length - 1]!.content ?? "";
-        let response = "";
-        let usage: Record<string, number> | undefined;
-        let error: string | undefined;
-        let terminalError: Error | undefined;
-        const lookups: { name: string; arguments: JsonObject; result: string }[] = [];
-        try {
-          const completionRequest: DexToolRequest = {
-            provider,
-            system,
-            messages,
-            spec: liveState.models[entrant]!,
-            reference,
-            boardSearch,
-            extraTools: [memoryPageTool(() => liveState.memories[entrant]!)],
-            policy: TRADE_WINDOW_PROMPT_POLICY,
-            onLookup: (call) => lookups.push(call),
-            signal: options.signal,
-          };
-          const completion = await completeWithDexTools(completionRequest);
-          response = completion.text;
-          usage = completion.usage;
-          const candidate = parseTradeDecision(
-            response || completion.reasoning || "",
-            liveState,
-            entrant,
-          );
-          if (isRejection(candidate)) {
-            error =
-              completion.finishReason === "length"
-                ? "the reply was cut off before completing the transaction list"
-                : candidate;
-            messages.push({
-              role: "assistant",
-              content: response || "[the reply contained no visible text]",
-            });
-            messages.push({
-              role: "user",
-              content:
-                completion.finishReason === "length"
-                  ? TRADE_WINDOW_PROMPT_POLICY.truncatedTemplate.replace(
-                      "{{budget}}",
-                      String(TRADE_WINDOW_PROMPT_POLICY.maxTokens),
-                    )
-                  : TRADE_WINDOW_PROMPT_POLICY.rejectionTemplate.replace("{{error}}", candidate),
-            });
-          } else {
-            parsed = candidate;
-          }
-        } catch (cause) {
-          const failure = classifyProviderFailure(cause, liveState.models[entrant]);
-          error = failure.summary;
-          terminalError = new Error(`${failure.summary} The trade window cannot continue.`, {
-            cause,
-          });
-        }
-        const seatEntry: TradeSeatLog =
-          attempt === 1
-            ? {
-                phase: "free_agency",
-                attempt,
-                system,
-                user: promptForAttempt,
-                response,
-              }
-            : {
-                phase: "free_agency",
-                attempt,
-                user: promptForAttempt,
-                response,
-              };
-        if (usage) seatEntry.usage = usage;
-        if (lookups.length) seatEntry.tool_lookups = lookups;
-        if (error) seatEntry.error = error;
-        fs.appendFileSync(seatLog, `${JSON.stringify(seatEntry)}\n`, "utf8");
-        if (terminalError) throw terminalError;
-      }
+      parsed = await completeTradePhase({
+        provider,
+        state: liveState,
+        entrant,
+        system: systemPrompt(liveState, entrant, windowPosition),
+        user: userPrompt(liveState, entrant, options.psDir),
+        phase: "free_agency",
+        seatLog,
+        reference,
+        boardSearch,
+        options,
+        policy: TRADE_WINDOW_PROMPT_POLICY,
+        cutoff: "the reply was cut off before completing the transaction list",
+        parse: (response) => parseTradeDecision(response, liveState, entrant),
+      });
     }
     if (!parsed) {
       parsed = { swaps: [], reasoning: "" };

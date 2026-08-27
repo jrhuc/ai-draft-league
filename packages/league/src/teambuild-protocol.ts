@@ -3,7 +3,7 @@ import type { FranchiseMemory } from "./franchise-memory.js";
 import type { ModelReasoningConfig, ReasoningLevel } from "./providers.js";
 import type { Rng } from "./random.js";
 import { normalizeStageEvidence, type StageEvidence } from "./stage-evidence.js";
-import { replyJsonObject } from "./value.js";
+import { isText, replyJsonObject } from "./value.js";
 import type { Provider } from "./types.js";
 import type { TeamBuildSetView, TeamBuildView } from "./views.js";
 
@@ -395,7 +395,7 @@ export function parseTeamBuildResponse(
   task: TeamBuildTask,
 ): ParsedTeamBuildResult {
   const json = replyJsonObject(response);
-  if (typeof json === "string") return { status: "rejected", error: json };
+  if (isText(json)) return { status: "rejected", error: json };
   const reply = teamBuildReplySchema.safeParse(json);
   if (!reply.success)
     return { status: "rejected", error: replyIssueMessage(reply.error.issues[0]!) };

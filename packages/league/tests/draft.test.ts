@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import { test } from "vite-plus/test";
 import type { DraftBoardMon, DraftState } from "../src/draft.js";
 import {
   applyDraftPick,
@@ -30,6 +30,8 @@ import {
   type TradeWindowState,
 } from "../src/trade-window.js";
 import type { Completion, JsonObject, ProviderMessage } from "../src/types.js";
+import { isCount, isText } from "../src/value.js";
+import { accepted, rejection } from "./asserts.js";
 import {
   assertFormatAuthority,
   BOARD,
@@ -65,7 +67,7 @@ test("mega entries register the base forme and lock their stone", () => {
     const stone = dex.items.get(entry.item!);
     assert.ok(stone.exists, `${entry.id} names a real stone`);
     const megaStone = stone.megaStone;
-    const target = typeof megaStone === "string" ? megaStone : megaStone?.[registered.name];
+    const target = isText(megaStone) ? megaStone : megaStone?.[registered.name];
     assert.equal(target, entry.forme, `${entry.id} stone must produce its forme`);
   }
   const zard = mon("charizard-mega-y");
@@ -82,7 +84,7 @@ test("re-priced entries keep the prior listing and the usage that moved it", () 
     "the usage pass should have moved a meaningful share of the board",
   );
   for (const entry of adjusted) {
-    assert.ok(typeof entry.listed === "number" && entry.listed !== entry.cost);
+    assert.ok(isCount(entry.listed) && entry.listed !== entry.cost);
     assert.match(entry.usage!, /^#\d+ at [\d.]+%$/);
   }
   assert.equal(mon("farigiraf").cost, 18, "a Reg M-B staple should not stay at its Reg M-A price");
@@ -92,14 +94,14 @@ test("re-priced entries keep the prior listing and the usage that moved it", () 
 
 test("a board id must match its filename", (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-draft-board-id-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   fs.writeFileSync(path.join(directory, "foo.json"), JSON.stringify({ ...BOARD, id: "bar" }));
   assert.throws(() => loadBoard("foo", directory), /id must match its filename/);
 });
 
 test("a board entry naming an unknown species is rejected", (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-draft-board-species-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const mons = BOARD.mons.map((entry, index) =>
     index === 0 ? { ...entry, species: "Missingno" } : entry,
   );
@@ -109,7 +111,7 @@ test("a board entry naming an unknown species is rejected", (t) => {
 
 test("a board rejects inconsistent battle metadata and an unaffordable budget", (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-draft-board-invariants-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const write = (id: string, mons: DraftBoardMon[], budget = BOARD.budget) => {
     fs.writeFileSync(
       path.join(directory, `${id}.json`),
@@ -149,13 +151,13 @@ test("draft pick transitions enforce the exact turn without mutating prior state
   const initial = freshState();
   const untouched = snapshot(initial);
   const action = { pick: 1, entrant: 0, mon: "garchomp" };
-  const accepted = applyDraftPick(initial, action);
+  const picked = applyDraftPick(initial, action);
 
   assert.deepEqual(snapshot(initial), untouched);
 
-  const afterAccepted = snapshot(accepted);
-  assert.throws(() => applyDraftPick(accepted, action), /pick 1 is stale; expected pick 2/);
-  assert.deepEqual(snapshot(accepted), afterAccepted);
+  const afterAccepted = snapshot(picked);
+  assert.throws(() => applyDraftPick(picked, action), /pick 1 is stale; expected pick 2/);
+  assert.deepEqual(snapshot(picked), afterAccepted);
   assert.throws(
     () => applyDraftPick(initial, { ...action, entrant: 1 }),
     /pick 1 belongs to entrant 0, not entrant 1/,
@@ -265,7 +267,7 @@ test("trade-window swaps are atomic and may upgrade a base entry to its Mega", (
     state,
     0,
   );
-  assert.match(String(overBudget), /above the .* budget/);
+  assert.match(rejection(overBudget), /above the .* budget/);
   const beforeRejected = structuredClone(state);
   assert.throws(
     () => applyFreeAgency(state, 0, [{ drop: tyranitar.id, add: megaTyranitar.id }]),
@@ -273,27 +275,27 @@ test("trade-window swaps are atomic and may upgrade a base entry to its Mega", (
   );
   assert.deepEqual(state, beforeRejected, "a rejected list mutates nothing");
 
-  const parsed = parseTradeDecision(
-    JSON.stringify({
-      swaps: [
-        { drop: tyranitar.id, add: megaTyranitar.id },
-        { drop: mrRime.id, add: absol.id },
-      ],
-      reasoning: "Trade depth for the Mega upgrade.",
-    }),
-    state,
-    0,
+  const parsed = accepted(
+    parseTradeDecision(
+      JSON.stringify({
+        swaps: [
+          { drop: tyranitar.id, add: megaTyranitar.id },
+          { drop: mrRime.id, add: absol.id },
+        ],
+        reasoning: "Trade depth for the Mega upgrade.",
+      }),
+      state,
+      0,
+    ),
   );
-  assert.notEqual(typeof parsed, "string", String(parsed));
-  if (typeof parsed === "string") return;
-  const accepted = applyFreeAgency(state, 0, parsed.swaps);
+  const applied = applyFreeAgency(state, 0, parsed.swaps);
   assert.deepEqual(state, beforeRejected, "an accepted transition does not mutate its prior state");
-  assert.equal(accepted.rosters[0]!.length, BOARD.picks);
-  assert.equal(accepted.budgets[0], 0);
-  assert.ok(accepted.rosters[0]!.some((entry) => entry.id === megaTyranitar.id));
-  assert.ok(accepted.rosters[0]!.some((entry) => entry.id === absol.id));
+  assert.equal(applied.rosters[0]!.length, BOARD.picks);
+  assert.equal(applied.budgets[0], 0);
+  assert.ok(applied.rosters[0]!.some((entry) => entry.id === megaTyranitar.id));
+  assert.ok(applied.rosters[0]!.some((entry) => entry.id === absol.id));
   assert.ok(
-    !accepted.rosters[0]!.some((entry) => entry.id === tyranitar.id || entry.id === mrRime.id),
+    !applied.rosters[0]!.some((entry) => entry.id === tyranitar.id || entry.id === mrRime.id),
   );
 });
 
@@ -315,16 +317,18 @@ test("coach trades validate both rosters and apply an accepted exchange atomical
     swapsAllowed: 6,
     swapsUsed: [0, 0],
   } satisfies TradeWindowState;
-  const parsed = parseTradeOffer(
-    JSON.stringify({
-      offer: { to: 1, give: "charizard-mega-y", get: "tyranitar", message: "A direct exchange." },
-      reasoning: "Private valuation.",
-    }),
-    state,
-    0,
+  const parsed = accepted(
+    parseTradeOffer(
+      JSON.stringify({
+        offer: { to: 1, give: "charizard-mega-y", get: "tyranitar", message: "A direct exchange." },
+        reasoning: "Private valuation.",
+      }),
+      state,
+      0,
+    ),
   );
   assert.match(
-    String(
+    rejection(
       parseTradeOffer(
         '{"offer":{"to":"1","give":"charizard-mega-y","get":"tyranitar","message":"A direct exchange."},"reasoning":"Private valuation.","notebook":"Plan around Tyranitar."}',
         state,
@@ -333,7 +337,6 @@ test("coach trades validate both rosters and apply an accepted exchange atomical
     ),
     /entrant index/,
   );
-  assert.notEqual(typeof parsed, "string", String(parsed));
   assert.deepEqual(
     parseTradeOffer(
       '{"offer":{"to":1,"give":"charizard-mega-y (21)","get":"Tyranitar (17)","message":"As listed."}}',
@@ -346,7 +349,7 @@ test("coach trades validate both rosters and apply an accepted exchange atomical
     },
   );
   assert.match(
-    String(
+    rejection(
       parseTradeOffer(
         '{"offer":{"to":0,"give":"charizard-mega-y","get":"tyranitar","message":"Self."}}',
         state,
@@ -364,8 +367,8 @@ test("coach trades validate both rosters and apply an accepted exchange atomical
     accept: false,
     reasoning: "",
   });
-  if (typeof parsed === "string" || !parsed.offer) return;
   const offered = parsed.offer;
+  assert.ok(offered, "a reply naming an offer parses to one");
   const before = structuredClone(state);
   assert.throws(
     () =>
@@ -384,7 +387,7 @@ test("coach trades validate both rosters and apply an accepted exchange atomical
     "a rejected offer leaves rosters, budgets, and notebooks untouched",
   );
 
-  const accepted = applyTradeOffer(state, {
+  const applied = applyTradeOffer(state, {
     from: 0,
     to: offered.to,
     give: offered.give,
@@ -393,20 +396,20 @@ test("coach trades validate both rosters and apply an accepted exchange atomical
   });
   assert.deepEqual(state, before, "an accepted offer does not mutate its prior state");
   assert.deepEqual(
-    accepted.rosters[0]!.map((entry) => entry.id),
+    applied.rosters[0]!.map((entry) => entry.id),
     ["absol", "tyranitar"],
   );
   assert.deepEqual(
-    accepted.rosters[1]!.map((entry) => entry.id),
+    applied.rosters[1]!.map((entry) => entry.id),
     ["mr-rime", "charizard-mega-y"],
   );
-  assert.equal(accepted.budgets[0], 85);
-  assert.equal(accepted.budgets[1], 77);
+  assert.equal(applied.budgets[0], 85);
+  assert.equal(applied.budgets[1], 77);
 });
 
 test("coach offers resolve before free agency and replay without model calls", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-coach-trades-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const cheap: DraftBoardMon[] = [];
   const bases = new Set<string>();
   for (const candidate of BOARD.mons) {
@@ -548,7 +551,7 @@ test("coach offers resolve before free agency and replay without model calls", a
 
 test("offer artifacts distinguish exhausted parsing from deliberate and random decisions", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-trade-fallbacks-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const state = transactionState();
   state.models = ["test:responder", "test:proposer"];
   const offer = {
@@ -559,7 +562,7 @@ test("offer artifacts distinguish exhausted parsing from deliberate and random d
       message: "One independent offer.",
     },
   };
-  assert.notEqual(typeof parseTradeOffer(JSON.stringify(offer), state, 1), "string");
+  accepted(parseTradeOffer(JSON.stringify(offer), state, 1));
   const calls = new Map<string, number>();
   const artifact = await runTradeWindow(state, {
     epochDir: directory,
@@ -613,8 +616,8 @@ test("offer artifacts distinguish exhausted parsing from deliberate and random d
 test("trade-offer caps are enforced by direct, fresh-league, and stored-resume ingress", async (t) => {
   const directDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-trade-cap-direct-"));
   const leagueDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-trade-cap-league-"));
-  t.after(() => fs.rmSync(directDir, { recursive: true, force: true }));
-  t.after(() => fs.rmSync(leagueDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(leagueDir, { recursive: true, force: true }));
   const invalid = MAX_TRADE_OFFERS + 1;
   await assert.rejects(
     runTradeWindow(transactionState(), {
@@ -668,7 +671,7 @@ test("trade-offer caps are enforced by direct, fresh-league, and stored-resume i
 
 test("the trade window runs lowest seed first and replays completed seats", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-trade-window-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const cheap: DraftBoardMon[] = [];
   const bases = new Set<string>();
   for (const candidate of BOARD.mons) {

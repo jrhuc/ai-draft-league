@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import { test } from "vite-plus/test";
 import { resolveAttemptLineage } from "../src/series.js";
 import { recordedFixtureOptions, writeDecidedAdoption } from "./series-test-helpers.js";
 
@@ -12,7 +12,7 @@ test("adoption fails closed on ambiguous equal-progress series directories", asy
   const { defaultPsDir } = await import("../src/paths.js");
   const pool = loadPool();
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-series-adopt-tie-"));
-  t.after(() => fs.rmSync(runDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(runDir, { recursive: true, force: true }));
   const options = recordedFixtureOptions(pool, defaultPsDir(), runDir, 14);
   const firstDir = writeDecidedAdoption(runDir, "z-equal-progress", options);
   const secondDir = writeDecidedAdoption(runDir, "a-equal-progress", options);
@@ -35,7 +35,7 @@ test("adoption rejects immutable series identity mismatches without rewriting me
   const { defaultPsDir } = await import("../src/paths.js");
   const pool = loadPool();
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-series-adopt-identity-"));
-  t.after(() => fs.rmSync(runDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(runDir, { recursive: true, force: true }));
   const stored = recordedFixtureOptions(pool, defaultPsDir(), runDir, 16);
   const seriesDir = writeDecidedAdoption(runDir, "identity-bound", stored);
   const metadataBefore = fs.readFileSync(path.join(seriesDir, "series.json"));
@@ -56,7 +56,7 @@ test("adoption rejects any mutation of marker-bound canonical game log bytes", a
   const { defaultPsDir } = await import("../src/paths.js");
   const pool = loadPool();
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-series-adopt-log-digest-"));
-  t.after(() => fs.rmSync(runDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(runDir, { recursive: true, force: true }));
   const options = recordedFixtureOptions(pool, defaultPsDir(), runDir, 17);
   const seriesDir = writeDecidedAdoption(runDir, "digest-bound", options);
   const attemptsBefore = fs.readFileSync(path.join(seriesDir, "series-attempts.jsonl"));
@@ -73,7 +73,7 @@ test("adoption accepts only the exact current completion marker shape", async (t
   const pool = loadPool();
   for (const mutation of ["extra", "missing"] as const) {
     const runDir = fs.mkdtempSync(path.join(os.tmpdir(), `vgc-series-adopt-marker-${mutation}-`));
-    t.after(() => fs.rmSync(runDir, { recursive: true, force: true }));
+    t.onTestFinished(() => fs.rmSync(runDir, { recursive: true, force: true }));
     const options = recordedFixtureOptions(
       pool,
       defaultPsDir(),
@@ -97,7 +97,7 @@ test("a resumed attempt supersedes a crashed attempt and completes under one sta
   const { defaultPsDir } = await import("../src/paths.js");
   const pool = loadPool();
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-series-attempt-resume-"));
-  t.after(() => fs.rmSync(runDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(runDir, { recursive: true, force: true }));
   const seriesId = "crashresume";
   const options = recordedFixtureOptions(pool, defaultPsDir(), runDir, 15);
   const seriesDir = writeDecidedAdoption(runDir, seriesId, options);
@@ -164,7 +164,7 @@ test("adoption truncates a torn final context row before a subsequent append", a
   const { defaultPsDir } = await import("../src/paths.js");
   const pool = loadPool();
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-series-context-tail-"));
-  t.after(() => fs.rmSync(runDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(runDir, { recursive: true, force: true }));
   const options = recordedFixtureOptions(pool, defaultPsDir(), runDir, 9, {
     p1: "openrouter:context-test",
     p2: "random",
@@ -229,7 +229,7 @@ test("adoption still rejects malformed interior context rows", async (t) => {
   const { defaultPsDir } = await import("../src/paths.js");
   const pool = loadPool();
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-series-context-interior-"));
-  t.after(() => fs.rmSync(runDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(runDir, { recursive: true, force: true }));
   const options = recordedFixtureOptions(pool, defaultPsDir(), runDir, 10, {
     p1: "openrouter:context-test",
     p2: "random",
@@ -329,7 +329,7 @@ test("adoption rejects context rows owned by another seat or series", async (t) 
   const { defaultPsDir } = await import("../src/paths.js");
   const pool = loadPool();
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-series-context-owner-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
   for (const [name, pid, persistedSeries] of [
     ["wrongpid", "p2", "wrongpid"],
     ["wrongseries", "p1", "another-series"],

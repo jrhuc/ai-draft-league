@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vite-plus/test";
 
 import { createBoardSearch } from "../src/board-search.js";
 import { completeWithDexTools, TOOL_BUDGET_NOTICE } from "../src/dex-lookups.js";
@@ -7,6 +7,7 @@ import { loadBoard } from "../src/draft.js";
 import { defaultPsDir } from "../src/paths.js";
 import { ShowdownReference } from "../src/reference.js";
 import type { CompleteOptions, Completion, Provider, ProviderMessage } from "../src/types.js";
+import { text } from "../src/value.js";
 
 const POLICY = {
   maxTokens: 4096,
@@ -272,7 +273,7 @@ test("extra tools are offered beside the dex tools and dispatched to their own r
           description: "page",
           parameters: { type: "object" },
         },
-        run: (args) => `page ${String(args.name)}`,
+        run: (args) => `page ${text(args.name)}`,
       },
     ],
     onLookup: (call) => lookups.push({ name: call.name, result: call.result }),

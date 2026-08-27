@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import { test } from "vite-plus/test";
 import { setTimeout as delay } from "node:timers/promises";
 import type { BattleStream } from "pokemon-showdown";
 import { RandomEngine } from "../src/battle-agent.js";
@@ -22,6 +22,7 @@ import type {
   SubmissionContext,
   TimerScale,
 } from "../src/types.js";
+import { text } from "../src/value.js";
 import { routeState } from "./fixtures/fork.js";
 
 test("forced-switch menus retain the neutral forfeit option", () => {
@@ -130,7 +131,7 @@ test("Showdown rejection and accepted retry resolve distinct stable submissions 
   assert.equal(new Set(all.map((row) => row.submission_id)).size, all.length);
   const rejected = p1Rows.find((row) => row.outcome === "rejected");
   assert.equal(rejected?.action, "invalid");
-  assert.match(String(rejected?.showdown_error), /^\|error\|/);
+  assert.match(text(rejected?.showdown_error), /^\|error\|/);
   assert.ok(p1Rows.some((row) => row.outcome === "accepted"));
   assert.ok(p2Rows.every((row) => row.outcome === "accepted"));
 });
@@ -173,7 +174,7 @@ test("an unavailable third reject is resolved before its simulator default", asy
   assert.deepEqual(outcome.errors, { p1: 3, p2: 0 });
   assert.deepEqual(outcome.simulatorSubstitutions, { p1: 1, p2: 0 });
   assert.match(
-    String(decisions.find((row) => row.action === "switch 2")?.showdown_error),
+    text(decisions.find((row) => row.action === "switch 2")?.showdown_error),
     /Unavailable choice/,
   );
   const generated = decisions.find((row) => row.submission_source === "simulator-default");
@@ -398,7 +399,7 @@ test("stream termination rejects an incomplete split triple", () => {
 
 test("Rotation writes one completed best-of-three record", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-run-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const records = path.join(directory, "results.jsonl");
   const rows = await runRotation(["random", "random"], 1, path.join(directory, "run"), {
     seed: 1,

@@ -35,8 +35,7 @@ import {
   readCompletedSeriesGameLogs,
 } from "./series.js";
 import type { JsonObject, Provider, ProviderMessage } from "./types.js";
-import { fileSlug } from "./value.js";
-import { clip, count, isText, replyJsonObject, text } from "./value.js";
+import { clip, count, fileSlug, isText, replyJsonObject, text } from "./value.js";
 
 const MEMORY_NOTICE = `- Your memory is yours to organise: a notebook page that every later prompt of yours shows in full, plus up to ${MEMORY_LIMITS.pages - 1} named pages that later prompts list by name and that you or your later selves fetch with read_memory_page. Each page holds at most ${MEMORY_LIMITS.pageChars} characters, ${MEMORY_LIMITS.totalChars} in all. It is the only state that carries from week to week; nothing else you write here is kept.`;
 
@@ -185,7 +184,7 @@ function parseWeeklyReviewResult(
   current: FranchiseMemory,
 ): ParsedWeeklyReviewResult {
   const object = replyJsonObject(response);
-  if (typeof object === "string") return { error: object };
+  if (isText(object)) return { error: object };
   const reasoning = object.reasoning;
   if (reasoning !== undefined && !isText(reasoning))
     return { error: '"reasoning" must be a string' };

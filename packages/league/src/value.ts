@@ -16,8 +16,12 @@ export function isText(value: JsonValue | undefined): value is string {
   return typeof value === "string";
 }
 
+export function isCount(value: JsonValue | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
 export function count(value: JsonValue | undefined, fallback = 0): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  return isCount(value) ? value : fallback;
 }
 
 export function replyJsonObject(response: string): JsonObject | string {

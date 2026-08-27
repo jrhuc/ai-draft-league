@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import { test } from "vite-plus/test";
 import { runDraftLeague } from "../src/draftleague.js";
 import { readJsonlObjects } from "../src/jsonl.js";
 import { defaultPsDir } from "../src/paths.js";
@@ -21,7 +21,7 @@ import { BOARD, transactionState } from "./draft-test-helpers.js";
 
 test("durable journal and atomic final-artifact faults retry provider-free and commit once", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-window-atomic-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const state = transactionState();
   state.models = ["random", "test:coach"];
   const initial = structuredClone(state);
@@ -38,7 +38,7 @@ test("durable journal and atomic final-artifact faults retry provider-free and c
         state,
         1,
       );
-      if (typeof parsed === "string" || !parsed.swaps[0]) continue;
+      if (!(parsed instanceof Object) || !parsed.swaps[0]) continue;
       swap = parsed.swaps[0];
       break;
     }
@@ -151,7 +151,7 @@ test("durable journal and atomic final-artifact faults retry provider-free and c
 
 test("current teambuild provenance counts as post-window transaction-barrier evidence", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-window-teambuild-barrier-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const recordsPath = path.join(directory, "results.jsonl");
   const models = ["random", "random"];
   await runDraftLeague(models, directory, {
@@ -179,7 +179,7 @@ test("current teambuild provenance counts as post-window transaction-barrier evi
 
 test("committed overlays fail closed when tampered or missing past the transaction barrier", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-window-barrier-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const recordsPath = path.join(directory, "results.jsonl");
   await runDraftLeague(["random", "random"], directory, { recordsPath, seed: 73, concurrency: 1 });
   const artifactFile = path.join(directory, "transactions", "after-week-1", "window.json");
@@ -213,7 +213,7 @@ test("committed overlays fail closed when tampered or missing past the transacti
 
 test("transaction replay enforces one current schema, privacy shape, and phase order", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-window-schema-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   await runTradeWindow(transactionState(), {
     epochDir: directory,
     psDir: defaultPsDir(),
@@ -290,7 +290,7 @@ test("transaction replay enforces one current schema, privacy shape, and phase o
 
 test("season resume requires canonical stored series evidence before standings and bracket adoption", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-season-fold-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const recordsPath = path.join(directory, "results.jsonl");
   await runDraftLeague(["random", "random"], directory, { recordsPath, seed: 29, concurrency: 1 });
   const original = fs
@@ -409,7 +409,7 @@ test("season resume requires canonical stored series evidence before standings a
 
 test("a two-coach league plays one week and a single final", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-draft-league-two-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const rows = await runDraftLeague(["random", "random"], directory, {
     recordsPath: path.join(directory, "results.jsonl"),
     seed: 5,
@@ -448,7 +448,7 @@ test("a two-coach league plays one week and a single final", async (t) => {
 
 test("a draft-only league stops at the rosters and resumes into a full season", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-draft-only-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const recordsPath = path.join(directory, "results.jsonl");
   const drafted = await runDraftLeague(["random", "random"], directory, {
     recordsPath,
@@ -499,7 +499,7 @@ test("a draft-only league stops at the rosters and resumes into a full season", 
   assert.equal(played[1]!.stage, "playoff");
 
   const contaminated = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-draft-only-evidence-"));
-  t.after(() => fs.rmSync(contaminated, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(contaminated, { recursive: true, force: true }));
   const contaminatedRecords = path.join(contaminated, "results.jsonl");
   await runDraftLeague(["random", "random"], contaminated, {
     recordsPath: contaminatedRecords,

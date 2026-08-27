@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import { test } from "vite-plus/test";
 
 import { TEAMS_DIR } from "../src/paths.js";
 import { loadShowdown } from "../src/showdown.js";
@@ -36,7 +36,7 @@ test("default pool loads in manifest order and validates", () => {
 
 test("pool loader uses custom directories and rejects invalid manifests", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-teams-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
   const poolDir = path.join(root, "snapshot");
   fs.mkdirSync(poolDir);
   fs.writeFileSync(path.join(poolDir, "a.team"), "alpha");
@@ -87,7 +87,7 @@ test("pool loader uses custom directories and rejects invalid manifests", (t) =>
 
 test("a created pool keeps the event and the placements a bracket reads seeds from", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-createpool-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
   createPool(
     "vr-import",
     "gen9championsvgc2026regmbbo3",

@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import test from "node:test";
+import { test } from "vite-plus/test";
 import { summarizeBattleEvents } from "../src/battle-transcript.js";
 import { LEAGUE_ROOT } from "../src/paths.js";
 import { ShowdownReference } from "../src/reference.js";
 import { BattleState } from "../src/state.js";
 import type { BattleRequest } from "../src/types.js";
-import { asRecord } from "../src/value.js";
+import { asRecord, count } from "../src/value.js";
 
 test("own requests render known sets and stats", () => {
   const request: BattleRequest = JSON.parse(
@@ -18,7 +18,7 @@ test("own requests render known sets and stats", () => {
   assert.match(rendered, new RegExp(`item ${first.item}`));
   assert.match(rendered, new RegExp(`ability ${first.ability}`));
   assert.match(rendered, new RegExp(String(first.moves![0])));
-  assert.match(rendered, new RegExp(`Attack ${asRecord(first.stats).atk}`));
+  assert.match(rendered, new RegExp(`Attack ${count(asRecord(first.stats).atk)}`));
   assert.doesNotMatch(rendered, /\bL50\b/);
   assert.match(rendered, /HP \d+%/);
   assert.doesNotMatch(rendered, /HP \d+\/\d+/);

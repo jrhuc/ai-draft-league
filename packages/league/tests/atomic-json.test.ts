@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import { test } from "vite-plus/test";
 
 import { writeAtomicJson } from "../src/atomic-json.js";
 
 test("a staging failure preserves the previous parseable JSON checkpoint", (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-atomic-json-"));
-  t.after(() => {
+  t.onTestFinished(() => {
     fs.chmodSync(directory, 0o700);
     fs.rmSync(directory, { recursive: true, force: true });
   });

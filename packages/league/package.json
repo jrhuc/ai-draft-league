@@ -28,8 +28,8 @@
     "check:comments": "node tools/check-comments.mjs",
     "typecheck": "node tools/setup-showdown.mjs --check && tsc -p tsconfig.json --noEmit",
     "export:season": "node dist/src/cli.js export-season",
-    "test:unit": "node -e 'for (const d of [\"runs\", \"records\"]) require(\"node:fs\").mkdirSync(d, { recursive: true })' && node --test --test-concurrency=4 --test-timeout=300000 dist/tests/*.test.js",
-    "test": "pnpm run check && pnpm run build && pnpm run test:unit",
+    "test:unit": "node -e 'for (const d of [\"runs\", \"records\"]) require(\"node:fs\").mkdirSync(d, { recursive: true })' && vp test",
+    "test": "pnpm run check && pnpm run test:unit",
     "archive-run": "node tools/archive-run.mjs",
     "vgcleague": "node --env-file-if-exists=.env dist/src/cli.js",
     "build-pool": "node dist/tools/build-pool.js",
@@ -48,7 +48,8 @@
   "devDependencies": {
     "@babel/parser": "8.0.4",
     "@types/node": "24.13.3",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "vite-plus": "0.3.0"
   },
   "engines": {
     "node": ">=24.18.1 <25"

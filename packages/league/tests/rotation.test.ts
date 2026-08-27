@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import { test } from "vite-plus/test";
 import type { RotationEvent } from "../src/rotation.js";
 import { makePlans, runRotation } from "../src/rotation.js";
 import { mapLimit } from "../src/series.js";
@@ -38,7 +38,7 @@ test("even series counts reuse team matchups while swapping model sides", () => 
 
 test("Rotation emits ordered events and completed results", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-rotation-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const events: RotationEvent[] = [];
   const rows = await runRotation(["random", "random"], 1, directory, {
     seed: 1,
@@ -95,7 +95,7 @@ test("the first failure cancels queued and in-flight series before rethrowing", 
 
 test("key-carrying runs require a key for every hosted model", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-keys-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   await assert.rejects(
     runRotation(["random", "prime:test-model"], 1, directory, {
       apiKeys: {},
@@ -107,7 +107,7 @@ test("key-carrying runs require a key for every hosted model", async (t) => {
 
 test("an aborted signal stops Rotation without recording", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-abort-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const recordsPath = path.join(directory, "results.jsonl");
   const controller = new AbortController();
   controller.abort();

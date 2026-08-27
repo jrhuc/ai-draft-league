@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import { test } from "vite-plus/test";
 import { main } from "../src/cli.js";
 import { acquireLease, withRunStatus, writeRunStatus } from "../src/run-status.js";
 import type { JsonObject } from "../src/types.js";
@@ -13,7 +13,7 @@ function readStatus(runDir: string): JsonObject {
 
 test("withRunStatus holds a run lease and writes lifecycle status", async (t) => {
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-status-"));
-  t.after(() => fs.rmSync(runDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(runDir, { recursive: true, force: true }));
   const lease = path.join(runDir, ".run.lease");
 
   const result = await withRunStatus(runDir, async () => {
@@ -47,7 +47,7 @@ test("withRunStatus holds a run lease and writes lifecycle status", async (t) =>
 
 test("direct lifecycle status writers hold the same run lease", async (t) => {
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-direct-status-"));
-  t.after(() => fs.rmSync(runDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(runDir, { recursive: true, force: true }));
   const start = new Date().toISOString();
   writeRunStatus(runDir, {
     state: "running",
@@ -74,7 +74,7 @@ test("direct lifecycle status writers hold the same run lease", async (t) => {
 
 test("CLI resumes acquire the same atomic per-run lease", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-cli-resume-live-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
   for (const [command, config] of [
     ["tournament", { models: ["random", "random"], seed: 1, pool: "test" }],
     ["draft", { models: ["random", "random"], seed: 1, board: "regmb-202607" }],
@@ -93,7 +93,7 @@ test("CLI resumes acquire the same atomic per-run lease", async (t) => {
 
 test("interleaved lease acquisitions have exactly one owner", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-lease-interleaved-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
   const lease = path.join(root, "records.jsonl.lease");
   const originalWriteFileSync = fs.writeFileSync;
   let contenderRelease: (() => void) | undefined;
@@ -120,7 +120,7 @@ test("interleaved lease acquisitions have exactly one owner", (t) => {
 
 test("a dead or malformed lease is replaced atomically", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-run-stale-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
   for (const [name, owner] of [
     [
       "dead",

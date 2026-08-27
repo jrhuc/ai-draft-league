@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import { test } from "vite-plus/test";
 import { runExhibition } from "../src/exhibition.js";
 import type { SeriesRecord } from "../src/records.js";
 import { loadSeriesRecords, scopeRows } from "../src/records.js";
 import { SeatBridge } from "../src/seat.js";
 import type { JsonObject, JsonValue } from "../src/types.js";
-import { asRecord } from "../src/value.js";
+import { asRecord, text } from "../src/value.js";
 
 test("unscoped play data includes exhibitions without turning them into a ranking", () => {
   const rows: SeriesRecord[] = [
@@ -24,7 +24,7 @@ test("seat bridge keeps a pending exchange, tools, and private context behind on
   const bridge = new SeatBridge({
     lookup: (name, args) => {
       lookups.push(name);
-      return `result for ${String(args.name)}`;
+      return `result for ${text(args.name)}`;
     },
     context: (query) => ({ query: { ...query } }),
   });

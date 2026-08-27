@@ -32,6 +32,7 @@ export default defineConfig({
       "anti-slop/no-object-parameters": "error",
       "anti-slop/no-reflect-apply": "error",
       "anti-slop/no-reflect-get": "error",
+      "anti-slop/no-runtime-typeof": ["error", { allowInTypeGuards: true }],
       "anti-slop/no-shape-in-symbol-names": "error",
       "anti-slop/no-unknown-parameters": "error",
       "anti-slop/no-unknown-returns": "error",
@@ -41,18 +42,6 @@ export default defineConfig({
       "anti-slop/require-safety-comment-for-type-assertion": "error",
     },
     options: { typeAware: true, typeCheck: true },
-    overrides: [
-      {
-        // Test assertion idioms only; src and tools pass every rule outright.
-        files: ["packages/league/tests/**"],
-        rules: {
-          "typescript/no-floating-promises": "off",
-          "typescript/no-base-to-string": "off",
-          "typescript/restrict-template-expressions": "off",
-          "typescript/require-array-sort-compare": "off",
-        },
-      },
-    ],
   },
   test: {
     projects: ["apps/site"],

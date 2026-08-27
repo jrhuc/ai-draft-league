@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vite-plus/test";
 import { RandomEngine } from "../src/battle-agent.js";
 import { LLMEngine } from "../src/llm-engine.js";
 import {
@@ -17,7 +17,7 @@ import type {
   JsonObject,
   SubmissionContext,
 } from "../src/types.js";
-import { asRecord, asRecords } from "../src/value.js";
+import { asRecord, asRecords, text } from "../src/value.js";
 import {
   acceptedAct,
   decision,
@@ -59,7 +59,7 @@ test("primed replay requires an exact request digest and seat provenance", async
   assert.ok(first);
   source.resolveSubmission(first, "rejected", "|error|[Invalid choice] test rejection");
   const row = structuredClone(recorded[0]!);
-  assert.match(String(row.request_digest), /^battle-decision-request-v1:[a-f0-9]{64}$/);
+  assert.match(text(row.request_digest), /^battle-decision-request-v1:[a-f0-9]{64}$/);
 
   const provider = new ScriptedProvider([decision([1], "live again")]);
   const decisions: JsonObject[] = [];
@@ -330,9 +330,9 @@ test("battle evidence flags follow model field presence rather than harness summ
 
     assert.deepEqual(logs[0]!.evidence_supplied, item.expectedEvidence, item.name);
     assert.equal(engine.coachingNote(), item.expectedNotebook, item.name);
-    if (typeof item.expectedRationale === "string")
-      assert.equal(logs[0]!.rationale, item.expectedRationale, item.name);
-    else assert.match(String(logs[0]!.rationale), item.expectedRationale, item.name);
+    if (item.expectedRationale instanceof RegExp)
+      assert.match(text(logs[0]!.rationale), item.expectedRationale, item.name);
+    else assert.equal(logs[0]!.rationale, item.expectedRationale, item.name);
     assert.equal(logs[0]!.fallback, item.fallback ?? false, item.name);
   }
 
@@ -465,7 +465,7 @@ test("Gemini-like nested candidate objects preserve the complete top-level decis
   assert.equal(decisions[0]!.parse_failures, 0);
   assert.equal(decisions[0]!.rationale, "use the top-level choice");
   assert.equal(
-    String(decisions[0]!.notebook).length,
+    text(decisions[0]!.notebook).length,
     1800,
     "well under the notebook backstop, kept whole",
   );
@@ -612,7 +612,7 @@ test("unoffered native tools are recorded, refused, and reprompted without dispa
   );
   const toolTrace = asRecords(traces[0]!.tool_calls);
   assert.equal(toolTrace.length, 2);
-  assert.ok(toolTrace.every((entry) => /Not executed/.test(String(entry.result))));
+  assert.ok(toolTrace.every((entry) => /Not executed/.test(text(entry.result))));
   assert.equal(decisions[0]!.rationale, "The researched choice remains mine.");
   assert.deepEqual(decisions[0]!.evidence_supplied, { rationale: true, notebook_update: true });
   assert.equal(
@@ -713,7 +713,7 @@ test("empty reflections record a fallback review", async () => {
   });
   assert.equal(decisions[0]!.kind, "game_reflection");
   assert.equal(decisions[0]!.fallback, true);
-  assert.match(String(decisions[0]!.summary), /model reflection unavailable/);
+  assert.match(text(decisions[0]!.summary), /model reflection unavailable/);
 });
 
 test("a draft roster switches only the series-final reflection to the prep-review variant", async () => {

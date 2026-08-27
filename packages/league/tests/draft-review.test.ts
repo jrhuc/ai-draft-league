@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import { test } from "vite-plus/test";
 import { createBoardSearch } from "../src/board-search.js";
 import { draftBoardTable, draftUserPrompt } from "../src/draft.js";
 import { runDraftLeague } from "../src/draftleague.js";
@@ -20,6 +20,8 @@ import {
   renderTradeOfferPrompt,
 } from "../src/trade-window.js";
 import type { Completion, JsonObject, ProviderMessage } from "../src/types.js";
+import { count } from "../src/value.js";
+import { accepted, rejection } from "./asserts.js";
 import {
   assertFormatAuthority,
   BOARD,
@@ -67,7 +69,7 @@ test("the draft prompt states budget rules without computing a ceiling for the c
 
 test("season reviews are written once per coach and replayed on resume", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-season-review-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const models = ["test:champion", "test:eliminated"];
   const state: SeasonReviewState = {
     board: BOARD,
@@ -215,17 +217,17 @@ test("season reviews are written once per coach and replayed on resume", async (
 });
 
 test("a season review must fill every field", () => {
-  assert.equal(typeof parseSeasonReview("no json here"), "string");
-  assert.equal(
-    typeof parseSeasonReview(
+  rejection(parseSeasonReview("no json here"));
+  rejection(
+    parseSeasonReview(
       JSON.stringify({ summary: "a", did_well: "b", did_poorly: "c", would_change: "  " }),
     ),
-    "string",
   );
-  const parsed = parseSeasonReview(
-    JSON.stringify({ summary: "a", did_well: "b", did_poorly: "c", would_change: "d", extra: 1 }),
+  accepted(
+    parseSeasonReview(
+      JSON.stringify({ summary: "a", did_well: "b", did_poorly: "c", would_change: "d", extra: 1 }),
+    ),
   );
-  assert.notEqual(typeof parsed, "string");
 });
 
 test("search_board filters the board by price, type, ability, and legal movepool", () => {
@@ -357,7 +359,7 @@ test("window prompts name their place in the schedule and the public moves of ea
 
 test("a league stopped after its second window resumes on the right roster version", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-draft-league-epochs-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const recordsPath = path.join(directory, "results.jsonl");
   const models = ["random", "random", "random", "random"];
   const first = await runDraftLeague(models, directory, {
@@ -409,8 +411,8 @@ test("a league stopped after its second window resumes on the right roster versi
       path.join(directory, "reviews", `week-${week}-transactions.jsonl`),
     );
     assert.deepEqual(
-      reconciliations.map((row) => row.entrant).sort(),
-      [...changed].sort(),
+      reconciliations.map((row) => row.entrant).sort((a, b) => count(a) - count(b)),
+      [...changed].sort((a, b) => a - b),
       `every coach whose roster changed after week ${week} reconciles its notebook`,
     );
     assert.ok(
@@ -446,7 +448,7 @@ test("a league stopped after its second window resumes on the right roster versi
 
 test("a roster preset seeds the league without a draft and resumes on its rosters", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-draft-league-preset-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const recordsPath = path.join(directory, "results.jsonl");
   const models = ["random", "random", "random", "random"];
   const preset = loadRosterPreset(path.join(process.cwd(), "presets", "noise-quartet.json"));

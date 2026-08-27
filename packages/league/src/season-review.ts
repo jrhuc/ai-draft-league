@@ -19,7 +19,7 @@ import { ShowdownReference } from "./reference.js";
 import { mapLimit } from "./series.js";
 import type { TradeWindowArtifact } from "./trade-window.js";
 import type { JsonObject, Provider, ProviderMessage } from "./types.js";
-import { clip, fileSlug, replyJsonObject } from "./value.js";
+import { clip, fileSlug, isText, replyJsonObject } from "./value.js";
 
 const SEASON_REVIEW_PROMPT_POLICY = {
   systemTemplate: [
@@ -126,7 +126,7 @@ const seasonReviewReplySchema = z.looseObject({
 
 function parseSeasonReviewResult(response: string): ParsedSeasonReviewResult {
   const json = replyJsonObject(response);
-  if (typeof json === "string") return { error: json };
+  if (isText(json)) return { error: json };
   const parsed = seasonReviewReplySchema.safeParse(json);
   if (!parsed.success)
     return { error: `"${String(parsed.error.issues[0]?.path[0])}" must be a non-empty string` };

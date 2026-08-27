@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import { test } from "vite-plus/test";
 
 import { readJsonlObjects } from "../src/jsonl.js";
 import type { SeriesRecord } from "../src/records.js";
@@ -72,7 +72,7 @@ test("scoping keeps the test pool out of overall views but selectable", () => {
 
 test("generic journals remain JSON objects while result authority requires the current series schema", (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-record-types-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const journal = path.join(directory, "draft.jsonl");
   fs.writeFileSync(journal, '{"kind":"draft_pick","pick":1}\n');
   assert.deepEqual(readJsonlObjects(journal), [{ kind: "draft_pick", pick: 1 }]);
@@ -88,7 +88,7 @@ test("generic journals remain JSON objects while result authority requires the c
 
 test("record loading ignores whitespace-only lines", (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-records-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const records = path.join(directory, "results.jsonl");
   fs.writeFileSync(records, `${JSON.stringify(row("a", "b", "a"))}\n   \n`);
   assert.deepEqual(loadSeriesRecords(records), [row("a", "b", "a")]);
@@ -96,7 +96,7 @@ test("record loading ignores whitespace-only lines", (t) => {
 
 test("record loading retains valid rows before a torn final JSONL fragment", (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-records-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const records = path.join(directory, "results.jsonl");
   const first = row("a", "b", "a");
   const second = row("c", "d", "c");
@@ -109,7 +109,7 @@ test("record loading retains valid rows before a torn final JSONL fragment", (t)
 
 test("record append removes a torn tail before committing the new row", (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-records-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const records = path.join(directory, "results.jsonl");
   const first = row("a", "b", "a");
   const replacement = row("c", "d", "d");
@@ -123,7 +123,7 @@ test("record append removes a torn tail before committing the new row", (t) => {
 
 test("record append preserves a valid unterminated object with a separator", (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-records-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const records = path.join(directory, "results.jsonl");
   const first = row("a", "b", "a");
   const second = row("c", "d", "c");
@@ -136,7 +136,7 @@ test("record append preserves a valid unterminated object with a separator", (t)
 
 test("record append rejects committed malformed rows without changing the journal", (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-records-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const records = path.join(directory, "results.jsonl");
   const malformed = `${JSON.stringify(row("a", "b", "a"))}\n{"players":\n`;
   fs.writeFileSync(records, malformed);
@@ -147,7 +147,7 @@ test("record append rejects committed malformed rows without changing the journa
 
 test("record append rejects malformed interior rows without changing the journal", (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-records-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const records = path.join(directory, "results.jsonl");
   const malformed = `${JSON.stringify(row("a", "b", "a"))}\n{"players":\n${JSON.stringify(row("c", "d", "c"))}`;
   fs.writeFileSync(records, malformed);
@@ -158,7 +158,7 @@ test("record append rejects malformed interior rows without changing the journal
 
 test("record append refuses a semantic-invalid unterminated tail", (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-records-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const records = path.join(directory, "results.jsonl");
   fs.writeFileSync(records, "42");
 
@@ -168,7 +168,7 @@ test("record append refuses a semantic-invalid unterminated tail", (t) => {
 
 test("record loading rejects a terminated malformed final JSONL row", (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-records-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const records = path.join(directory, "results.jsonl");
   fs.writeFileSync(records, `${JSON.stringify(row("a", "b", "a"))}\n{"players":\n`);
   assert.throws(() => loadSeriesRecords(records), /invalid JSONL line 2.*results\.jsonl/);
@@ -176,7 +176,7 @@ test("record loading rejects a terminated malformed final JSONL row", (t) => {
 
 test("record loading rejects a malformed interior JSONL row with its line number", (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-records-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const records = path.join(directory, "results.jsonl");
   fs.writeFileSync(
     records,
@@ -187,7 +187,7 @@ test("record loading rejects a malformed interior JSONL row with its line number
 
 test("record loading invalidates a cached torn tail after it is completed by an append", (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-records-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const records = path.join(directory, "results.jsonl");
   const first = row("a", "b", "a");
   const second = row("c", "d", "c");
@@ -211,7 +211,7 @@ test("record loading invalidates a cached torn tail after it is completed by an 
 
 test("HTML reports include nested games and filter pools", (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-records-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const records = path.join(directory, "results.jsonl");
   appendRow(records, {
     ...row("included-a", "included-b", "included-a"),

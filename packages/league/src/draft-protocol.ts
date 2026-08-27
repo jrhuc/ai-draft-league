@@ -9,7 +9,7 @@ import { type MechanicsToolAvailability, mechanicsToolNotice } from "./prompt-ca
 import { FORMAT_AUTHORITY_NOTICE, MANAGER_CHARGE, renderPromptTemplate } from "./prompts.js";
 import { loadShowdown } from "./showdown.js";
 import { normalizeStageEvidence, type StageEvidence } from "./stage-evidence.js";
-import { fileSlug, isRecord, replyJsonObject } from "./value.js";
+import { fileSlug, isRecord, isText, replyJsonObject } from "./value.js";
 import type { BoardInfo, DraftBoardMonView } from "./views.js";
 
 const BOARD_SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -559,7 +559,7 @@ export function parsePick(
   currentNotebook = "",
 ): ParsedPick | string {
   const json = replyJsonObject(response);
-  if (typeof json === "string") return json;
+  if (isText(json)) return json;
   const record = pickResponseSchema.safeParse(json);
   if (!record.success) return "the reply must be one JSON object";
   const pickId = fileSlug(record.data.pick);
@@ -586,7 +586,7 @@ interface ParsedFranchiseName {
 
 export function parseFranchiseName(response: string): ParsedFranchiseName | string {
   const json = replyJsonObject(response);
-  if (typeof json === "string") return json;
+  if (isText(json)) return json;
   const record = franchiseNameResponseSchema.safeParse(json);
   if (!record.success) return '"team_name" must be a non-empty string';
   const teamName = record.data.team_name

@@ -29,7 +29,7 @@ import type {
   ToolDefinition,
 } from "./types.js";
 
-import { isRecord } from "./value.js";
+import { isRecord, isText } from "./value.js";
 
 type FetchRequest = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -147,7 +147,7 @@ export function opencodeApi(provider: "opencode-go" | "opencode-zen", model: str
 
 function parseToolArguments(value: JsonValue): JsonObject {
   if (isRecord(value)) return value;
-  if (typeof value !== "string" || !value.trim()) return {};
+  if (!isText(value) || !value.trim()) return {};
   try {
     const parsed = JSON.parse(value);
     return isRecord(parsed) ? parsed : {};

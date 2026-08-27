@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vite-plus/test";
 import { LLMEngine } from "../src/llm-engine.js";
 import { REFLECTION_SYSTEM } from "../src/prompts.js";
 import type { BattleRequest, Completion, JsonObject, Provider } from "../src/types.js";
+import { text } from "../src/value.js";
 import {
   acceptedAct,
   decision,
@@ -49,7 +50,7 @@ test("a persistent illegal joint choice becomes a flagged legal fallback", async
     "move 1, move 1",
   );
   assert.equal(decisions[0]!.fallback, true);
-  assert.match(String(decisions[0]!.rationale), /defaulted to the first legal option/);
+  assert.match(text(decisions[0]!.rationale), /defaulted to the first legal option/);
   assert.equal(decisions[0]!.parse_failures, 4);
 });
 

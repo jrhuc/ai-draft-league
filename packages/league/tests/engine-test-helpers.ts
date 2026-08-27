@@ -81,12 +81,11 @@ export class ScriptedProvider implements Provider {
       options: structuredClone(options),
     });
     const scripted = this.responses[this.index++];
-    const response = typeof scripted === "function" ? scripted(options) : scripted;
+    const response = scripted instanceof Function ? scripted(options) : scripted;
     if (response instanceof Error) throw response;
-    if (typeof response === "string")
-      return { text: response, usage: { input_tokens: 10, output_tokens: 2 }, toolCalls: [] };
-    if (!response) throw new Error("missing scripted response");
-    return response;
+    if (response instanceof Object) return response;
+    if (response === undefined) throw new Error("missing scripted response");
+    return { text: response, usage: { input_tokens: 10, output_tokens: 2 }, toolCalls: [] };
   }
 }
 

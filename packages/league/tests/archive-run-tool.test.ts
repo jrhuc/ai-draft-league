@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import { test } from "vite-plus/test";
 
 const tool = path.resolve("tools/archive-run.mjs");
 
@@ -20,7 +20,7 @@ function runTool(dataDir: string, archiveDir: string, runId: string) {
 
 test("archive-run uses the configured league data directory", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-archive-tool-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
   const dataDir = path.join(root, "data");
   const archiveDir = path.join(root, "archives");
   const runDir = path.join(dataDir, "runs", "safe-run");
@@ -35,7 +35,7 @@ test("archive-run uses the configured league data directory", (t) => {
 
 test("archive-run rejects parent-directory run ids", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-archive-tool-unsafe-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
   const dataDir = path.join(root, "data");
   const archiveDir = path.join(root, "archives");
   fs.mkdirSync(path.join(dataDir, "runs"), { recursive: true });

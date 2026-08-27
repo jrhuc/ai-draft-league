@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vite-plus/test";
 
 import { loadBoard } from "../src/draft.js";
 import { defaultPsDir } from "../src/paths.js";

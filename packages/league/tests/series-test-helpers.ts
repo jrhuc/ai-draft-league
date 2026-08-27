@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Bo3Context, RecordedSeriesContext } from "../src/series.js";
 import { chanceEventCounts } from "../src/series.js";
+import { relativeSeriesFile } from "../src/recorded-series.js";
 import { showdownCommit } from "../src/showdown.js";
 import type { JsonObject } from "../src/types.js";
 
@@ -66,7 +67,6 @@ export function writeGameCompletionMarkerFixture(
 ): void {
   const logPath = path.join(seriesDir, `game-${gameNumber}.log`);
   const logBytes = fs.readFileSync(logPath);
-  const relativeLog = path.relative(process.cwd(), logPath);
   const zeros = { p1: 0, p2: 0 };
   const emptyChance = chanceEventCounts([]);
   fs.writeFileSync(
@@ -88,7 +88,7 @@ export function writeGameCompletionMarkerFixture(
         simulator_substitutions: result.simulator_substitutions ?? zeros,
         timer_autodefaults: result.timer_autodefaults ?? zeros,
         chance_events: result.chance_events ?? emptyChance,
-        log: relativeLog.startsWith("..") ? logPath : relativeLog,
+        log: relativeSeriesFile(logPath),
       },
     })}
 `,

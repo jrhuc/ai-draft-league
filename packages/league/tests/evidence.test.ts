@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import { test } from "vite-plus/test";
 import { buildTournamentGame, buildTournaments } from "../src/evidence.js";
 import { TEAMS_DIR } from "../src/paths.js";
 import type { ParsedSeriesRecord } from "../src/records.js";

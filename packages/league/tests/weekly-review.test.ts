@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { test } from "node:test";
+import { test } from "vite-plus/test";
 
 import { loadBoard } from "../src/draft.js";
 import { emptyMemory } from "../src/franchise-memory.js";
@@ -278,7 +278,7 @@ test("own-build evidence lists what was left behind on the roster of the time, b
 
 test("a reconciliation reviews only the changed seats against both rosters", async (t) => {
   const { runDir, state } = writeRun();
-  t.after(() => fs.rmSync(runDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(runDir, { recursive: true, force: true }));
   const previousRosters = state.rosters.map((roster) => [...roster]);
   const swapped = BOARD.mons[20]!;
   state.rosters[0] = [...state.rosters[0]!.slice(1), swapped];
@@ -315,7 +315,7 @@ test("a reconciliation reviews only the changed seats against both rosters", asy
 
 test("a coach keeps named pages, reads them back, and is refused an over-limit page with the reason", async (t) => {
   const { runDir, state } = writeRun();
-  t.after(() => fs.rmSync(runDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(runDir, { recursive: true, force: true }));
   const week1 = scripted([
     reply(
       '{"notebook":"Lead Garchomp.","set_pages":{"opp.random":"Random brings nothing.","lessons":"' +
@@ -379,7 +379,7 @@ test("a coach keeps named pages, reads them back, and is refused an over-limit p
 
 test("set_pages merges, delete_pages removes, and the reconciliation snapshot is addressable by stage", async (t) => {
   const { runDir, state } = writeRun();
-  t.after(() => fs.rmSync(runDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(runDir, { recursive: true, force: true }));
   state.memories[0] = { notebook: "Start.", lessons: "Old lesson.", scouting: "Scouted." };
   const week1 = scripted([
     reply('{"set_pages":{"lessons":"New lesson."},"delete_pages":["scouting"]}'),
@@ -432,7 +432,7 @@ test("set_pages merges, delete_pages removes, and the reconciliation snapshot is
 
 test("a coach reads a series through its tools, replaces its notebook, and the row replays without a model", async (t) => {
   const { runDir, state } = writeRun();
-  t.after(() => fs.rmSync(runDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(runDir, { recursive: true, force: true }));
   const script = scripted([
     toolCall("read_public_series", { series_index: 0 }),
     toolCall("read_own_series", { series_index: 0 }),
@@ -473,7 +473,7 @@ test("a coach reads a series through its tools, replaces its notebook, and the r
 
 test("a rejected reply is re-prompted with the reason and the attempt is logged", async (t) => {
   const { runDir, state } = writeRun();
-  t.after(() => fs.rmSync(runDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(runDir, { recursive: true, force: true }));
   const script = scripted([reply("I would keep my plan."), reply('{"notebook":"Keep the plan."}')]);
   await runWeeklyReview(state, {
     runDir,
@@ -498,7 +498,7 @@ test("a rejected reply is re-prompted with the reason and the attempt is logged"
 
 test("a stored review stays attached to its entrant identity", async (t) => {
   const { runDir, state } = writeRun();
-  t.after(() => fs.rmSync(runDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(runDir, { recursive: true, force: true }));
   await runWeeklyReview(state, {
     runDir,
     psDir: defaultPsDir(),

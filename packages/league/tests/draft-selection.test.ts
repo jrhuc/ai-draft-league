@@ -2,14 +2,15 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import { test } from "vite-plus/test";
 import { legalPicks, parseFranchiseName, parsePick, runDraft } from "../src/draft.js";
 import { readJsonlObjects } from "../src/jsonl.js";
 import { ApiError } from "../src/providers.js";
 import { seededRng } from "../src/random.js";
 import { runTeambuild } from "../src/teambuild.js";
 import type { Completion, JsonObject, Provider } from "../src/types.js";
-import { asRecords } from "../src/value.js";
+import { asRecords, text } from "../src/value.js";
+import { accepted, rejection } from "./asserts.js";
 import {
   assertFormatAuthority,
   BOARD,
@@ -22,7 +23,7 @@ import {
 
 test("a transient provider failure retries instead of ending the draft", async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-draft-logs-"));
-  t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(logDir, { recursive: true, force: true }));
   let calls = 0;
   const flaky: Provider = {
     complete(): Promise<Completion> {
@@ -50,13 +51,13 @@ test("a transient provider failure retries instead of ending the draft", async (
   assert.equal(outcome.rosters[0]![0]!.id, "garchomp");
   assert.equal(outcome.picks[0]!.fallback, false);
   const rows = readJsonlObjects(path.join(logDir, "drafter-0-fake-model.jsonl"));
-  assert.match(String(rows[0]!.error), /API request failed \(400\)/);
+  assert.match(text(rows[0]!.error), /API request failed \(400\)/);
   assert.equal(rows[1]!.error, undefined, "the retry succeeds and the draft moves on");
 });
 
 test("drafters name their franchise only after every pick is complete", async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-draft-logs-"));
-  t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(logDir, { recursive: true, force: true }));
   let receivedReasoning = "";
   const prompts: string[] = [];
   const outcome = await runDraft(
@@ -101,14 +102,12 @@ test("drafters name their franchise only after every pick is complete", async (t
     .trim()
     .split("\n")
     .map((line): JsonObject => JSON.parse(line));
-  assert.match(String(rows[0]!.error), /is not a board id/);
-  assert.ok(
-    String(rows[0]!.system).includes("DRAFT BOARD"),
-    "the board rides in the cacheable system prompt",
-  );
-  assertFormatAuthority(String(rows[0]!.system));
-  assert.match(String(rows[0]!.system), /test transaction window opens after week 2/);
-  assert.doesNotMatch(String(rows[0]!.system), /franchise name|Shadow Cabinet|Drought Dodgers/i);
+  assert.match(text(rows[0]!.error), /is not a board id/);
+  const system = text(rows[0]!.system);
+  assert.ok(system.includes("DRAFT BOARD"), "the board rides in the cacheable system prompt");
+  assertFormatAuthority(system);
+  assert.match(system, /test transaction window opens after week 2/);
+  assert.doesNotMatch(system, /franchise name|Shadow Cabinet|Drought Dodgers/i);
 
   const transcript = fs
     .readFileSync(path.join(logDir, "draft.jsonl"), "utf8")
@@ -120,10 +119,11 @@ test("drafters name their franchise only after every pick is complete", async (t
   const names = readJsonlObjects(path.join(logDir, "franchise-names.jsonl"));
   assert.equal(names.find((row) => row.entrant === 0)?.team_name, "Route 210 Garchomps");
   const namingLog = readJsonlObjects(path.join(logDir, "namer-0-fake-model.jsonl"));
-  assert.match(String(namingLog[0]!.system), /The Shadow Cabinet/);
-  assertFormatAuthority(String(namingLog[0]!.system));
-  assert.match(String(namingLog[0]!.user), /Garchomp/);
-  assert.match(String(namingLog[0]!.user), /Farigiraf/);
+  const namerSystem = text(namingLog[0]!.system);
+  assert.match(namerSystem, /The Shadow Cabinet/);
+  assertFormatAuthority(namerSystem);
+  assert.match(text(namingLog[0]!.user), /Garchomp/);
+  assert.match(text(namingLog[0]!.user), /Farigiraf/);
 
   let replayCalls = 0;
   const replayed = await runDraft(
@@ -168,7 +168,7 @@ test("a rejected pick is told which rule it broke", () => {
       0,
       ["fake:model", "fake:rival"],
     );
-    return typeof parsed === "string" ? parsed : "accepted";
+    return parsed instanceof Object ? "accepted" : parsed;
   });
 
   assert.match(reasons[0]!, /is not a board id/);
@@ -185,20 +185,17 @@ test("a rejected pick is told which rule it broke", () => {
     state,
     0,
   );
-  assert.match(String(denied), /costs 19, but you can spend at most \d+ points?/);
+  assert.match(rejection(denied), /costs 19, but you can spend at most \d+ points?/);
 });
 
 test("picks do not request a franchise name and franchise names normalize separately", () => {
   const state = freshState();
   const legal = legalPicks(state, 0);
-  assert.notEqual(
-    typeof parsePick('{"pick":"garchomp","notebook":"Build around Garchomp"}', legal, state, 0),
-    "string",
-  );
+  accepted(parsePick('{"pick":"garchomp","notebook":"Build around Garchomp"}', legal, state, 0));
   assert.deepEqual(parseFranchiseName(JSON.stringify({ team_name: "  Prankster\n  Paradise  " })), {
     teamName: "Prankster Paradise",
   });
-  assert.match(String(parseFranchiseName('{"team_name":""}')), /non-empty/);
+  assert.match(rejection(parseFranchiseName('{"team_name":""}')), /non-empty/);
 });
 
 test("a legal pick is not rejected when optional evidence is omitted", () => {
@@ -206,34 +203,33 @@ test("a legal pick is not rejected when optional evidence is omitted", () => {
   const legal = legalPicks(state, 0);
   const id = legal[0]?.id;
   assert.ok(id);
-  const parsed = parsePick(JSON.stringify({ pick: id }), legal, state, 0);
-  assert.notEqual(typeof parsed, "string");
-  if (typeof parsed !== "string") {
-    assert.equal(parsed.mon.id, id);
-    assert.equal(parsed.reasoning, "");
-    assert.equal(parsed.notebook, undefined);
-    assert.deepEqual(parsed.evidence.supplied, { rationale: false, notebookUpdate: false });
-  }
+  const parsed = accepted(parsePick(JSON.stringify({ pick: id }), legal, state, 0));
+  assert.equal(parsed.mon.id, id);
+  assert.equal(parsed.reasoning, "");
+  assert.equal(parsed.notebook, undefined);
+  assert.deepEqual(parsed.evidence.supplied, { rationale: false, notebookUpdate: false });
 });
 
 test("a pick may be written as the board id or the name shown beside it", () => {
   const state = freshState();
   const legal = legalPicks(state, 0);
   for (const spelling of ["lucario-mega", "Mega Lucario", "mega-lucario", "MEGA LUCARIO"]) {
-    const parsed = parsePick(
-      JSON.stringify({ pick: spelling, reasoning: "x", notebook: "plan" }),
-      legal,
-      state,
-      0,
+    const parsed = accepted(
+      parsePick(
+        JSON.stringify({ pick: spelling, reasoning: "x", notebook: "plan" }),
+        legal,
+        state,
+        0,
+      ),
+      `${spelling} should resolve`,
     );
-    assert.notEqual(typeof parsed, "string", `${spelling} should resolve`);
-    assert.equal(typeof parsed === "string" ? "" : parsed.mon.id, "lucario-mega");
+    assert.equal(parsed.mon.id, "lucario-mega");
   }
 });
 
 test("drafters can look up the dex before committing a pick", async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-draft-tools-"));
-  t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(logDir, { recursive: true, force: true }));
   let offered: string[] = [];
   let toolResult = "";
   let call = 0;
@@ -294,7 +290,7 @@ test("drafters can look up the dex before committing a pick", async (t) => {
   assert.equal(lookups.length, 1, "lookups are logged for the audit trail");
   assert.equal(lookups[0]!.name, "lookup_species");
   assert.match(
-    String(lookups[0]!.result),
+    text(lookups[0]!.result),
     /Blastoise-Mega/,
     "the result content is preserved for audits",
   );
@@ -302,7 +298,7 @@ test("drafters can look up the dex before committing a pick", async (t) => {
 
 test("teambuilders can look up the dex while writing sets", async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-teambuild-tools-"));
-  t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(logDir, { recursive: true, force: true }));
   let offered: string[] = [];
   let toolResult = "";
   let call = 0;
@@ -342,7 +338,7 @@ test("teambuilders can look up the dex while writing sets", async (t) => {
 
 test("a pick cut off by its token budget is told so, not blamed for formatting", async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-draft-truncated-"));
-  t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(logDir, { recursive: true, force: true }));
   const long = "y".repeat(4_000);
   let secondPrompt = "";
   let call = 0;
@@ -387,12 +383,12 @@ test("a pick cut off by its token budget is told so, not blamed for formatting",
     .trim()
     .split("\n")
     .map((line): JsonObject => JSON.parse(line));
-  assert.match(String(rows[0]!.error), /whole 65536-token budget before naming a pick/);
+  assert.match(text(rows[0]!.error), /whole 65536-token budget before naming a pick/);
 });
 
 test("a teambuild cut off by its token budget is told so", async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-teambuild-truncated-"));
-  t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(logDir, { recursive: true, force: true }));
   const long = "z".repeat(4_000);
   let secondPrompt = "";
   let call = 0;
@@ -429,7 +425,7 @@ test("a teambuild cut off by its token budget is told so", async (t) => {
 
 test("a drafter that never answers falls back to a random legal pick", async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-draft-fallback-"));
-  t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(logDir, { recursive: true, force: true }));
   const outcome = await runDraft(
     ["fake:model", "random"],
     { ...BOARD, picks: 4 },
@@ -457,7 +453,7 @@ test("a drafter that never answers falls back to a random legal pick", async (t)
 
 test("a credential failure stops the draft instead of making random picks", async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-draft-terminal-"));
-  t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(logDir, { recursive: true, force: true }));
   await assert.rejects(
     runDraft(
       ["openrouter:google/gemini-test", "random"],
@@ -476,7 +472,7 @@ test("a credential failure stops the draft instead of making random picks", asyn
 
 test("a pick written only in the reasoning channel is salvaged without another attempt", async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-draft-salvage-"));
-  t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(logDir, { recursive: true, force: true }));
   const outcome = await runDraft(
     ["fake:model", "random"],
     { ...BOARD, picks: 4 },
@@ -506,7 +502,7 @@ test("a pick written only in the reasoning channel is salvaged without another a
 
 test("a resumed draft replays its transcript and continues from the next pick", async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-draft-replay-"));
-  t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(logDir, { recursive: true, force: true }));
   const garchomp = mon("garchomp");
   const incineroar = mon("incineroar");
   const whimsicott = mon("whimsicott");
@@ -601,7 +597,7 @@ test("a resumed draft replays its transcript and continues from the next pick", 
 
 test("an explicit empty draft notebook survives transcript replay", async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-draft-empty-notebook-"));
-  t.after(() => fs.rmSync(logDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(logDir, { recursive: true, force: true }));
   const replies = new Map<string, string[]>(
     Object.entries({
       "fake:a": [

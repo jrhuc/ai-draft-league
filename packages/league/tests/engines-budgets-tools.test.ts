@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vite-plus/test";
 import {
   DECISION_MAX_TOKENS_CEILING,
   LLMEngine,
   REFLECTION_MAX_TOKENS,
 } from "../src/llm-engine.js";
 import type { CompleteOptions, Completion, JsonObject } from "../src/types.js";
-import { asRecord, asRecords } from "../src/value.js";
+import { asRecord, asRecords, text } from "../src/value.js";
 import { acceptedAct, decision, request, ScriptedProvider } from "./engine-test-helpers.js";
 
 const lengthTruncated = (options: CompleteOptions): Completion => ({
@@ -192,7 +192,7 @@ test("a genuine format failure is still reported as one", async () => {
   assert.equal(await acceptedAct(engine, request(), { povLines: [] }), "move 1");
   assert.equal(decisions[0]!.fallback, true);
   assert.doesNotMatch(
-    String(decisions[0]!.error),
+    text(decisions[0]!.error),
     /response budget/,
     "well inside the budget is a real parse failure",
   );
@@ -304,7 +304,7 @@ test("timed tool batches stay capped at two rounds of two calls", async () => {
     "two executed plus one explicitly-refused call per timed round",
   );
   assert.ok(
-    toolTrace.some((entry) => /Not executed/.test(String(entry.result))),
+    toolTrace.some((entry) => /Not executed/.test(text(entry.result))),
     "dropped calls are answered, not silently discarded",
   );
 });
@@ -374,5 +374,5 @@ test("one action-order call may accompany two standard calls in the single tool 
   );
   const toolTrace = asRecords(traces[0]!.tool_calls);
   assert.equal(toolTrace.length, 3);
-  assert.match(String(toolTrace[2]!.result), /Gengar-Mega is guaranteed to act first/);
+  assert.match(text(toolTrace[2]!.result), /Gengar-Mega is guaranteed to act first/);
 });

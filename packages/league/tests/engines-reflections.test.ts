@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vite-plus/test";
 import { LLMEngine } from "../src/llm-engine.js";
 import { ApiError } from "../src/providers.js";
 import type { JsonObject } from "../src/types.js";
+import { text } from "../src/value.js";
 import {
   acceptedAct,
   decision,
@@ -65,7 +66,7 @@ test("readable decisions, technical traces, and post-game reflections stay separ
   assert.ok(!("menus" in decisions[0]!));
   assert.equal(decisions[1]!.kind, "game_reflection");
   assert.equal(decisions[1]!.series_over, false);
-  assert.match(String(decisions[1]!.adjustment), /speed order/);
+  assert.match(text(decisions[1]!.adjustment), /speed order/);
   assert.equal(traces[0]!.kind, "decision_trace");
   assert.ok("prompt" in traces[0]! && "raw_response" in traces[0]! && "menus" in traces[0]!);
   assert.equal(traces[1]!.kind, "reflection_trace");
@@ -129,7 +130,7 @@ test("provider failures during reflection fall back instead of stopping the seri
   assert.equal(decisions[0]!.kind, "game_reflection");
   assert.equal(decisions[0]!.fallback, true);
   assert.equal(decisions[0]!.failure_kind, "quota");
-  assert.match(String(decisions[0]!.summary), /model reflection unavailable/);
+  assert.match(text(decisions[0]!.summary), /model reflection unavailable/);
 });
 
 test("game transcripts reset while notebook and score persist, with a marked character cap", async () => {

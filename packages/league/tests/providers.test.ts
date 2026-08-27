@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test } from "vite-plus/test";
 import {
   ApiError,
   assistantToolMessage,
@@ -14,7 +14,19 @@ import {
   validateModelExecution,
   validateReasoning,
 } from "../src/providers.js";
-import type { JsonObject } from "../src/types.js";
+import type { JsonObject, JsonValue } from "../src/types.js";
+import { asRecord } from "../src/value.js";
+
+function requestUrl(input: RequestInfo | URL): string {
+  return input instanceof Request ? input.url : String(input);
+}
+
+function requestJson(init: RequestInit | undefined): JsonObject {
+  const body = init?.body;
+  if (body instanceof Object || body == null) return {};
+  const parsed: JsonValue = JSON.parse(body);
+  return asRecord(parsed);
+}
 
 function sseResponse(events: unknown[]): Response {
   return new Response(
@@ -142,9 +154,9 @@ test("OpenRouter executes the model spec while recording its pinned upstream as 
   let authorization = "";
   let body: JsonObject = {};
   const fetch: typeof globalThis.fetch = async (input, init) => {
-    url = String(input);
+    url = requestUrl(input);
     authorization = new Headers(init?.headers).get("authorization") ?? "";
-    body = JSON.parse(String(init?.body));
+    body = requestJson(init);
     return chatStream("ok", {
       provider: "DeepInfra",
       usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6, cost: 0.00123 },
@@ -177,9 +189,9 @@ test("Prime uses only its fixed OpenAI-compatible chat endpoint and plain respon
   let authorization = "";
   let body: JsonObject = {};
   const fetch: typeof globalThis.fetch = async (input, init) => {
-    url = String(input);
+    url = requestUrl(input);
     authorization = new Headers(init?.headers).get("authorization") ?? "";
-    body = JSON.parse(String(init?.body));
+    body = requestJson(init);
     return chatStream("prime reply", {
       provider: "must-not-surface",
       usage: { prompt_tokens: 7, completion_tokens: 3, total_tokens: 10, cost: 99 },
@@ -207,9 +219,9 @@ test("the Vercel AI Gateway uses only its fixed OpenAI-compatible chat endpoint"
   let authorization = "";
   let body: JsonObject = {};
   const fetch: typeof globalThis.fetch = async (input, init) => {
-    url = String(input);
+    url = requestUrl(input);
     authorization = new Headers(init?.headers).get("authorization") ?? "";
-    body = JSON.parse(String(init?.body));
+    body = requestJson(init);
     return chatStream("gateway reply", {
       usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 },
     });
@@ -231,7 +243,7 @@ test("the Vercel AI Gateway uses only its fixed OpenAI-compatible chat endpoint"
 test("the common compatible stream preserves tools, structured finish reason, and replay messages", async () => {
   let body: JsonObject = {};
   const fetch: typeof globalThis.fetch = async (_input, init) => {
-    body = JSON.parse(String(init?.body));
+    body = requestJson(init);
     const base = { id: "gen_tool", object: "chat.completion.chunk", created: 1, model: "stub" };
     return sseResponse([
       {
@@ -470,7 +482,7 @@ test("nitro routing changes only OpenRouter specs", () => {
 test("OpenRouter forwards an explicit reasoning token budget with text headroom", async () => {
   let body: JsonObject = {};
   const fetch: typeof globalThis.fetch = async (_input, init) => {
-    body = JSON.parse(String(init?.body));
+    body = requestJson(init);
     return chatStream("ok", { usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 } });
   };
   await makeProvider(parseSpec("openrouter:test/model"), {
@@ -501,7 +513,7 @@ test("OpenCode models are routed to the one API shape that serves them", async (
 
   const requests: Array<{ url: string; body: JsonObject }> = [];
   const fetch: typeof globalThis.fetch = async (input, init) => {
-    requests.push({ url: String(input), body: JSON.parse(String(init?.body)) });
+    requests.push({ url: requestUrl(input), body: requestJson(init) });
     return new Response('{"error":"stub"}', { status: 500 });
   };
   for (const model of ["kimi-k3", "muse-spark-1.2-contributor", "minimax-m3"]) {

@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import { test } from "vite-plus/test";
 import {
   chanceEventCounts,
   foldSeriesGames,
@@ -12,7 +12,7 @@ import {
   seriesSeedSchedule,
 } from "../src/series.js";
 import type { JsonObject } from "../src/types.js";
-import { asRecords } from "../src/value.js";
+import { asRecords, isText } from "../src/value.js";
 import {
   attemptFixture,
   fakeEngines,
@@ -38,7 +38,7 @@ test("chance-event counts retain uninterpreted protocol facts per side", () => {
 
 test("game evidence separates model defaults, simulator substitutions, and timer autodefaults", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-series-fallback-evidence-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const engines = fakeEngines();
   let modelFallbacks = 5;
   engines.p1.decisionStats = () => ({ fallbacks: modelFallbacks });
@@ -72,7 +72,7 @@ test("game evidence separates model defaults, simulator substitutions, and timer
 
 test("a result log is not adoptable until both post-game hooks finish", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-series-completion-marker-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const engines = fakeEngines();
   engines.p2.endGame = async () => {
     throw new Error("reflection failed");
@@ -113,7 +113,7 @@ test("a result log is not adoptable until both post-game hooks finish", async (t
   assert.equal(marker.schema_version, 1);
   assert.equal(marker.series_id, "marker");
   assert.equal(marker.game_number, 1);
-  assert.equal(typeof marker.attempt_id, "string");
+  assert.ok(isText(marker.attempt_id) && marker.attempt_id !== "");
   assert.deepEqual(marker.seed, [1, 2, 3, 4]);
   assert.equal(
     marker.log_sha256,
@@ -185,7 +185,7 @@ test("foldSeriesGames derives deterministic terminal playoff tiebreaks for games
 
 test("single elimination plays deterministic tiebreak games until one side wins", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-series-tiebreak-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const planned: Array<[number, number, number, number]> = [
     [1, 2, 3, 4],
     [5, 6, 7, 8],
@@ -239,7 +239,7 @@ test("single elimination plays deterministic tiebreak games until one side wins"
 
 test("single elimination fails rather than fabricating a winner after the safety cap", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-series-tiebreak-cap-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   let games = 0;
   await assert.rejects(
     playBo3({
@@ -281,7 +281,7 @@ test("a tied playoff resumes with its deterministic non-null tiebreak seed", asy
   const { defaultPsDir } = await import("../src/paths.js");
   const pool = loadPool();
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-series-tiebreak-resume-"));
-  t.after(() => fs.rmSync(runDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(runDir, { recursive: true, force: true }));
   const options = recordedFixtureOptions(pool, defaultPsDir(), runDir, 19, undefined, {
     requireWinner: true,
   });
@@ -352,7 +352,7 @@ test("a tied playoff resumes with its deterministic non-null tiebreak seed", asy
 
 test("adopted completed games fast-forward the series and only remaining games play", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-series-fastforward-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const seeds: Array<[number, number, number, number]> = [];
   const result = await playBo3({
     engines: fakeEngines(),
@@ -401,7 +401,7 @@ test("adopted completed games fast-forward the series and only remaining games p
 
 test("a decided adopted series plays nothing at all", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-series-decided-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const result = await playBo3({
     engines: fakeEngines(),
     names: { p1: "Side One", p2: "Side Two" },
@@ -435,7 +435,7 @@ test("a live restart has no lineage link and keeps prior rows append-only", asyn
   const { defaultPsDir } = await import("../src/paths.js");
   const pool = loadPool();
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-series-adopt-"));
-  t.after(() => fs.rmSync(runDir, { recursive: true, force: true }));
+  t.onTestFinished(() => fs.rmSync(runDir, { recursive: true, force: true }));
   const options = recordedFixtureOptions(pool, defaultPsDir(), runDir, 4);
   const priorDir = path.join(runDir, "series", "priorattempt1");
   fs.mkdirSync(priorDir, { recursive: true });
