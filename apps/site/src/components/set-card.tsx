@@ -1,3 +1,4 @@
+import { ItemIcon } from "@/components/item-icon";
 import { Sprite } from "@/components/sprite";
 import { evLine, titleCase } from "@/lib/format";
 import type { BuildSet } from "@/lib/season";
@@ -7,7 +8,10 @@ export function SetCard({ set, games }: { set: BuildSet; games: number[] | null 
   return (
     <article className={`card setcard${bench ? " bench" : ""}`}>
       <header>
-        <Sprite id={set.spriteId} name={set.species} size={48} />
+        <span className="sprite-item">
+          <Sprite id={set.spriteId} name={set.species} size={48} />
+          {set.item ? <ItemIcon item={set.item} /> : null}
+        </span>
         <div>
           <b>{set.species}</b>
           <small>

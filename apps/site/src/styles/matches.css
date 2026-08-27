@@ -293,6 +293,10 @@
   grid-column: 1 / -1;
 }
 
+.dec summary {
+  color: var(--good);
+}
+
 .dec details p {
   font-family: var(--font-sans), system-ui, sans-serif;
 }

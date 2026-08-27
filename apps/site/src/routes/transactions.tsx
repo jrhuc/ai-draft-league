@@ -46,8 +46,8 @@ export function TransactionsPage() {
                   {offer.to ? (
                     <>
                       <span className="arrow">
-                        offers {offer.give ? monName(season, offer.give) : "—"} for{" "}
-                        {offer.get ? monName(season, offer.get) : "—"} to
+                        offers <b>{offer.give ? monName(season, offer.give) : "—"}</b> for{" "}
+                        <b>{offer.get ? monName(season, offer.get) : "—"}</b> to
                       </span>
                       <TeamTag id={offer.to} />
                       {offer.accepted === true ? (

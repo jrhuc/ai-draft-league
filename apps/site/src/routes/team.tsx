@@ -9,7 +9,11 @@ import { weeklyReviewsForFranchise } from "@/lib/weekly-reviews";
 import { useSeason, useTitle } from "@/lib/season-context";
 import { NotFoundPage } from "@/routes/not-found";
 
-const ACQUIRED = { draft: "Drafted", trade: "Traded for", "free-agency": "Signed" } as const;
+const ACQUIRED = {
+  draft: { label: "Drafted", className: "acq-draft" },
+  trade: { label: "Traded for", className: "acq-trade" },
+  "free-agency": { label: "Signed", className: "acq-signed" },
+} as const;
 
 export function TeamPage() {
   const season = useSeason();
@@ -56,10 +60,15 @@ function TeamPageBody({ id }: { id: string }) {
                 <Sprite id={slot.spriteId} name={slot.name} size={40} />
                 <b>{slot.name}</b>
                 <span className="sub">
-                  {ACQUIRED[slot.acquired]}
+                  <span className={`acq ${ACQUIRED[slot.acquired].className}`}>
+                    {ACQUIRED[slot.acquired].label}
+                  </span>
                   {slot.overallPick !== null ? ` · pick ${slot.overallPick}` : ""} · {slot.cost} pts
                 </span>
                 {slot.fallback ? <span className="chip chip-warn">AUTO</span> : null}
+                <span className="why" aria-hidden="true">
+                  reasoning
+                </span>
               </summary>
               <p>{slot.rationale || "No reasoning recorded."}</p>
             </details>

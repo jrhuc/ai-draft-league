@@ -15,8 +15,8 @@ export function DraftPage() {
         <span className="label">Draft</span>
         <h1>{picks.length} picks, snake order</h1>
         <p className="sub">
-          Hover or focus a pick to follow its team through the draft; click it to read the model’s
-          reasoning.{" "}
+          Hover a pick to trace its team through the draft; click it (or linger a moment) for the
+          model’s reasoning.{" "}
           {auto > 0
             ? `${auto} pick${auto === 1 ? "" : "s"} fell to the auto-picker after the model’s choice was illegal.`
             : "Every pick was the model’s own."}

@@ -43,8 +43,7 @@ export function HomePage() {
         </p>
         <p className="sub mono">
           An exhibition season under one fixed configuration, schedule, simulator revision, and
-          provider routing. The standings are the outcome of this season, not a ranking of the
-          models.
+          provider routing.
         </p>
         <dl className="facts">
           <div>

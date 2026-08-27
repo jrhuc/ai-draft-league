@@ -595,6 +595,26 @@ td.team {
   gap: 0.1rem;
 }
 
+.sprite-item {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.item-icon {
+  width: 24px;
+  height: 24px;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+
+.sprite-item .item-icon {
+  position: absolute;
+  right: -5px;
+  bottom: -3px;
+}
+
 /* ---- standings/home ---- */
 
 .home-grid {

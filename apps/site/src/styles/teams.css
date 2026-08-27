@@ -45,7 +45,7 @@
 
 .roster-row > summary {
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) auto;
+  grid-template-columns: 40px minmax(0, 1fr) auto auto;
   gap: 0.1rem 0.9rem;
   align-items: center;
   padding: 0.6rem 0;
@@ -64,6 +64,22 @@
   grid-row: 1 / 3;
 }
 
+.roster-row > summary .why {
+  grid-column: 4;
+  grid-row: 1 / 3;
+  font-size: 0.7rem;
+  color: var(--good);
+  white-space: nowrap;
+}
+
+.roster-row > summary .why::before {
+  content: "▸ ";
+}
+
+.roster-row[open] > summary .why::before {
+  content: "▾ ";
+}
+
 .roster-row b {
   color: var(--t1);
   font-weight: 600;
@@ -76,6 +92,18 @@
   font-family: var(--font-mono), monospace;
   font-size: 0.7rem;
   color: var(--t4);
+}
+
+.acq-draft {
+  color: var(--t3);
+}
+
+.acq-signed {
+  color: var(--good);
+}
+
+.acq-trade {
+  color: var(--link);
 }
 
 .roster-row summary,
@@ -100,6 +128,22 @@ summary::-webkit-details-marker {
 
 details[open] > summary::before {
   content: "▾ ";
+}
+
+.build > details > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: fit-content;
+  padding: 0.4rem 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--good) 40%, transparent);
+  border-radius: 999px;
+  color: var(--good);
+  background: var(--card);
+}
+
+.build > details > summary:hover {
+  background: var(--card-2);
 }
 
 .roster-row > p,
