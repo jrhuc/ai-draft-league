@@ -55,6 +55,15 @@ jobs:
           node-version: 24
           cache: true
       - run: vp install --frozen-lockfile
+      # The site build resolves league/protocol against dist/, which needs the
+      # pinned Showdown checkout — same prerequisites as verify.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: packages/league/pokemon-showdown
+          key: showdown-${{ hashFiles('packages/league/showdown.lock.json') }}
+      - run: node tools/setup-showdown.mjs
+        working-directory: packages/league
+      - run: vp run league#build
       - run: vp run site#build
       # The lockfile-pinned wrangler, same binary as a local deploy — not
       # whatever wrangler-action would fetch.
