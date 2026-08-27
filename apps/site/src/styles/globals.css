@@ -558,6 +558,8 @@ td.team {
 .sprite {
   image-rendering: pixelated;
   flex: none;
+  /* Alt text otherwise paints inside the box while the PNG streams in. */
+  color: transparent;
 }
 
 .sprite-fallback {
