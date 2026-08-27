@@ -27,10 +27,6 @@
   text-align: right;
 }
 
-.team-hero {
-  --accent: var(--tone);
-}
-
 .roster {
   display: grid;
 }

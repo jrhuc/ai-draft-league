@@ -326,23 +326,6 @@ button {
   gap: 0.9rem;
   padding-bottom: 2rem;
   border-bottom: 1px solid var(--line);
-  /* The glow pseudo bleeds 2rem past each side; clip horizontally so it cannot
-     widen the document. The upward bleed stays visible. */
-  overflow-x: clip;
-}
-
-.hero::before {
-  content: "";
-  position: absolute;
-  inset: -6rem -2rem auto;
-  height: 16rem;
-  background: radial-gradient(
-    60% 70% at 20% 30%,
-    color-mix(in srgb, var(--accent) 16%, transparent),
-    transparent 70%
-  );
-  pointer-events: none;
-  z-index: -1;
 }
 
 .hero h1 {

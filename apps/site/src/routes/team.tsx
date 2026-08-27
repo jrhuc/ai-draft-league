@@ -3,7 +3,7 @@ import { MatchRow } from "@/components/match-list";
 import { Model } from "@/components/mark";
 import { SetCard } from "@/components/set-card";
 import { Sprite } from "@/components/sprite";
-import { TeamTag, teamStyle } from "@/components/team";
+import { TeamTag } from "@/components/team";
 import { franchise, franchiseName, matchesFor, monName } from "@/lib/load";
 import { weeklyReviewsForFranchise } from "@/lib/weekly-reviews";
 import { useSeason, useTitle } from "@/lib/season-context";
@@ -32,7 +32,7 @@ function TeamPageBody({ id }: { id: string }) {
   const weeklyReviews = weeklyReviewsForFranchise(season.weeklyReviews, team.id);
   return (
     <>
-      <section className="hero team-hero" style={teamStyle(season, team.id)}>
+      <section className="hero">
         <span className="label">
           {standing ? `#${standing.rank} · ` : ""}
           {team.record.seriesWins}–{team.record.seriesLosses} series · {team.record.gameWins}–

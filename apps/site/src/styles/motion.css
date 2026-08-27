@@ -109,27 +109,6 @@ a:hover .sprite-row .sprite,
   }
 }
 
-/* ---------- Hero ambience ---------- */
-
-/* Slow drift on the existing hero glow so the top of every page feels alive
-   without introducing any new element or layout. Transform-only with a fixed
-   base opacity: animating brightness made unanimated first frames render the
-   glow at full strength, which flashed at the top of the page on load. */
-.hero::before {
-  opacity: 0.85;
-  animation: glow-drift 14s ease-in-out infinite alternate;
-  will-change: transform;
-}
-
-@keyframes glow-drift {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(4%);
-  }
-}
-
 /* Shimmer sweep across the champion banner, echoing the reference sites'
    "shine" keyframes. */
 .champion {
