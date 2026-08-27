@@ -31,7 +31,8 @@ jobs:
       - run: vp run league#build
       - run: vp check
       - run: vp run league#check
-      - run: pnpm test
+      - run: vp run site#test
+      - run: vp run league#test:unit
       - run: vp run site#build
       # The live-watch surface is dev-only; fail if any trace ships.
       - run: "! grep -rl 'api/watch' apps/site/dist/"
