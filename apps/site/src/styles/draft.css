@@ -171,6 +171,10 @@
   align-items: center;
 }
 
+.pick-pop .model {
+  color: var(--tone);
+}
+
 .pick-pop p {
   color: var(--t2);
   font-size: 0.85rem;

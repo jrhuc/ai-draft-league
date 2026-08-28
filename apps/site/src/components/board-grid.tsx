@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Mark } from "@/components/mark";
 import { Sprite } from "@/components/sprite";
 import { tone, toneStyle } from "@/lib/format";
 import type { TeamRef } from "@/components/pick-path";
@@ -32,6 +33,7 @@ export function BoardGrid({ board, franchises }: { board: BoardMon[]; franchises
   const [filter, setFilter] = useState<Filter>({ team: null, type: null, undrafted: false });
   const index = new Map(franchises.map((team, i) => [team.id, i]));
   const names = new Map(franchises.map((team) => [team.id, team.name]));
+  const models = new Map(franchises.map((team) => [team.id, team.model]));
   const rows = useMemo(
     () =>
       board.filter(
@@ -77,12 +79,9 @@ export function BoardGrid({ board, franchises }: { board: BoardMon[]; franchises
               })
             }
           >
-            <span
-              className="swatch"
-              style={{ width: 8, height: 8, borderRadius: 2, background: tone(i) }}
-              aria-hidden="true"
-            />
-            {team.name}
+            <span style={toneStyle(tone(i))}>
+              <Mark spec={team.model} size={12} tone /> {team.name}
+            </span>
           </button>
         ))}
       </div>
@@ -137,7 +136,15 @@ export function BoardGrid({ board, franchises }: { board: BoardMon[]; franchises
                   </div>
                 ))}
               </div>
-              <div className="owner">{owner ? names.get(owner) : "undrafted"}</div>
+              <div className="owner">
+                {owner ? (
+                  <>
+                    <Mark spec={models.get(owner) ?? ""} size={12} tone /> {names.get(owner)}
+                  </>
+                ) : (
+                  "undrafted"
+                )}
+              </div>
             </article>
           );
         })}

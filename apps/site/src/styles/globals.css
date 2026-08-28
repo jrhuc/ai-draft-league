@@ -531,6 +531,10 @@ td.team {
   display: inline-block;
   vertical-align: -0.15em;
   flex: none;
+  background: currentColor;
+  mask-position: center;
+  mask-size: contain;
+  mask-repeat: no-repeat;
 }
 
 .mark-mono {
@@ -540,8 +544,22 @@ td.team {
   background: var(--line-2);
   color: var(--t1);
   font:
-    700 0.55rem var(--font-mono),
+    700 0.55em var(--font-mono),
     monospace;
+}
+
+.title-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+}
+
+.mark-tone {
+  background: var(--tone);
+}
+
+.mark-mono.mark-tone {
+  color: var(--bg);
 }
 
 .model {

@@ -1,5 +1,5 @@
 import { Link, useParams } from "react-router-dom";
-import { Model } from "@/components/mark";
+import { Mark, Model } from "@/components/mark";
 import { ReplayViewer } from "@/components/replay";
 import { SetCard } from "@/components/set-card";
 import { TeamTag, teamStyle } from "@/components/team";
@@ -49,6 +49,7 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
     id,
     name: franchise(season, id).name,
     tone: tone(franchiseIndex(season, id)),
+    model: franchise(season, id).model,
   });
   function Side({ id, right = false }: { id: string; right?: boolean }) {
     const lost = match.winnerId !== null && match.winnerId !== id;
@@ -58,7 +59,10 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
         style={teamStyle(season, id)}
       >
         <h2>
-          <Link to={`/teams/${id}`}>{franchise(season, id).name}</Link>
+          <Link className="title-tag" to={`/teams/${id}`}>
+            <Mark spec={franchise(season, id).model} size="0.72em" tone />
+            {franchise(season, id).name}
+          </Link>
         </h2>
         <Model spec={franchise(season, id).model} />
       </div>
@@ -67,9 +71,7 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
   return (
     <>
       <section className="hero match-hero">
-        <h1 className="label">
-          {label} · {franchise(season, a).name} vs {franchise(season, b).name}
-        </h1>
+        <h1 className="label">{label}</h1>
         <Side id={a} />
         <div className="big-score">
           {match.score ? `${match.score[0]}–${match.score[1]}` : "vs"}
@@ -82,8 +84,8 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
         <div className="section-head">
           <h2>Team sheets</h2>
           <p>
-            Six registered before the series, four brought to each game. Each card lists the games
-            it played.
+            Each team registers six before the series and brings four to every game. Each card lists
+            the games it played.
           </p>
         </div>
         <div className="two-col">
@@ -96,12 +98,11 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
                 className="build"
                 style={teamStyle(season, build.franchiseId)}
               >
-                <div className="build-head">
-                  <TeamTag id={build.franchiseId} />
-                  {build.attempts > 1 ? (
+                {build.attempts > 1 ? (
+                  <div className="build-head">
                     <span className="chip chip-warn">{build.attempts} attempts</span>
-                  ) : null}
-                </div>
+                  </div>
+                ) : null}
                 <details>
                   <summary>Why this team</summary>
                   <p className="rationale">{build.rationale || "No build reasoning recorded."}</p>
@@ -182,7 +183,7 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
         <div className="section-head">
           <h2>Replay</h2>
           <p>
-            Step through each turn. Every choice includes the model’s reasoning; AUTO marks a turn
+            Step through each turn. Every choice includes the model’s reasoning. AUTO marks a turn
             the harness had to pick for it.
           </p>
         </div>

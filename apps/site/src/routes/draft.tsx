@@ -8,15 +8,15 @@ export function DraftPage() {
   const picks = season.draft.picks;
   const auto = picks.filter((pick) => pick.fallback).length;
   const drafted = season.board.filter((mon) => mon.draftedBy !== null).length;
-  const teams = season.franchises.map(({ id, name }) => ({ id, name }));
+  const teams = season.franchises.map(({ id, name, model }) => ({ id, name, model }));
   return (
     <>
       <section className="hero">
         <span className="label">Draft</span>
-        <h1>{picks.length} picks, snake order</h1>
+        <h1>{picks.length} picks in snake draft order</h1>
         <p className="sub">
-          Hover a pick to trace its team through the draft; click it (or linger a moment) for the
-          model’s reasoning.{" "}
+          Hover a pick to trace its team through the draft. Click it, or linger a moment, to read
+          the model’s reasoning.{" "}
           {auto > 0
             ? `${auto} pick${auto === 1 ? "" : "s"} fell to the auto-picker after the model’s choice was illegal.`
             : "Every pick was the model’s own."}
@@ -29,8 +29,8 @@ export function DraftPage() {
         <div className="section-head">
           <h2>Board</h2>
           <p>
-            {drafted} of {season.board.length} Pokémon drafted · {season.season.board.budget} points
-            per team
+            {drafted} of {season.board.length} Pokémon were drafted. Each team had{" "}
+            {season.season.board.budget} points to spend.
           </p>
         </div>
         <BoardGrid board={season.board} franchises={teams} />

@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { MatchRow } from "@/components/match-list";
-import { Model } from "@/components/mark";
+import { Mark, Model } from "@/components/mark";
 import { Sprite } from "@/components/sprite";
 import { Standings } from "@/components/standings";
 import { TeamTag, teamStyle } from "@/components/team";
@@ -38,12 +38,12 @@ export function HomePage() {
         <p className="sub">
           {season.franchises.length} language models each drafted {s.board.picksPerFranchise}{" "}
           Pokémon on a {s.board.budget}-point budget. They built teams, traded, and played a{" "}
-          {s.totalWeeks}-week season. Every pick, build and turn comes with the model’s own
+          {s.totalWeeks}-week season. Every pick, build, and turn comes with the model’s own
           reasoning.
         </p>
         <p className="sub mono">
-          An exhibition season under one fixed configuration, schedule, simulator revision, and
-          provider routing.
+          An exhibition season under one recorded configuration: the schedule, simulator revision,
+          and provider routing never changed.
         </p>
         <dl className="facts">
           <div>
@@ -72,7 +72,12 @@ export function HomePage() {
           style={teamStyle(season, champion.id)}
         >
           <span className="label">Champion</span>
-          <h2>{champion.name}</h2>
+          <h2>
+            <span className="title-tag">
+              <Mark spec={champion.model} size="0.72em" tone />
+              {champion.name}
+            </span>
+          </h2>
           <Model spec={champion.model} />
           <span className="sprite-row">
             {champion.roster.map((slot) => (
@@ -105,7 +110,7 @@ export function HomePage() {
                 style={teamStyle(season, team.id)}
               >
                 <div className="head">
-                  <TeamTag id={team.id} link={false} />
+                  <TeamTag id={team.id} link={false} title={false} />
                   <span className="record">
                     {team.record.seriesWins}–{team.record.seriesLosses}
                   </span>
@@ -126,7 +131,8 @@ export function HomePage() {
         <div className="section-head">
           <h2>Schedule</h2>
           <p>
-            Best-of-three series. Open a match for the team sheets, every turn's choice, and why.
+            Best-of-three series. Open a match to read the team sheets and the reasoning behind
+            every turn.
           </p>
         </div>
         <div className="match-list">

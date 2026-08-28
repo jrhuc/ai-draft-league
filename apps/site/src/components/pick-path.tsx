@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { Sprite } from "@/components/sprite";
-import { tone, toneStyle } from "@/lib/format";
+import { Mark } from "@/components/mark";
+import { modelLabel, tone, toneStyle } from "@/lib/format";
 import type { DraftPick } from "@/lib/season";
 
-export type TeamRef = { id: string; name: string };
+export type TeamRef = { id: string; name: string; model: string };
 
 const HOVER_OPEN_MS = 600;
 
@@ -75,6 +76,7 @@ export function PickPath({ picks, franchises }: { picks: DraftPick[]; franchises
         ))}
         {picks.map((pick) => {
           const style = toneStyle(tone(index.get(pick.franchiseId) ?? 0));
+          const drafter = byId.get(pick.franchiseId);
           const on = hover !== null && hover === pick.franchiseId;
           const isOpen = open?.overall === pick.overall;
           const col = column(pick);
@@ -121,7 +123,10 @@ export function PickPath({ picks, franchises }: { picks: DraftPick[]; franchises
                 </span>
                 <Sprite id={pick.pokemon.spriteId} name={pick.pokemon.name} size={40} />
                 <b>{pick.pokemon.name}</b>
-                <small>{byId.get(pick.franchiseId)?.name ?? pick.franchiseId}</small>
+                <small>
+                  {drafter ? <Mark spec={drafter.model} size={11} tone /> : null}{" "}
+                  {drafter?.name ?? pick.franchiseId}
+                </small>
               </button>
               {isOpen ? (
                 <div
@@ -131,9 +136,14 @@ export function PickPath({ picks, franchises }: { picks: DraftPick[]; franchises
                 >
                   <div className="meta">
                     <Link className="team-tag" to={`/teams/${pick.franchiseId}/`}>
-                      <span className="swatch" aria-hidden="true" />
-                      {byId.get(pick.franchiseId)?.name ?? pick.franchiseId}
+                      {drafter ? (
+                        <Mark spec={drafter.model} tone />
+                      ) : (
+                        <span className="swatch" aria-hidden="true" />
+                      )}
+                      {drafter?.name ?? pick.franchiseId}
                     </Link>
+                    {drafter ? <span className="model">{modelLabel(drafter.model)}</span> : null}
                     {pick.fallback ? (
                       <span
                         className="chip chip-warn"

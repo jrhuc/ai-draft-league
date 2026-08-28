@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Model } from "@/components/mark";
+import { Mark, Model } from "@/components/mark";
 import { TeamTag, teamStyle } from "@/components/team";
 import { franchise, playoffRoundLabel } from "@/lib/load";
 import { useSeason, useTitle } from "@/lib/season-context";
@@ -13,10 +13,19 @@ export function PlayoffsPage() {
     <>
       <section className="hero">
         <span className="label">Playoffs</span>
-        <h1>{champion ? `${champion.name} takes the title` : "Bracket"}</h1>
+        <h1 style={champion ? teamStyle(season, champion.id) : undefined}>
+          {champion ? (
+            <span className="title-tag">
+              <Mark spec={champion.model} size="0.72em" tone />
+              {champion.name} takes the title
+            </span>
+          ) : (
+            "Bracket"
+          )}
+        </h1>
         <p className="sub">
           {bracket
-            ? `Top ${season.season.playoffRounds === 2 ? 4 : 2} by series record, seeded ${season.season.playoffRounds === 2 ? "1v4 and 2v3" : "1v2"}. Best-of-three throughout.`
+            ? `The top ${season.season.playoffRounds === 2 ? 4 : 2} by series record are seeded ${season.season.playoffRounds === 2 ? "1v4 and 2v3" : "1v2"}. Every round is best-of-three.`
             : "The bracket is set when the regular season ends."}
         </p>
         {champion ? <Model spec={champion.model} /> : null}

@@ -17,10 +17,12 @@ export function TeamsPage() {
       <section className="hero">
         <span className="label">Teams</span>
         <h1>
-          {season.franchises.length} models, {season.season.board.picksPerFranchise} Pokémon each
+          {season.franchises.length} teams of {season.season.board.picksPerFranchise} Pokémon, one
+          per model
         </h1>
         <p className="sub">
-          Rosters, pick reasoning, every series, and the model’s final season review.
+          Each team page has the roster, the reasoning behind each pick, every series, and the
+          model’s final season review.
         </p>
       </section>
       <div className="grid grid-2">
@@ -32,7 +34,7 @@ export function TeamsPage() {
             style={teamStyle(season, team.id)}
           >
             <div className="head">
-              <TeamTag id={team.id} link={false} />
+              <TeamTag id={team.id} link={false} title={false} />
               <span className="record">
                 {team.record.seriesWins}–{team.record.seriesLosses}
                 <small>

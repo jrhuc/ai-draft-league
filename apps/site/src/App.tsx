@@ -87,7 +87,7 @@ export function App() {
             {season.season.title} · {formatLabel(season.season.format)}
           </span>
           <span>
-            Games played in a pinned Pokémon Showdown fork
+            Games played on a pinned Pokémon Showdown fork
             {season.provenance.showdownCommit
               ? ` (${season.provenance.showdownCommit.slice(0, 10)})`
               : ""}

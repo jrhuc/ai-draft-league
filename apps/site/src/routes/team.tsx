@@ -1,9 +1,9 @@
 import { Link, useParams } from "react-router-dom";
 import { MatchRow } from "@/components/match-list";
-import { Model } from "@/components/mark";
+import { Mark, Model } from "@/components/mark";
 import { SetCard } from "@/components/set-card";
 import { Sprite } from "@/components/sprite";
-import { TeamTag } from "@/components/team";
+import { teamStyle } from "@/components/team";
 import { franchise, franchiseName, matchesFor, monName } from "@/lib/load";
 import { weeklyReviewsForFranchise } from "@/lib/weekly-reviews";
 import { useSeason, useTitle } from "@/lib/season-context";
@@ -39,7 +39,12 @@ function TeamPageBody({ id }: { id: string }) {
           {team.record.gameLosses} games
           {team.finish ? ` · ${team.finish}` : ""}
         </span>
-        <h1>{team.name}</h1>
+        <h1 style={teamStyle(season, team.id)}>
+          <span className="title-tag">
+            <Mark spec={team.model} size="0.72em" tone />
+            {team.name}
+          </span>
+        </h1>
         <div className="hero-row">
           <Model spec={team.model} />
           <span className="hint">
@@ -80,21 +85,16 @@ function TeamPageBody({ id }: { id: string }) {
         <div className="section-head">
           <h2>Season</h2>
           <p>
-            Each series shows the six the model registered and why. Open the match for the games.
+            Each series shows the six Pokémon the model registered and why it chose them. Open the
+            match for the games.
           </p>
         </div>
         {rows.map(({ match, label, href }) => {
           const build = match.builds.find((entry) => entry.franchiseId === team.id);
-          const opponent = match.franchises.find((entry) => entry !== team.id) ?? null;
           return (
             <article key={match.id} className="section build">
               <div className="week-head">
                 <h3>{label}</h3>
-                {opponent ? (
-                  <span className="hint">
-                    vs <TeamTag id={opponent} />
-                  </span>
-                ) : null}
               </div>
               <MatchRow match={match} href={href} turns />
               {build ? (
@@ -130,9 +130,9 @@ function TeamPageBody({ id }: { id: string }) {
           <div className="section-head">
             <h2>Weekly reviews</h2>
             <p>
-              Released memory reviews
+              Each model writes its own summary of the week
               {weeklyReviews.some((entry) => entry.stage === "transactions")
-                ? ", including reconciliation after transaction windows."
+                ? ", plus a reconciliation after any trade window."
                 : "."}
             </p>
           </div>
