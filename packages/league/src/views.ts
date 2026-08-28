@@ -389,8 +389,10 @@ export interface LeagueFranchiseView {
 export interface LeagueGameView {
   winner: number | null;
   turns: number;
-  /** Draft board ids each side actually sent out, in order of first entry. */
+  /** The four each side picked at team preview, lead pair first; falls back to fielded order. */
   brought: [string[], string[]];
+  /** Draft board ids each side actually sent out, in order of first entry. */
+  fielded: [string[], string[]];
   megaEvolved: [string | null, string | null];
   faints: [Record<string, number>, Record<string, number>];
 }

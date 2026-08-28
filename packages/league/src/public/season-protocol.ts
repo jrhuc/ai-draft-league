@@ -69,6 +69,8 @@ const decisionSchema = z.strictObject({
   turn: z.number().int().nonnegative(),
   phase: z.string(),
   action: z.string(),
+  /** The chosen options as the menu presented them, one per acting slot. */
+  selection: z.array(z.string()),
   rationale: z.string(),
   fallback: z.boolean(),
   automatic: z.boolean(),
@@ -86,6 +88,7 @@ const gameSummarySchema = z.strictObject({
   number: z.number().int().positive(),
   winnerId: franchiseRef.nullable(),
   turns: z.number().int().nonnegative(),
+  /** The four each side picked at team preview, lead pair first. */
   brought: z.tuple([z.array(z.string()), z.array(z.string())]),
   megaEvolved: z.tuple([z.string().nullable(), z.string().nullable()]),
   faints: z.tuple([

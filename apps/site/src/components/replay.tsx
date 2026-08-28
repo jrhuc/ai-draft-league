@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import { Mark } from "@/components/mark";
 import { Sprite } from "@/components/sprite";
 import { displaySpecies, seconds, spriteKey, statusLabel, toneStyle, tokens } from "@/lib/format";
 import type { Decision, Replay, ReplayEvent, ReplayGame } from "@/lib/season";
 
-type Team = { id: string; name: string; tone: string };
+type Team = { id: string; name: string; tone: string; model: string };
 type FieldSlot = { species: string; hp: number; status: string | null; fainted: boolean } | null;
 type SideState = {
   preview: string[];
@@ -88,6 +89,14 @@ function narrate(text: string, teams: [Team, Team]): string {
     );
 }
 
+function describeSelection(decision: Decision): string {
+  const picks = decision.selection;
+  if (!picks.length) return decision.action || decision.phase;
+  if (picks.every((pick) => pick.startsWith("Pick ")))
+    return `Bring ${picks.map((pick) => pick.slice("Pick ".length)).join(", ")}`;
+  return picks.join(" · ").replaceAll(" -> ", " → ");
+}
+
 function DecisionRow({
   decision,
   team,
@@ -97,16 +106,15 @@ function DecisionRow({
   team: Team;
   position: number;
 }) {
-  const choice =
-    decision.action && decision.phase
-      ? `${decision.phase}: ${decision.action}`
-      : decision.action || decision.phase;
+  const choice = describeSelection(decision);
   const context = decision.turn === 0 ? "team preview" : `turn ${decision.turn}`;
   const rationaleLabel = `${team.name} rationale for ${choice}, ${context}, decision ${position + 1}`;
   return (
     <div className="dec" style={toneStyle(team.tone)}>
       <span className="who">{team.name}</span>
-      <span className="act">{decision.action || decision.phase}</span>
+      <span className="act" title={decision.action}>
+        {choice}
+      </span>
       <span className="meta">
         {decision.automatic ? <span className="chip chip-solid">AUTO</span> : null}
         {decision.fallback && !decision.automatic ? (
@@ -187,7 +195,7 @@ function Game({
             >
               <div className="who">
                 <span className="team-tag" style={toneStyle(team.tone)}>
-                  <span className="swatch" aria-hidden="true" />
+                  <Mark spec={team.model} tone />
                   {team.name}
                 </span>
                 <span className="bench" role="group" aria-label="Registered">
@@ -293,7 +301,7 @@ function Game({
                   style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}
                 >
                   <span className="team-tag" style={toneStyle(team.tone)}>
-                    <span className="swatch" aria-hidden="true" />
+                    <Mark spec={team.model} tone />
                     {team.name}
                   </span>
                   <span

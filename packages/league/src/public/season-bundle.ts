@@ -244,6 +244,7 @@ export function buildPublicSeasonBundle(
             turn: decision.turn,
             phase: decision.phase,
             action: decision.action,
+            selection: [...decision.selection],
             rationale: decision.rationale,
             fallback: decision.fallback,
             automatic: decision.automatic,

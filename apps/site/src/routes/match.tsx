@@ -9,7 +9,7 @@ import type { Match, SeasonBundle } from "@/lib/season";
 import { useSeason, useTitle } from "@/lib/season-context";
 import { NotFoundPage } from "@/routes/not-found";
 
-function fieldedGames(match: Match, side: 0 | 1, draftId: string): number[] {
+function broughtGames(match: Match, side: 0 | 1, draftId: string): number[] {
   return match.games
     .filter((game) => game.brought[side].includes(draftId))
     .map((game) => game.number);
@@ -85,7 +85,7 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
           <h2>Team sheets</h2>
           <p>
             Each team registers six before the series and brings four to every game. Each card lists
-            the games it played.
+            the games it was brought to.
           </p>
         </div>
         <div className="two-col">
@@ -119,7 +119,7 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
                         <SetCard
                           key={draftId}
                           set={set}
-                          games={fieldedGames(match, side, draftId)}
+                          games={broughtGames(match, side, draftId)}
                         />
                       );
                     })}
@@ -140,7 +140,7 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
         <section className="section">
           <div className="section-head">
             <h2>Game by game</h2>
-            <p>What each side actually sent out, read from the battle log.</p>
+            <p>The four each side brought, lead pair first.</p>
           </div>
           <div className="two-col">
             {([0, 1] as const).map((side) => (

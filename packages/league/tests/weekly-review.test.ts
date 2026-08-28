@@ -257,6 +257,7 @@ test("own-build evidence lists what was left behind on the roster of the time, b
     assert.deepEqual(summaries, [
       {
         brought: [["charizard-mega-y"], ["altaria"]],
+        fielded: [["charizard-mega-y"], ["altaria"]],
         megaEvolved: ["charizard-mega-y", null],
         faints: [{ "charizard-mega-y": 1 }, {}],
       },

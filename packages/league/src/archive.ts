@@ -685,6 +685,7 @@ export function buildLeague(
     const games = (row.games ?? []).map((game, index) => {
       const gameSummary = summaries[index];
       const brought: [string[], string[]] = gameSummary?.brought ?? [[], []];
+      const fielded: [string[], string[]] = gameSummary?.fielded ?? [[], []];
       const megaEvolved: [string | null, string | null] = gameSummary?.megaEvolved ?? [null, null];
       const faints: [Record<string, number>, Record<string, number>] = gameSummary?.faints ?? [
         {},
@@ -694,6 +695,7 @@ export function buildLeague(
         winner: game.winner_side === "p1" ? a : game.winner_side === "p2" ? b : null,
         turns: count(game.turns),
         brought,
+        fielded,
         megaEvolved,
         faints,
       };
@@ -785,7 +787,7 @@ export function buildLeague(
         else if (view.winner !== null) usage.seriesLosses += 1;
       }
       for (const game of view.games) {
-        for (const id of game.brought[sideIndex]) {
+        for (const id of game.fielded[sideIndex]) {
           const usage = usageOf(entrant, id);
           usage.gamesFielded += 1;
           if (game.winner === entrant) usage.gameWins += 1;
