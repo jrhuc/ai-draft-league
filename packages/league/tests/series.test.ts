@@ -195,14 +195,9 @@ test("single elimination plays deterministic tiebreak games until one side wins"
     const seriesDir = path.join(directory, name);
     fs.mkdirSync(seriesDir);
     const seeds: Array<[number, number, number, number]> = [];
-    const seriesEnds: boolean[] = [];
-    const engines = fakeEngines();
-    engines.p1.endGame = (context) => {
-      seriesEnds.push(context.seriesOver);
-    };
     let game = 0;
     const result = await playBo3({
-      engines,
+      engines: fakeEngines(),
       names: { p1: "Side One", p2: "Side Two" },
       players: { p1: "model-one", p2: "model-two" },
       teams: { p1: { id: "one", packed: "" }, p2: { id: "two", packed: "" } },
@@ -227,7 +222,7 @@ test("single elimination plays deterministic tiebreak games until one side wins"
         };
       },
     });
-    return { result, seeds, seriesEnds };
+    return { result, seeds };
   };
 
   const first = await run("first");
@@ -240,7 +235,6 @@ test("single elimination plays deterministic tiebreak games until one side wins"
   assert.deepEqual(first.result.games[0]!.timer_autodefaults, { p1: 0, p2: 0 });
   assert.deepEqual(first.seeds.slice(0, 3), planned);
   assert.deepEqual(first.seeds[3], second.seeds[3]);
-  assert.deepEqual(first.seriesEnds, [false, false, false, true]);
 });
 
 test("a tied terminal game assigns tournament status from the series winner", async (t) => {

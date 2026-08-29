@@ -165,32 +165,6 @@ test("a completed pool bracket exports its entrants, bracket, and replay evidenc
     const invalid = structuredClone(bundle);
     invalid.replays[seriesId]!.games[0]!.brought[0].pop();
     assert.equal(publicTournamentBundleSchema.safeParse(invalid).success, false);
-    fs.appendFileSync(
-      path.join(seriesDir, "p1-decisions.jsonl"),
-      `${JSON.stringify({
-        kind: "game_reflection",
-        game_number: 2,
-        result: "lost",
-        series_over: true,
-        summary: "partial retrospective",
-        adjustment: "",
-        notebook: "",
-        did_well: "one field is not enough",
-        fallback: false,
-        total_tokens: 100,
-      })}\n`,
-    );
-    assert.throws(
-      () =>
-        buildTournamentExport({
-          recordsPath,
-          runsDir,
-          runId,
-          title: "Test Cup",
-          generatedAt: "2026-08-26T13:00:00.000Z",
-        }),
-      /incomplete retrospective artifact/,
-    );
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

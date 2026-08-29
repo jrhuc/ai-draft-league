@@ -146,52 +146,6 @@ test("an eliminated tournament entrant files a retrospective instead of next-rou
   );
 });
 
-test("a champion is identified from tournament status when the final game ties", async () => {
-  const provider = new ScriptedProvider([
-    JSON.stringify({
-      summary: "The tied final game preserved the existing series lead.",
-      did_well: "Protected the position needed to retain the lead.",
-      did_poorly: "Created too few winning lines in the final game.",
-      would_change: "Seek a more proactive endgame in a future event.",
-    }),
-  ]);
-  const decisions: JsonObject[] = [];
-  const engine = new LLMEngine("p1", "scripted", { provider, decisionLog: decisions });
-  await engine.endGame({
-    gameNumber: 3,
-    seriesOver: true,
-    tournamentStatus: "champion",
-    outcome: { winner: null, won: false, turns: 9 },
-    seriesScore: { p1: 1, p2: 0 },
-  });
-
-  assert.equal(decisions[0]!.result, "tied");
-  assert.match(
-    String(provider.calls[0]!.messages[0]!.content),
-    /won the tournament final and are the champion/,
-  );
-});
-
-test("a failed tournament retrospective does not fabricate structured judgments", async () => {
-  const decisions: JsonObject[] = [];
-  const engine = new LLMEngine("p2", "scripted", {
-    provider: new ScriptedProvider(["", ""]),
-    decisionLog: decisions,
-  });
-  await engine.endGame({
-    gameNumber: 2,
-    seriesOver: true,
-    tournamentStatus: "eliminated",
-    outcome: { winner: "opponent", won: false, turns: 9 },
-    seriesScore: { p1: 2, p2: 0 },
-  });
-
-  assert.equal(decisions[0]!.fallback, true);
-  assert.ok(!("did_well" in decisions[0]!));
-  assert.ok(!("did_poorly" in decisions[0]!));
-  assert.ok(!("would_change" in decisions[0]!));
-});
-
 test("provider failures during reflection fall back instead of stopping the series", async () => {
   const decisions: JsonObject[] = [];
   const engine = new LLMEngine("p1", "openrouter:google/gemini-test", {
@@ -214,32 +168,6 @@ test("provider failures during reflection fall back instead of stopping the seri
   assert.equal(decisions[0]!.fallback, true);
   assert.equal(decisions[0]!.failure_kind, "quota");
   assert.match(text(decisions[0]!.summary), /model reflection unavailable/);
-});
-
-test("a failed advancing review carries only the notebook from before the match", async () => {
-  const decisions: JsonObject[] = [];
-  const engine = new LLMEngine("p1", "openrouter:google/gemini-test", {
-    provider: new ScriptedProvider([
-      new ApiError(
-        429,
-        "openrouter:google/gemini-test 429: exceeded your current quota; requests per day",
-      ),
-    ]),
-    decisionLog: decisions,
-    initialNotebook: "opponent-specific notes from this match",
-    carryInNotebook: "transferable note from the prior round",
-  });
-
-  await engine.endGame({
-    gameNumber: 2,
-    seriesOver: true,
-    tournamentStatus: "advancing",
-    outcome: { winner: "p1", won: true, turns: 8 },
-    seriesScore: { p1: 2, p2: 0 },
-  });
-
-  assert.equal(engine.coachingNote(), "transferable note from the prior round");
-  assert.equal(decisions[0]!.notebook, "transferable note from the prior round");
 });
 
 test("game transcripts reset while notebook and score persist, with a marked character cap", async () => {

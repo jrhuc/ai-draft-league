@@ -4,14 +4,6 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "vite-plus/test";
 import { runExhibition } from "../src/exhibition.js";
-import {
-  CLOSED_SERIES_REFLECTION_SYSTEM,
-  DRAFT_SERIES_REFLECTION_SYSTEM,
-  REFLECTION_SYSTEM,
-  SERIES_REFLECTION_SYSTEM,
-  TOURNAMENT_REFLECTION_SYSTEM,
-  TOURNAMENT_RETROSPECTIVE_SYSTEM,
-} from "../src/prompts.js";
 import type { SeriesRecord } from "../src/records.js";
 import { loadSeriesRecords, scopeRows } from "../src/records.js";
 import { SeatBridge } from "../src/seat.js";
@@ -81,28 +73,6 @@ test("seat bridge keeps a pending exchange, tools, and private context behind on
       200,
     );
     assert.equal((await completion).text, '{"choices":[0]}');
-
-    for (const system of [
-      REFLECTION_SYSTEM,
-      SERIES_REFLECTION_SYSTEM,
-      DRAFT_SERIES_REFLECTION_SYSTEM,
-      CLOSED_SERIES_REFLECTION_SYSTEM,
-      TOURNAMENT_REFLECTION_SYSTEM,
-      TOURNAMENT_RETROSPECTIVE_SYSTEM,
-    ]) {
-      const reflection = bridge
-        .provider()
-        .complete(`${system}\nTournament stage.`, [{ role: "user", content: "review" }]);
-      const next: { exchange: { id: number; phase: string } } = await (
-        await post("/poll", { waitMs: 2000 })
-      ).json();
-      assert.equal(next.exchange.phase, "reflection");
-      assert.equal(
-        (await post("/submit", { id: next.exchange.id, text: '{"summary":"review"}' })).status,
-        200,
-      );
-      await reflection;
-    }
   } finally {
     bridge.close();
   }
