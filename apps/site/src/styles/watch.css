@@ -43,3 +43,23 @@
 .watch-notice {
   color: var(--warn);
 }
+
+.on-air {
+  display: inline-block;
+  width: 0.45rem;
+  height: 0.45rem;
+  margin-left: 0.4rem;
+  border-radius: 50%;
+  background: var(--bad);
+  animation: on-air-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes on-air-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--bad) 45%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--bad) 12%, transparent);
+  }
+}

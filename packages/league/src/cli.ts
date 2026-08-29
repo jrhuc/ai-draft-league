@@ -138,6 +138,9 @@ Commands:
   export-season --run <id> --through-week <n> [--title <text>] [--out <file>]
       atomically write one validated public season bundle;
       n past the last regular-season week releases playoff rounds
+  export-tournament --run <id> [--title <text>] [--out <file>]
+      atomically write one validated public tournament bundle for a pool bracket;
+      every recorded series is released, unplayed bracket slots stay open
 
 Model specs are exactly openrouter:<model-id>, prime:<model-id>, gateway:<model-id>,
 opencode-go:<model-id>, opencode-zen:<model-id>, or random.
@@ -505,6 +508,34 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
           ? ` + ${bundle.season.releasedPlayoffRounds} playoff round(s)`
           : "") +
         ` to ${out}`,
+    );
+    return 0;
+  }
+  if (command === "export-tournament") {
+    const { values } = parseArgs({
+      args: rest,
+      options: {
+        out: { type: "string" },
+        run: { type: "string" },
+        title: { type: "string", default: "AI Replay Bracket" },
+      },
+    });
+    if (!values.run) throw new Error("export-tournament requires --run <id>");
+    const out = path.resolve(
+      values.out ??
+        path.join("artifacts", "public", "tournaments", values.run, "tournament-bundle.json"),
+    );
+    const { exportTournamentBundle } = await import("./export-tournament.js");
+    const bundle = exportTournamentBundle({
+      out,
+      recordsPath: RESULTS_PATH,
+      runsDir: RUNS_DIR,
+      runId: values.run,
+      title: values.title,
+    });
+    const played = Object.keys(bundle.replays).length;
+    console.log(
+      `${bundle.tournament.title} exported with ${played} of ${bundle.entrants.length - 1} series to ${out}`,
     );
     return 0;
   }

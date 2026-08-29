@@ -1,39 +1,20 @@
-import { useEffect, useState } from "react";
-import type { ExternalRunSummary } from "league/server";
+import { useState } from "react";
 import { liveRunId, startWatching, stopWatching } from "@/lib/live";
-import "@/styles/watch.css";
+import type { ExternalRunSummary } from "@/lib/runs";
 
-async function fetchRuns(): Promise<ExternalRunSummary[]> {
-  const response = await fetch("/api/watch/runs");
-  if (!response.ok) throw new Error(`watch runs responded ${response.status}`);
-  // SAFETY: the dev server builds this listing from the league's own lister.
-  return response.json() as Promise<ExternalRunSummary[]>;
-}
-
-export default function WatchPage() {
-  const [runs, setRuns] = useState<ExternalRunSummary[] | null>(null);
+export function RunBrowser({
+  runs,
+  failed,
+  verb,
+  empty,
+}: {
+  runs: ExternalRunSummary[] | null;
+  failed: boolean;
+  verb: string;
+  empty: string;
+}) {
   const [notice, setNotice] = useState<string | null>(null);
   const live = liveRunId();
-
-  useEffect(() => {
-    let alive = true;
-    const refresh = (): void => {
-      void fetchRuns().then(
-        (rows) => {
-          if (alive) setRuns(rows);
-        },
-        () => {
-          if (alive) setNotice("Run listing unavailable — is this the dev server?");
-        },
-      );
-    };
-    refresh();
-    const timer = setInterval(refresh, 5000);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, []);
 
   const open = (runId: string): void => {
     void (async () => {
@@ -48,13 +29,7 @@ export default function WatchPage() {
   };
 
   return (
-    <section className="watch">
-      <span className="label">Local live watch</span>
-      <h1>Runs on disk</h1>
-      <p className="sub">
-        Dev-only. Pick a run and the regular season pages render its current state, refreshed as it
-        plays. Only exportable runs (draft archived, replays verified) can open.
-      </p>
+    <>
       {live ? (
         <p className="watch-live mono">
           Watching {live}{" "}
@@ -70,9 +45,14 @@ export default function WatchPage() {
           </button>
         </p>
       ) : null}
+      {failed ? (
+        <p className="watch-notice mono">Run listing unavailable — is this the dev server?</p>
+      ) : null}
       {notice ? <p className="watch-notice mono">{notice}</p> : null}
       {runs === null ? (
         <p className="sub">Loading…</p>
+      ) : runs.length === 0 ? (
+        <p className="sub">{empty}</p>
       ) : (
         <div className="card watch-table">
           <table>
@@ -80,7 +60,6 @@ export default function WatchPage() {
               <tr>
                 <th>Run</th>
                 <th>Mode</th>
-                <th>State</th>
                 <th>Started</th>
                 <th aria-label="Actions" />
               </tr>
@@ -90,14 +69,10 @@ export default function WatchPage() {
                 <tr key={run.runId}>
                   <td className="mono">{run.runId}</td>
                   <td>{run.mode}</td>
-                  <td className={run.state === "running" ? "watch-running" : undefined}>
-                    {run.state}
-                    {run.error ? ` · ${run.error}` : ""}
-                  </td>
                   <td className="mono">{run.startTime ?? "—"}</td>
                   <td>
                     <button type="button" className="chip" onClick={() => open(run.runId)}>
-                      watch
+                      {verb}
                     </button>
                   </td>
                 </tr>
@@ -106,6 +81,6 @@ export default function WatchPage() {
           </table>
         </div>
       )}
-    </section>
+    </>
   );
 }

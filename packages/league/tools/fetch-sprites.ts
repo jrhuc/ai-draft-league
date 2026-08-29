@@ -7,8 +7,9 @@ import { fileURLToPath } from "node:url";
 import { defaultPsDir, LEAGUE_ROOT } from "../src/paths.js";
 import { loadShowdown } from "../src/showdown.js";
 
-/** Sprites feed the spectator app; the league keeps no client of its own. */
+/** Sprites feed the spectator apps; the league keeps no client of its own. */
 const CLIENT_PUBLIC = path.join(LEAGUE_ROOT, "..", "..", "apps", "site", "public");
+const MIRROR_PUBLICS = [path.join(LEAGUE_ROOT, "..", "..", "apps", "worlds", "public")];
 const SPRITE_DIR = path.join(CLIENT_PUBLIC, "sprites");
 const SOURCE = "https://play.pokemonshowdown.com/sprites/gen5";
 const ITEM_SHEET_SOURCE = "https://play.pokemonshowdown.com/sprites/itemicons-sheet.png";
@@ -111,9 +112,21 @@ async function fetchItemIcons(
   return { items: Object.keys(icons).length, sheet: sheetName };
 }
 
+function mirrorClients(): void {
+  for (const publicDir of MIRROR_PUBLICS) {
+    fs.rmSync(path.join(publicDir, "sprites"), { recursive: true, force: true });
+    fs.cpSync(SPRITE_DIR, path.join(publicDir, "sprites"), { recursive: true });
+    fs.copyFileSync(
+      path.join(CLIENT_PUBLIC, "itemicons.json"),
+      path.join(publicDir, "itemicons.json"),
+    );
+  }
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const { written, substituted, missing } = await fetchSprites();
   const itemResult = await fetchItemIcons();
+  mirrorClients();
   console.log(`itemicons.json: ${itemResult.items} items -> ${itemResult.sheet}`);
   const bytes = fs
     .readdirSync(SPRITE_DIR)

@@ -28,7 +28,8 @@ export function modelLabel(spec: string): string {
 
 export function modelProvider(spec: string): string {
   const [provider] = spec.split(":");
-  return provider && provider !== spec ? provider : "";
+  if (!provider || provider === spec) return "";
+  return provider.startsWith("opencode") ? "opencode" : provider;
 }
 
 export const FRANCHISE_TONES = [

@@ -1,0 +1,303 @@
+/* ---- teams ---- */
+
+.team-card {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem 1.1rem;
+  border-top: 2px solid var(--tone);
+}
+
+.team-card .head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.team-card .record {
+  font-family: var(--font-mono), monospace;
+  color: var(--t1);
+  font-size: 1.1rem;
+}
+
+.team-card .record small {
+  display: block;
+  color: var(--t5);
+  font-size: 0.65rem;
+  text-align: right;
+}
+
+.roster {
+  display: grid;
+}
+
+.roster-row {
+  padding: 0 0.9rem;
+}
+
+.roster-row + .roster-row {
+  border-top: 1px solid var(--line);
+}
+
+.roster-row > summary {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto auto;
+  gap: 0.1rem 0.9rem;
+  align-items: center;
+  padding: 0.6rem 0;
+}
+
+.roster-row > summary .sprite {
+  grid-row: 1 / 3;
+}
+
+.roster-row > summary::before {
+  display: none;
+}
+
+.roster-row > summary .chip {
+  grid-column: 3;
+  grid-row: 1 / 3;
+}
+
+.roster-row > summary .why {
+  grid-column: 4;
+  grid-row: 1 / 3;
+  font-size: 0.7rem;
+  color: var(--good);
+  white-space: nowrap;
+}
+
+.roster-row > summary .why::before {
+  content: "▸ ";
+}
+
+.roster-row[open] > summary .why::before {
+  content: "▾ ";
+}
+
+.roster-row b {
+  color: var(--t1);
+  font-weight: 600;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 0.9rem;
+}
+
+.roster-row .sub {
+  grid-column: 2;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.7rem;
+  color: var(--t4);
+}
+
+.acq-draft {
+  color: var(--t3);
+}
+
+.acq-signed {
+  color: var(--good);
+}
+
+.acq-trade {
+  color: var(--link);
+}
+
+.roster-row summary,
+.dec summary,
+.build summary {
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.72rem;
+  color: var(--t4);
+}
+
+summary::-webkit-details-marker {
+  display: none;
+}
+
+.roster-row summary::before,
+.dec summary::before,
+.build summary::before {
+  content: "▸ ";
+}
+
+details[open] > summary::before {
+  content: "▾ ";
+}
+
+.build > details > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: fit-content;
+  padding: 0.4rem 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--good) 40%, transparent);
+  border-radius: 999px;
+  color: var(--good);
+  background: var(--card);
+}
+
+.build > details > summary:hover {
+  background: var(--card-2);
+}
+
+.roster-row > p,
+.dec details p {
+  margin: 0 0 0.8rem 0.4rem;
+  padding-left: 0.8rem;
+  border-left: 2px solid var(--line-2);
+  color: var(--t2);
+  font-size: 0.88rem;
+  max-width: 70ch;
+}
+
+.review {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1.1rem 1.2rem;
+}
+
+.review dl {
+  margin: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.review dt {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--t4);
+}
+
+.review dd {
+  margin: 0.15rem 0 0;
+  color: var(--t2);
+  max-width: 72ch;
+}
+
+.weekly-reviews {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.weekly-review {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem 1.1rem;
+}
+
+.weekly-review header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+}
+
+.weekly-review header > div:first-child {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.weekly-review .review-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.weekly-review .prose {
+  color: var(--t2);
+  max-width: 78ch;
+  white-space: pre-wrap;
+}
+
+/* ---- sets ---- */
+
+.setcard {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.74rem;
+}
+
+.setcard header {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.setcard header b {
+  display: block;
+  font:
+    600 0.86rem/1.2 var(--font-sans),
+    system-ui,
+    sans-serif;
+  color: var(--t1);
+}
+
+.setcard header small {
+  display: block;
+  color: var(--t4);
+  font-size: 0.68rem;
+  margin-top: 0.1rem;
+}
+
+.setcard ul {
+  list-style: none;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.15rem 0.75rem;
+  color: var(--t2);
+}
+
+.setcard footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  border-top: 1px solid var(--line);
+  color: var(--t4);
+  font-size: 0.66rem;
+}
+
+.setcard footer em {
+  font-style: normal;
+  color: var(--tone, var(--link));
+}
+
+.setcard.bench {
+  opacity: 0.62;
+}
+
+.build {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.build .build-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.build .rationale {
+  color: var(--t2);
+  max-width: 78ch;
+  font-size: 0.9rem;
+}
+
+.closed-note {
+  padding: 0.8rem 1rem;
+  color: var(--t4);
+  font-size: 0.85rem;
+}

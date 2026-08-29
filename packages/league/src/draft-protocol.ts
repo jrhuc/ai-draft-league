@@ -150,7 +150,7 @@ export const FRANCHISE_NAME_PROMPT_POLICY = {
     "You are {{model}}. The competitive draft is complete.",
     FORMAT_AUTHORITY_NOTICE,
     "Choose a concise, playful franchise name for the spectator-facing league display based on your finished roster.",
-    "Wordplay and personality are welcome. The Shadow Cabinet, Prankster's Paradise, and Drought Dodgers are examples of the tone, not names to copy.",
+    "Wordplay and personality are welcome. Trick Room Service, Prankster's Paradise, and Drought Dodgers are examples of the tone, not names to copy.",
     "The name is presentation only: coaches never see franchise names during competitive decisions.",
     'Reply with exactly one JSON object {"team_name":"<your franchise name>"} and nothing else.',
   ],

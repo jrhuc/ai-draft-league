@@ -15,7 +15,7 @@ import {
 } from "ai";
 import { z } from "zod";
 
-import { providerOption } from "./provider-registry.js";
+import { providerOption, type ProviderOption } from "./provider-registry.js";
 import { redactSecrets } from "./sanitize.js";
 import type {
   CompleteOptions,
@@ -426,10 +426,31 @@ function bodyFetch(
     return inner(input, request);
   };
 }
+/** OpenRouter forwards Anthropic requests without cache_control, so the chat-shaped body gets the
+ * same system + first-user breakpoints the Messages path marks; other vendors cache implicitly. */
+function markAnthropicCacheBreakpoints(body: JsonObject): void {
+  if (!isText(body.model) || !body.model.startsWith("anthropic/")) return;
+  if (!Array.isArray(body.messages)) return;
+  const mark = (message: JsonValue | undefined): void => {
+    if (!isRecord(message)) return;
+    if (isText(message.content) && message.content) {
+      message.content = [
+        { type: "text", text: message.content, cache_control: { type: "ephemeral" } },
+      ];
+    } else if (Array.isArray(message.content)) {
+      const last = message.content.at(-1);
+      if (isRecord(last)) last.cache_control = { type: "ephemeral" };
+    }
+  };
+  for (const role of ["system", "user"])
+    mark(body.messages.find((entry) => isRecord(entry) && entry.role === role));
+}
+
 function openRouterFetch(base: FetchRequest | undefined, routing: JsonObject): FetchRequest {
   return bodyFetch(base, (body) => {
     body.usage = { include: true };
     body.provider = routing;
+    markAnthropicCacheBreakpoints(body);
   });
 }
 
@@ -600,14 +621,29 @@ class SdkProvider implements Provider {
     return this.cachedModel.model;
   }
 
+  /** OpenCode Go's subscription quota rolls over 5-hour and weekly windows; OPENCODE_ZEN_BILLING
+   * names go models (comma-separated ids, verified to exist on Zen) whose calls bill Zen credits
+   * instead. Spec strings and recorded identity stay opencode-go — Go and Zen serve the same models. */
+  private baseUrl(option: ProviderOption): string {
+    if (!option.baseUrl) throw new Error(USAGE);
+    const zenBilled = (process.env.OPENCODE_ZEN_BILLING ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    return this.spec.provider === "opencode-go" && zenBilled.includes(this.model)
+      ? "https://opencode.ai/zen/v1"
+      : option.baseUrl;
+  }
+
   private buildLanguageModel(apiKey: string): LanguageModel {
     const option = providerOption(this.spec.provider);
     if (!option?.baseUrl) throw new Error(USAGE);
+    const baseURL = this.baseUrl(option);
     const transport = this.fetch ? { fetch: this.fetch } : {};
     if (this.api === "responses") {
       return createOpenAI({
         name: this.spec.provider,
-        baseURL: option.baseUrl,
+        baseURL,
         apiKey,
         ...transport,
       }).responses(this.model);
@@ -615,7 +651,7 @@ class SdkProvider implements Provider {
     if (this.api === "messages") {
       return createAnthropic({
         name: this.spec.provider,
-        baseURL: option.baseUrl,
+        baseURL,
         apiKey,
         ...transport,
       })(this.model);
@@ -623,7 +659,7 @@ class SdkProvider implements Provider {
     if (this.spec.provider === "openrouter") {
       return createOpenAICompatible({
         name: this.spec.provider,
-        baseURL: option.baseUrl,
+        baseURL,
         apiKey,
         ...transport,
         metadataExtractor: OPENROUTER_METADATA,
@@ -631,7 +667,7 @@ class SdkProvider implements Provider {
     }
     return createOpenAICompatible({
       name: this.spec.provider,
-      baseURL: option.baseUrl,
+      baseURL,
       apiKey,
       ...transport,
     })(this.model);
@@ -738,15 +774,24 @@ class SdkProvider implements Provider {
           ? { tools, toolChoice: options.toolChoice }
           : { tools }
         : {};
+      /** OpenCode's Responses upstreams cannot resolve item_reference ids, so replay must stay
+       * stateless: store nothing server-side and carry reasoning back as encrypted content. */
+      const statelessResponses =
+        this.api === "responses"
+          ? { openai: { store: false, include: ["reasoning.encrypted_content"] } }
+          : undefined;
       const reasoningOptions = options.reasoningMaxTokens
         ? {
             providerOptions: {
+              ...statelessResponses,
               [this.spec.provider]: { reasoning: { max_tokens: options.reasoningMaxTokens } },
             },
           }
-        : this.reasoning
-          ? { reasoning: this.reasoning }
-          : {};
+        : statelessResponses
+          ? { providerOptions: statelessResponses, reasoning: this.reasoning }
+          : this.reasoning
+            ? { reasoning: this.reasoning }
+            : {};
       /** Anthropic-style APIs reject prefill when extended thinking is on, so reasoning disables it. */
       const prefill =
         options.prefillResponse &&

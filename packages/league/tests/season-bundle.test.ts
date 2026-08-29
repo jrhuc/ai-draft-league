@@ -333,6 +333,22 @@ test("the season bundle publishes one complete week with its public evidence and
   assert.equal(bundle.playoffs, null);
 });
 
+test("a mid-draft league without team names labels franchises by model", () => {
+  const { league, plans } = fixture();
+  for (const entry of league.franchises) entry.teamName = "";
+  league.franchises[1]!.model = "openrouter:anthropic/claude-opus-5";
+  const bundle = buildPublicSeasonBundle({
+    ...COMMON,
+    league,
+    plans,
+    releasedThroughWeek: 0,
+    games: new Map(),
+  });
+  assert.equal(bundle.season.status, "draft");
+  assert.equal(bundle.franchises[0]?.name, "model-0");
+  assert.equal(bundle.franchises[1]?.name, "claude-opus-5");
+});
+
 test("a completed round-robin draw releases its replay and game record without a match result", () => {
   const { league, plans } = fixture();
   const plan = plans[0]!;

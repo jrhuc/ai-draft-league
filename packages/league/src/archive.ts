@@ -582,9 +582,14 @@ export function buildLeague(
   const identity = leagueIdentity(runsDir, runId, rows);
   if (identity.models.length < 2) return null;
   let boardMons: DraftBoardMon[] = [];
+  let boardPicks: number | null = null;
+  let boardBudget: number | null = null;
   if (identity.board) {
     try {
-      boardMons = loadBoard(identity.board).mons;
+      const board = loadBoard(identity.board);
+      boardMons = board.mons;
+      boardPicks = board.picks;
+      boardBudget = board.budget;
     } catch {}
   }
   const liveSeries = live ? liveSeriesViews(runsDir, runId, rows, identity) : [];
@@ -867,8 +872,9 @@ export function buildLeague(
     lastPlayed: timestamps[timestamps.length - 1] ?? null,
     board: identity.board,
     format: identity.format,
-    budget: sample ? sample.spent + sample.budgetLeft : null,
-    picksPerEntrant: rosters.find((entry) => entry.roster.length > 0)?.roster.length ?? null,
+    budget: boardBudget ?? (sample ? sample.spent + sample.budgetLeft : null),
+    picksPerEntrant:
+      boardPicks ?? rosters.find((entry) => entry.roster.length > 0)?.roster.length ?? null,
     weeks: identity.weeks,
     playoffRounds: draftLeagueTopology(identity.models.length).playoffRounds,
     phase: leaguePhase(runsDir, runId, rows, progress, liveSeries),

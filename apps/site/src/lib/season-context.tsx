@@ -1,22 +1,29 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { publicSeasonBundleSchema } from "league/protocol";
-import { liveRunId } from "./live";
+import { liveRunId, stopWatching } from "./live";
 import type { SeasonBundle } from "./season";
 
 let bundlePromise: Promise<SeasonBundle> | null = null;
 
-function bundleUrl(): string {
-  if (!import.meta.env.DEV) return "/season-bundle.json";
-  const live = liveRunId();
-  return live ? `/api/watch/runs/${live}/bundle` : "/season-bundle.json";
-}
-
-async function fetchBundle(): Promise<SeasonBundle> {
-  const url = bundleUrl();
+async function fetchParsed(url: string): Promise<SeasonBundle> {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`${url} responded ${response.status}`);
   const value: unknown = await response.json();
   return publicSeasonBundleSchema.parse(value);
+}
+
+async function fetchBundle(): Promise<SeasonBundle> {
+  if (import.meta.env.DEV) {
+    const live = liveRunId();
+    if (live) {
+      try {
+        return await fetchParsed(`/api/watch/runs/${live}/bundle`);
+      } catch {
+        stopWatching();
+      }
+    }
+  }
+  return fetchParsed("/season-bundle.json");
 }
 
 function loadBundle(): Promise<SeasonBundle> {

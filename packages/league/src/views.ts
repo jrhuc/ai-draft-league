@@ -1,41 +1,5 @@
-import type { ExperimentMode, Pid } from "./types.js";
+import type { Pid } from "./types.js";
 import type { BattleLogEntry } from "./battlelog.js";
-
-export interface ModelInfo {
-  id: string;
-  label: string;
-  reasoningLevels: string[];
-}
-
-export interface ProviderInfo {
-  id: string;
-  label: string;
-  description: string;
-  discovery: "list" | "manual" | "none";
-  requiresKey: boolean;
-}
-
-export interface PoolInfo {
-  name: string;
-  id: string;
-  format: string;
-  teamCount: number;
-}
-
-export interface FormatInfo {
-  id: string;
-  label: string;
-}
-
-export interface SeriesRowView {
-  players: Record<Pid, string>;
-  status: "queued" | "running" | "done";
-  score: Record<Pid, number>;
-  game: number;
-  turn: number;
-  turns: number;
-  winner: string | null;
-}
 
 export interface BoardInfo {
   id: string;
@@ -138,60 +102,6 @@ export interface PublicTeamSheetSetView {
   moves: string[];
 }
 
-export type RunState = "running" | "done" | "failed" | "stopped";
-
-export interface RunSnapshot {
-  runId: string;
-  mode: ExperimentMode;
-  state: RunState;
-  error: string;
-  notices: string[];
-  seed: number | null;
-  pool: string;
-  models: string[];
-  startTime: number;
-  endTime: number | null;
-  canControl: boolean;
-  rows: SeriesRowView[];
-  bracket: BracketView | null;
-  draft: DraftView | null;
-  board: string | null;
-}
-
-export type RunView = RunSnapshot;
-
-export interface SampleTeam {
-  name: string;
-  paste: string;
-}
-
-export interface PoolTeamsResponse {
-  name: string;
-  format: string;
-  teams: SampleTeam[];
-}
-
-export interface BoardResponse {
-  id: string;
-  format: string;
-  budget: number;
-  picks: number;
-  mons: DraftBoardMonView[];
-}
-
-export interface AppState {
-  pools: PoolInfo[];
-  defaultFormat: string;
-  formats: FormatInfo[];
-  providers: ProviderInfo[];
-  sampleTeams: SampleTeam[];
-  boards: BoardInfo[];
-  run: RunSnapshot | null;
-  externalRun: { runId: string; mode: "draft" | "tournament" } | null;
-}
-
-export type AppStateResponse = AppState;
-
 export interface MonView {
   species: string;
   spriteId: string;
@@ -251,18 +161,6 @@ export interface BattleSnapshot {
   log: BattleLogEntryView[];
   decisions: DecisionView[];
 }
-
-export interface BattleMessage {
-  index: number;
-  game: number;
-  /** Game numbers with a retained log, ascending; pass ?game= to fetch one. */
-  games: number[];
-  revision: number;
-  snapshot: BattleSnapshot | null;
-}
-
-export type BattleView = BattleMessage;
-export type ServerEvent = { type: "run"; run: RunView | null } | ({ type: "battle" } & BattleView);
 
 export interface TournamentSummary {
   tournaments: number;
@@ -593,31 +491,4 @@ export interface QuartileView {
   p25: number;
   p75: number;
   max: number;
-}
-
-export interface ModelsResponse {
-  models: ModelInfo[];
-}
-
-export interface TeamMemberView {
-  species: string;
-  item: string;
-  ability: string;
-  moves: string[];
-}
-
-export interface ValidateResponse {
-  species: string[];
-  members: TeamMemberView[];
-  problems: string[];
-}
-
-export interface PokepasteResponse {
-  paste: string;
-}
-
-export interface CreatePoolResponse {
-  ok: boolean;
-  name: string;
-  pools: PoolInfo[];
 }

@@ -184,6 +184,43 @@ test("OpenRouter executes the model spec while recording its pinned upstream as 
   }
 });
 
+test("OpenRouter marks Anthropic system and first-user cache breakpoints, other vendors untouched", async () => {
+  let body: JsonObject = {};
+  const fetch: typeof globalThis.fetch = async (_input, init) => {
+    body = requestJson(init);
+    return chatStream("ok");
+  };
+  const messages = [
+    { role: "user" as const, content: "board" },
+    { role: "user" as const, content: "pick" },
+  ];
+  await makeProvider(parseSpec("openrouter:anthropic/claude-opus-5"), {
+    apiKey: "openrouter-key",
+    fetch,
+  }).complete("rules", messages);
+  assert.deepEqual(body.messages, [
+    {
+      role: "system",
+      content: [{ type: "text", text: "rules", cache_control: { type: "ephemeral" } }],
+    },
+    {
+      role: "user",
+      content: [{ type: "text", text: "board", cache_control: { type: "ephemeral" } }],
+    },
+    { role: "user", content: "pick" },
+  ]);
+
+  await makeProvider(parseSpec("openrouter:z-ai/glm-5"), {
+    apiKey: "openrouter-key",
+    fetch,
+  }).complete("rules", messages);
+  assert.deepEqual(body.messages, [
+    { role: "system", content: "rules" },
+    { role: "user", content: "board" },
+    { role: "user", content: "pick" },
+  ]);
+});
+
 test("Prime uses only its fixed OpenAI-compatible chat endpoint and plain response metadata", async () => {
   let url = "";
   let authorization = "";

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { DraftBoardMon } from "./draft.js";
+import type { JsonObject } from "./types.js";
 import type { TeamBuildView } from "./views.js";
 import { readCompletedSeriesDecisionRows, readCompletedSeriesGameLogs } from "./series.js";
 import { isErrnoCode } from "./value.js";
@@ -25,7 +26,8 @@ type Side = 0 | 1;
 
 /** The six each side registered, in entrant order; an absent build leaves that side unresolved. */
 type RegisteredBuilds = readonly [TeamBuildView | undefined, TeamBuildView | undefined];
-type DraftMon = Pick<DraftBoardMon, "id" | "species" | "forme">;
+export type RegisteredMon = Pick<DraftBoardMon, "id" | "species" | "forme">;
+type DraftMon = RegisteredMon;
 
 interface Entry {
   name: string;
@@ -69,23 +71,12 @@ function pickedTeam(action: string | undefined, registered: readonly DraftMon[])
  * registered candidates share (the base forme and its Mega both drafted) stays open until a
  * `-mega` event names it, then falls back to the base forme if neither happened.
  */
-function gameSummaries(
+export function summarizeGameLogs(
   games: readonly (readonly string[])[],
-  mons: readonly Pick<DraftBoardMon, "id" | "species" | "forme">[],
-  builds: RegisteredBuilds,
+  registered: readonly [readonly DraftMon[], readonly DraftMon[]],
   teamPicks: ReadonlyArray<readonly [string | undefined, string | undefined]> = [],
 ): GameSummary[] {
   const byName = new Map<string, DraftMon[]>();
-  const byId = new Map(mons.map((mon) => [mon.id, mon] as const));
-  const registeredMons = (build: TeamBuildView | undefined): DraftMon[] =>
-    (build?.brought ?? []).flatMap((id) => {
-      const mon = byId.get(id);
-      return mon ? [mon] : [];
-    });
-  const registered: [DraftMon[], DraftMon[]] = [
-    registeredMons(builds[0]),
-    registeredMons(builds[1]),
-  ];
   for (const sideMons of new Set([...registered[0], ...registered[1]])) {
     for (const name of sideMons.forme && sideMons.forme !== sideMons.species
       ? [sideMons.species, sideMons.forme]
@@ -184,6 +175,25 @@ function gameSummaries(
   });
 }
 
+/** Extracts each game's accepted team-preview action per side from decision rows. */
+export function teamPreviewPicks(
+  rowsBySide: readonly [readonly JsonObject[], readonly JsonObject[]],
+  gameCount: number,
+): Array<[string | undefined, string | undefined]> {
+  const picks: Array<[string | undefined, string | undefined]> = Array.from(
+    { length: gameCount },
+    () => [undefined, undefined],
+  );
+  for (const side of [0, 1] as const) {
+    for (const row of rowsBySide[side]) {
+      const preview = acceptedTeamPreviewRow.safeParse(row);
+      if (!preview.success || preview.data.game_number > gameCount) continue;
+      picks[preview.data.game_number - 1]![side] = preview.data.action;
+    }
+  }
+  return picks;
+}
+
 /** Reads every completed game of one recorded series, or an empty list when none exists yet. */
 export function seriesGameSummaries(
   seriesDir: string,
@@ -191,23 +201,22 @@ export function seriesGameSummaries(
   mons: readonly Pick<DraftBoardMon, "id" | "species" | "forme">[],
   builds: RegisteredBuilds,
 ): GameSummary[] {
+  const byId = new Map(mons.map((mon) => [mon.id, mon] as const));
+  const registeredMons = (build: TeamBuildView | undefined): DraftMon[] =>
+    (build?.brought ?? []).flatMap((id) => {
+      const mon = byId.get(id);
+      return mon ? [mon] : [];
+    });
   try {
     const logs = readCompletedSeriesGameLogs(seriesDir, seriesId);
-    const teamPicks: Array<[string | undefined, string | undefined]> = logs.map(() => [
-      undefined,
-      undefined,
-    ]);
-    for (const [side, pid] of [
-      [0, "p1"],
-      [1, "p2"],
-    ] as const) {
-      for (const row of readCompletedSeriesDecisionRows(seriesDir, seriesId, pid)) {
-        const preview = acceptedTeamPreviewRow.safeParse(row);
-        if (!preview.success || preview.data.game_number > teamPicks.length) continue;
-        teamPicks[preview.data.game_number - 1]![side] = preview.data.action;
-      }
-    }
-    return gameSummaries(logs, mons, builds, teamPicks);
+    const picks = teamPreviewPicks(
+      [
+        readCompletedSeriesDecisionRows(seriesDir, seriesId, "p1"),
+        readCompletedSeriesDecisionRows(seriesDir, seriesId, "p2"),
+      ],
+      logs.length,
+    );
+    return summarizeGameLogs(logs, [registeredMons(builds[0]), registeredMons(builds[1])], picks);
   } catch (cause) {
     if (isErrnoCode(cause, "ENOENT") && "path" in cause && cause.path === seriesDir) return [];
     throw cause;

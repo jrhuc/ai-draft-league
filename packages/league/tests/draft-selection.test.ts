@@ -107,7 +107,7 @@ test("drafters name their franchise only after every pick is complete", async (t
   assert.ok(system.includes("DRAFT BOARD"), "the board rides in the cacheable system prompt");
   assertFormatAuthority(system);
   assert.match(system, /test transaction window opens after week 2/);
-  assert.doesNotMatch(system, /franchise name|Shadow Cabinet|Drought Dodgers/i);
+  assert.doesNotMatch(system, /franchise name|Trick Room Service|Drought Dodgers/i);
 
   const transcript = fs
     .readFileSync(path.join(logDir, "draft.jsonl"), "utf8")
@@ -120,7 +120,7 @@ test("drafters name their franchise only after every pick is complete", async (t
   assert.equal(names.find((row) => row.entrant === 0)?.team_name, "Route 210 Garchomps");
   const namingLog = readJsonlObjects(path.join(logDir, "namer-0-fake-model.jsonl"));
   const namerSystem = text(namingLog[0]!.system);
-  assert.match(namerSystem, /The Shadow Cabinet/);
+  assert.match(namerSystem, /Trick Room Service/);
   assertFormatAuthority(namerSystem);
   assert.match(text(namingLog[0]!.user), /Garchomp/);
   assert.match(text(namingLog[0]!.user), /Farigiraf/);

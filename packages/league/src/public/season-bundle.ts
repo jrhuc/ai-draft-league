@@ -42,6 +42,10 @@ function franchiseId(entrant: number): string {
   return `franchise-${entrant}`;
 }
 
+function franchiseName(teamName: string, model: string): string {
+  return teamName || model.replace(/^[^:]*:/, "").replace(/^[^/]*\//, "");
+}
+
 type PublicRosterSlot = PublicSeasonBundle["franchises"][number]["roster"][number];
 
 function replayReleasedRosters(
@@ -431,7 +435,7 @@ export function buildPublicSeasonBundle(
     const record = table[franchise.entrant]!;
     return {
       id: franchiseId(franchise.entrant),
-      name: franchise.teamName,
+      name: franchiseName(franchise.teamName, franchise.model),
       model: franchise.model,
       budget: { total: league.budget!, spent, remaining: league.budget! - spent },
       roster,

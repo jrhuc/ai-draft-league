@@ -13,7 +13,10 @@ import { TeamPage } from "@/routes/team";
 import { TeamsPage } from "@/routes/teams";
 import { TransactionsPage } from "@/routes/transactions";
 
-const WatchPage = import.meta.env.DEV ? lazy(() => import("@/routes/watch")) : null;
+const dev = import.meta.env.DEV;
+const LivePage = dev ? lazy(() => import("@/routes/live")) : null;
+const ArchivePage = dev ? lazy(() => import("@/routes/archive")) : null;
+const DevNav = dev ? lazy(() => import("@/components/dev-nav")) : null;
 
 const NAV: Array<[string, string]> = [
   ["/", "Standings"],
@@ -23,9 +26,14 @@ const NAV: Array<[string, string]> = [
   ["/playoffs", "Playoffs"],
 ];
 
-function releaseLabel(s: ReturnType<typeof useSeason>["season"]): string {
+function releaseLabel(bundle: ReturnType<typeof useSeason>): string {
+  const s = bundle.season;
   if (s.status === "complete") return "Season complete";
-  if (s.status === "draft") return "Draft complete";
+  if (s.status === "draft") {
+    const total = bundle.franchises.length * s.board.picksPerFranchise;
+    const picks = bundle.draft.picks.length;
+    return picks < total ? `Drafting · pick ${picks + 1} of ${total}` : "Draft complete";
+  }
   if (s.releasedPlayoffRounds > 0)
     return s.releasedPlayoffRounds >= s.playoffRounds ? "Final played" : "Playoffs underway";
   return `Through week ${s.releasedThroughWeek} of ${s.totalWeeks}`;
@@ -51,11 +59,15 @@ export function App() {
                 {label}
               </NavLink>
             ))}
-            {WatchPage ? <NavLink href="/watch">Watch</NavLink> : null}
+            {DevNav ? (
+              <Suspense fallback={null}>
+                <DevNav />
+              </Suspense>
+            ) : null}
           </nav>
           <span className="release mono">
             <span className="dot" aria-hidden="true" />
-            {releaseLabel(season.season)}
+            {releaseLabel(season)}
           </span>
         </div>
       </header>
@@ -68,12 +80,22 @@ export function App() {
           <Route path="/matches/:seriesId" element={<MatchPage />} />
           <Route path="/transactions" element={<TransactionsPage />} />
           <Route path="/playoffs" element={<PlayoffsPage />} />
-          {WatchPage ? (
+          {LivePage ? (
             <Route
-              path="/watch"
+              path="/live"
               element={
                 <Suspense fallback={null}>
-                  <WatchPage />
+                  <LivePage />
+                </Suspense>
+              }
+            />
+          ) : null}
+          {ArchivePage ? (
+            <Route
+              path="/archive"
+              element={
+                <Suspense fallback={null}>
+                  <ArchivePage />
                 </Suspense>
               }
             />
