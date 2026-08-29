@@ -9,14 +9,14 @@
   --t1: #221e16;
   --t2: #3a352a;
   --t3: #6d6553;
-  --t4: #8c8370;
-  --t5: #ac9c7a;
+  --t4: #706857;
+  --t5: #756d5d;
   --good: #187f4b;
-  --bad: #d23c22;
-  --warn: #a4770f;
-  --link: #2a75bb;
-  --accent: #e3350d;
-  --ball-red: #e3350d;
+  --bad: #c4351c;
+  --warn: #806000;
+  --link: #2368a6;
+  --accent: #c92e0a;
+  --ball-red: #c92e0a;
   --ball-dark: #22262e;
   --poke-blue: #2a75bb;
   --poke-yellow: #ffcb05;
@@ -314,6 +314,20 @@ button {
   padding-bottom: 2.5rem;
   font-size: 0.72rem;
   color: var(--t4);
+}
+
+.retry {
+  min-height: 2.75rem;
+  padding: 0.65rem 1rem;
+  border: 1px solid var(--ball-dark);
+  border-radius: var(--r);
+  background: var(--ball-dark);
+  color: #fff;
+  font-weight: 600;
+}
+
+.retry:hover {
+  background: var(--t2);
 }
 
 @media (max-width: 48rem) {

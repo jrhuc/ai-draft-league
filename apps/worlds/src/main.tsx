@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { App } from "@/App";
+import { AppErrorBoundary } from "@/components/app-error";
 import { TournamentProvider } from "@/lib/context";
 
 import "@fontsource-variable/geist";
@@ -17,10 +18,12 @@ if (!root) throw new Error("missing #root element");
 
 createRoot(root).render(
   <StrictMode>
-    <BrowserRouter>
-      <TournamentProvider>
-        <App />
-      </TournamentProvider>
-    </BrowserRouter>
+    <AppErrorBoundary>
+      <BrowserRouter>
+        <TournamentProvider>
+          <App />
+        </TournamentProvider>
+      </BrowserRouter>
+    </AppErrorBoundary>
   </StrictMode>,
 );

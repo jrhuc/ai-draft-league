@@ -6,6 +6,8 @@
   provider clients, and the `vgcleague` CLI. Runs execute here; `runs/`,
   `records/`, and `.env` are local state and are never committed.
 - `apps/site` — the spectator app, deployed to Cloudflare as static assets.
+- `apps/worlds` — the Worlds exhibition microsite, deployed as a separate
+  static-assets Worker from one exported tournament bundle.
 - Repo-wide format, lint (anti-slop, type-aware), and type checks run from the
   root: `pnpm check`. League tests run with Vitest straight from source via
   `vp run league#test:unit`; the `tsc` build to `dist` still backs the

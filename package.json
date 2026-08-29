@@ -10,12 +10,12 @@
   "type": "module",
   "scripts": {
     "dev": "vp run site#dev",
-    "build": "vp run site#build",
-    "test": "vp run site#test && vp run league#test:unit",
+    "build": "vp run site#build && vp run worlds#build",
+    "test": "vp run site#test && vp run worlds#test && vp run league#test:unit",
     "check": "vp check",
     "lint": "vp lint",
     "fmt": "vp fmt",
-    "deploy": "vp run site#deploy",
+    "deploy": "vp run site#deploy && vp run worlds#deploy",
     "test:league": "vp run league#test:unit"
   },
   "devDependencies": {

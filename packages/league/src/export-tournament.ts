@@ -244,11 +244,16 @@ export function buildTournamentExport(
       const summary = summaries[index];
       if (!summary)
         throw new Error(`series ${row.series_id} game ${game.number} has no verified summary`);
+      const broughtComplete: [boolean, boolean] = [
+        summary.brought[0].length === 4,
+        summary.brought[1].length === 4,
+      ];
       return {
         number: game.number,
         winnerId: game.winner_side === null ? null : refs[game.winner_side === "p1" ? 0 : 1],
         turns: game.turns,
         brought: summary.brought,
+        broughtComplete,
         megaEvolved: summary.megaEvolved,
         faints: summary.faints,
       };
@@ -311,6 +316,20 @@ export function buildTournamentExport(
     throw new Error(`run ${options.runId} mixes Showdown commits ${[...commits].join(", ")}`);
   const showdownCommit = [...commits][0];
   const timestamps = settledRows.map((row) => row.timestamp).sort();
+  const seriesStarts = settledRows.flatMap((row) => {
+    try {
+      const metadata = z
+        .looseObject({ started: z.iso.datetime() })
+        .safeParse(
+          JSON.parse(
+            fs.readFileSync(path.join(runDir, "series", row.series_id, "series.json"), "utf8"),
+          ),
+        );
+      return metadata.success ? [metadata.data.started] : [];
+    } catch {
+      return [];
+    }
+  });
   let storedStart: string | undefined;
   try {
     const status = runStatusSchema.safeParse(
@@ -318,7 +337,11 @@ export function buildTournamentExport(
     );
     if (status.success) storedStart = status.data.start_time;
   } catch {}
-  const startedAt = storedStart ?? timestamps[0];
+  const startedAt = [
+    ...(storedStart ? [storedStart] : []),
+    ...timestamps,
+    ...seriesStarts,
+  ].sort()[0];
   if (!startedAt) throw new Error(`run ${options.runId} has no start time and no played series`);
 
   const champion = rounds[rounds.length - 1]![0]!.winner;

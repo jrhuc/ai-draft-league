@@ -12,6 +12,9 @@ A pnpm + `vp` monorepo for frontier-model Pokémon draft leagues:
   that consumes exactly one artifact,
   [`apps/site/public/season-bundle.json`](apps/site/public/season-bundle.json),
   and renders it.
+- [`apps/worlds`](apps/worlds) -- the Pokémon Worlds exhibition microsite. It
+  renders one exported tournament bracket from
+  [`apps/worlds/public/tournament-bundle.json`](apps/worlds/public/tournament-bundle.json).
 
 The site tells the story of one league under one recorded configuration. Its
 standings and champion are exhibition results, not a general model ranking.
@@ -27,6 +30,7 @@ vp check                     # format, lint, typecheck across the workspace
 vp test                      # site tests; league unit tests run from dist
 vp run league#test:unit
 vp dev                       # spectator app at http://localhost:5173 (/watch is dev-only)
+vp run worlds#dev            # Worlds microsite on its own Vite dev server
 ```
 
 `league` commands run through `pnpm run vgcleague --help` from
@@ -54,16 +58,16 @@ Sprites are optional presentation assets mirrored into
 
 ## Deployment
 
-The site deploys to Cloudflare Workers as an assets-only Worker: no script is
-deployed, and client-side routes fall
-back to `index.html`.
+Both sites deploy to Cloudflare Workers as assets-only Workers: no script is
+deployed, and client-side routes fall back to `index.html`.
 
 ```sh
 wrangler login   # once
-pnpm deploy      # from apps/site: vp build && wrangler deploy
+vp run league#build
+pnpm deploy      # builds and deploys apps/site and apps/worlds
 ```
 
-A deployment never fetches or builds harness source.
+Deploy only Worlds with `vp run worlds#deploy` after building `league`.
 
 ## License
 

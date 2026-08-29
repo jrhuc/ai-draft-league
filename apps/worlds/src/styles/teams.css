@@ -274,7 +274,8 @@ details[open] > summary::before {
 }
 
 .setcard.bench {
-  opacity: 0.62;
+  border-style: dashed;
+  background: color-mix(in srgb, var(--card) 78%, var(--card-2));
 }
 
 .build {

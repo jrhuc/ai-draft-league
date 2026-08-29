@@ -13,7 +13,13 @@ async function fetchBundle(): Promise<TournamentBundle> {
 }
 
 function loadBundle(): Promise<TournamentBundle> {
-  bundlePromise ??= fetchBundle();
+  if (!bundlePromise) {
+    const pending = fetchBundle();
+    bundlePromise = pending;
+    void pending.catch(() => {
+      if (bundlePromise === pending) bundlePromise = null;
+    });
+  }
   return bundlePromise;
 }
 
@@ -22,8 +28,10 @@ const TournamentContext = createContext<TournamentBundle | null>(null);
 export function TournamentProvider({ children }: { children: ReactNode }) {
   const [bundle, setBundle] = useState<TournamentBundle | null>(null);
   const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let live = true;
+    setFailed(false);
     loadBundle().then(
       (value) => {
         if (live) setBundle(value);
@@ -35,8 +43,18 @@ export function TournamentProvider({ children }: { children: ReactNode }) {
     return () => {
       live = false;
     };
-  }, []);
-  if (failed) throw new Error("Could not load. Refresh to try again.");
+  }, [attempt]);
+  if (failed) {
+    return (
+      <div className="boot" role="alert">
+        <h1>Could not load the tournament</h1>
+        <p>Check your connection, then try again.</p>
+        <button className="retry" type="button" onClick={() => setAttempt((value) => value + 1)}>
+          Try again
+        </button>
+      </div>
+    );
+  }
   if (!bundle) {
     return (
       <div className="boot" role="status">

@@ -143,7 +143,13 @@ export function writeRunStatus(runDir: string, status: RunStatus): void {
 
 export async function withRunStatus<T>(runDir: string, task: () => Promise<T>): Promise<T> {
   const release = holdRunLease(runDir);
-  const startTime = new Date().toISOString();
+  let startTime = new Date().toISOString();
+  try {
+    const stored = runStatusSchema.safeParse(
+      JSON.parse(fs.readFileSync(path.join(runDir, "status.json"), "utf8")),
+    );
+    if (stored.success && stored.data.start_time) startTime = stored.data.start_time;
+  } catch {}
   const write = (state: RunStatus["state"], error: string | null) =>
     writeRunStatus(runDir, {
       state,

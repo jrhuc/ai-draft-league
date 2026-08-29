@@ -26,6 +26,7 @@ function replayDoc(raw: string, teams: [Team, Team], title: string): string {
   }
   return `<!DOCTYPE html>
 <meta charset="utf-8" />
+<meta name="referrer" content="no-referrer" />
 <!-- version 1 -->
 <title>${escapeLog(title)}</title>
 <div class="wrapper replay-wrapper" style="max-width:1180px;margin:0 auto">
@@ -38,9 +39,34 @@ function replayDoc(raw: string, teams: [Team, Team], title: string): string {
 }
 
 function ShowdownPlayer({ game, teams }: { game: ReplayGame; teams: [Team, Team] }) {
+  const [loaded, setLoaded] = useState(false);
   const title = `${teams[0].name} vs ${teams[1].name} — Game ${game.number}`;
   const doc = useMemo(() => replayDoc(game.raw, teams, title), [game.raw, teams, title]);
-  return <iframe className="ps-frame" srcDoc={doc} title={title} sandbox="allow-scripts" />;
+  if (!loaded) {
+    return (
+      <div className="player-gate">
+        <button type="button" onClick={() => setLoaded(true)}>
+          Load animated replay
+          <small>Loads the replay client from Pokémon Showdown</small>
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="player-loaded">
+      <iframe
+        className="ps-frame"
+        srcDoc={doc}
+        title={title}
+        sandbox="allow-scripts"
+        referrerPolicy="no-referrer"
+        loading="lazy"
+      />
+      <p className="player-note">
+        If the animation is unavailable, the turn reasoning and full text log remain below.
+      </p>
+    </div>
+  );
 }
 
 function narrate(text: string, teams: [Team, Team]): string {
@@ -108,16 +134,13 @@ function ReflectionCard({
   reflection,
   team,
   lastGame,
-  carriesForward,
 }: {
   reflection: Reflection;
   team: Team;
   lastGame: boolean;
-  carriesForward: boolean;
 }) {
   const won = reflection.result === "won";
   const eliminated = lastGame && !won;
-  const carried = lastGame && won && carriesForward;
   return (
     <article className="card reflection" style={toneStyle(team.tone)}>
       <div className="who">
@@ -136,7 +159,7 @@ function ReflectionCard({
       ) : null}
       {reflection.notebook && !eliminated ? (
         <details className="notebook">
-          <summary>{carried ? "Notes carried into the next match" : "Notebook"}</summary>
+          <summary>{lastGame ? "Notebook after this match" : "Notebook"}</summary>
           <blockquote>{reflection.notebook}</blockquote>
         </details>
       ) : null}
@@ -148,12 +171,10 @@ function Game({
   game,
   teams,
   lastGame,
-  carriesForward,
 }: {
   game: ReplayGame;
   teams: [Team, Team];
   lastGame: boolean;
-  carriesForward: boolean;
 }) {
   const teamFor = (id: string) => (teams[0].id === id ? teams[0] : teams[1]);
   const turns = useMemo(() => {
@@ -223,7 +244,6 @@ function Game({
               reflection={reflection}
               team={teamFor(reflection.entrantId)}
               lastGame={lastGame}
-              carriesForward={carriesForward}
             />
           ))}
         </div>
@@ -232,15 +252,7 @@ function Game({
   );
 }
 
-export function ReplayViewer({
-  replay,
-  teams,
-  carriesForward,
-}: {
-  replay: Replay;
-  teams: [Team, Team];
-  carriesForward: boolean;
-}) {
+export function ReplayViewer({ replay, teams }: { replay: Replay; teams: [Team, Team] }) {
   const [index, setIndex] = useState(0);
   const game = replay.games[index] ?? replay.games[0];
   if (!game) return null;
@@ -275,7 +287,6 @@ export function ReplayViewer({
         game={game}
         teams={teams}
         lastGame={index === replay.games.length - 1}
-        carriesForward={carriesForward}
       />
     </div>
   );

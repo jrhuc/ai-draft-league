@@ -9,10 +9,13 @@ import { entrant, entrantIndex, matchBySeries, monName } from "@/lib/load";
 import type { Match } from "@/lib/tournament";
 import { NotFoundPage } from "@/routes/not-found";
 
-function broughtGames(match: Match, side: 0 | 1, setId: string): number[] {
-  return match.games
-    .filter((game) => game.brought[side].includes(setId))
-    .map((game) => game.number);
+function broughtGames(match: Match, side: 0 | 1, setId: string) {
+  return {
+    games: match.games
+      .filter((game) => game.brought[side].includes(setId))
+      .map((game) => game.number),
+    complete: match.games.every((game) => game.broughtComplete[side]),
+  };
 }
 
 export function MatchPage() {
@@ -66,7 +69,9 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
   return (
     <>
       <section className="hero match-hero">
-        <h1 className="label">{label}</h1>
+        <h1 className="label" tabIndex={-1}>
+          {label}
+        </h1>
         <Side id={a} />
         <div className="big-score">
           {`${match.score[0]}–${match.score[1]}`}
@@ -83,11 +88,7 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
             follows each turn. AUTO marks a forced choice.
           </p>
         </div>
-        <ReplayViewer
-          replay={replay}
-          teams={[team(a), team(b)]}
-          carriesForward={label !== "Final"}
-        />
+        <ReplayViewer replay={replay} teams={[team(a), team(b)]} />
       </section>
 
       <section className="section">
@@ -106,9 +107,10 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
             return (
               <div key={entry.id} className="build" style={entrantStyle(bundle, entry.id)}>
                 <div className="grid grid-2">
-                  {entry.team.sets.map((set) => (
-                    <SetCard key={set.id} set={set} games={broughtGames(match, side, set.id)} />
-                  ))}
+                  {entry.team.sets.map((set) => {
+                    const usage = broughtGames(match, side, set.id);
+                    return <SetCard key={set.id} set={set} {...usage} />;
+                  })}
                 </div>
               </div>
             );
@@ -120,7 +122,7 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
         <section className="section">
           <div className="section-head">
             <h2>Game by game</h2>
-            <p>The 4 each model brought, leads first.</p>
+            <p>Confirmed selections, leads first. Unrevealed slots are labeled.</p>
           </div>
           <div className="two-col">
             {([0, 1] as const).map((side) => (
@@ -150,6 +152,11 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
                           ? game.brought[side].map((mon) => monName(bundle, mon)).join(", ")
                           : "Nothing recorded"}
                       </span>
+                      {!game.broughtComplete[side] ? (
+                        <span className="chip chip-warn">
+                          {4 - game.brought[side].length} unrevealed
+                        </span>
+                      ) : null}
                       {game.megaEvolved[side] ? (
                         <span className="chip">{monName(bundle, game.megaEvolved[side])}</span>
                       ) : null}

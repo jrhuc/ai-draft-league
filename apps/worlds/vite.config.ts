@@ -8,4 +8,7 @@ export default defineConfig({
       "@": "/src",
     },
   },
+  test: {
+    include: ["tests/**/*.test.ts?(x)"],
+  },
 });

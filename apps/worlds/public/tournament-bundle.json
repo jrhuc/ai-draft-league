@@ -6,7 +6,7 @@
     "format": "gen9championsvgc2026regmbbo3",
     "provenance": "disclosed",
     "showdownCommit": "6a1836dd71c0718e923206f3d089e61074410868",
-    "startedAt": "2026-08-07T00:04:47.217Z",
+    "startedAt": "2026-08-06T23:57:33.089Z",
     "championId": "entrant-6"
   },
   "event": {
@@ -703,6 +703,7 @@
                     "entrant-7-gengar"
                   ]
                 ],
+                "broughtComplete": [true, true],
                 "megaEvolved": ["entrant-0-staraptor", "entrant-7-swampert"],
                 "faints": [
                   { "entrant-0-farigiraf": 1, "entrant-0-raichu": 1 },
@@ -727,6 +728,7 @@
                     "entrant-7-vivillontundra"
                   ]
                 ],
+                "broughtComplete": [true, true],
                 "megaEvolved": ["entrant-0-staraptor", "entrant-7-swampert"],
                 "faints": [
                   { "entrant-0-farigiraf": 1 },
@@ -759,6 +761,7 @@
                     "entrant-4-basculegion"
                   ]
                 ],
+                "broughtComplete": [false, true],
                 "megaEvolved": ["entrant-3-charizard", "entrant-4-charizard"],
                 "faints": [
                   {},
@@ -788,6 +791,7 @@
                     "entrant-4-basculegion"
                   ]
                 ],
+                "broughtComplete": [true, true],
                 "megaEvolved": ["entrant-3-charizard", "entrant-4-charizard"],
                 "faints": [
                   { "entrant-3-charizard": 1, "entrant-3-garchomp": 1 },
@@ -825,6 +829,7 @@
                   ],
                   ["entrant-6-sneasler", "entrant-6-incineroar", "entrant-6-delphox"]
                 ],
+                "broughtComplete": [true, false],
                 "megaEvolved": ["entrant-1-raichu", "entrant-6-delphox"],
                 "faints": [
                   {
@@ -854,6 +859,7 @@
                     "entrant-6-delphox"
                   ]
                 ],
+                "broughtComplete": [true, true],
                 "megaEvolved": ["entrant-1-staraptor", "entrant-6-delphox"],
                 "faints": [
                   {
@@ -891,6 +897,7 @@
                     "entrant-5-sinistcha"
                   ]
                 ],
+                "broughtComplete": [false, true],
                 "megaEvolved": ["entrant-2-froslass", null],
                 "faints": [
                   {},
@@ -915,6 +922,7 @@
                     "entrant-5-floetteeternal"
                   ]
                 ],
+                "broughtComplete": [false, true],
                 "megaEvolved": ["entrant-2-froslass", null],
                 "faints": [
                   { "entrant-2-sneasler": 1 },
@@ -959,6 +967,7 @@
                     "entrant-3-whimsicott"
                   ]
                 ],
+                "broughtComplete": [true, true],
                 "megaEvolved": ["entrant-0-raichu", null],
                 "faints": [
                   { "entrant-0-raichu": 1, "entrant-0-staraptor": 1 },
@@ -988,6 +997,7 @@
                     "entrant-3-basculegion"
                   ]
                 ],
+                "broughtComplete": [true, true],
                 "megaEvolved": [null, "entrant-3-charizard"],
                 "faints": [
                   { "entrant-0-staraptor": 1 },
@@ -1030,6 +1040,7 @@
                     "entrant-2-kingambit"
                   ]
                 ],
+                "broughtComplete": [true, true],
                 "megaEvolved": ["entrant-6-delphox", "entrant-2-froslass"],
                 "faints": [
                   { "entrant-6-sneasler": 1, "entrant-6-delphox": 1, "entrant-6-kingambit": 1 },
@@ -1059,6 +1070,7 @@
                     "entrant-2-basculegion"
                   ]
                 ],
+                "broughtComplete": [true, true],
                 "megaEvolved": ["entrant-6-delphox", "entrant-2-froslass"],
                 "faints": [
                   { "entrant-6-sneasler": 1, "entrant-6-incineroar": 1 },
@@ -1098,6 +1110,7 @@
                     "entrant-6-kingambit"
                   ]
                 ],
+                "broughtComplete": [true, true],
                 "megaEvolved": ["entrant-0-staraptor", "entrant-6-delphox"],
                 "faints": [
                   { "entrant-0-staraptor": 1, "entrant-0-kingambit": 1 },
@@ -1127,6 +1140,7 @@
                     "entrant-6-incineroar"
                   ]
                 ],
+                "broughtComplete": [true, true],
                 "megaEvolved": ["entrant-0-raichu", "entrant-6-delphox"],
                 "faints": [
                   {
@@ -1151,6 +1165,7 @@
                   ],
                   ["entrant-6-delphox", "entrant-6-sinistcha", "entrant-6-incineroar"]
                 ],
+                "broughtComplete": [true, false],
                 "megaEvolved": [null, "entrant-6-delphox"],
                 "faints": [
                   {
@@ -1186,6 +1201,7 @@
             ],
             ["entrant-7-swampert", "entrant-7-politoed", "entrant-7-kommoo", "entrant-7-gengar"]
           ],
+          "broughtComplete": [true, true],
           "megaEvolved": ["entrant-0-staraptor", "entrant-7-swampert"],
           "faints": [
             { "entrant-0-farigiraf": 1, "entrant-0-raichu": 1 },
@@ -2122,6 +2138,7 @@
               "entrant-7-vivillontundra"
             ]
           ],
+          "broughtComplete": [true, true],
           "megaEvolved": ["entrant-0-staraptor", "entrant-7-swampert"],
           "faints": [
             { "entrant-0-farigiraf": 1 },
@@ -3213,6 +3230,7 @@
               "entrant-4-basculegion"
             ]
           ],
+          "broughtComplete": [false, true],
           "megaEvolved": ["entrant-3-charizard", "entrant-4-charizard"],
           "faints": [
             {},
@@ -3888,6 +3906,7 @@
               "entrant-4-basculegion"
             ]
           ],
+          "broughtComplete": [true, true],
           "megaEvolved": ["entrant-3-charizard", "entrant-4-charizard"],
           "faints": [
             { "entrant-3-charizard": 1, "entrant-3-garchomp": 1 },
@@ -5054,6 +5073,7 @@
             ],
             ["entrant-6-sneasler", "entrant-6-incineroar", "entrant-6-delphox"]
           ],
+          "broughtComplete": [true, false],
           "megaEvolved": ["entrant-1-raichu", "entrant-6-delphox"],
           "faints": [
             {
@@ -5930,6 +5950,7 @@
               "entrant-6-delphox"
             ]
           ],
+          "broughtComplete": [true, true],
           "megaEvolved": ["entrant-1-staraptor", "entrant-6-delphox"],
           "faints": [
             {
@@ -6933,6 +6954,7 @@
               "entrant-5-sinistcha"
             ]
           ],
+          "broughtComplete": [false, true],
           "megaEvolved": ["entrant-2-froslass", null],
           "faints": [
             {},
@@ -7614,6 +7636,7 @@
               "entrant-5-floetteeternal"
             ]
           ],
+          "broughtComplete": [false, true],
           "megaEvolved": ["entrant-2-froslass", null],
           "faints": [
             { "entrant-2-sneasler": 1 },
@@ -8276,6 +8299,7 @@
               "entrant-3-whimsicott"
             ]
           ],
+          "broughtComplete": [true, true],
           "megaEvolved": ["entrant-0-raichu", null],
           "faints": [
             { "entrant-0-raichu": 1, "entrant-0-staraptor": 1 },
@@ -9048,6 +9072,7 @@
               "entrant-3-basculegion"
             ]
           ],
+          "broughtComplete": [true, true],
           "megaEvolved": [null, "entrant-3-charizard"],
           "faints": [
             { "entrant-0-staraptor": 1 },
@@ -9800,6 +9825,7 @@
               "entrant-2-kingambit"
             ]
           ],
+          "broughtComplete": [true, true],
           "megaEvolved": ["entrant-6-delphox", "entrant-2-froslass"],
           "faints": [
             { "entrant-6-sneasler": 1, "entrant-6-delphox": 1, "entrant-6-kingambit": 1 },
@@ -10738,6 +10764,7 @@
               "entrant-2-basculegion"
             ]
           ],
+          "broughtComplete": [true, true],
           "megaEvolved": ["entrant-6-delphox", "entrant-2-froslass"],
           "faints": [
             { "entrant-6-sneasler": 1, "entrant-6-incineroar": 1 },
@@ -11703,6 +11730,7 @@
               "entrant-6-kingambit"
             ]
           ],
+          "broughtComplete": [true, true],
           "megaEvolved": ["entrant-0-staraptor", "entrant-6-delphox"],
           "faints": [
             { "entrant-0-staraptor": 1, "entrant-0-kingambit": 1 },
@@ -12699,6 +12727,7 @@
               "entrant-6-incineroar"
             ]
           ],
+          "broughtComplete": [true, true],
           "megaEvolved": ["entrant-0-raichu", "entrant-6-delphox"],
           "faints": [
             {
@@ -13661,6 +13690,7 @@
             ],
             ["entrant-6-delphox", "entrant-6-sinistcha", "entrant-6-incineroar"]
           ],
+          "broughtComplete": [true, false],
           "megaEvolved": [null, "entrant-6-delphox"],
           "faints": [
             {

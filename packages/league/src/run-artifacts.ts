@@ -16,6 +16,7 @@ import type {
 import { BattleLog } from "./battlelog.js";
 import { readJsonlObjects } from "./jsonl.js";
 import { SAFE_SEGMENT } from "./path-safety.js";
+import { readCompletedSeriesDecisionRows } from "./recorded-series.js";
 import type { SeriesRecord } from "./records.js";
 import { runStatusSchema } from "./run-status.js";
 import { storedSeriesMetadataSchema } from "./series.js";
@@ -344,13 +345,15 @@ export function buildSeriesGame(
     [0, "p1"],
     [1, "p2"],
   ] as const) {
-    for (const artifact of readRunLines(
-      runsDir,
-      runId,
-      "series",
-      seriesId,
-      `${pid}-decisions.jsonl`,
-    )) {
+    const artifacts =
+      row && seriesFiles.includes("series-attempts.jsonl")
+        ? readCompletedSeriesDecisionRows(
+            path.join(runsDir, runId, "series", seriesId),
+            seriesId,
+            pid,
+          )
+        : readRunLines(runsDir, runId, "series", seriesId, `${pid}-decisions.jsonl`);
+    for (const artifact of artifacts) {
       const parsed = decisionArtifactUnion.safeParse(artifact);
       if (!parsed.success) continue;
       const entry = parsed.data;

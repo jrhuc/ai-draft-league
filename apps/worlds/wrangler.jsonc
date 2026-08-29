@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "aipokemonworlds2026",
+  "name": "pokeaiworlds",
   "compatibility_date": "2026-08-18",
   // Assets-only Worker: no script is deployed, so asset requests are free and
   // unlimited and nothing else is billable. SPA fallback serves index.html for

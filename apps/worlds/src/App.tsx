@@ -1,6 +1,7 @@
-import { Link, Route, Routes } from "react-router-dom";
+import { useEffect } from "react";
+import { Link, Route, Routes, useLocation } from "react-router-dom";
 import { PokeBall } from "@/components/pokeball";
-import { useTitle, useTournament } from "@/lib/context";
+import { useTournament } from "@/lib/context";
 import { formatLabel, modelLabel } from "@/lib/format";
 import { allMatches, entrant } from "@/lib/load";
 import { useReveal } from "@/lib/use-reveal";
@@ -10,7 +11,6 @@ import { NotFoundPage } from "@/routes/not-found";
 
 export function App() {
   const bundle = useTournament();
-  useTitle();
   useReveal();
   const champion = bundle.tournament.championId
     ? entrant(bundle, bundle.tournament.championId)
@@ -22,6 +22,7 @@ export function App() {
     : `Progress · ${played}/${total} matches`;
   return (
     <>
+      <RouteEffects />
       <a className="skip" href="#main">
         Skip to content
       </a>
@@ -53,7 +54,7 @@ export function App() {
           </a>
         </div>
       </header>
-      <main id="main" className="page">
+      <main id="main" className="page" tabIndex={-1}>
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/matches/:seriesId" element={<MatchPage />} />
@@ -89,4 +90,13 @@ export function App() {
       </footer>
     </>
   );
+}
+
+function RouteEffects() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    document.querySelector<HTMLElement>("#main h1")?.focus({ preventScroll: true });
+  }, [pathname]);
+  return null;
 }

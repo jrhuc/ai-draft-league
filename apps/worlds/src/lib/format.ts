@@ -35,11 +35,11 @@ export function modelProvider(spec: string): string {
 export const FRANCHISE_TONES = [
   "#C7420F",
   "#2A75BB",
-  "#1F8F4E",
+  "#187F4B",
   "#C22F53",
   "#7A4BC9",
   "#14837E",
-  "#A57C00",
+  "#8A6700",
   "#5B64D6",
 ];
 

@@ -44,6 +44,6 @@ export default defineConfig({
     options: { typeAware: true, typeCheck: true },
   },
   test: {
-    projects: ["apps/site"],
+    projects: ["apps/site", "apps/worlds"],
   },
 });

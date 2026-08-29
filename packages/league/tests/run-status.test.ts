@@ -31,6 +31,7 @@ test("withRunStatus holds a run lease and writes lifecycle status", async (t) =>
     { state: readStatus(runDir).state, error: readStatus(runDir).error },
     { state: "done", error: null },
   );
+  const originalStart = readStatus(runDir).start_time;
 
   await assert.rejects(
     withRunStatus(runDir, async () => {
@@ -42,6 +43,7 @@ test("withRunStatus holds a run lease and writes lifecycle status", async (t) =>
     { state: readStatus(runDir).state, error: readStatus(runDir).error },
     { state: "failed", error: "provider exploded" },
   );
+  assert.equal(readStatus(runDir).start_time, originalStart);
   assert.equal(process.listeners("SIGINT").length, 0);
 });
 

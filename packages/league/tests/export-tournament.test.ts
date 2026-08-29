@@ -5,6 +5,7 @@ import path from "node:path";
 import { test } from "vite-plus/test";
 
 import { buildTournamentExport } from "../src/export-tournament.js";
+import { publicTournamentBundleSchema } from "../src/public/tournament-protocol.js";
 import { seriesRecordFixture } from "./fixtures/records.js";
 
 test("a completed pool bracket exports its entrants, bracket, and replay evidence", () => {
@@ -121,12 +122,16 @@ test("a completed pool bracket exports its entrants, bracket, and replay evidenc
     assert.deepEqual(final?.match?.score, [0, 2]);
     assert.equal(bundle.replays[seriesId]?.games.length, 2);
     assert.equal(bundle.replays[seriesId]?.games[0]?.winnerId, "entrant-1");
+    assert.deepEqual(bundle.replays[seriesId]?.games[0]?.broughtComplete, [false, false]);
     assert.equal(
       bundle.replays[seriesId]?.games[0]?.raw,
       `|player|p1|${models[0]}|\n|player|p2|${models[1]}|\n|turn|5\n|win|${models[1]}\n`,
     );
     assert.equal(bundle.replays[seriesId]?.games[0]?.decisions[0]?.notebook, "watch the sash");
     assert.equal(bundle.replays[seriesId]?.games[0]?.reflections[0]?.notebook, "carry: lead safe");
+    const invalid = structuredClone(bundle);
+    invalid.replays[seriesId]!.games[0]!.broughtComplete[0] = true;
+    assert.equal(publicTournamentBundleSchema.safeParse(invalid).success, false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

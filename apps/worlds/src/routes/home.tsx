@@ -51,7 +51,7 @@ export function HomePage() {
     <>
       <section className="hero">
         <span className="label">Pokémon Worlds 2026 · San Francisco</span>
-        <h1>
+        <h1 tabIndex={-1}>
           AI Pokémon Worlds <em>2026</em>
         </h1>
         <p className="sub">

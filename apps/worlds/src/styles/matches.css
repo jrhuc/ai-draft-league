@@ -103,6 +103,49 @@
   background: var(--card);
 }
 
+.player-gate {
+  display: grid;
+  place-items: center;
+  min-height: 18rem;
+  padding: 2rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--card);
+}
+
+.player-gate button {
+  display: grid;
+  gap: 0.25rem;
+  min-height: 2.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--ball-dark);
+  border-radius: var(--r);
+  background: var(--ball-dark);
+  color: #fff;
+  font-weight: 600;
+}
+
+.player-gate button:hover {
+  background: var(--t2);
+}
+
+.player-gate button small,
+.player-note {
+  color: #e9e4d9;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.68rem;
+  font-weight: 400;
+}
+
+.player-loaded {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.player-note {
+  color: var(--t4);
+}
+
 /* Below the embed's side-by-side breakpoint the log hides and the battle
    scales with width, so track it: 9/16 of the viewport plus the controls. */
 @media (max-width: 60rem) {

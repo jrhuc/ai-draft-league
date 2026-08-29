@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { z } from "zod";
 import { spriteKey } from "@/lib/format";
 
 type Manifest = { sheet: string; icons: Record<string, number> };
@@ -6,11 +7,19 @@ type Manifest = { sheet: string; icons: Record<string, number> };
 let cached: Manifest | null = null;
 let pending: Promise<Manifest | null> | null = null;
 
+const manifestSchema = z.strictObject({
+  sheet: z.string().regex(/^\/sprites\/[a-z0-9-]+\.png$/u),
+  icons: z.record(z.string(), z.number().int().nonnegative()),
+});
+
 async function fetchManifest(): Promise<Manifest | null> {
   try {
     const response = await fetch("/itemicons.json");
     if (!response.ok) return null;
-    const manifest: Manifest = await response.json();
+    const value: unknown = await response.json();
+    const parsed = manifestSchema.safeParse(value);
+    if (!parsed.success) return null;
+    const manifest: Manifest = parsed.data;
     cached = manifest;
     return manifest;
   } catch {
