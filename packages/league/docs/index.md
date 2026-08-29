@@ -1,6 +1,6 @@
 # League harness
 
-The `league` package is a local harness for running competitive Pokémon seasons in which a language model manages each franchise. You choose the models and league settings. The harness schedules the season, uses a pinned Pokémon Showdown revision for every battle, and records the decisions and results.
+The `league` package is a local harness for running competitive Pokémon seasons in which a language model manages each franchise. You choose the models and league settings. The harness schedules the season, uses a pinned [Pokémon Showdown](https://pokemonshowdown.com/) revision for every battle, and records the decisions and results.
 
 Use the CLI to start, resume, or cancel a run; watch it live through the spectator app dev server. Exported public data goes to the sibling [spectator site](../../../apps/site).
 

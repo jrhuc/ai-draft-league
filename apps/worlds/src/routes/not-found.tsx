@@ -3,9 +3,9 @@ import { Link } from "react-router-dom";
 export function NotFoundPage() {
   return (
     <section className="void">
-      <h1>Nothing here</h1>
+      <h1>Page not found</h1>
       <p>
-        That URL is not a match. <Link to="/">Back to Worlds</Link>.
+        This match does not exist. <Link to="/">Back to the bracket</Link>.
       </p>
     </section>
   );

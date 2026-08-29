@@ -42,9 +42,7 @@ export function ItemIcon({ item }: { item: string }) {
   return (
     <span
       className="item-icon"
-      role="img"
-      aria-label={item}
-      title={item}
+      aria-hidden="true"
       style={{
         backgroundImage: `url(${manifest.sheet})`,
         backgroundPosition: `${-(num % 16) * 24}px ${-Math.floor(num / 16) * 24}px`,

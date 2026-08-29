@@ -1,5 +1,5 @@
 :root {
-  --bg: #f8f4ea;
+  --bg: #f4f5f2;
   --font-sans: "Geist Variable";
   --font-mono: "Geist Mono Variable";
   --card: #fffdf8;
@@ -255,13 +255,24 @@ button {
 }
 
 .release {
-  margin-left: auto;
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
   font-size: 0.72rem;
   color: var(--t3);
   white-space: nowrap;
+}
+
+.repo-link {
+  margin-left: auto;
+  display: inline-grid;
+  place-items: center;
+  color: var(--t3);
+  flex: none;
+}
+
+.repo-link:hover {
+  color: var(--t1);
 }
 
 .dot {
@@ -662,6 +673,13 @@ td.team {
 
 .champion h2 {
   font-size: 1.4rem;
+}
+
+@media (max-width: 40rem) {
+  .champion {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
 }
 
 /* ---- match list ---- */

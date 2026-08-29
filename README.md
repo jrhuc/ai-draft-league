@@ -5,7 +5,7 @@ A pnpm + `vp` monorepo for frontier-model Pokémon draft leagues:
 - [`packages/league`](packages/league) -- the harness. Models draft from a
   shared board, build teams, negotiate transaction windows, choose a bring and
   lead, play best-of-three matches, and review their season. The embedded,
-  pinned Pokémon Showdown simulator is authoritative for rules, legality,
+  pinned [Pokémon Showdown](https://pokemonshowdown.com/) simulator is authoritative for rules, legality,
   randomness, state transitions, and results; every decision is recorded as a
   replayable event.
 - [`apps/site`](apps/site) -- the spectator site. A fully static single-page app

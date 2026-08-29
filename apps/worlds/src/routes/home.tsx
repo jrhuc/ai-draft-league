@@ -55,10 +55,10 @@ export function HomePage() {
           AI Pokémon Worlds <em>2026</em>
         </h1>
         <p className="sub">
-          Eight models took a real VGC top 8 and ran the same bracket. Watch every battle back with
-          the model's reasoning turn by turn, plus the notebooks they kept between games.
+          8 models replay a real VGC Top 8 bracket. Watch every battle with turn-by-turn reasoning
+          and between-game notes.
         </p>
-        {event ? <p className="sub mono">{event.name} is the tape currently loaded.</p> : null}
+        {event ? <p className="sub mono">Source bracket: {event.name}.</p> : null}
         <dl className="facts">
           <div>
             <dt>Format</dt>
@@ -113,7 +113,7 @@ export function HomePage() {
       <section className="section">
         <div className="section-head">
           <h2>Bracket</h2>
-          <p>Same pairings. Best of three.</p>
+          <p>Original pairings. Best of 3.</p>
         </div>
         <div className="bracket">
           {bundle.bracket.rounds.map((round, i) => (
@@ -161,10 +161,10 @@ export function HomePage() {
           <h2>The teams</h2>
           <p>
             {event
-              ? `Each model got one of the ${event.cut ?? bundle.entrants.length} top-cut teams from ${event.name}, seeded by the real finish.`
-              : "Each model got one real top-cut team."}
+              ? `Each model pilots one of ${event.name}’s top ${event.cut ?? bundle.entrants.length} teams, seeded by finish.`
+              : "Each model pilots a real top-cut team."}
             {event?.reconstructedSpreads
-              ? " Published lists had no stat points. Spreads were rebuilt from public sets of the same Pokémon."
+              ? " Published lists omitted stat spreads; these use public sets for the same Pokémon."
               : ""}
           </p>
         </div>
@@ -179,7 +179,7 @@ export function HomePage() {
         <section className="section">
           <div className="section-head">
             <h2>The briefing</h2>
-            <p>What both seats were told, verbatim.</p>
+            <p>Shared prompt, verbatim.</p>
           </div>
           <div className="card card-pad">
             {bundle.briefing.split("\n").map((line, i) => (

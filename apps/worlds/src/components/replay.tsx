@@ -90,7 +90,7 @@ function DecisionRow({
       </span>
       {decision.rationale ? (
         <details>
-          <summary aria-label={rationaleLabel}>Why</summary>
+          <summary aria-label={rationaleLabel}>Reasoning</summary>
           <blockquote>{decision.rationale}</blockquote>
         </details>
       ) : null}

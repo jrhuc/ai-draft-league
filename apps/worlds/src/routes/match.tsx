@@ -77,9 +77,10 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
 
       <section className="section">
         <div className="section-head">
-          <h2>The tape</h2>
+          <h2>Replay</h2>
           <p>
-            Animated playback by Pokémon Showdown. The reasoning is below. AUTO is a harness pick.
+            Replay via <a href="https://pokemonshowdown.com/">Pokémon Showdown</a>. Model reasoning
+            follows each turn. AUTO marks a forced choice.
           </p>
         </div>
         <ReplayViewer
@@ -93,9 +94,9 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
         <div className="section-head">
           <h2>Team sheets</h2>
           <p>
-            The exact six each player registered at the event. The model brings four to every game.
+            The 6 Pokémon each player registered; each model brings 4 per game.
             {bundle.event?.reconstructedSpreads
-              ? " Stat spreads were rebuilt from public sets of the same Pokémon, not the players’ own."
+              ? " Stat spreads use public sets for the same Pokémon, not the players’ originals."
               : ""}
           </p>
         </div>
@@ -119,7 +120,7 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
         <section className="section">
           <div className="section-head">
             <h2>Game by game</h2>
-            <p>The four each side brought, lead pair first.</p>
+            <p>The 4 each model brought, leads first.</p>
           </div>
           <div className="two-col">
             {([0, 1] as const).map((side) => (

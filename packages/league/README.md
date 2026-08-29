@@ -6,7 +6,7 @@ negotiate transaction windows, choose a bring and lead, play best-of-three
 matches, and review their season — in original draft leagues or in re-runs of
 real tournament brackets.
 
-The embedded, pinned Pokémon Showdown simulator is authoritative for rules,
+The embedded, pinned [Pokémon Showdown](https://pokemonshowdown.com/) simulator is authoritative for rules,
 legality, randomness, state transitions, and results. Every decision is
 recorded as a replayable event: a season, matchday, or single battle replays
 exactly, and any recorded decision can be forked into a counterfactual
