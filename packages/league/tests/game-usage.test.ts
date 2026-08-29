@@ -6,7 +6,7 @@ import path from "node:path";
 import { test } from "vite-plus/test";
 
 import { loadBoard } from "../src/draft.js";
-import { seriesGameSummaries } from "../src/game-usage.js";
+import { seriesGameSummaries, teamPreviewPicks } from "../src/game-usage.js";
 import type { TeamBuildView } from "../src/views.js";
 
 const BOARD = loadBoard("regmb-202607");
@@ -103,6 +103,41 @@ function writeSeries(previewActions: { p1?: string; p2?: string }): string {
 
 const P1_REGISTERED = ["raichu", "primarina", "tsareena", "diggersby"];
 const P2_REGISTERED = ["pelipper", "heliolisk", "hydreigon", "klefki"];
+
+test("team preview evidence requires an accepted unique four-slot action", () => {
+  const picks = teamPreviewPicks(
+    [
+      [
+        {
+          kind: "decision",
+          phase: "team_preview",
+          outcome: "accepted",
+          game_number: 1,
+          action: "team 3142",
+        },
+        {
+          kind: "decision",
+          phase: "team_preview",
+          outcome: "rejected",
+          game_number: 1,
+          action: "team 1234",
+        },
+      ],
+      [
+        {
+          kind: "decision",
+          phase: "team_preview",
+          outcome: "accepted",
+          game_number: 1,
+          action: "team 1123",
+        },
+      ],
+    ],
+    1,
+  );
+
+  assert.deepEqual(picks, [["team 3142", undefined]]);
+});
 
 test("brought comes from the recorded team-preview pick, fielded from the log", () => {
   const seriesDir = writeSeries({ p1: "team 3142", p2: "team 2143" });

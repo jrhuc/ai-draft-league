@@ -10,12 +10,9 @@ import type { Match } from "@/lib/tournament";
 import { NotFoundPage } from "@/routes/not-found";
 
 function broughtGames(match: Match, side: 0 | 1, setId: string) {
-  return {
-    games: match.games
-      .filter((game) => game.brought[side].includes(setId))
-      .map((game) => game.number),
-    complete: match.games.every((game) => game.broughtComplete[side]),
-  };
+  return match.games
+    .filter((game) => game.brought[side].includes(setId))
+    .map((game) => game.number);
 }
 
 export function MatchPage() {
@@ -108,8 +105,8 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
               <div key={entry.id} className="build" style={entrantStyle(bundle, entry.id)}>
                 <div className="grid grid-2">
                   {entry.team.sets.map((set) => {
-                    const usage = broughtGames(match, side, set.id);
-                    return <SetCard key={set.id} set={set} {...usage} />;
+                    const games = broughtGames(match, side, set.id);
+                    return <SetCard key={set.id} set={set} games={games} />;
                   })}
                 </div>
               </div>
@@ -118,56 +115,45 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
         </div>
       </section>
 
-      {match.games.some((game) => game.brought[0].length || game.brought[1].length) ? (
-        <section className="section">
-          <div className="section-head">
-            <h2>Game by game</h2>
-            <p>Confirmed selections, leads first. Unrevealed slots are labeled.</p>
-          </div>
-          <div className="two-col">
-            {([0, 1] as const).map((side) => (
-              <div
-                key={side}
-                className="card card-pad"
-                style={entrantStyle(bundle, match.entrants[side])}
-              >
-                <span className="team-tag" style={entrantStyle(bundle, match.entrants[side])}>
-                  <Mark spec={entrant(bundle, match.entrants[side]).model} tone />
-                  {modelLabel(entrant(bundle, match.entrants[side]).model)}
-                </span>
-                <ul className="game-usage">
-                  {match.games.map((game) => (
-                    <li key={game.number}>
-                      <span className="label">
-                        G{game.number} ·{" "}
-                        {game.winnerId === null
-                          ? "no winner"
-                          : game.winnerId === match.entrants[side]
-                            ? "won"
-                            : "lost"}{" "}
-                        · {game.turns}t
-                      </span>
-                      <span>
-                        {game.brought[side].length
-                          ? game.brought[side].map((mon) => monName(bundle, mon)).join(", ")
-                          : "Nothing recorded"}
-                      </span>
-                      {!game.broughtComplete[side] ? (
-                        <span className="chip chip-warn">
-                          {4 - game.brought[side].length} unrevealed
-                        </span>
-                      ) : null}
-                      {game.megaEvolved[side] ? (
-                        <span className="chip">{monName(bundle, game.megaEvolved[side])}</span>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
+      <section className="section">
+        <div className="section-head">
+          <h2>Game by game</h2>
+          <p>The 4 each model brought, leads first.</p>
+        </div>
+        <div className="two-col">
+          {([0, 1] as const).map((side) => (
+            <div
+              key={side}
+              className="card card-pad"
+              style={entrantStyle(bundle, match.entrants[side])}
+            >
+              <span className="team-tag" style={entrantStyle(bundle, match.entrants[side])}>
+                <Mark spec={entrant(bundle, match.entrants[side]).model} tone />
+                {modelLabel(entrant(bundle, match.entrants[side]).model)}
+              </span>
+              <ul className="game-usage">
+                {match.games.map((game) => (
+                  <li key={game.number}>
+                    <span className="label">
+                      G{game.number} ·{" "}
+                      {game.winnerId === null
+                        ? "no winner"
+                        : game.winnerId === match.entrants[side]
+                          ? "won"
+                          : "lost"}{" "}
+                      · {game.turns}t
+                    </span>
+                    <span>{game.brought[side].map((mon) => monName(bundle, mon)).join(", ")}</span>
+                    {game.megaEvolved[side] ? (
+                      <span className="chip">{monName(bundle, game.megaEvolved[side])}</span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </section>
     </>
   );
 }

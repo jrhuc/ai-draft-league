@@ -68,10 +68,8 @@ const gameSummarySchema = z.strictObject({
   number: z.number().int().positive(),
   winnerId: entrantRef.nullable(),
   turns: z.number().int().nonnegative(),
-  /** The confirmed picks for each side, lead pair first, as set ids. */
-  brought: z.tuple([z.array(id), z.array(id)]),
-  /** Whether the record confirms all four picks for each side. */
-  broughtComplete: z.tuple([z.boolean(), z.boolean()]),
+  /** The four picks for each side, lead pair first, as set ids. */
+  brought: z.tuple([z.array(id).length(4), z.array(id).length(4)]),
   megaEvolved: z.tuple([z.string().nullable(), z.string().nullable()]),
   faints: z.tuple([
     z.record(z.string(), z.number().int().nonnegative()),
@@ -256,18 +254,11 @@ export const publicTournamentBundleSchema = z
           for (const side of [0, 1] as const) {
             const knownSets = setIds.get(match.entrants[side]) ?? new Set<string>();
             const brought = game.brought[side];
-            if (brought.length > 4 || new Set(brought).size !== brought.length) {
+            if (new Set(brought).size !== brought.length) {
               context.addIssue({
                 code: "custom",
-                message: `confirmed selections must contain at most 4 unique sets`,
+                message: `team selections must contain 4 unique sets`,
                 path: [...gamePath, "brought", side],
-              });
-            }
-            if (game.broughtComplete[side] !== (brought.length === 4)) {
-              context.addIssue({
-                code: "custom",
-                message: `selection completeness does not match the confirmed set count`,
-                path: [...gamePath, "broughtComplete", side],
               });
             }
             for (const [setIndex, setId] of brought.entries()) {

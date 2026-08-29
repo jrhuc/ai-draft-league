@@ -35,7 +35,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-test("a failed bundle load can retry and labels unrevealed selections", async () => {
+test("a failed bundle load can retry and show team selections", async () => {
   const fetchBundle = vi
     .fn()
     .mockRejectedValueOnce(new Error("offline"))
@@ -46,10 +46,10 @@ test("a failed bundle load can retry and labels unrevealed selections", async ()
 
   await until(() => document.body.textContent?.includes("Could not load the tournament") ?? false);
   document.querySelector<HTMLButtonElement>(".retry")?.click();
-  await until(() => document.body.textContent?.includes("1 unrevealed") ?? false);
+  await until(() => document.body.textContent?.includes("The 4 each model brought") ?? false);
 
   expect(fetchBundle).toHaveBeenCalledTimes(2);
-  expect(document.body.textContent).toContain("Confirmed selections");
+  expect(document.body.textContent).toContain("Game by game");
   expect(document.querySelector<HTMLAnchorElement>(".repo-link")?.href).toBe(
     "https://github.com/jrhuc/ai-draft-league/tree/main/apps/worlds",
   );

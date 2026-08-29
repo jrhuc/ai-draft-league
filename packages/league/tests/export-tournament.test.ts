@@ -8,6 +8,30 @@ import { buildTournamentExport } from "../src/export-tournament.js";
 import { publicTournamentBundleSchema } from "../src/public/tournament-protocol.js";
 import { seriesRecordFixture } from "./fixtures/records.js";
 
+function writeTeamPreviewRows(seriesDir: string, gameCount: number): void {
+  for (const pid of ["p1", "p2"] as const) {
+    const rows = Array.from({ length: gameCount }, (_, index) => ({
+      kind: "decision",
+      game_number: index + 1,
+      turn: 0,
+      phase: "team_preview",
+      action: "team 1234",
+      selection: [],
+      rationale: "",
+      outcome: "accepted",
+      submission_id: `${pid}-preview-${index + 1}`,
+      automatic: false,
+      fallback: false,
+      latency_ms: 100,
+      total_tokens: 100,
+    }));
+    fs.appendFileSync(
+      path.join(seriesDir, `${pid}-decisions.jsonl`),
+      `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`,
+    );
+  }
+}
+
 test("a completed pool bracket exports its entrants, bracket, and replay evidence", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-export-tournament-"));
   const runsDir = path.join(root, "runs");
@@ -98,6 +122,7 @@ test("a completed pool bracket exports its entrants, bracket, and replay evidenc
       reasoning_tokens: 300,
     })}\n`,
   );
+  writeTeamPreviewRows(seriesDir, 2);
 
   try {
     const bundle = buildTournamentExport({
@@ -122,15 +147,20 @@ test("a completed pool bracket exports its entrants, bracket, and replay evidenc
     assert.deepEqual(final?.match?.score, [0, 2]);
     assert.equal(bundle.replays[seriesId]?.games.length, 2);
     assert.equal(bundle.replays[seriesId]?.games[0]?.winnerId, "entrant-1");
-    assert.deepEqual(bundle.replays[seriesId]?.games[0]?.broughtComplete, [false, false]);
+    assert.equal(bundle.replays[seriesId]?.games[0]?.brought[0].length, 4);
+    assert.equal(bundle.replays[seriesId]?.games[0]?.brought[1].length, 4);
     assert.equal(
       bundle.replays[seriesId]?.games[0]?.raw,
       `|player|p1|${models[0]}|\n|player|p2|${models[1]}|\n|turn|5\n|win|${models[1]}\n`,
     );
-    assert.equal(bundle.replays[seriesId]?.games[0]?.decisions[0]?.notebook, "watch the sash");
+    assert.equal(
+      bundle.replays[seriesId]?.games[0]?.decisions.find((decision) => decision.phase === "turn")
+        ?.notebook,
+      "watch the sash",
+    );
     assert.equal(bundle.replays[seriesId]?.games[0]?.reflections[0]?.notebook, "carry: lead safe");
     const invalid = structuredClone(bundle);
-    invalid.replays[seriesId]!.games[0]!.broughtComplete[0] = true;
+    invalid.replays[seriesId]!.games[0]!.brought[0].pop();
     assert.equal(publicTournamentBundleSchema.safeParse(invalid).success, false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
@@ -194,6 +224,7 @@ test("a half-played bracket keeps later rounds open and reports no champion", ()
       `|player|p1|${models[0]}|\n|player|p2|${models[3]}|\n|turn|5\n|win|${models[0]}\n`,
     );
   }
+  writeTeamPreviewRows(seriesDir, 2);
 
   try {
     const bundle = buildTournamentExport({ recordsPath, runsDir, runId, title: "Test Cup" });

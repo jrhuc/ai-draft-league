@@ -12,8 +12,7 @@ test("the published tournament bundle has coherent selection evidence", () => {
       expect(replay?.games).toHaveLength(slot.match.games.length);
       for (const game of slot.match.games) {
         for (const side of [0, 1] as const) {
-          expect(game.brought[side].length).toBeLessThanOrEqual(4);
-          expect(game.broughtComplete[side]).toBe(game.brought[side].length === 4);
+          expect(game.brought[side]).toHaveLength(4);
         }
       }
     }

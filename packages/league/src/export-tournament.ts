@@ -227,10 +227,20 @@ export function buildTournamentExport(
         `series ${row.series_id} has ${evidence.logs.length} completed logs for ${row.games.length} recorded games`,
       );
     }
+    const teamPicks = teamPreviewPicks(evidence.decisionRows, row.games.length);
+    for (const [gameIndex, picks] of teamPicks.entries()) {
+      for (const side of [0, 1] as const) {
+        if (!picks[side]) {
+          throw new Error(
+            `series ${row.series_id} game ${gameIndex + 1} has no accepted team-preview pick for p${side + 1}`,
+          );
+        }
+      }
+    }
     const summaries = summarizeGameLogs(
       evidence.logs,
       [entrants[sides[0]]!.mons, entrants[sides[1]]!.mons],
-      teamPreviewPicks(evidence.decisionRows, row.games.length),
+      teamPicks,
     );
     const slot: SeriesSlot = {
       seriesId: row.series_id,
@@ -244,16 +254,11 @@ export function buildTournamentExport(
       const summary = summaries[index];
       if (!summary)
         throw new Error(`series ${row.series_id} game ${game.number} has no verified summary`);
-      const broughtComplete: [boolean, boolean] = [
-        summary.brought[0].length === 4,
-        summary.brought[1].length === 4,
-      ];
       return {
         number: game.number,
         winnerId: game.winner_side === null ? null : refs[game.winner_side === "p1" ? 0 : 1],
         turns: game.turns,
         brought: summary.brought,
-        broughtComplete,
         megaEvolved: summary.megaEvolved,
         faints: summary.faints,
       };

@@ -53,10 +53,17 @@ function nickname(ident: string): string {
   return ident.replace(/^p[12][a-z]?:\s*/u, "").toLowerCase();
 }
 
-function pickedTeam(action: string | undefined, registered: readonly DraftMon[]): string[] | null {
+function pickedSlots(action: string | undefined): number[] | null {
   if (!action) return null;
-  const slots = action.replace(/\D+/gu, "").split("").map(Number);
-  if (!slots.length) return null;
+  const match = /^team ([1-6])([1-6])([1-6])([1-6])$/u.exec(action);
+  if (!match) return null;
+  const slots = match.slice(1).map(Number);
+  return new Set(slots).size === slots.length ? slots : null;
+}
+
+function pickedTeam(action: string | undefined, registered: readonly DraftMon[]): string[] | null {
+  const slots = pickedSlots(action);
+  if (!slots) return null;
   const ids = slots.map((slot) => registered[slot - 1]?.id);
   const picked = ids.filter((id): id is string => id !== undefined);
   if (picked.length !== slots.length || new Set(picked).size !== picked.length) return null;
@@ -187,7 +194,12 @@ export function teamPreviewPicks(
   for (const side of [0, 1] as const) {
     for (const row of rowsBySide[side]) {
       const preview = acceptedTeamPreviewRow.safeParse(row);
-      if (!preview.success || preview.data.game_number > gameCount) continue;
+      if (
+        !preview.success ||
+        preview.data.game_number > gameCount ||
+        !pickedSlots(preview.data.action)
+      )
+        continue;
       picks[preview.data.game_number - 1]![side] = preview.data.action;
     }
   }
