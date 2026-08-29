@@ -5,9 +5,12 @@ import { z } from "zod";
 
 import type { AgentContextQuery } from "./agent-context.js";
 import {
+  CLOSED_SERIES_REFLECTION_SYSTEM,
   DRAFT_SERIES_REFLECTION_SYSTEM,
   REFLECTION_SYSTEM,
   SERIES_REFLECTION_SYSTEM,
+  TOURNAMENT_REFLECTION_SYSTEM,
+  TOURNAMENT_RETROSPECTIVE_SYSTEM,
 } from "./prompts.js";
 import { DEX_TOOLS } from "./reference.js";
 import type {
@@ -21,6 +24,15 @@ import type {
 import { isRecord, text } from "./value.js";
 
 type SeatPhase = "decision" | "reflection";
+
+const REFLECTION_SYSTEMS = [
+  REFLECTION_SYSTEM,
+  SERIES_REFLECTION_SYSTEM,
+  DRAFT_SERIES_REFLECTION_SYSTEM,
+  CLOSED_SERIES_REFLECTION_SYSTEM,
+  TOURNAMENT_REFLECTION_SYSTEM,
+  TOURNAMENT_RETROSPECTIVE_SYSTEM,
+];
 
 interface SeatExchangeView extends JsonObject {
   id: number;
@@ -104,12 +116,12 @@ export class SeatBridge {
     const { promise, resolve, reject } = Promise.withResolvers<Completion>();
     this.exchange = {
       id: ++this.sequence,
-      phase:
-        system === REFLECTION_SYSTEM ||
-        system === SERIES_REFLECTION_SYSTEM ||
-        system === DRAFT_SERIES_REFLECTION_SYSTEM
-          ? "reflection"
-          : "decision",
+      phase: REFLECTION_SYSTEMS.some(
+        (reflectionSystem) =>
+          system === reflectionSystem || system.startsWith(`${reflectionSystem}\n`),
+      )
+        ? "reflection"
+        : "decision",
       system,
       messages,
       resolve,

@@ -1,7 +1,16 @@
 import type { GameEnd } from "./battle-agent.js";
-import { extractReflection } from "./llm-engine-support.js";
-import { classifyProviderFailure } from "./providers.js";
-import type { Completion, Pid, ProviderMessage } from "./types.js";
+import {
+  extractReflection,
+  extractTournamentRetrospective,
+  type Reflection,
+} from "./llm-engine-support.js";
+import {
+  assistantToolMessage,
+  classifyProviderFailure,
+  toolResultMessage,
+  uniqueToolCalls,
+} from "./providers.js";
+import type { Completion, JsonObject, Pid, ProviderMessage, ToolDefinition } from "./types.js";
 import { count } from "./value.js";
 
 export function reflectionPrompt(input: {
@@ -17,7 +26,10 @@ export function reflectionPrompt(input: {
   outcome: GameEnd["outcome"];
   finalState: string;
   timeline: string[];
+  gameLog: string[];
   notebook: string;
+  tournamentStatus?: GameEnd["tournamentStatus"];
+  retrospective: boolean;
 }): string {
   return [
     `Series ${input.seriesId ?? "?"}; game ${input.gameNumber}; result: ${input.result}; series score ${input.scoreText}.`,
@@ -26,6 +38,15 @@ export function reflectionPrompt(input: {
           `The series is over: you ${input.seriesResult} it ${input.score.mine}-${input.score.theirs} (you are ${input.pid}).`,
         ]
       : []),
+    ...(input.tournamentStatus === "advancing"
+      ? ["You won this single-elimination match and advance to the next round with the same team."]
+      : input.tournamentStatus === "champion"
+        ? ["You won the tournament final and are the champion; your tournament run is complete."]
+        : input.tournamentStatus === "eliminated"
+          ? [
+              "You lost this single-elimination match and are eliminated; your tournament run is complete.",
+            ]
+          : []),
     ...(input.draftRoster ? [`Your full draft roster this season: ${input.draftRoster}`] : []),
     `Turns: ${input.outcome.turns === undefined ? "?" : count(input.outcome.turns)}. Decision errors: ${count(input.outcome.errors)}. Model-choice defaults: ${count(input.outcome.model_choice_fallbacks)}. Simulator substitutions: ${count(input.outcome.simulator_substitutions)}. Timer autodefaults: ${count(input.outcome.timer_autodefaults)}.`,
     "",
@@ -35,18 +56,28 @@ export function reflectionPrompt(input: {
     "Compact private battle timeline:",
     ...input.timeline,
     "",
-    `Current private notebook: ${input.notebook || "(empty)"}`,
+    "Complete private Showdown battle log (your POV; no model reasoning):",
+    ...(input.gameLog.length ? input.gameLog : ["(unavailable)"]),
     "",
-    "Return the required concise game review and updated notebook.",
+    ...(input.retrospective
+      ? []
+      : [`Current private notebook: ${input.notebook || "(empty)"}`, ""]),
+    input.retrospective
+      ? "Return the required concise tournament retrospective. Do not return or update the private notebook."
+      : "Return the required concise game review and updated notebook.",
   ].join("\n");
 }
 
 export async function requestReflection(input: {
   prompt: string;
   currentNotebook: string;
+  fallbackNotebook: string;
   result: string;
   spec: string;
-  complete: (messages: ProviderMessage[]) => Promise<Completion>;
+  tools: ToolDefinition[];
+  complete: (messages: ProviderMessage[], finalRound: boolean) => Promise<Completion>;
+  lookupTool: (name: string, args: JsonObject) => string;
+  retrospective: boolean;
 }) {
   const messages: ProviderMessage[] = [{ role: "user", content: input.prompt }];
   const usage: Record<string, number> = {};
@@ -55,21 +86,55 @@ export async function requestReflection(input: {
   let error: string | undefined;
   let failureSummary: string | undefined;
   let failureKind: string | undefined;
+  let toolRounds = 0;
+  const toolCalls: Array<{ name: string; arguments: JsonObject; result: string }> = [];
+  const offered = new Set(input.tools.map((tool) => tool.name));
   try {
     for (let attempt = 0; attempt < 2 && !parsed; attempt += 1) {
-      const completion = await input.complete(messages);
-      for (const [key, value] of Object.entries(completion.usage)) {
-        usage[key] = (usage[key] ?? 0) + (key === "cost" ? value : Math.trunc(value));
+      let completion: Completion | undefined;
+      for (let round = 0; round <= 2; round += 1) {
+        const finalRound = round === 2;
+        completion = await input.complete(messages, finalRound);
+        for (const [key, value] of Object.entries(completion.usage)) {
+          usage[key] = (usage[key] ?? 0) + (key === "cost" ? value : Math.trunc(value));
+        }
+        if (!finalRound && completion.toolCalls.length) {
+          toolRounds += 1;
+          messages.push(assistantToolMessage(completion));
+          const calls = uniqueToolCalls(completion.toolCalls);
+          for (const [index, call] of calls.entries()) {
+            let result: string;
+            try {
+              result =
+                index >= 8
+                  ? "Not executed: this review round is limited to 8 tool calls."
+                  : offered.has(call.name)
+                    ? input.lookupTool(call.name, call.arguments)
+                    : `Not executed: tool ${JSON.stringify(call.name)} is not available during review.`;
+            } catch (caught) {
+              result = `Tool error: ${caught instanceof Error ? caught.message : String(caught)}`;
+            }
+            toolCalls.push({ name: call.name, arguments: call.arguments, result });
+            messages.push(toolResultMessage(call.id, result));
+          }
+          continue;
+        }
+        break;
       }
+      if (!completion) throw new Error("reflection completion unavailable");
       rawResponse = completion.text;
       if (!rawResponse.trim() && completion.reasoning) {
         try {
-          extractReflection(completion.reasoning);
+          if (input.retrospective)
+            extractTournamentRetrospective(completion.reasoning, input.currentNotebook);
+          else extractReflection(completion.reasoning);
           rawResponse = completion.reasoning;
         } catch {}
       }
       try {
-        parsed = extractReflection(rawResponse);
+        parsed = input.retrospective
+          ? extractTournamentRetrospective(rawResponse, input.currentNotebook)
+          : extractReflection(rawResponse);
         error = undefined;
       } catch (caught) {
         error = caught instanceof Error ? caught.message : String(caught);
@@ -92,12 +157,29 @@ export async function requestReflection(input: {
     failureKind = failure.kind;
   }
   const fallback = !parsed;
+  const fallbackReason = `Game ${input.result}; model reflection unavailable (${failureSummary ?? error ?? "unparseable review"}).`;
   const review =
     parsed ??
-    ({
-      summary: `Game ${input.result}; model reflection unavailable (${failureSummary ?? error ?? "unparseable review"}).`,
-      adjustment: "Retain the existing series plan and reassess from the next team preview.",
-      notebook: input.currentNotebook,
-    } satisfies { summary: string; adjustment: string; notebook: string });
-  return { usage, rawResponse, error, failureSummary, failureKind, fallback, review };
+    (input.retrospective
+      ? ({
+          summary: fallbackReason,
+          adjustment: "",
+          notebook: input.fallbackNotebook,
+        } satisfies Reflection)
+      : ({
+          summary: fallbackReason,
+          adjustment: "No model-authored adjustment was recorded.",
+          notebook: input.fallbackNotebook,
+        } satisfies Reflection));
+  return {
+    usage,
+    rawResponse,
+    error,
+    failureSummary,
+    failureKind,
+    fallback,
+    review,
+    toolRounds,
+    toolCalls,
+  };
 }

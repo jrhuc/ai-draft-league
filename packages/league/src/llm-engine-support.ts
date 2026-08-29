@@ -25,6 +25,11 @@ export interface Reflection {
   summary: string;
   adjustment: string;
   notebook: string;
+  retrospective?: {
+    didWell: string;
+    didPoorly: string;
+    wouldChange: string;
+  };
 }
 
 export interface ToolTrace extends JsonObject {
@@ -75,6 +80,12 @@ const reflectionSchema = z.object({
   summary: z.string(),
   adjustment: z.string(),
   notebook: z.string(),
+});
+const tournamentRetrospectiveSchema = z.object({
+  summary: z.string(),
+  did_well: z.string(),
+  did_poorly: z.string(),
+  would_change: z.string(),
 });
 const suppliedDecisionEvidenceSchema = z.object({ rationale: z.string(), notebook: z.string() });
 
@@ -163,6 +174,11 @@ export function decisionTools(sheets: SheetPolicy): ToolDefinition[] {
     }),
     ACTION_ORDER_TOOL,
   ];
+}
+
+export function reflectionTools(): ToolDefinition[] {
+  const allowed = new Set(["lookup_species", "lookup_move", "lookup_item", "lookup_ability"]);
+  return DEX_TOOLS.filter((tool) => allowed.has(tool.name));
 }
 
 export function totalTokens(usage: Record<string, number> | undefined): number {
@@ -319,6 +335,31 @@ export function extractReflection(response: string): Reflection {
     summary: clip(parsed.data.summary, DECISION_RATIONALE_LIMIT),
     adjustment: clip(parsed.data.adjustment, DECISION_RATIONALE_LIMIT),
     notebook: clip(parsed.data.notebook, DECISION_NOTE_LIMIT),
+  };
+}
+
+export function extractTournamentRetrospective(
+  response: string,
+  currentNotebook: string,
+): Reflection {
+  const object = jsonObjects(response)
+    .filter((value) => "summary" in value || "did_well" in value)
+    .at(-1);
+  if (!object) throw new Error("no JSON tournament retrospective found");
+  const parsed = tournamentRetrospectiveSchema.safeParse(object);
+  if (!parsed.success)
+    throw new Error(
+      "retrospective must contain string summary, did_well, did_poorly, and would_change fields",
+    );
+  return {
+    summary: clip(parsed.data.summary, DECISION_RATIONALE_LIMIT),
+    adjustment: "",
+    notebook: currentNotebook,
+    retrospective: {
+      didWell: clip(parsed.data.did_well, DECISION_RATIONALE_LIMIT),
+      didPoorly: clip(parsed.data.did_poorly, DECISION_RATIONALE_LIMIT),
+      wouldChange: clip(parsed.data.would_change, DECISION_RATIONALE_LIMIT),
+    },
   };
 }
 

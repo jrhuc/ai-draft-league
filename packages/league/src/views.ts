@@ -368,10 +368,15 @@ export interface LeagueGameDecisionView {
 
 export interface LeagueGameReflectionView {
   side: 0 | 1;
-  result: "won" | "lost";
+  result: "won" | "lost" | "tied";
   summary: string;
   adjustment: string;
   notebook: string;
+  retrospective?: {
+    didWell: string;
+    didPoorly: string;
+    wouldChange: string;
+  };
   fallback: boolean;
   seriesOver: boolean;
 }

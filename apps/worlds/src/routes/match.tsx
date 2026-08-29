@@ -66,9 +66,7 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
   return (
     <>
       <section className="hero match-hero">
-        <h1 className="label" tabIndex={-1}>
-          {label}
-        </h1>
+        <h1 className="label">{label}</h1>
         <Side id={a} />
         <div className="big-score">
           {`${match.score[0]}–${match.score[1]}`}

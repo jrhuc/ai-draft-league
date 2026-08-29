@@ -9,9 +9,15 @@ import type { JsonObject } from "../src/types.js";
 
 export function fakeEngines(): Bo3Context["engines"] {
   const engine = () => {
-    const fake: Pick<Bo3Context["engines"]["p1"], "beginGame" | "endGame" | "decisionStats"> = {
+    const fake: Pick<
+      Bo3Context["engines"]["p1"],
+      "beginGame" | "endGame" | "decisionStats" | "coachingNote"
+    > = {
       beginGame() {},
       endGame() {},
+      coachingNote() {
+        return "";
+      },
       decisionStats() {
         return { fallbacks: 0 };
       },
@@ -55,6 +61,7 @@ export interface CompletionSummaryFixture {
   simulator_substitutions?: { p1: number; p2: number };
   timer_autodefaults?: { p1: number; p2: number };
   chance_events?: ReturnType<typeof chanceEventCounts>;
+  coach_notes?: { p1: string; p2: string };
 }
 
 export function writeGameCompletionMarkerFixture(
@@ -73,12 +80,13 @@ export function writeGameCompletionMarkerFixture(
     path.join(seriesDir, `game-${gameNumber}.complete.json`),
     `${JSON.stringify({
       kind: "game_complete",
-      schema_version: 1,
+      schema_version: 2,
       series_id: seriesId,
       game_number: gameNumber,
       attempt_id: attemptId,
       seed,
       log_sha256: createHash("sha256").update(logBytes).digest("hex"),
+      coach_notes: result.coach_notes ?? { p1: "", p2: "" },
       summary: {
         winner: result.winner,
         winner_side: result.winner_side,

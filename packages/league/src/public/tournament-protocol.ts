@@ -45,11 +45,14 @@ const decisionSchema = z.strictObject({
 });
 const reflectionSchema = z.strictObject({
   entrantId: entrantRef,
-  result: z.enum(["won", "lost"]),
+  result: z.enum(["won", "lost", "tied"]),
   summary: z.string(),
   adjustment: z.string(),
   /** The scratchpad as it stood after the review — what a winner carries forward. */
   notebook: z.string(),
+  retrospective: z
+    .strictObject({ didWell: z.string(), didPoorly: z.string(), wouldChange: z.string() })
+    .optional(),
   fallback: z.boolean(),
 });
 const setSchema = z.strictObject({
@@ -111,7 +114,7 @@ export const publicTournamentBundleSchema = z
         reconstructedSpreads: z.boolean(),
       })
       .nullable(),
-    /** Exactly what both seats were told before playing; null when provenance was blind. */
+    /** Event provenance context shared with both seats; null when provenance was blind. */
     briefing: z.string().nullable(),
     /** Index is the bracket seed position; the team each entrant piloted, sheets always open. */
     entrants: z.array(

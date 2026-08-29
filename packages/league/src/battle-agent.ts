@@ -54,7 +54,9 @@ export interface GameStart {
 export interface GameEnd {
   outcome: JsonObject;
   gameNumber: number;
+  seriesOver: boolean;
   seriesScore?: Record<Pid, number>;
+  tournamentStatus?: "active" | "advancing" | "eliminated" | "champion";
 }
 
 export type DecisionLog = string | JsonObject[] | ((row: JsonObject) => void);

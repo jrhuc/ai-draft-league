@@ -305,7 +305,7 @@ function Game({
                     {team.name}
                   </span>
                   <span
-                    className={`chip ${reflection.result === "won" ? "chip-good" : "chip-bad"}`}
+                    className={`chip ${reflection.result === "won" ? "chip-good" : reflection.result === "lost" ? "chip-bad" : "chip-warn"}`}
                   >
                     {reflection.result}
                   </span>

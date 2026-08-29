@@ -68,6 +68,7 @@ export interface Bo3Context {
     score: Record<Pid, number>,
   ) => void;
   requireWinner?: boolean;
+  tournamentRound?: "round" | "final";
   completedGames?: JsonObject[];
   runBattle?: (
     seed: [number, number, number, number],
@@ -138,6 +139,20 @@ export async function playBo3(context: Bo3Context): Promise<Bo3Result> {
       p1: (engines.p1.decisionStats().fallbacks ?? 0) - modelFallbacksAtStart.p1,
       p2: (engines.p2.decisionStats().fallbacks ?? 0) - modelFallbacksAtStart.p2,
     };
+    const nextFolded = foldSeriesGames(
+      context.gameSeeds,
+      [
+        ...games,
+        {
+          number: gameNumber,
+          seed: gameSeed,
+          winner: winnerSide ? context.players[winnerSide] : null,
+          winner_side: winnerSide ?? null,
+        },
+      ],
+      { requireWinner: context.requireWinner, players: context.players },
+    );
+    const seriesOver = nextFolded.complete;
     await Promise.all(
       (["p1", "p2"] as const).map(async (pid) => {
         const end: GameEnd = {
@@ -153,7 +168,18 @@ export async function playBo3(context: Bo3Context): Promise<Bo3Result> {
             timer_autodefaults: outcome.timerAutodefaults[pid],
           },
           gameNumber,
+          seriesOver,
           seriesScore: { ...score },
+          tournamentStatus:
+            context.tournamentRound === undefined
+              ? undefined
+              : !seriesOver
+                ? "active"
+                : nextFolded.winnerSide === pid
+                  ? context.tournamentRound === "final"
+                    ? "champion"
+                    : "advancing"
+                  : "eliminated",
         };
         await engines[pid].endGame(end);
       }),
@@ -169,6 +195,7 @@ export async function playBo3(context: Bo3Context): Promise<Bo3Result> {
       winnerSide,
       outcome,
       modelChoiceFallbacks,
+      coachNotes: { p1: engines.p1.coachingNote(), p2: engines.p2.coachingNote() },
       log: relativeSeriesFile(logPath),
       logBytes: canonicalLog,
     });
@@ -394,6 +421,7 @@ export async function playRecordedSeries(context: RecordedSeriesContext): Promis
         signal: context.signal,
         apiKey: context.apiKeys?.[context.players[pid]],
         initialNotebook: adopted?.notebooks[pid] ?? context.initialNotebooks?.[pid],
+        carryInNotebook: context.initialNotebooks?.[pid],
         draftRoster: context.draftRosters?.[pid],
         briefing: context.briefings?.[pid],
         closedSheets: context.closedSheets,
@@ -422,6 +450,7 @@ export async function playRecordedSeries(context: RecordedSeriesContext): Promis
       timerScale,
       attemptId,
       requireWinner: context.requireWinner,
+      tournamentRound: context.tournamentRound,
       signal: context.signal,
       onGameUpdate: context.onGameUpdate,
       onGameEnd: context.onGameEnd,

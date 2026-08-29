@@ -110,7 +110,7 @@ test("a result log is not adoptable until both post-game hooks finish", async (t
   const result = await play();
   const marker = JSON.parse(fs.readFileSync(path.join(directory, "game-1.complete.json"), "utf8"));
   assert.equal(marker.kind, "game_complete");
-  assert.equal(marker.schema_version, 1);
+  assert.equal(marker.schema_version, 2);
   assert.equal(marker.series_id, "marker");
   assert.equal(marker.game_number, 1);
   assert.ok(isText(marker.attempt_id) && marker.attempt_id !== "");
@@ -195,9 +195,14 @@ test("single elimination plays deterministic tiebreak games until one side wins"
     const seriesDir = path.join(directory, name);
     fs.mkdirSync(seriesDir);
     const seeds: Array<[number, number, number, number]> = [];
+    const seriesEnds: boolean[] = [];
+    const engines = fakeEngines();
+    engines.p1.endGame = (context) => {
+      seriesEnds.push(context.seriesOver);
+    };
     let game = 0;
     const result = await playBo3({
-      engines: fakeEngines(),
+      engines,
       names: { p1: "Side One", p2: "Side Two" },
       players: { p1: "model-one", p2: "model-two" },
       teams: { p1: { id: "one", packed: "" }, p2: { id: "two", packed: "" } },
@@ -222,7 +227,7 @@ test("single elimination plays deterministic tiebreak games until one side wins"
         };
       },
     });
-    return { result, seeds };
+    return { result, seeds, seriesEnds };
   };
 
   const first = await run("first");
@@ -235,6 +240,55 @@ test("single elimination plays deterministic tiebreak games until one side wins"
   assert.deepEqual(first.result.games[0]!.timer_autodefaults, { p1: 0, p2: 0 });
   assert.deepEqual(first.seeds.slice(0, 3), planned);
   assert.deepEqual(first.seeds[3], second.seeds[3]);
+  assert.deepEqual(first.seriesEnds, [false, false, false, true]);
+});
+
+test("a tied terminal game assigns tournament status from the series winner", async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-series-terminal-tie-"));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const engines = fakeEngines();
+  const statuses = { p1: new Array<string>(), p2: new Array<string>() };
+  engines.p1.endGame = (context) => {
+    statuses.p1.push(context.tournamentStatus ?? "none");
+  };
+  engines.p2.endGame = (context) => {
+    statuses.p2.push(context.tournamentStatus ?? "none");
+  };
+  let game = 0;
+  const result = await playBo3({
+    engines,
+    names: { p1: "Side One", p2: "Side Two" },
+    players: { p1: "model-one", p2: "model-two" },
+    teams: { p1: { id: "one", packed: "" }, p2: { id: "two", packed: "" } },
+    gameSeeds: [
+      [1, 2, 3, 4],
+      [5, 6, 7, 8],
+      [9, 10, 11, 12],
+    ],
+    seriesId: "terminal-tie",
+    seriesDir: directory,
+    format: "test",
+    psDir: "",
+    requireWinner: true,
+    tournamentRound: "round",
+    runBattle: async () => {
+      game += 1;
+      const winner = game === 1 ? "Side One" : null;
+      return {
+        winner,
+        turns: 1,
+        log: [winner ? `|win|${winner}` : "|tie"],
+        pov: { p1: [], p2: [] },
+        errors: { p1: 0, p2: 0 },
+        simulatorSubstitutions: { p1: 0, p2: 0 },
+        timerAutodefaults: { p1: 0, p2: 0 },
+      };
+    },
+  });
+
+  assert.equal(result.winnerSide, "p1");
+  assert.deepEqual(statuses.p1, ["active", "active", "advancing"]);
+  assert.deepEqual(statuses.p2, ["active", "active", "eliminated"]);
 });
 
 test("single elimination fails rather than fabricating a winner after the safety cap", async (t) => {

@@ -71,6 +71,7 @@ export interface EngineSetup {
   signal?: AbortSignal | undefined;
   apiKey?: string | undefined;
   initialNotebook?: string | undefined;
+  carryInNotebook?: string | undefined;
   draftRoster?: string | undefined;
   briefing?: string | undefined;
   closedSheets?: boolean | undefined;

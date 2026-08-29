@@ -3,9 +3,9 @@ import { test } from "vite-plus/test";
 import { RandomEngine } from "../src/battle-agent.js";
 import { LLMEngine } from "../src/llm-engine.js";
 import {
+  CLOSED_SERIES_REFLECTION_SYSTEM,
   DRAFT_SERIES_REFLECTION_SYSTEM,
   REFLECTION_SYSTEM,
-  SERIES_REFLECTION_SYSTEM,
 } from "../src/prompts.js";
 import { ApiError } from "../src/providers.js";
 import { SimBattle } from "../src/sim.js";
@@ -708,6 +708,7 @@ test("empty reflections record a fallback review", async () => {
   });
   await engine.endGame({
     gameNumber: 1,
+    seriesOver: false,
     outcome: { winner: "opponent", won: false, turns: 8 },
     seriesScore: { p1: 0, p2: 1 },
   });
@@ -721,6 +722,7 @@ test("a draft roster switches only the series-final reflection to the prep-revie
   const roster = "registered for this series: Ampharos, Beartic; left behind: Corviknight.";
   const finalGame = {
     gameNumber: 3,
+    seriesOver: true,
     outcome: { winner: "opponent", won: false, turns: 9 },
     seriesScore: { p1: 1, p2: 2 },
   };
@@ -732,6 +734,8 @@ test("a draft roster switches only the series-final reflection to the prep-revie
     draftRoster: roster,
   }).endGame(finalGame);
   assert.equal(draftFinal.calls[0]!.system, DRAFT_SERIES_REFLECTION_SYSTEM);
+  assert.match(draftFinal.calls[0]!.system, /six you registered/);
+  assert.match(draftFinal.calls[0]!.system, /full roster/);
   assert.match(draftFinal.calls[0]!.messages[0]!.content ?? "", /left behind: Corviknight/);
 
   const draftMidSeries = new ScriptedProvider([reflection]);
@@ -741,6 +745,7 @@ test("a draft roster switches only the series-final reflection to the prep-revie
     draftRoster: roster,
   }).endGame({
     gameNumber: 1,
+    seriesOver: false,
     outcome: { winner: "opponent", won: false, turns: 9 },
     seriesScore: { p1: 0, p2: 1 },
   });
@@ -751,5 +756,6 @@ test("a draft roster switches only the series-final reflection to the prep-revie
   await new LLMEngine("p1", "scripted", { provider: constructedFinal, decisionLog: [] }).endGame(
     finalGame,
   );
-  assert.equal(constructedFinal.calls[0]!.system, SERIES_REFLECTION_SYSTEM);
+  assert.equal(constructedFinal.calls[0]!.system, CLOSED_SERIES_REFLECTION_SYSTEM);
+  assert.doesNotMatch(constructedFinal.calls[0]!.system, /six you registered|full roster/);
 });

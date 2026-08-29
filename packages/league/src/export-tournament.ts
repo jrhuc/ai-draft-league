@@ -300,6 +300,7 @@ export function buildTournamentExport(
             summary: reflection.summary,
             adjustment: reflection.adjustment,
             notebook: reflection.notebook,
+            retrospective: reflection.retrospective,
             fallback: reflection.fallback,
           })),
         };

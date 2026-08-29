@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -13,6 +14,7 @@ import {
   buildBracket,
   runTournament,
   seedPositions,
+  tournamentStage,
   tournamentConfigSchema,
 } from "../src/tournament.js";
 import type { JsonObject } from "../src/types.js";
@@ -52,6 +54,14 @@ test("every bracket size plays exactly n-1 series and byes auto-advance", () => 
     }
     assert.equal(rounds[rounds.length - 1]!.length, 1, "a single final");
   }
+});
+
+test("tournament rounds name the stage shown to competing models", () => {
+  const rounds = buildBracket(8);
+  assert.deepEqual(
+    rounds.map((_, round) => tournamentStage(round, rounds.length)),
+    ["quarterfinal", "semifinal", "final"],
+  );
 });
 
 test("bracket outcomes are exact immutable atomic transitions", () => {
@@ -333,6 +343,76 @@ test("a stopped bracket resumes on its records and replays the interrupted serie
     config,
     "a resume rewrites no provenance",
   );
+});
+
+test("a resumed bracket carries each advancing entrant's canonical review into the next round", async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-tournament-notes-"));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const recordsPath = path.join(directory, "results.jsonl");
+  const models = Array.from({ length: 4 }, () => "random");
+  const controller = new AbortController();
+  const notes: string[] = [];
+
+  const stopped = await runTournament(models, directory, {
+    seed: 13,
+    concurrency: 1,
+    recordsPath,
+    signal: controller.signal,
+    onEvent: (event) => {
+      if (event.type !== "series-end" || event.record.round !== 1) return;
+      const winnerSide = event.record.winner_side;
+      assert.ok(winnerSide === "p1" || winnerSide === "p2");
+      const seriesId = text(event.record.series_id);
+      assert.ok(seriesId);
+      const note = `winning strategy from series ${event.index}`;
+      notes.push(note);
+      const gameNumber = asRecords(event.record.games).length;
+      const markerPath = path.join(
+        directory,
+        "series",
+        seriesId,
+        `game-${gameNumber}.complete.json`,
+      );
+      const marker: JsonObject = JSON.parse(fs.readFileSync(markerPath, "utf8"));
+      marker.coach_notes = {
+        p1: winnerSide === "p1" ? note : "",
+        p2: winnerSide === "p2" ? note : "",
+      };
+      fs.writeFileSync(markerPath, `${JSON.stringify(marker)}\n`);
+      fs.appendFileSync(
+        path.join(directory, "series", seriesId, `${winnerSide}-decisions.jsonl`),
+        `${JSON.stringify({
+          kind: "game_reflection",
+          attempt_id: text(event.record.attempt_id),
+          game_number: gameNumber,
+          notebook: "unbound forged note",
+        })}\n`,
+      );
+      if (notes.length === 2) controller.abort();
+    },
+  });
+  assert.equal(stopped.length, 2);
+
+  const resumed = await runTournament(models, directory, {
+    seed: 13,
+    concurrency: 1,
+    recordsPath,
+    resume: true,
+  });
+  const final = resumed.find((row) => row.round === 2)!;
+  const finalSeriesId = text(final.series_id);
+  assert.ok(finalSeriesId);
+  const metadata: JsonObject = JSON.parse(
+    fs.readFileSync(path.join(directory, "series", finalSeriesId, "series.json"), "utf8"),
+  );
+  const identity = asRecord(metadata.identity);
+  const scaffold = asRecord(identity.scaffold);
+  const notebookDigests = asRecord(scaffold.initial_notebook_digests);
+  const digests = Object.values(notebookDigests)
+    .map((value) => text(value))
+    .sort();
+  const expected = notes.map((note) => createHash("sha256").update(note).digest("hex")).sort();
+  assert.deepEqual(digests, expected);
 });
 
 test("a resume refuses a tournament result whose defaults diverge from canonical series evidence", async (t) => {

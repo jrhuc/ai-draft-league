@@ -97,6 +97,10 @@ p a,
   border-radius: 2px;
 }
 
+.page:focus {
+  outline: none;
+}
+
 h1,
 h2,
 h3,

@@ -30,6 +30,7 @@ import {
   type ParsedDecision,
   type PendingDecision,
   reasoningField,
+  reflectionTools,
   REFLECTION_MAX_TOKENS,
   replayDecisionSchema,
   type ToolTrace,
@@ -45,12 +46,15 @@ import {
 import { BattleTranscript } from "./llm-engine-transcript.js";
 import {
   battleSystemPrompt,
+  CLOSED_SERIES_REFLECTION_SYSTEM,
   DRAFT_SERIES_REFLECTION_SYSTEM,
   REFLECTION_SYSTEM,
   renderDecision,
   SERIES_REFLECTION_SYSTEM,
   type SheetPolicy,
   SYSTEM,
+  TOURNAMENT_REFLECTION_SYSTEM,
+  TOURNAMENT_RETROSPECTIVE_SYSTEM,
 } from "./prompts.js";
 import type { ReasoningLevel } from "./providers.js";
 import {
@@ -100,6 +104,7 @@ interface LLMEngineOptions {
   reasoning?: ReasoningLevel;
   signal?: AbortSignal;
   initialNotebook?: string;
+  carryInNotebook?: string;
   draftRoster?: string;
   briefing?: string;
   closedSheets?: boolean;
@@ -116,6 +121,7 @@ export class LLMEngine extends BaseEngine {
   private readonly stats = new LLMEngineStats();
   private readonly dexLookupCache = new Map<string, string>();
   private notebook: string;
+  private readonly carryInNotebook: string;
   private gameId: string;
   private seriesId?: string;
   private gameNumber = 1;
@@ -129,6 +135,7 @@ export class LLMEngine extends BaseEngine {
   private activeToolRequest: BattleRequest | undefined;
   private readonly sheets: SheetPolicy;
   private readonly decisionTools: ToolDefinition[];
+  private readonly reflectionTools: ToolDefinition[];
 
   constructor(
     pid: Pid,
@@ -139,6 +146,7 @@ export class LLMEngine extends BaseEngine {
     this.transcript = new BattleTranscript(pid);
     this.sheets = options.closedSheets === true ? "closed" : "open";
     this.decisionTools = decisionTools(this.sheets);
+    this.reflectionTools = reflectionTools();
     if (options.provider) this.provider = options.provider;
     else {
       this.provider = makeProvider(parseSpec(spec), {
@@ -162,6 +170,7 @@ export class LLMEngine extends BaseEngine {
       (row) => this.writeLog(this.options.contextLog, row),
     );
     this.notebook = clip(options.initialNotebook?.trim() ?? "", DECISION_NOTE_LIMIT);
+    this.carryInNotebook = clip(options.carryInNotebook?.trim() ?? "", DECISION_NOTE_LIMIT);
     this.gameId = spec;
   }
 
@@ -311,6 +320,10 @@ export class LLMEngine extends BaseEngine {
       throw new Error(`unknown battle tool ${name}`);
     if (name === ACTION_ORDER_TOOL.name) return this.state.compareActionOrder(args, this.reference);
     if (name === "estimate_damage") return this.state.estimateDamage(args, request, this.reference);
+    return this.lookupReferenceTool(name, args);
+  }
+
+  private lookupReferenceTool(name: string, args: JsonObject): string {
     const key = `${name} ${JSON.stringify(args)}`;
     const cached = this.dexLookupCache.get(key);
     if (cached !== undefined) {
@@ -886,12 +899,14 @@ export class LLMEngine extends BaseEngine {
   }
 
   private async reflect(context: GameEnd, result: string): Promise<void> {
-    const seriesOver =
-      context.gameNumber >= 3 || Math.max(this.seriesScore.p1, this.seriesScore.p2) >= 2;
+    const seriesOver = context.seriesOver;
     const mine = this.seriesScore[this.pid];
     const theirs = this.seriesScore[this.pid === "p1" ? "p2" : "p1"];
     const seriesResult = mine > theirs ? "won" : mine < theirs ? "lost" : "drew";
     const draftRoster = seriesOver ? this.options.draftRoster : undefined;
+    const draft = this.options.draftRoster !== undefined;
+    const retrospective =
+      context.tournamentStatus === "eliminated" || context.tournamentStatus === "champion";
     const prompt = reflectionPrompt({
       seriesId: this.seriesId,
       gameNumber: context.gameNumber,
@@ -903,31 +918,75 @@ export class LLMEngine extends BaseEngine {
       pid: this.pid,
       draftRoster,
       outcome: context.outcome,
-      finalState: this.state.render({}),
+      finalState: this.state.renderReview(),
       timeline: this.transcript.lines,
+      gameLog: Array.isArray(context.outcome.pov_lines)
+        ? context.outcome.pov_lines.filter((line): line is string => typeof line === "string")
+        : [],
       notebook: this.notebook,
+      tournamentStatus: context.tournamentStatus,
+      retrospective,
     });
     const system = this.briefed(
-      draftRoster
-        ? DRAFT_SERIES_REFLECTION_SYSTEM
-        : seriesOver
-          ? SERIES_REFLECTION_SYSTEM
-          : REFLECTION_SYSTEM,
+      draft
+        ? seriesOver
+          ? DRAFT_SERIES_REFLECTION_SYSTEM
+          : REFLECTION_SYSTEM
+        : retrospective
+          ? TOURNAMENT_RETROSPECTIVE_SYSTEM
+          : context.tournamentStatus === "advancing"
+            ? SERIES_REFLECTION_SYSTEM
+            : context.tournamentStatus === "active"
+              ? TOURNAMENT_REFLECTION_SYSTEM
+              : seriesOver
+                ? CLOSED_SERIES_REFLECTION_SYSTEM
+                : REFLECTION_SYSTEM,
     );
-    const { usage, rawResponse, error, failureSummary, failureKind, fallback, review } =
-      await requestReflection({
-        prompt,
-        currentNotebook: this.notebook,
-        result,
-        spec: this.spec,
-        complete: (messages) =>
-          this.completeOnce(messages, { maxTokens: REFLECTION_MAX_TOKENS }, system),
-      });
+    const {
+      usage,
+      rawResponse,
+      error,
+      failureSummary,
+      failureKind,
+      fallback,
+      review,
+      toolRounds,
+      toolCalls,
+    } = await requestReflection({
+      prompt,
+      currentNotebook: this.notebook,
+      fallbackNotebook:
+        context.tournamentStatus === "advancing" ? this.carryInNotebook : this.notebook,
+      result,
+      spec: this.spec,
+      tools: this.reflectionTools,
+      retrospective,
+      complete: (messages, finalRound) =>
+        this.completeOnce(
+          messages,
+          {
+            maxTokens: REFLECTION_MAX_TOKENS,
+            tools: this.reflectionTools,
+            toolChoice: finalRound ? "none" : "auto",
+          },
+          system,
+        ),
+      lookupTool: (name, args) => this.lookupReferenceTool(name, args),
+    });
     this.stats.reflection(fallback, usage);
     this.notebook = review.notebook;
     this.transcript.remember(
-      `Game review: ${review.summary} Next-game adjustment: ${review.adjustment}`,
+      review.retrospective
+        ? `Tournament retrospective: ${review.summary}`
+        : `Game review: ${review.summary} Next-game adjustment: ${review.adjustment}`,
     );
+    const retrospectiveFields = review.retrospective
+      ? {
+          did_well: review.retrospective.didWell,
+          did_poorly: review.retrospective.didPoorly,
+          would_change: review.retrospective.wouldChange,
+        }
+      : {};
     this.context.append("reflection", {
       game_id: this.gameId,
       series_id: this.seriesId ?? null,
@@ -936,6 +995,7 @@ export class LLMEngine extends BaseEngine {
       series_over: seriesOver,
       summary: review.summary,
       adjustment: review.adjustment,
+      ...retrospectiveFields,
       notebook: this.notebook,
       fallback,
     });
@@ -949,7 +1009,8 @@ export class LLMEngine extends BaseEngine {
       series_over: seriesOver,
       summary: review.summary,
       adjustment: review.adjustment,
-      ...this.notebookUpdate(),
+      ...retrospectiveFields,
+      notebook: this.notebook,
       total_tokens: totalTokens(usage),
       ...reasoningField(usage),
       fallback,
@@ -967,6 +1028,8 @@ export class LLMEngine extends BaseEngine {
       prompt,
       raw_response: rawResponse,
       usage,
+      tool_rounds: toolRounds,
+      tool_calls: toolCalls,
       fallback,
       error: error ?? null,
       error_summary: failureSummary || undefined,

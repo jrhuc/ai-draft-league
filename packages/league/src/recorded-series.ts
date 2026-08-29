@@ -22,7 +22,7 @@ import {
 } from "./series-core.js";
 import type { GameSeed, SeriesFold, SeriesGameResult } from "./series-core.js";
 
-export const SERIES_GAME_COMPLETION_SCHEMA_VERSION = 1 as const;
+export const SERIES_GAME_COMPLETION_SCHEMA_VERSION = 2 as const;
 
 const sha256Schema = z.string().regex(/^[0-9a-f]{64}$/u);
 const gameCompletionMarkerSchema = z.strictObject({
@@ -33,6 +33,7 @@ const gameCompletionMarkerSchema = z.strictObject({
   attempt_id: z.string().min(1),
   seed: gameSeedSchema,
   log_sha256: sha256Schema,
+  coach_notes: z.strictObject({ p1: z.string(), p2: z.string() }),
   summary: seriesGameSummarySchema,
 });
 
@@ -61,6 +62,7 @@ export interface RecordedSeriesContext extends ModelReasoningConfig {
   ) => void;
   onDecision?: (pid: Pid, row: JsonObject) => void;
   requireWinner?: boolean;
+  tournamentRound?: "round" | "final";
   timerScale?: TimerScale;
   closedSheets?: boolean;
 }
@@ -295,6 +297,7 @@ export function completedGameEvidence(input: {
   winnerSide: Pid | undefined;
   outcome: BattleOutcome;
   modelChoiceFallbacks: Record<Pid, number>;
+  coachNotes: Record<Pid, string>;
   log: string;
   logBytes: Buffer;
 }): CompletedGameEvidence {
@@ -306,6 +309,7 @@ export function completedGameEvidence(input: {
     attempt_id: input.attemptId,
     seed: input.seed,
     log_sha256: createHash("sha256").update(input.logBytes).digest("hex"),
+    coach_notes: input.coachNotes,
     summary: {
       winner: input.winnerSide ? input.players[input.winnerSide] : null,
       winner_side: input.winnerSide ?? null,
@@ -378,7 +382,6 @@ interface SideDecisionRows {
   p2: JsonObject[];
 }
 
-const decisionNotebookSchema = z.looseObject({ notebook: z.string() });
 const attemptOwnedDecisionSchema = z.looseObject({ attempt_id: z.string().min(1) });
 const replayableDecisionSchema = z.looseObject({
   request_digest: z.string(),
@@ -415,6 +418,7 @@ function reconstructAdoptedSeries(
   const completedLineages = new Map<number, Set<string>>();
   const completedAttempts: CompletedDecisionAttempt[] = [];
   const games: JsonObject[] = [];
+  const notebooks: Partial<Record<Pid, string>> = {};
   let folded = foldSeriesGames(context.gameSeeds, games, {
     requireWinner: context.requireWinner,
     players: storedPlayers,
@@ -447,6 +451,8 @@ function reconstructAdoptedSeries(
     }
     completedLineages.set(number, new Set(lineage));
     completedAttempts.push({ gameNumber: number, attemptId: marker.attempt_id });
+    notebooks.p1 = marker.coach_notes.p1;
+    notebooks.p2 = marker.coach_notes.p2;
     games.push(seriesGameResult(marker));
     folded = foldSeriesGames(context.gameSeeds, games, {
       requireWinner: context.requireWinner,
@@ -475,15 +481,10 @@ function reconstructAdoptedSeries(
   const currentAttempts = new Set(currentLineage ?? []);
   const decisions: SideDecisionRows = { p1: [], p2: [] };
   const replay: SideDecisionRows = { p1: [], p2: [] };
-  const notebooks: Partial<Record<Pid, string>> = {};
   for (const pid of ["p1", "p2"] as const) {
     const rows = readJsonlObjects(path.join(seriesDir, `${pid}-decisions.jsonl`));
     const completedRows = selectCompletedDecisionRows(rows, attemptRows, completedAttempts);
     decisions[pid].push(...completedRows);
-    for (const row of completedRows) {
-      const recordedNotebook = decisionNotebookSchema.safeParse(row);
-      if (recordedNotebook.success) notebooks[pid] = recordedNotebook.data.notebook;
-    }
     for (const row of rows) {
       const ownedDecision = attemptOwnedDecisionSchema.safeParse(row);
       const attemptId = ownedDecision.success ? ownedDecision.data.attempt_id : undefined;
@@ -519,10 +520,6 @@ function reconstructAdoptedSeries(
   if (replayable && hasReplay) {
     for (const pid of ["p1", "p2"] as const) {
       decisions[pid].push(...replay[pid]);
-      for (const row of replay[pid]) {
-        const recordedNotebook = decisionNotebookSchema.safeParse(row);
-        if (recordedNotebook.success) notebooks[pid] = recordedNotebook.data.notebook;
-      }
     }
   } else {
     replay.p1 = [];
@@ -796,6 +793,7 @@ function canonicalCompletedAttempt(
 }
 
 interface CompletedSeriesEvidence {
+  coachNotes: Record<Pid, string>;
   winnerSide: Pid | undefined;
   fields: CompletedSeriesFields;
 }
@@ -840,7 +838,14 @@ export function readCompletedSeriesEvidence(
       p2: reasoningForModel(identity.players.p2, reasoningConfig) ?? null,
     };
   }
-  return { winnerSide, fields };
+  return {
+    coachNotes: {
+      p1: adopted.notebooks.p1 ?? context.initialNotebooks?.p1 ?? "",
+      p2: adopted.notebooks.p2 ?? context.initialNotebooks?.p2 ?? "",
+    },
+    winnerSide,
+    fields,
+  };
 }
 
 type ContextLedgerHead = z.infer<typeof contextLedgerHeadSchema>;

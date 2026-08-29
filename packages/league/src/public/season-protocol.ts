@@ -79,7 +79,7 @@ const decisionSchema = z.strictObject({
 });
 const reflectionSchema = z.strictObject({
   franchiseId: franchiseRef,
-  result: z.enum(["won", "lost"]),
+  result: z.enum(["won", "lost", "tied"]),
   summary: z.string(),
   adjustment: z.string(),
   fallback: z.boolean(),

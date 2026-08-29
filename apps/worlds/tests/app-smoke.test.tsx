@@ -50,6 +50,7 @@ test("a failed bundle load can retry and show team selections", async () => {
 
   expect(fetchBundle).toHaveBeenCalledTimes(2);
   expect(document.body.textContent).toContain("Game by game");
+  expect(document.querySelector(".ps-frame")).not.toBeNull();
   expect(document.querySelector<HTMLAnchorElement>(".repo-link")?.href).toBe(
     "https://github.com/jrhuc/ai-draft-league/tree/main/apps/worlds",
   );

@@ -53,11 +53,14 @@ const reflectionArtifactSchema = z.looseObject({
   kind: z.literal("game_reflection"),
   fallback: z.boolean(),
   game_number: z.number().finite(),
-  result: z.enum(["won", "lost"]),
+  result: z.enum(["won", "lost", "tied"]),
   series_over: z.boolean(),
   summary: z.string(),
   adjustment: z.string(),
-  notebook: z.string().optional(),
+  notebook: z.string(),
+  did_well: z.string().optional(),
+  did_poorly: z.string().optional(),
+  would_change: z.string().optional(),
   total_tokens: z.number().finite(),
   reasoning_tokens: z.number().finite().optional(),
 });
@@ -355,18 +358,43 @@ export function buildSeriesGame(
         : readRunLines(runsDir, runId, "series", seriesId, `${pid}-decisions.jsonl`);
     for (const artifact of artifacts) {
       const parsed = decisionArtifactUnion.safeParse(artifact);
-      if (!parsed.success) continue;
+      if (!parsed.success) {
+        if (artifact.kind === "game_reflection") {
+          throw new Error(
+            `invalid reflection artifact for ${seriesId} ${pid} game ${JSON.stringify(artifact.game_number)}`,
+          );
+        }
+        continue;
+      }
       const entry = parsed.data;
       const entryGame = entry.game_number;
       if (entryGame > 0) gameNumbers.add(entryGame);
       if (entryGame !== game) continue;
       if (entry.kind === "game_reflection") {
+        const retrospectiveCount = [entry.did_well, entry.did_poorly, entry.would_change].filter(
+          (field) => field !== undefined,
+        ).length;
+        if (retrospectiveCount !== 0 && retrospectiveCount !== 3) {
+          throw new Error(
+            `incomplete retrospective artifact for ${seriesId} ${pid} game ${entryGame}`,
+          );
+        }
         reflections.push({
           side,
           result: entry.result,
           summary: entry.summary,
           adjustment: entry.adjustment,
-          notebook: entry.notebook ?? "",
+          notebook: entry.notebook,
+          retrospective:
+            entry.did_well !== undefined &&
+            entry.did_poorly !== undefined &&
+            entry.would_change !== undefined
+              ? {
+                  didWell: entry.did_well,
+                  didPoorly: entry.did_poorly,
+                  wouldChange: entry.would_change,
+                }
+              : undefined,
           fallback: entry.fallback,
           seriesOver: entry.series_over,
         });

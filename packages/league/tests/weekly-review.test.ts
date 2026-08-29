@@ -108,12 +108,13 @@ function writeRun() {
     path.join(seriesDir, "game-1.complete.json"),
     `${JSON.stringify({
       kind: "game_complete",
-      schema_version: 1,
+      schema_version: 2,
       series_id: "abc123",
       game_number: 1,
       attempt_id: "canonical",
       seed: [1, 2, 3, 4],
       log_sha256: createHash("sha256").update(gameLog).digest("hex"),
+      coach_notes: { p1: "", p2: "" },
       summary: {
         winner: "test:alpha",
         winner_side: "p1",

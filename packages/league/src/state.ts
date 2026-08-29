@@ -315,6 +315,17 @@ export class BattleState {
     ].join("\n");
   }
 
+  renderReview(referenceFor?: (mon: CompactMon) => CompactMonReference | undefined): string {
+    const foe: Pid = this.pid === "p1" ? "p2" : "p1";
+    return [
+      `Turn: ${this.turn}`,
+      `Weather: ${this.weatherLabel()}`,
+      `Field: ${this.fieldLabels().join(", ") || "none"}`,
+      ...this.renderSide(this.pid, true, false, referenceFor, true),
+      ...this.renderSide(foe, false, false, referenceFor),
+    ].join("\n");
+  }
+
   slotName(slot: number, request: BattleRequest): string {
     if (request.teamPreview) return `team preview pick ${slot + 1}`;
     const key = this.sides[this.pid].active[String.fromCharCode("a".charCodeAt(0) + slot)];
@@ -531,6 +542,7 @@ export class BattleState {
     own: boolean,
     expandedRoster: boolean,
     referenceFor?: (mon: CompactMon) => CompactMonReference | undefined,
+    includeOwnBench = false,
   ): string[] {
     const side = this.sides[pid];
     const title = own ? "Your side" : "Opponent side";
@@ -538,7 +550,7 @@ export class BattleState {
     const lines = [`${title} conditions: ${conditions.length ? conditions.join(", ") : "none"}`];
     const mons = this.withoutPreviewGhosts(
       side,
-      [...side.mons.values()].filter((mon) => !own || mon.brought !== false),
+      [...side.mons.values()].filter((mon) => !own || includeOwnBench || mon.brought !== false),
     );
     const broughtCount = [...this.sides[this.pid].mons.values()].filter(
       (mon) => mon.brought === true,
@@ -588,7 +600,8 @@ export class BattleState {
       const attrs = [mon.species];
       if (reference?.types) attrs.push(`types ${reference.types}`);
       if (activeSlots.length) attrs.push(`active slot ${activeSlots.join("/")}`);
-      if (foesResolved && mon.hpPercent === undefined) attrs.push("not brought this game");
+      if ((own && mon.brought === false) || (foesResolved && mon.hpPercent === undefined))
+        attrs.push("not brought this game");
       else attrs.push(`HP ${mon.hpPercent === undefined ? "?" : `${Math.round(mon.hpPercent)}%`}`);
       if (mon.status) attrs.push(mon.status);
       if (mon.fainted) attrs.push("fainted");

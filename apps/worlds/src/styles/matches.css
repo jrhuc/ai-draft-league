@@ -103,38 +103,9 @@
   background: var(--card);
 }
 
-.player-gate {
-  display: grid;
-  place-items: center;
-  min-height: 18rem;
-  padding: 2rem;
-  border: 1px solid var(--line);
-  border-radius: var(--r);
-  background: var(--card);
-}
-
-.player-gate button {
-  display: grid;
-  gap: 0.25rem;
-  min-height: 2.75rem;
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--ball-dark);
-  border-radius: var(--r);
-  background: var(--ball-dark);
-  color: #fff;
-  font-weight: 600;
-}
-
-.player-gate button:hover {
-  background: var(--t2);
-}
-
-.player-gate button small,
 .player-note {
-  color: #e9e4d9;
   font-family: var(--font-mono), monospace;
   font-size: 0.68rem;
-  font-weight: 400;
 }
 
 .player-loaded {
@@ -355,6 +326,31 @@
   padding-left: 0.8rem;
   border-left: 2px solid var(--line-2);
   color: var(--t3);
+}
+
+.reflection .retrospective {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+}
+
+.reflection .retrospective div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.reflection .retrospective dt {
+  font-family: var(--font-mono), monospace;
+  color: var(--t3);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.reflection .retrospective dd {
+  margin: 0;
+  color: var(--t2);
+  font-size: 0.9rem;
 }
 
 .reflection details.notebook summary {

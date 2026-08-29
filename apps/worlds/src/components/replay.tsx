@@ -39,19 +39,8 @@ function replayDoc(raw: string, teams: [Team, Team], title: string): string {
 }
 
 function ShowdownPlayer({ game, teams }: { game: ReplayGame; teams: [Team, Team] }) {
-  const [loaded, setLoaded] = useState(false);
   const title = `${teams[0].name} vs ${teams[1].name} — Game ${game.number}`;
   const doc = useMemo(() => replayDoc(game.raw, teams, title), [game.raw, teams, title]);
-  if (!loaded) {
-    return (
-      <div className="player-gate">
-        <button type="button" onClick={() => setLoaded(true)}>
-          Load animated replay
-          <small>Loads the replay client from Pokémon Showdown</small>
-        </button>
-      </div>
-    );
-  }
   return (
     <div className="player-loaded">
       <iframe
@@ -60,7 +49,6 @@ function ShowdownPlayer({ game, teams }: { game: ReplayGame; teams: [Team, Team]
         title={title}
         sandbox="allow-scripts"
         referrerPolicy="no-referrer"
-        loading="lazy"
       />
       <p className="player-note">
         If the animation is unavailable, the turn reasoning and full text log remain below.
@@ -140,7 +128,8 @@ function ReflectionCard({
   lastGame: boolean;
 }) {
   const won = reflection.result === "won";
-  const eliminated = lastGame && !won;
+  const lost = reflection.result === "lost";
+  const eliminated = lastGame && lost;
   return (
     <article className="card reflection" style={toneStyle(team.tone)}>
       <div className="who">
@@ -148,16 +137,34 @@ function ReflectionCard({
           <Mark spec={team.model} tone />
           {team.name}
         </span>
-        <span className={`chip ${won ? "chip-good" : "chip-bad"}`}>{reflection.result}</span>
+        <span className={`chip ${won ? "chip-good" : lost ? "chip-bad" : "chip-warn"}`}>
+          {reflection.result}
+        </span>
       </div>
       <p>{reflection.summary}</p>
-      {reflection.adjustment && !eliminated ? (
+      {reflection.retrospective ? (
+        <dl className="retrospective">
+          <div>
+            <dt>Did well</dt>
+            <dd>{reflection.retrospective.didWell}</dd>
+          </div>
+          <div>
+            <dt>Did poorly</dt>
+            <dd>{reflection.retrospective.didPoorly}</dd>
+          </div>
+          <div>
+            <dt>Would change</dt>
+            <dd>{reflection.retrospective.wouldChange}</dd>
+          </div>
+        </dl>
+      ) : null}
+      {reflection.adjustment && !eliminated && !reflection.retrospective ? (
         <p className="next">
           <span className="label">{lastGame ? "Looking ahead" : "For the next game"}</span>
           {reflection.adjustment}
         </p>
       ) : null}
-      {reflection.notebook && !eliminated ? (
+      {reflection.notebook && !eliminated && !reflection.retrospective ? (
         <details className="notebook">
           <summary>{lastGame ? "Notebook after this match" : "Notebook"}</summary>
           <blockquote>{reflection.notebook}</blockquote>

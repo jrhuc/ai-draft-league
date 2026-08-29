@@ -64,11 +64,14 @@ interface PlayMatchContext extends ModelReasoningConfig {
   signal?: AbortSignal;
   contributor?: ContributorAttribution;
   timerScale: TimerScale;
+  initialNotebooks?: Partial<Record<Pid, string>>;
+  finalRound: boolean;
 }
 
 interface PlayMatchResult {
   row: SeriesRecord;
   winnerSide: Pid;
+  winnerNote: string;
 }
 
 export const tournamentConfigSchema = z.looseObject({
@@ -105,6 +108,14 @@ export function briefEvent(event: PoolEvent, count: number): string {
       "The published lists gave species, items, abilities, natures and moves but no stat points, so every spread here was rebuilt from public sets of the same Pok\u00e9mon in this regulation and is not the players\u2019 own.",
     );
   return lines.join("\n");
+}
+
+export function tournamentStage(round: number, roundCount: number): string {
+  const remaining = roundCount - round;
+  if (remaining === 1) return "final";
+  if (remaining === 2) return "semifinal";
+  if (remaining === 3) return "quarterfinal";
+  return `round of ${2 ** remaining}`;
 }
 
 export interface BracketMatch {
@@ -297,6 +308,21 @@ export async function runTournament(
   let rounds = buildBracket(entrants.length);
   const seriesCount = entrants.length - 1;
   const seriesSeeds = Array.from({ length: seriesCount }, () => seriesEntropy(random));
+  const notebooks = entrants.map(() => "");
+  const briefingFor = (match: BracketMatch): string =>
+    [briefing, `This match is a tournament ${tournamentStage(match.round, rounds.length)}.`]
+      .filter(Boolean)
+      .join("\n");
+
+  const initialNotebooksFor = (match: BracketMatch): Partial<Record<Pid, string>> | undefined => {
+    const p1 = match.slots[0] === null ? "" : notebooks[match.slots[0]]!;
+    const p2 = match.slots[1] === null ? "" : notebooks[match.slots[1]]!;
+    if (!p1 && !p2) return undefined;
+    const initial: Partial<Record<Pid, string>> = {};
+    if (p1) initial.p1 = p1;
+    if (p2) initial.p2 = p2;
+    return initial;
+  };
 
   const bracketView = (): BracketView => ({
     entrants: entrants.map((entrant) => ({ model: entrant.model, team: entrant.team.id })),
@@ -352,7 +378,10 @@ export async function runTournament(
     seed,
   });
 
-  const validateStoredMatch = (match: BracketMatch, row: ParsedSeriesRecord): Pid => {
+  const validateStoredMatch = (
+    match: BracketMatch,
+    row: ParsedSeriesRecord,
+  ): Omit<PlayMatchResult, "row"> => {
     const index = match.seriesIndex!;
     const sides = { p1: entrants[match.slots[0]!]!, p2: entrants[match.slots[1]!]! };
     const evidenceContext: RecordedSeriesContext = {
@@ -366,7 +395,9 @@ export async function runTournament(
       runDir,
       requireWinner: true,
       timerScale,
-      briefings: briefing === undefined ? undefined : { p1: briefing, p2: briefing },
+      tournamentRound: match.round === rounds.length - 1 ? "final" : "round",
+      briefings: { p1: briefingFor(match), p2: briefingFor(match) },
+      initialNotebooks: initialNotebooksFor(match),
       reasoningByModel: options.reasoningByModel,
       reasoning: options.reasoning,
     };
@@ -412,7 +443,10 @@ export async function runTournament(
         `run ${runId} tournament series ${index} does not match its canonical completed series evidence`,
       );
     }
-    return canonical.winnerSide;
+    return {
+      winnerSide: canonical.winnerSide,
+      winnerNote: canonical.coachNotes[canonical.winnerSide],
+    };
   };
 
   const results: SeriesRecord[] = [];
@@ -434,7 +468,9 @@ export async function runTournament(
         if (match.slots[0] === null || match.slots[1] === null) continue;
         const row = recorded.get(match.seriesIndex);
         if (!row) continue;
-        const winnerSide = validateStoredMatch(match, row);
+        const { winnerSide, winnerNote } = validateStoredMatch(match, row);
+        const winner = match.slots[winnerSide === "p1" ? 0 : 1]!;
+        notebooks[winner] = winnerNote;
         rounds = applyBracketOutcome(rounds, match, winnerSide);
         started.add(match.seriesIndex);
         results.push(row);
@@ -465,14 +501,18 @@ export async function runTournament(
         seriesSeeds: seriesSeeds[match.seriesIndex!]!,
         provenance,
         timerScale,
-        briefing,
+        briefing: briefingFor(match),
         reasoning: options.reasoning,
         apiKeys: options.apiKeys,
         reasoningByModel: options.reasoningByModel,
         onEvent: options.onEvent,
         contributor: options.contributor,
+        initialNotebooks: initialNotebooksFor(match),
+        finalRound: match.round === rounds.length - 1,
       };
-      const { row, winnerSide } = await playMatch(match, entrants, matchContext);
+      const { row, winnerSide, winnerNote } = await playMatch(match, entrants, matchContext);
+      const winner = match.slots[winnerSide === "p1" ? 0 : 1]!;
+      notebooks[winner] = winnerNote;
       rounds = applyBracketOutcome(rounds, match, winnerSide);
       appendRow(recordsPath, row);
       results.push(row);
@@ -544,12 +584,14 @@ async function playMatch(
     onDecision: (pid, row) => context.onEvent?.({ type: "decision", index, pid, row }),
     briefings:
       context.briefing === undefined ? undefined : { p1: context.briefing, p2: context.briefing },
+    initialNotebooks: context.initialNotebooks,
+    tournamentRound: context.finalRound ? "final" : "round",
     reasoningByModel: context.reasoningByModel,
     reasoning: context.reasoning,
     apiKeys: context.apiKeys,
     signal: context.signal,
   };
-  const { winnerSide, fields } = await playRecordedSeries(seriesContext);
+  const { winnerSide, fields, coachNotes } = await playRecordedSeries(seriesContext);
 
   if (!winnerSide) throw new Error(`single-elimination series ${index + 1} ended without a winner`);
   const winner = match.slots[winnerSide === "p1" ? 0 : 1]!;
@@ -568,5 +610,5 @@ async function playMatch(
   };
   if (context.poolId !== null) row.pool = context.poolId;
   if (context.contributor !== undefined) row.contributor = context.contributor;
-  return { row, winnerSide };
+  return { row, winnerSide, winnerNote: coachNotes[winnerSide] };
 }

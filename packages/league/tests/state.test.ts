@@ -357,7 +357,7 @@ test("unseen opponents read as not brought once the whole bring is revealed", ()
   );
 });
 
-test("post-preview own state omits Pokémon that were not brought", () => {
+test("post-preview decisions hide unbrought Pokémon while reviews retain the full team", () => {
   const state = new BattleState("p1");
   const previewPokemon = Array.from({ length: 6 }, (_, index) => ({
     ident: `p1: Mon${index + 1}`,
@@ -379,6 +379,9 @@ test("post-preview own state omits Pokémon that were not brought", () => {
   const rendered = state.render(brought);
   assert.match(rendered, /Species4/);
   assert.doesNotMatch(rendered, /Species5|Species6/);
+  const review = state.renderReview();
+  assert.match(review, /Species5; not brought this game/);
+  assert.match(review, /Species6; not brought this game/);
 });
 
 test("public percentage HP color suffixes are normalized", () => {

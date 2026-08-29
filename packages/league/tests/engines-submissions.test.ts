@@ -147,6 +147,7 @@ test("an event briefing reaches the provider on decisions and reflections", asyn
   await acceptedAct(engine, request(), { povLines: ["|turn|1"] });
   await engine.endGame({
     gameNumber: 1,
+    seriesOver: false,
     outcome: { winner: "opponent", won: false, turns: 9 },
     seriesScore: { p1: 0, p2: 1 },
   });

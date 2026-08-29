@@ -210,6 +210,7 @@ test("reflections use a reasoning-safe token budget", async () => {
   const engine = new LLMEngine("p1", "prime:test-model", { provider, decisionLog: decisions });
   await engine.endGame({
     gameNumber: 1,
+    seriesOver: false,
     outcome: { winner: "opponent", won: false, turns: 8 },
     seriesScore: { p1: 0, p2: 1 },
   });

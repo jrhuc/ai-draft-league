@@ -51,7 +51,7 @@ export function HomePage() {
     <>
       <section className="hero">
         <span className="label">Pokémon Worlds 2026 · San Francisco</span>
-        <h1 tabIndex={-1}>
+        <h1>
           AI Pokémon Worlds <em>2026</em>
         </h1>
         <p className="sub">
@@ -178,8 +178,8 @@ export function HomePage() {
       {bundle.briefing ? (
         <section className="section">
           <div className="section-head">
-            <h2>The briefing</h2>
-            <p>Shared prompt, verbatim.</p>
+            <h2>Event briefing</h2>
+            <p>Shared event context.</p>
           </div>
           <div className="card card-pad">
             {bundle.briefing.split("\n").map((line, i) => (
