@@ -10,14 +10,59 @@
 }
 
 .bracket-round {
+  position: relative;
   display: grid;
   align-content: space-around;
   gap: 1rem;
+  padding-top: 2rem;
+}
+
+.bracket-round > .label {
+  position: absolute;
+  top: 0;
+  left: 0;
 }
 
 .bracket-match {
+  position: relative;
   display: grid;
-  overflow: hidden;
+  height: 7.4rem;
+  overflow: visible;
+}
+
+.bracket-round:not(:first-child) .bracket-slot + .bracket-slot {
+  position: relative;
+}
+
+.bracket-round:not(:first-child) .bracket-slot + .bracket-slot::before,
+.bracket-round:not(:first-child) .bracket-slot + .bracket-slot::after {
+  content: "";
+  position: absolute;
+  top: -1px;
+  pointer-events: none;
+}
+
+.bracket-round:not(:first-child) .bracket-slot + .bracket-slot::before {
+  right: calc(100% - 1px);
+  width: calc(1rem + 1px);
+  border-top: 1px solid var(--line-2);
+}
+
+.bracket-round:not(:first-child) .bracket-slot + .bracket-slot::after {
+  right: calc(100% + 1rem - 1px);
+  width: calc(1rem + 2px);
+  height: var(--connector-span);
+  border: solid var(--line-2);
+  border-width: 1px 1px 1px 0;
+  transform: translateY(-50%);
+}
+
+.bracket-round:nth-child(2) .bracket-match {
+  --connector-span: 8.4rem;
+}
+
+.bracket-round:nth-child(3) .bracket-match {
+  --connector-span: 16.8rem;
 }
 
 .bracket-match a,
