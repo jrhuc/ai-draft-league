@@ -1,0 +1,25 @@
+name: format scoped memory
+
+on:
+  push:
+    branches:
+      - feat/scoped-agent-memory
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: voidzero-dev/setup-vp@1b32467adbe183473499fd9d5d372c3ed9641754
+        with:
+          node-version: 24
+      - run: vp check --fix
+      - run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add packages/league/src packages/league/tests
+          git diff --cached --quiet || git commit -m "style: format scoped memory changes"
+          git push
