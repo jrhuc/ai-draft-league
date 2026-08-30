@@ -25,6 +25,18 @@ export interface StrategicMemory {
   verifiedReferences: VerifiedReference[];
 }
 
+interface ParsedUpdate {
+  team_playbook: string;
+  series_memory?: string;
+  next_game_plan?: string;
+}
+
+const REFERENCE_TOOLS = new Set([
+  "lookup_species",
+  "lookup_move",
+  "lookup_item",
+  "lookup_ability",
+]);
 const referenceSchema = z
   .object({
     tool: z.string(),
@@ -127,7 +139,7 @@ export function normalizeStrategicMemory(value: string): string {
   return serializeMemory(parseStrategicMemory(value));
 }
 
-function parseUpdate(value: JsonValue, scope: MemoryUpdateScope) {
+function parseUpdate(value: JsonValue, scope: MemoryUpdateScope): ParsedUpdate {
   const schema =
     scope === "series"
       ? seriesUpdateSchema
@@ -157,8 +169,8 @@ export function applyStrategicMemoryUpdate(
   if (scope === "series")
     return serializeMemory({
       teamPlaybook: parsed.team_playbook,
-      seriesMemory: parsed.series_memory,
-      nextGamePlan: parsed.next_game_plan,
+      seriesMemory: parsed.series_memory ?? "",
+      nextGamePlan: parsed.next_game_plan ?? "",
       verifiedReferences: current.verifiedReferences,
     });
   if (scope === "next-round")
@@ -170,7 +182,7 @@ export function applyStrategicMemoryUpdate(
     });
   return serializeMemory({
     teamPlaybook: parsed.team_playbook,
-    seriesMemory: parsed.series_memory,
+    seriesMemory: parsed.series_memory ?? "",
     nextGamePlan: "",
     verifiedReferences: current.verifiedReferences,
   });
@@ -201,17 +213,17 @@ export function rememberVerifiedReference(
     result: string;
   },
 ): string {
-  if (!new Set(["lookup_species", "lookup_move", "lookup_item", "lookup_ability"]).has(input.tool))
-    return notebook;
+  if (!REFERENCE_TOOLS.has(input.tool)) return notebook;
   const result = input.result.trim();
   if (!result) return notebook;
   const memory = parseStrategicMemory(notebook);
-  const key = `${input.tool}:${JSON.stringify(input.arguments)}:${input.format}:${input.revision}`;
+  const key = `${input.tool}:${JSON.stringify(input.arguments)}`;
   const entry: VerifiedReference = { ...input, result };
   const references = memory.verifiedReferences.filter(
     (reference) =>
-      `${reference.tool}:${JSON.stringify(reference.arguments)}:${reference.format}:${reference.revision}` !==
-      key,
+      reference.format === input.format &&
+      reference.revision === input.revision &&
+      `${reference.tool}:${JSON.stringify(reference.arguments)}` !== key,
   );
   references.push(entry);
   while (
