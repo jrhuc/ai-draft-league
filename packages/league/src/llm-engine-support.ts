@@ -4,6 +4,11 @@ import type { SlotMenu } from "./choices.js";
 import type { SheetPolicy } from "./prompts.js";
 import { DEX_TOOLS } from "./reference.js";
 import { normalizeStageEvidence, type StageEvidence } from "./stage-evidence.js";
+import {
+  applyStrategicMemoryUpdate,
+  type MemoryUpdateScope,
+  normalizeStrategicMemory,
+} from "./strategic-memory.js";
 import type {
   BattleRequest,
   JsonObject,
@@ -79,7 +84,7 @@ export const replayDecisionSchema = z.object({
 const reflectionSchema = z.object({
   summary: z.string(),
   adjustment: z.string(),
-  notebook: z.string(),
+  notebook: z.json(),
 });
 const tournamentRetrospectiveSchema = z.object({
   summary: z.string(),
@@ -87,7 +92,7 @@ const tournamentRetrospectiveSchema = z.object({
   did_poorly: z.string(),
   would_change: z.string(),
 });
-const suppliedDecisionEvidenceSchema = z.object({ rationale: z.string(), notebook: z.string() });
+const suppliedDecisionEvidenceSchema = z.object({ rationale: z.string(), notebook: z.json() });
 
 export const FORCE_COMMIT_MS = 25_000;
 export const FORCE_COMMIT_TURN_FRACTION = 0.5;
@@ -110,7 +115,6 @@ export const UNTIMED_DECISION_PARSE_ATTEMPTS = 4;
 export const DECISION_PREFILL = '{"choices": [';
 export const DEX_LOOKUP_CACHE_LIMIT = 256;
 export const UNTIMED_EMPTY_RESPONSE_RETRIES = 2;
-export const DECISION_NOTE_LIMIT = 8000;
 const DECISION_RATIONALE_LIMIT = 2000;
 export const REFLECTION_MAX_TOKENS = 32_768;
 export const TRANSCRIPT_CHARACTER_LIMIT = 24000;
@@ -315,7 +319,6 @@ function parseDecision(
   const evidence = normalizeStageEvidence(object.rationale, object.notebook, {
     currentNotebook,
     rationaleLimit: DECISION_RATIONALE_LIMIT,
-    notebookLimit: DECISION_NOTE_LIMIT,
   });
   const decision: ParsedDecision = { choices, evidence };
   if (evidence.supplied.rationale) decision.rationale = evidence.rationale;
@@ -323,18 +326,22 @@ function parseDecision(
   return decision;
 }
 
-export function extractReflection(response: string): Reflection {
+export function extractReflection(
+  response: string,
+  currentNotebook = "",
+  scope: MemoryUpdateScope = "series",
+): Reflection {
   const object = jsonObjects(response)
     .filter((value) => "summary" in value || "adjustment" in value)
     .at(-1);
   if (!object) throw new Error("no JSON game review found");
   const parsed = reflectionSchema.safeParse(object);
   if (!parsed.success)
-    throw new Error("review must contain string summary, adjustment, and notebook fields");
+    throw new Error("review must contain string summary and adjustment fields plus a notebook object");
   return {
     summary: clip(parsed.data.summary, DECISION_RATIONALE_LIMIT),
     adjustment: clip(parsed.data.adjustment, DECISION_RATIONALE_LIMIT),
-    notebook: clip(parsed.data.notebook, DECISION_NOTE_LIMIT),
+    notebook: applyStrategicMemoryUpdate(currentNotebook, parsed.data.notebook, scope),
   };
 }
 
@@ -354,7 +361,7 @@ export function extractTournamentRetrospective(
   return {
     summary: clip(parsed.data.summary, DECISION_RATIONALE_LIMIT),
     adjustment: "",
-    notebook: currentNotebook,
+    notebook: normalizeStrategicMemory(currentNotebook),
     retrospective: {
       didWell: clip(parsed.data.did_well, DECISION_RATIONALE_LIMIT),
       didPoorly: clip(parsed.data.did_poorly, DECISION_RATIONALE_LIMIT),
