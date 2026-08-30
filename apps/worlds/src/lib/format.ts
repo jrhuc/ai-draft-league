@@ -23,7 +23,10 @@ export function modelFamily(spec: string): string | null {
 }
 
 export function modelLabel(spec: string): string {
-  return spec.replace(/^[^:]*:/, "").replace(/^[^/]*\//, "");
+  return spec
+    .replace(/^[^:]*:/, "")
+    .replace(/^[^/]*\//, "")
+    .replace(/-contributor$/, "");
 }
 
 export function modelProvider(spec: string): string {

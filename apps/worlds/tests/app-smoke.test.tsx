@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, test, vi } from "vite-plus/test";
 import { App } from "../src/App";
 import { TournamentProvider } from "../src/lib/context";
+import { modelLabel } from "../src/lib/format";
 import bundle from "../public/tournament-bundle.json";
 
 const roots: Root[] = [];
@@ -72,4 +73,8 @@ test("a failed bundle load can retry and show team selections", async () => {
   await until(() => frame!.style.height === "322px");
   report(frame!.contentWindow, 20);
   await until(() => frame!.style.height === "240px");
+});
+
+test("model labels omit the contributor routing suffix", () => {
+  expect(modelLabel("opencode-go:muse-spark-1.2-contributor")).toBe("muse-spark-1.2");
 });

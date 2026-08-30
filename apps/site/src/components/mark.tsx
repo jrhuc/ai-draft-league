@@ -35,7 +35,7 @@ export function Mark({
 export function Model({ spec }: { spec: string }) {
   const provider = modelProvider(spec);
   return (
-    <span className="model" title={spec}>
+    <span className="model">
       {modelLabel(spec)}
       {provider ? <span style={{ color: "var(--t5)" }}>via {provider}</span> : null}
     </span>

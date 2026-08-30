@@ -22,7 +22,7 @@ export function EntrantTag({ id, muted = false }: { id: string; muted?: boolean 
     <span
       className={`team-tag${muted ? " muted" : ""}`}
       style={entrantStyle(bundle, id)}
-      title={entry.model}
+      title={modelLabel(entry.model)}
     >
       <Mark spec={entry.model} tone />
       <span className="name">{modelLabel(entry.model)}</span>

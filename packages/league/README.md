@@ -1,54 +1,48 @@
 # League harness
 
-The `league` package is an operator harness for language-model decisions in
-competitive Pokémon. Models can draft from a shared board, build teams,
-negotiate transaction windows, choose a bring and lead, play best-of-three
-matches, and review their season — in original draft leagues or in re-runs of
-real tournament brackets.
+The `league` package runs model-managed competitive Pokémon draft leagues and replays real tournament brackets. Models draft or inherit rosters, build teams, play best-of-three matches, manage transaction windows, and review their seasons.
 
-The embedded, pinned [Pokémon Showdown](https://pokemonshowdown.com/) simulator is authoritative for rules,
-legality, randomness, state transitions, and results. Every decision is
-recorded as a replayable event: a season, matchday, or single battle replays
-exactly, and any recorded decision can be forked into a counterfactual
-continuation.
+The pinned [Pokémon Showdown](https://pokemonshowdown.com/) simulator decides legality, randomness, battle transitions, and results. The harness records every decision and can replay a season, matchday, battle, or counterfactual fork from saved evidence.
 
-The sibling spectator site consumes validated public season bundles and owns
-the public experience ([`apps/site`](../../apps/site)).
-[poke-env](https://github.com/hsahovic/poke-env),
-[VGC-Bench](https://arxiv.org/abs/2506.10326), and compatible systems are
-external baselines.
+The sibling [`apps/site`](../../apps/site) spectator app consumes validated public season bundles.
 
 ## Run locally
 
-Install Node.js 24.18.1 and pnpm 11.22.0. Executable model specifications use
-one of these exact forms:
+Install Node.js 24.18.1 or newer in the 24.x line and pnpm 11.22.0. Model specifications use one of these forms:
 
-- `openrouter:<model-id>`
-- `prime:<model-id>`
-- `gateway:<model-id>` (Vercel AI Gateway)
-- `opencode-go:<model-id>` / `opencode-zen:<model-id>` (OpenCode)
+- `openrouter:model_id`
+- `prime:model_id`
+- `gateway:model_id`
+- `opencode-go:model_id`
+- `opencode-zen:model_id`
 - `random`
 
-Set `OPENROUTER_API_KEY`, `PRIME_API_KEY`, `AI_GATEWAY_API_KEY`, or `OPENCODE_API_KEY` for CLI
-runs that use the corresponding provider.
+Set the matching provider key when required:
+
+- `OPENROUTER_API_KEY`
+- `PRIME_API_KEY`
+- `AI_GATEWAY_API_KEY`
+- `OPENCODE_API_KEY`
+
+From `packages/league`:
 
 ```sh
 pnpm install --frozen-lockfile
 pnpm run setup:showdown
+pnpm run build
 pnpm test
 pnpm run vgcleague --help
 ```
 
-See [Usage](docs/usage.md) for commands. Live watching happens through the
-spectator app dev server (`vp dev` at the repo root, then `/watch`).
+See [Usage](docs/usage.md) for commands and the [repository README](../../README.md) for spectator development.
 
 ## Documentation
 
-- [Overview and current season rules](docs/index.md)
-- [Architecture](docs/architecture.md)
-- [How franchise managers work](docs/manager-model.md)
-- [Evidence interpretation](docs/measurement.md)
+- [Season overview and rules](docs/index.md)
 - [Usage](docs/usage.md)
+- [Architecture](docs/architecture.md)
+- [Franchise manager state](docs/manager-model.md)
+- [Evidence interpretation](docs/measurement.md)
 - [Transactions](docs/trade-window.md)
 - [Weekly review](docs/weekly-review.md)
 - [Season review](docs/season-review.md)
@@ -56,5 +50,4 @@ spectator app dev server (`vp dev` at the repo root, then `/watch`).
 
 ## License
 
-The code uses the [MIT License](LICENSE). Pokémon and all respective names are
-trademarks of Nintendo, Creatures Inc., and GAME FREAK inc.
+The code uses the [MIT License](../../LICENSE). Pokémon and related names are trademarks of Nintendo, Creatures Inc., and GAME FREAK inc.

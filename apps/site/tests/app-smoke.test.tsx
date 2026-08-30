@@ -46,6 +46,9 @@ test("home renders standings from the fetched bundle", async () => {
   mount("/");
   await until(() => document.querySelector("table") !== null);
   expect(document.body.textContent).toContain("Standings");
+  expect(document.body.textContent).toContain("muse-spark-1.2");
+  expect(document.body.textContent).not.toContain("muse-spark-1.2-contributor");
+  expect(document.querySelector('[title*="contributor"]')).toBeNull();
 });
 
 test("unknown team route renders the not-found view", async () => {
