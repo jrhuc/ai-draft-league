@@ -1,8 +1,3 @@
-import {
-  applyMemoryUpdate,
-  type BattleMemory,
-  type MemoryUpdate,
-} from "./battle-memory.js";
 import type { JsonValue } from "./types.js";
 import { clip, isText } from "./value.js";
 
@@ -13,14 +8,14 @@ interface EvidenceSupplied {
 
 export interface StageEvidence {
   rationale: string;
-  memory: BattleMemory;
-  memoryUpdate: MemoryUpdate;
+  notebook: string;
   supplied: EvidenceSupplied;
 }
 
 interface StageEvidenceOptions {
-  currentMemory: BattleMemory;
+  currentNotebook: string;
   rationaleLimit: number;
+  notebookLimit: number;
 }
 
 export function normalizeStageEvidence(
@@ -29,21 +24,18 @@ export function normalizeStageEvidence(
   options: StageEvidenceOptions,
 ): StageEvidence {
   const hasRationale = isText(rationale);
-  const memoryUpdate = applyMemoryUpdate(options.currentMemory, notebook);
+  const hasNotebook = isText(notebook);
   return {
     rationale: hasRationale ? clip(rationale.trim(), options.rationaleLimit) : "",
-    memory: memoryUpdate.memory,
-    memoryUpdate,
-    supplied: { rationale: hasRationale, notebookUpdate: memoryUpdate.supplied },
+    notebook: hasNotebook ? clip(notebook.trim(), options.notebookLimit) : options.currentNotebook,
+    supplied: { rationale: hasRationale, notebookUpdate: hasNotebook },
   };
 }
 
-export function noStageEvidence(currentMemory: BattleMemory): StageEvidence {
-  const memoryUpdate = applyMemoryUpdate(currentMemory, undefined);
+export function noStageEvidence(currentNotebook: string): StageEvidence {
   return {
     rationale: "",
-    memory: currentMemory,
-    memoryUpdate,
+    notebook: currentNotebook,
     supplied: { rationale: false, notebookUpdate: false },
   };
 }
