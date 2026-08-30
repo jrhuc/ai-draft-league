@@ -60,7 +60,7 @@ test("a failed bundle load can retry and show team selections", async () => {
 
   const frame = document.querySelector<HTMLIFrameElement>(".ps-frame");
   expect(frame?.srcdoc).toContain("battle-log-data");
-  expect(frame?.srcdoc).toContain("ps-height");
+  expect(frame?.srcdoc).toContain('<script src="/replay-frame.js">');
   expect(frame?.contentWindow).not.toBeNull();
   const report = (source: Window | null, height: number) =>
     window.dispatchEvent(

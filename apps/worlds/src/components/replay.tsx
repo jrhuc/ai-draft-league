@@ -14,7 +14,9 @@ function escapeLog(value: string): string {
  * The "downloaded replay" document the official client publishes for offline
  * viewing: replay-embed.js reads .battle-log-data and renders the animated
  * battle. Only the log travels; every script and sprite stays on Showdown's
- * own server.
+ * own server. /replay-frame.js must run first (see that file), and stays an
+ * external script because the site CSP bars inline scripts, which the srcdoc
+ * inherits.
  */
 function replayDoc(raw: string, teams: [Team, Team], title: string): string {
   let log = raw;
@@ -35,17 +37,8 @@ function replayDoc(raw: string, teams: [Team, Team], title: string): string {
 <div class="battle"></div><div class="battle-log"></div><div class="replay-controls"></div><div class="replay-controls-2"></div>
 <script type="text/plain" class="battle-log-data">${escapeLog(log)}</script>
 </div>
+<script src="/replay-frame.js"></script>
 <script src="https://play.pokemonshowdown.com/js/replay-embed.js"></script>
-<script>
-new ResizeObserver(() => {
-  const style = getComputedStyle(document.body);
-  const height =
-    document.body.getBoundingClientRect().height +
-    parseFloat(style.marginTop) +
-    parseFloat(style.marginBottom);
-  parent.postMessage({ type: "ps-height", height }, "*");
-}).observe(document.body);
-</script>
 `;
 }
 
