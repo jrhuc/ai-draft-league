@@ -193,7 +193,7 @@ export function scopeStrategicMemory(
   return serializeMemory({
     teamPlaybook: memory.teamPlaybook,
     seriesMemory: scope === "next-round" ? "" : memory.seriesMemory,
-    nextGamePlan: scope === "series" ? memory.nextGamePlan : "",
+    nextGamePlan: "",
     verifiedReferences: references,
   });
 }
