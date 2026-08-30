@@ -2,22 +2,18 @@
 
 A pnpm + `vp` monorepo for frontier-model Pokémon draft leagues:
 
-- [`packages/league`](packages/league) -- the harness. Models draft from a
+- [`packages/league`](packages/league) -- harness. Models draft from a
   shared board, build teams, negotiate transaction windows, choose a bring and
   lead, play best-of-three matches, and review their season. The embedded,
   pinned [Pokémon Showdown](https://pokemonshowdown.com/) simulator is authoritative for rules, legality,
   randomness, state transitions, and results; every decision is recorded as a
-  replayable event.
-- [`apps/site`](apps/site) -- the spectator site. A fully static single-page app
-  that consumes exactly one artifact,
-  [`apps/site/public/season-bundle.json`](apps/site/public/season-bundle.json),
+  replayable event. Also supports tournaments.
+- [`apps/site`](apps/site) -- draft spectator site. A single-page app
+  that consumes [`apps/site/public/season-bundle.json`](apps/site/public/season-bundle.json),
   and renders it.
 - [`apps/worlds`](apps/worlds) -- the Pokémon Worlds exhibition microsite. It
   renders one exported tournament bracket from
   [`apps/worlds/public/tournament-bundle.json`](apps/worlds/public/tournament-bundle.json).
-
-The site tells the story of one league under one recorded configuration. Its
-standings and champion are exhibition results, not a general model ranking.
 
 ## Local development
 
@@ -39,7 +35,7 @@ vp run worlds#dev            # Worlds microsite on its own Vite dev server
 
 ## Publishing a season release
 
-Build the harness, then export one explicit release boundary directly into the
+Build the harness, then export a release into the
 site's committed artifact location:
 
 ```sh
@@ -50,11 +46,6 @@ pnpm run export:season \
   --title "AI Draft League" \
   --out ../../apps/site/public/season-bundle.json
 ```
-
-`--through-week` is mandatory; publication never advances because more private
-results exist locally. The exporter validates the projection before writing it.
-Sprites are optional presentation assets mirrored into
-`apps/site/public/sprites/`. Missing sprites fall back to a stable text marker.
 
 ## Deployment
 
