@@ -1,4 +1,11 @@
 import type { SlotMenu } from "./choices.js";
+import {
+  NEXT_GAME_PLAN_LIMIT,
+  renderStrategicMemory,
+  SERIES_MEMORY_LIMIT,
+  STRATEGIC_MEMORY_LIMIT,
+  TEAM_PLAYBOOK_LIMIT,
+} from "./strategic-memory.js";
 
 export const MANAGER_CHARGE =
   "The franchise is yours for the whole season: you draft its roster, review it after every week, trade and sign in the transaction windows, and each matchup’s six is built and piloted on your behalf from the roster and memory you leave behind. The goal is not to run the franchise correctly but to win the league: you are judged on results against the other coaches, nothing else.";
@@ -41,7 +48,7 @@ const TOOL_RULES = {
     "lookup_matchup reports only the type chart. For actual KO ranges, use estimate_damage: it binds the abilities, items, stats, stages, status, HP, screens, weather, terrain, and both active allies with their abilities that the battle has revealed so far, and treats anything unrevealed as neutral across legal ranges. Use compare_action_order for Speed order. Trust a tool only for the factors its result says it applied.",
 } satisfies Record<SheetPolicy, string>;
 
-const NOTEBOOK_RULE = "Your private notebook is a full replacement carried across turns and games.";
+const NOTEBOOK_RULE = `Your private notebook has three model-owned scopes: team_playbook (at most ${TEAM_PLAYBOOK_LIMIT} characters) for transferable team use, series_memory (at most ${SERIES_MEMORY_LIMIT}) for this opponent, and next_game_plan (at most ${NEXT_GAME_PLAN_LIMIT}) for the immediate next game. Their combined model-owned budget is ${STRATEGIC_MEMORY_LIMIT}. A notebook update fully replaces only the requested scopes. verified_references is harness-managed lookup evidence; never return or edit it.`;
 
 const RETURN_JSON = "Return only the JSON object requested in the current decision prompt.";
 
@@ -67,24 +74,28 @@ const REFLECTION_EVIDENCE =
   "Use only the supplied private battle evidence and authoritative outcome. Do not invent hidden information.";
 const REFLECTION_PREVIEW_PLAN =
   "Assess the team-preview plan separately from piloting: whether the four brought, and which Mega Stone holder (if any) you evolved, suited this opponent.";
+const SERIES_NOTEBOOK_RESPONSE =
+  'Respond with exactly one JSON object: {"summary":"why the game was won or lost","adjustment":"what to do next","notebook":{"team_playbook":"transferable team lessons","series_memory":"durable facts about this opponent","next_game_plan":"immediate plan for the next game"}}.';
 
 export const REFLECTION_SYSTEM = [
   "You are reviewing one completed game in a best-of-three VGC series.",
   FORMAT_AUTHORITY_NOTICE,
+  NOTEBOOK_RULE,
   REFLECTION_EVIDENCE,
   "Identify the main reason for the result and one concrete adjustment for the next game.",
   REFLECTION_PREVIEW_PLAN,
-  "Update the private notebook with only durable opponent tendencies, revealed strategic facts, and future plans; omit current HP, active positions, turn recaps, and repeated roster facts.",
-  'Respond with exactly one JSON object: {"summary":"why the game was won or lost","adjustment":"what to do better next game","notebook":"updated durable series notes"}.',
+  "Replace the three model-owned notebook scopes. Keep team_playbook transferable, series_memory limited to durable opponent tendencies and revealed strategic facts, and next_game_plan limited to the immediate next game. Omit current HP, active positions, turn recaps, and repeated roster facts.",
+  SERIES_NOTEBOOK_RESPONSE,
 ].join("\n");
 
 export const TOURNAMENT_REFLECTION_SYSTEM = [
   "You are reviewing one completed game in a best-of-three fixed-team VGC tournament series. If the series continues, the next game is against the same opponent with the same six Pokémon.",
   FORMAT_AUTHORITY_NOTICE,
+  NOTEBOOK_RULE,
   REFLECTION_EVIDENCE,
   "Identify the main reasons for the result and what, if anything, to keep or change for the next game.",
-  "Update the private notebook with only durable opponent tendencies, revealed strategic facts, and future plans; omit current HP, active positions, turn recaps, and repeated roster facts.",
-  'Respond with exactly one JSON object: {"summary":"why the game was won or lost","adjustment":"what to keep or change next game","notebook":"updated durable series notes"}.',
+  "Replace the three model-owned notebook scopes. Keep team_playbook transferable, series_memory limited to durable opponent tendencies and revealed strategic facts, and next_game_plan limited to the immediate next game. Omit current HP, active positions, turn recaps, and repeated roster facts.",
+  SERIES_NOTEBOOK_RESPONSE,
 ].join("\n");
 
 const SERIES_REFLECTION_OVER =
@@ -92,14 +103,15 @@ const SERIES_REFLECTION_OVER =
 const SERIES_REFLECTION_RESULT =
   "Identify the main reasons for the game and series result, including whether your between-game adaptations helped or backfired.";
 const SERIES_REFLECTION_RESPONSE =
-  'Respond with exactly one JSON object: {"summary":"why the game and series were won or lost","adjustment":"what to keep or change with this team in the next match","notebook":"durable team-strategy notes for the next round"}.';
+  'Respond with exactly one JSON object: {"summary":"why the game and series were won or lost","adjustment":"what to keep or change with this team in the next match","notebook":{"team_playbook":"transferable team lessons for the next round"}}.';
 
 export const SERIES_REFLECTION_SYSTEM = [
   SERIES_REFLECTION_OVER,
   FORMAT_AUTHORITY_NOTICE,
+  NOTEBOOK_RULE,
   REFLECTION_EVIDENCE,
   SERIES_REFLECTION_RESULT,
-  "Rewrite the private notebook for the next match with only transferable lessons about using this fixed team; do not assume an interaction or damage result against this opponent will repeat against a different team. Omit opponent-specific details, current HP, active positions, turn recaps, and repeated roster facts.",
+  "Replace only team_playbook for the next match with transferable lessons about using this fixed team. The harness clears series_memory and next_game_plan. Do not assume an interaction or damage result against this opponent will repeat against a different team. Omit opponent-specific details, current HP, active positions, turn recaps, and repeated roster facts.",
   SERIES_REFLECTION_RESPONSE,
 ].join("\n");
 
@@ -113,25 +125,30 @@ export const TOURNAMENT_RETROSPECTIVE_SYSTEM = [
   'Respond with exactly one JSON object: {"summary":"<1-2 sentences on how the final game ended>","did_well":"<2-4 sentences>","did_poorly":"<2-4 sentences>","would_change":"<2-4 sentences, each one concrete>"}.',
 ].join("\n");
 
+const REMATCH_NOTEBOOK_RESPONSE =
+  'Respond with exactly one JSON object: {"summary":"why the game and series were won or lost","adjustment":"what you would change against this opponent in a future series","notebook":{"team_playbook":"transferable team lessons","series_memory":"durable opponent facts for a rematch"}}.';
+
 export const CLOSED_SERIES_REFLECTION_SYSTEM = [
   SERIES_REFLECTION_OVER,
   FORMAT_AUTHORITY_NOTICE,
+  NOTEBOOK_RULE,
   REFLECTION_EVIDENCE,
   "Identify the main reason for the game and series result, including whether your between-game adjustments helped or backfired.",
   REFLECTION_PREVIEW_PLAN,
-  "Rewrite the private notebook for a possible future rematch: only durable opponent tendencies and revealed strategic facts worth carrying forward; omit current HP, active positions, turn recaps, and repeated roster facts.",
-  'Respond with exactly one JSON object: {"summary":"why the game and series were won or lost","adjustment":"what you would change against this opponent in a future series","notebook":"durable notes for a future rematch"}.',
+  "Replace team_playbook and series_memory for a possible future rematch. Keep only transferable team lessons, durable opponent tendencies, and revealed strategic facts. The harness clears next_game_plan. Omit current HP, active positions, turn recaps, and repeated roster facts.",
+  REMATCH_NOTEBOOK_RESPONSE,
 ].join("\n");
 
 export const DRAFT_SERIES_REFLECTION_SYSTEM = [
   SERIES_REFLECTION_OVER,
   FORMAT_AUTHORITY_NOTICE,
+  NOTEBOOK_RULE,
   REFLECTION_EVIDENCE,
   "Identify the main reason for the game and series result, including whether your between-game adjustments helped or backfired.",
   REFLECTION_PREVIEW_PLAN,
   "Also assess the preparation for this series: how well the six you registered and their sets fit this opponent, what worked, and whether the full roster offered a materially better alternative.",
-  "Rewrite the private notebook for a possible future rematch: durable opponent tendencies, revealed strategic facts, and brief prep conclusions worth carrying forward; omit current HP, active positions, turn recaps, and repeated roster facts.",
-  'Respond with exactly one JSON object: {"summary":"why the game and series were won or lost","adjustment":"what you would change against this opponent in a future series","notebook":"durable notes for a future rematch"}.',
+  "Replace team_playbook and series_memory for a possible future rematch. Keep only transferable team and preparation lessons, durable opponent tendencies, and revealed strategic facts. The harness clears next_game_plan. Omit current HP, active positions, turn recaps, and repeated roster facts.",
+  REMATCH_NOTEBOOK_RESPONSE,
 ].join("\n");
 
 export interface DecisionPrompt {
@@ -154,7 +171,7 @@ export function renderDecision(input: DecisionPrompt): string {
       ...input.matchups,
       "",
     );
-  lines.push(`Private notebook: ${input.notebook || "(empty)"}`, "");
+  lines.push("Private notebook:", renderStrategicMemory(input.notebook ?? ""), "");
   if (input.transcript?.length)
     lines.push("Compact private battle timeline (your POV):", ...input.transcript, "");
 
@@ -183,7 +200,7 @@ export function renderDecision(input: DecisionPrompt): string {
   lines.push(
     "",
     `Return one JSON object with {"choices":[${input.menus.map((_, index) => `N${index + 1}`).join(",")}]}.`,
-    'You may add "rationale":"final reason" and, only when durable plans changed, "notebook":"complete replacement with durable cross-game facts and future plans; no current HP, active board, or turn recap".',
+    'You may add "rationale":"final reason" and, only when durable memory changed, "notebook":{"team_playbook":"complete replacement","series_memory":"complete replacement","next_game_plan":"complete replacement"}. Omit the notebook field to retain it unchanged.',
     `Each choice is the zero-based index for its displayed slot${sharedTeamMenu ? " or ordered team position" : ""}. Include no prose outside JSON.`,
   );
   return lines.join("\n");
