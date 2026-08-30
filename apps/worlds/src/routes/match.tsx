@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { entrantStyle, ordinal } from "@/components/entrant";
 import { Mark } from "@/components/mark";
@@ -26,6 +27,7 @@ export function MatchPage() {
 
 function MatchPageBody({ seriesId }: { seriesId: string }) {
   const bundle = useTournament();
+  const [sheetsOpen, setSheetsOpen] = useState(false);
   const row = matchBySeries(bundle, seriesId);
   const replay = bundle.replays[seriesId];
   if (!row || !replay) throw new Error(`series ${seriesId} is not released`);
@@ -83,39 +85,50 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
             follows each turn. AUTO marks a forced choice.
           </p>
         </div>
-        <ReplayViewer replay={replay} teams={[team(a), team(b)]} />
-      </section>
-
-      <section className="section">
-        <div className="section-head">
-          <h2>Team sheets</h2>
-          <p>
-            The 6 Pokémon each player registered; each model brings 4 per game.
-            {bundle.event?.reconstructedSpreads
-              ? " Stat spreads use public sets for the same Pokémon, not the players’ originals."
-              : ""}
-          </p>
-        </div>
-        <div className="two-col">
-          {([0, 1] as const).map((side) => {
-            const entry = entrant(bundle, match.entrants[side]);
-            return (
-              <div key={entry.id} className="build" style={entrantStyle(bundle, entry.id)}>
-                {entry.team.paste ? (
-                  <a href={entry.team.paste} target="_blank" rel="noreferrer" className="chip">
-                    Show original sheet →
-                  </a>
-                ) : null}
-                <div className="grid grid-2">
-                  {entry.team.sets.map((set) => {
-                    const games = broughtGames(match, side, set.id);
-                    return <SetCard key={set.id} set={set} games={games} />;
-                  })}
-                </div>
+        <ReplayViewer
+          replay={replay}
+          teams={[team(a), team(b)]}
+          sheets={
+            <details
+              className="sheets"
+              open={sheetsOpen}
+              onToggle={(event) => setSheetsOpen(event.currentTarget.open)}
+            >
+              <summary>
+                Team sheets
+                <span className="hint">
+                  The 6 registered per player, 4 brought per game.
+                  {bundle.event?.reconstructedSpreads ? " Spreads use public sets." : ""}
+                </span>
+              </summary>
+              <div className="two-col">
+                {([0, 1] as const).map((side) => {
+                  const entry = entrant(bundle, match.entrants[side]);
+                  return (
+                    <div key={entry.id} className="build" style={entrantStyle(bundle, entry.id)}>
+                      {entry.team.paste ? (
+                        <a
+                          href={entry.team.paste}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="chip"
+                        >
+                          Show original sheet →
+                        </a>
+                      ) : null}
+                      <div className="grid grid-2">
+                        {entry.team.sets.map((set) => {
+                          const games = broughtGames(match, side, set.id);
+                          return <SetCard key={set.id} set={set} games={games} />;
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
-        </div>
+            </details>
+          }
+        />
       </section>
 
       <section className="section">

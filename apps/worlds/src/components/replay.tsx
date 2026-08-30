@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { z } from "zod";
 import { Mark } from "@/components/mark";
 import { seconds, toneStyle, tokens } from "@/lib/format";
@@ -208,10 +208,12 @@ function Game({
   game,
   teams,
   lastGame,
+  sheets,
 }: {
   game: ReplayGame;
   teams: [Team, Team];
   lastGame: boolean;
+  sheets?: ReactNode;
 }) {
   const teamFor = (id: string) => (teams[0].id === id ? teams[0] : teams[1]);
   const turns = useMemo(() => {
@@ -238,6 +240,7 @@ function Game({
   return (
     <div className="replay">
       <ShowdownPlayer game={game} teams={teams} />
+      {sheets}
 
       <div className="turns">
         {turns.map(({ turn, decisions }) => (
@@ -289,7 +292,15 @@ function Game({
   );
 }
 
-export function ReplayViewer({ replay, teams }: { replay: Replay; teams: [Team, Team] }) {
+export function ReplayViewer({
+  replay,
+  teams,
+  sheets,
+}: {
+  replay: Replay;
+  teams: [Team, Team];
+  sheets?: ReactNode;
+}) {
   const [index, setIndex] = useState(0);
   const game = replay.games[index] ?? replay.games[0];
   if (!game) return null;
@@ -324,6 +335,7 @@ export function ReplayViewer({ replay, teams }: { replay: Replay; teams: [Team, 
         game={game}
         teams={teams}
         lastGame={index === replay.games.length - 1}
+        sheets={sheets}
       />
     </div>
   );

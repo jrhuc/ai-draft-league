@@ -1,12 +1,12 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { EntrantTag, entrantStyle, ordinal } from "@/components/entrant";
 import { Mark } from "@/components/mark";
 import { SetCard } from "@/components/set-card";
 import { Sprite } from "@/components/sprite";
 import { useTitle, useTournament } from "@/lib/context";
-import { formatLabel, modelLabel, modelProvider, tokens } from "@/lib/format";
-import { entrant, roundLabel, tapeStats } from "@/lib/load";
+import { formatLabel, modelLabel, modelProvider, seconds, tokens } from "@/lib/format";
+import { entrant, entrantStats, roundLabel, tapeStats } from "@/lib/load";
 import type { Entrant } from "@/lib/tournament";
 
 function TeamCard({ entry }: { entry: Entrant }) {
@@ -15,8 +15,29 @@ function TeamCard({ entry }: { entry: Entrant }) {
   const provider = modelProvider(entry.model);
   const [openSetId, setOpenSetId] = useState<string | null>(null);
   const openSet = team.sets.find((set) => set.id === openSetId);
+  const cardRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!openSetId) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !cardRef.current?.contains(event.target))
+        setOpenSetId(null);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenSetId(null);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [openSetId]);
   return (
-    <article className="card card-pad team-card" style={entrantStyle(bundle, entry.id)}>
+    <article
+      ref={cardRef}
+      className={`card card-pad team-card${openSet ? " popped" : ""}`}
+      style={entrantStyle(bundle, entry.id)}
+    >
       <div className="head">
         <EntrantTag id={entry.id} />
         {team.placement === null ? null : (
@@ -29,7 +50,7 @@ function TeamCard({ entry }: { entry: Entrant }) {
         {team.handle ? ` (${team.handle})` : ""}
         {team.swiss ? ` · ${team.swiss} in Swiss` : ""}
       </span>
-      <span className="sprite-row">
+      <div className="sprite-row">
         {team.sets.map((set) => (
           <button
             key={set.id}
@@ -41,8 +62,12 @@ function TeamCard({ entry }: { entry: Entrant }) {
             <Sprite id={set.spriteId} name={set.species} size={40} />
           </button>
         ))}
-      </span>
-      {openSet ? <SetCard set={openSet} /> : null}
+        {openSet ? (
+          <div key={openSet.id} className="set-pop">
+            <SetCard set={openSet} />
+          </div>
+        ) : null}
+      </div>
       {team.paste ? (
         <a href={team.paste} target="_blank" rel="noreferrer" className="chip">
           Show original sheet →
@@ -186,6 +211,37 @@ export function HomePage() {
         <div className="grid grid-2">
           {bundle.entrants.map((entry) => (
             <TeamCard key={entry.id} entry={entry} />
+          ))}
+        </div>
+      </section>
+
+      <section className="section">
+        <div className="section-head">
+          <h2>Decision stats</h2>
+          <p>Reasoning and time are per decision; Protect and switch rates are per turn.</p>
+        </div>
+        <div className="card stat-table">
+          <div className="stat-row stat-head">
+            <span />
+            <span>reasoning</span>
+            <span>time</span>
+            <span>protect</span>
+            <span>switch</span>
+          </div>
+          {entrantStats(bundle).map((row) => (
+            <div
+              key={row.entrantId}
+              className="stat-row"
+              style={entrantStyle(bundle, row.entrantId)}
+            >
+              <EntrantTag id={row.entrantId} />
+              <span className="num">
+                {row.reasoningTokens === null ? "—" : tokens(Math.round(row.reasoningTokens))}
+              </span>
+              <span className="num">{row.latencyMs === null ? "—" : seconds(row.latencyMs)}</span>
+              <span className="num">{Math.round(row.protectRate * 100)}%</span>
+              <span className="num">{Math.round(row.switchRate * 100)}%</span>
+            </div>
           ))}
         </div>
       </section>

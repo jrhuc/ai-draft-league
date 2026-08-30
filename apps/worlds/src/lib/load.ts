@@ -112,3 +112,53 @@ export function tapeStats(bundle: TournamentBundle): TapeStats {
   }
   return { games, decisions, reasoningTokens };
 }
+
+export type EntrantStats = {
+  entrantId: string;
+  latencyMs: number | null;
+  reasoningTokens: number | null;
+  protectRate: number;
+  switchRate: number;
+};
+
+export function entrantStats(bundle: TournamentBundle): EntrantStats[] {
+  type StatRow = {
+    lat: number[];
+    tok: number[];
+    turns: number;
+    protects: number;
+    switches: number;
+  };
+  const rows = new Map<string, StatRow>(
+    bundle.entrants.map((entry) => [
+      entry.id,
+      { lat: [], tok: [], turns: 0, protects: 0, switches: 0 },
+    ]),
+  );
+  for (const replay of Object.values(bundle.replays)) {
+    for (const game of replay.games) {
+      for (const decision of game.decisions) {
+        const row = rows.get(decision.entrantId);
+        if (!row || decision.automatic) continue;
+        if (decision.latencyMs !== null) row.lat.push(decision.latencyMs);
+        if (decision.reasoningTokens !== null) row.tok.push(decision.reasoningTokens);
+        if (decision.phase !== "turn") continue;
+        row.turns += 1;
+        if (decision.selection.some((choice) => choice.startsWith("Protect"))) row.protects += 1;
+        if (decision.selection.some((choice) => choice.startsWith("Switch to"))) row.switches += 1;
+      }
+    }
+  }
+  const mean = (values: number[]) =>
+    values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+  return bundle.entrants.map((entry) => {
+    const row = rows.get(entry.id)!;
+    return {
+      entrantId: entry.id,
+      latencyMs: mean(row.lat),
+      reasoningTokens: mean(row.tok),
+      protectRate: row.turns ? row.protects / row.turns : 0,
+      switchRate: row.turns ? row.switches / row.turns : 0,
+    };
+  });
+}
