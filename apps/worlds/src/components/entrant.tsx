@@ -25,7 +25,7 @@ export function EntrantTag({ id, muted = false }: { id: string; muted?: boolean 
       title={entry.model}
     >
       <Mark spec={entry.model} tone />
-      {modelLabel(entry.model)}
+      <span className="name">{modelLabel(entry.model)}</span>
     </span>
   );
 }

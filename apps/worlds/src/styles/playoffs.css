@@ -25,17 +25,9 @@
   left: 0;
 }
 
-/* Narrow columns wrap long model names to two lines; keep every card the same
-   height so the connector geometry derived from --match-h stays true. */
-@media (max-width: 60rem) {
-  .bracket {
-    --match-h: 8.9rem;
-  }
-}
-
 .bracket-match {
   display: grid;
-  min-height: var(--match-h);
+  height: var(--match-h);
 }
 
 .bracket-round:nth-child(2) .bracket-match {
@@ -93,6 +85,18 @@
 
 .bracket-match a .bracket-slot + .bracket-slot {
   border-bottom: 1px solid var(--line);
+}
+
+/* The connector spans assume every card is exactly --match-h tall with the
+   divider at one shared offset, so a label must never wrap. */
+.bracket-slot .team-tag {
+  min-width: 0;
+}
+
+.bracket-slot .team-tag .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .bracket-slot .num {
