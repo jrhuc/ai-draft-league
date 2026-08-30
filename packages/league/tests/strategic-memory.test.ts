@@ -16,24 +16,33 @@ const update = {
 test("strategic memory expires scopes at their lifecycle boundaries", () => {
   const current = applyStrategicMemoryUpdate("", update, "series");
 
-  assert.deepEqual(parseStrategicMemory(scopeStrategicMemory(current, current, "series")), {
-    teamPlaybook: "Team lesson.",
-    seriesMemory: "Opponent fact.",
-    nextGamePlan: "",
-    verifiedReferences: [],
-  });
-  assert.deepEqual(parseStrategicMemory(scopeStrategicMemory(current, current, "rematch")), {
-    teamPlaybook: "Team lesson.",
-    seriesMemory: "Opponent fact.",
-    nextGamePlan: "",
-    verifiedReferences: [],
-  });
-  assert.deepEqual(parseStrategicMemory(scopeStrategicMemory(current, current, "next-round")), {
-    teamPlaybook: "Team lesson.",
-    seriesMemory: "",
-    nextGamePlan: "",
-    verifiedReferences: [],
-  });
+  assert.deepEqual(
+    parseStrategicMemory(scopeStrategicMemory(current, current, "series")),
+    {
+      teamPlaybook: "Team lesson.",
+      seriesMemory: "Opponent fact.",
+      nextGamePlan: "",
+      verifiedReferences: [],
+    },
+  );
+  assert.deepEqual(
+    parseStrategicMemory(scopeStrategicMemory(current, current, "rematch")),
+    {
+      teamPlaybook: "Team lesson.",
+      seriesMemory: "Opponent fact.",
+      nextGamePlan: "",
+      verifiedReferences: [],
+    },
+  );
+  assert.deepEqual(
+    parseStrategicMemory(scopeStrategicMemory(current, current, "next-round")),
+    {
+      teamPlaybook: "Team lesson.",
+      seriesMemory: "",
+      nextGamePlan: "",
+      verifiedReferences: [],
+    },
+  );
 });
 
 test("strategic memory rejects oversized replacements instead of clipping them", () => {
