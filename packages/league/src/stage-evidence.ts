@@ -1,3 +1,4 @@
+import { applyStrategicMemoryUpdate } from "./strategic-memory.js";
 import type { JsonValue } from "./types.js";
 import { clip, isText } from "./value.js";
 
@@ -15,20 +16,20 @@ export interface StageEvidence {
 interface StageEvidenceOptions {
   currentNotebook: string;
   rationaleLimit: number;
-  notebookLimit: number;
 }
-/** Optional evidence is distinguished by field presence: an absent notebook retains prior context,
- * while a supplied empty string deliberately clears it. */
+
 export function normalizeStageEvidence(
   rationale: JsonValue | undefined,
   notebook: JsonValue | undefined,
   options: StageEvidenceOptions,
 ): StageEvidence {
   const hasRationale = isText(rationale);
-  const hasNotebook = isText(notebook);
+  const hasNotebook = notebook !== undefined;
   return {
     rationale: hasRationale ? clip(rationale.trim(), options.rationaleLimit) : "",
-    notebook: hasNotebook ? clip(notebook.trim(), options.notebookLimit) : options.currentNotebook,
+    notebook: hasNotebook
+      ? applyStrategicMemoryUpdate(options.currentNotebook, notebook, "series")
+      : options.currentNotebook,
     supplied: { rationale: hasRationale, notebookUpdate: hasNotebook },
   };
 }
