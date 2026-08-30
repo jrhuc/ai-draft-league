@@ -1,3 +1,8 @@
+import {
+  applyMemoryUpdate,
+  type BattleMemory,
+  type MemoryUpdate,
+} from "./battle-memory.js";
 import type { JsonValue } from "./types.js";
 import { clip, isText } from "./value.js";
 
@@ -8,35 +13,37 @@ interface EvidenceSupplied {
 
 export interface StageEvidence {
   rationale: string;
-  notebook: string;
+  memory: BattleMemory;
+  memoryUpdate: MemoryUpdate;
   supplied: EvidenceSupplied;
 }
 
 interface StageEvidenceOptions {
-  currentNotebook: string;
+  currentMemory: BattleMemory;
   rationaleLimit: number;
-  notebookLimit: number;
 }
-/** Optional evidence is distinguished by field presence: an absent notebook retains prior context,
- * while a supplied empty string deliberately clears it. */
+
 export function normalizeStageEvidence(
   rationale: JsonValue | undefined,
   notebook: JsonValue | undefined,
   options: StageEvidenceOptions,
 ): StageEvidence {
   const hasRationale = isText(rationale);
-  const hasNotebook = isText(notebook);
+  const memoryUpdate = applyMemoryUpdate(options.currentMemory, notebook);
   return {
     rationale: hasRationale ? clip(rationale.trim(), options.rationaleLimit) : "",
-    notebook: hasNotebook ? clip(notebook.trim(), options.notebookLimit) : options.currentNotebook,
-    supplied: { rationale: hasRationale, notebookUpdate: hasNotebook },
+    memory: memoryUpdate.memory,
+    memoryUpdate,
+    supplied: { rationale: hasRationale, notebookUpdate: memoryUpdate.supplied },
   };
 }
 
-export function noStageEvidence(currentNotebook: string): StageEvidence {
+export function noStageEvidence(currentMemory: BattleMemory): StageEvidence {
+  const memoryUpdate = applyMemoryUpdate(currentMemory, undefined);
   return {
     rationale: "",
-    notebook: currentNotebook,
+    memory: currentMemory,
+    memoryUpdate,
     supplied: { rationale: false, notebookUpdate: false },
   };
 }
