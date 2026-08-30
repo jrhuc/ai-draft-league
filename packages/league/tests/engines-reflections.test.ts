@@ -383,7 +383,10 @@ test("oversized reflection notebooks are compressed on retry instead of clipped"
   assert.equal(provider.calls.length, 2);
   assert.match(String(provider.calls[1]!.messages.at(-1)?.content), /Compress the notebook/);
   assert.equal(traces[0]!.fallback, false);
-  assert.equal((traces[0]!.failed_attempts as unknown[])?.length, 1);
+  assert.equal(
+    Array.isArray(traces[0]!.failed_attempts) ? traces[0]!.failed_attempts.length : 0,
+    1,
+  );
   assert.doesNotMatch(engine.coachingNote(), /\[clipped\]/);
   assert.equal(parseStrategicMemory(engine.coachingNote()).teamPlaybook, "Compact team lesson.");
 });

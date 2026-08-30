@@ -7,7 +7,13 @@ import {
 } from "../src/llm-engine.js";
 import type { CompleteOptions, Completion, JsonObject } from "../src/types.js";
 import { asRecord, asRecords, text } from "../src/value.js";
-import { acceptedAct, decision, request, ScriptedProvider } from "./engine-test-helpers.js";
+import {
+  acceptedAct,
+  decision,
+  notebookUpdate,
+  request,
+  ScriptedProvider,
+} from "./engine-test-helpers.js";
 
 const lengthTruncated = (options: CompleteOptions): Completion => ({
   text: "",
@@ -203,7 +209,7 @@ test("reflections use a reasoning-safe token budget", async () => {
     JSON.stringify({
       summary: "Lost the rain matchup.",
       adjustment: "Lead differently.",
-      notebook: "notes",
+      notebook: notebookUpdate("notes"),
     }),
   ]);
   const decisions: JsonObject[] = [];

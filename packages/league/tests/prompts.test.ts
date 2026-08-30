@@ -64,7 +64,7 @@ test("decision prompt leads with merged state and keeps mechanics compact", () =
       prompt.indexOf("Active matchup reference"),
   );
   assert.ok(prompt.indexOf("Active matchup reference") < prompt.indexOf("Choose for Swampert"));
-  assert.match(prompt, /only when durable plans changed.*notebook.*complete replacement/);
+  assert.match(prompt, /only when durable memory changed.*team_playbook.*complete replacement/);
   assert.doesNotMatch(prompt, /at most \d+ characters/);
   assert.equal(prompt.match(/"choices"/g)?.length, 1);
 });

@@ -22,6 +22,8 @@ import {
   acceptedAct,
   decision,
   emptyStats,
+  memory,
+  notebookUpdate,
   oneMoveStats,
   request,
   ScriptedProvider,
@@ -79,7 +81,7 @@ test("primed replay requires an exact request digest and seat provenance", async
     "an exactly matching reject replay costs no provider call",
   );
   assert.equal(decisions.length, 0, "a replayed terminal row is not logged again");
-  assert.equal(engine.coachingNote(), "carried plan");
+  assert.equal(engine.coachingNote(), memory("", "carried plan"));
   const live = await engine.submit(request(), {
     povLines: ["|turn|2"],
     submissionId: "attempt-two:p1:2",
@@ -285,35 +287,35 @@ test("battle evidence flags follow model field presence rather than harness summ
       name: "rationale only",
       responses: [JSON.stringify({ choices: [1], rationale: "  model reason  " })],
       expectedEvidence: { rationale: true, notebook_update: false },
-      expectedNotebook: "Keep the current plan.",
+      expectedNotebook: memory("Keep the current plan."),
       expectedRationale: "model reason",
     },
     {
       name: "notebook only",
-      responses: [JSON.stringify({ choices: [1], notebook: "  Revised plan.  " })],
+      responses: [JSON.stringify({ choices: [1], notebook: notebookUpdate("  Revised plan.  ") })],
       expectedEvidence: { rationale: false, notebook_update: true },
-      expectedNotebook: "Revised plan.",
+      expectedNotebook: memory("Revised plan."),
       expectedRationale: "No rationale supplied.",
     },
     {
       name: "explicit empty strings",
-      responses: [JSON.stringify({ choices: [1], rationale: "   ", notebook: "   " })],
+      responses: [JSON.stringify({ choices: [1], rationale: "   ", notebook: notebookUpdate() })],
       expectedEvidence: { rationale: true, notebook_update: true },
       expectedNotebook: "",
       expectedRationale: "No rationale supplied.",
     },
     {
-      name: "absent non-string evidence",
-      responses: [JSON.stringify({ choices: [1], rationale: null, notebook: false })],
+      name: "absent evidence",
+      responses: [JSON.stringify({ choices: [1], rationale: null })],
       expectedEvidence: { rationale: false, notebook_update: false },
-      expectedNotebook: "Keep the current plan.",
+      expectedNotebook: memory("Keep the current plan."),
       expectedRationale: "No rationale supplied.",
     },
     {
       name: "parse fallback",
       responses: ["invalid", "invalid", "invalid", "invalid"],
       expectedEvidence: { rationale: false, notebook_update: false },
-      expectedNotebook: "Keep the current plan.",
+      expectedNotebook: memory("Keep the current plan."),
       expectedRationale: /defaulted to the first legal option/,
       fallback: true,
     },
@@ -353,7 +355,7 @@ test("battle evidence flags follow model field presence rather than harness summ
   assert.equal(provider.calls.length, 0);
   assert.equal(logs[0]!.rationale, "Automatic: only one legal joint action.");
   assert.deepEqual(logs[0]!.evidence_supplied, { rationale: false, notebook_update: false });
-  assert.equal(engine.coachingNote(), "Keep the current plan.");
+  assert.equal(engine.coachingNote(), memory("Keep the current plan."));
 });
 
 test("full seat context retains request snapshots and complete accepted decision menus", async () => {
@@ -438,7 +440,7 @@ test("Gemini-like nested candidate objects preserve the complete top-level decis
     JSON.stringify({
       choices: [1],
       rationale: "use the top-level choice",
-      notebook: "n".repeat(1800),
+      notebook: notebookUpdate("", "n".repeat(1800)),
       threats: [
         "direct threat",
         { rationale: "not a threat" },
@@ -464,11 +466,7 @@ test("Gemini-like nested candidate objects preserve the complete top-level decis
   assert.equal(decisions[0]!.fallback, false);
   assert.equal(decisions[0]!.parse_failures, 0);
   assert.equal(decisions[0]!.rationale, "use the top-level choice");
-  assert.equal(
-    text(decisions[0]!.notebook).length,
-    1800,
-    "well under the notebook backstop, kept whole",
-  );
+  assert.equal(decisions[0]!.notebook, memory("", "n".repeat(1800)));
 });
 
 test("timer context reaches the provider request", async () => {
@@ -718,7 +716,16 @@ test("empty reflections record a fallback review", async () => {
 });
 
 test("a draft roster switches only the series-final reflection to the prep-review variant", async () => {
-  const reflection = JSON.stringify({ summary: "s", adjustment: "a", notebook: "n" });
+  const finalReflection = JSON.stringify({
+    summary: "s",
+    adjustment: "a",
+    notebook: { team_playbook: "n", series_memory: "" },
+  });
+  const midseriesReflection = JSON.stringify({
+    summary: "s",
+    adjustment: "a",
+    notebook: notebookUpdate("n"),
+  });
   const roster = "registered for this series: Ampharos, Beartic; left behind: Corviknight.";
   const finalGame = {
     gameNumber: 3,
@@ -727,7 +734,7 @@ test("a draft roster switches only the series-final reflection to the prep-revie
     seriesScore: { p1: 1, p2: 2 },
   };
 
-  const draftFinal = new ScriptedProvider([reflection]);
+  const draftFinal = new ScriptedProvider([finalReflection]);
   await new LLMEngine("p1", "scripted", {
     provider: draftFinal,
     decisionLog: [],
@@ -738,7 +745,7 @@ test("a draft roster switches only the series-final reflection to the prep-revie
   assert.match(draftFinal.calls[0]!.system, /full roster/);
   assert.match(draftFinal.calls[0]!.messages[0]!.content ?? "", /left behind: Corviknight/);
 
-  const draftMidSeries = new ScriptedProvider([reflection]);
+  const draftMidSeries = new ScriptedProvider([midseriesReflection]);
   await new LLMEngine("p1", "scripted", {
     provider: draftMidSeries,
     decisionLog: [],
@@ -752,7 +759,7 @@ test("a draft roster switches only the series-final reflection to the prep-revie
   assert.equal(draftMidSeries.calls[0]!.system, REFLECTION_SYSTEM);
   assert.doesNotMatch(draftMidSeries.calls[0]!.messages[0]!.content ?? "", /left behind/);
 
-  const constructedFinal = new ScriptedProvider([reflection]);
+  const constructedFinal = new ScriptedProvider([finalReflection]);
   await new LLMEngine("p1", "scripted", { provider: constructedFinal, decisionLog: [] }).endGame(
     finalGame,
   );
