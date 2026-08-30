@@ -3,8 +3,8 @@ import { Sprite } from "@/components/sprite";
 import { evLine, titleCase } from "@/lib/format";
 import type { TeamSet } from "@/lib/tournament";
 
-export function SetCard({ set, games }: { set: TeamSet; games: number[] }) {
-  const bench = games.length === 0;
+export function SetCard({ set, games }: { set: TeamSet; games?: number[] }) {
+  const bench = games !== undefined && games.length === 0;
   return (
     <article className={`card setcard${bench ? " bench" : ""}`}>
       <header>
@@ -27,7 +27,11 @@ export function SetCard({ set, games }: { set: TeamSet; games: number[] }) {
       </ul>
       <footer>
         <span>{evLine(set.evs) || "no investment"}</span>
-        {bench ? <span>bench</span> : <em>{games.map((n) => `G${n}`).join(" · ")}</em>}
+        {games === undefined ? null : bench ? (
+          <span>bench</span>
+        ) : (
+          <em>{games.map((n) => `G${n}`).join(" · ")}</em>
+        )}
       </footer>
     </article>
   );

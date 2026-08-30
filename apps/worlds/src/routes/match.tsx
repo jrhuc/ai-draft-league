@@ -101,6 +101,11 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
             const entry = entrant(bundle, match.entrants[side]);
             return (
               <div key={entry.id} className="build" style={entrantStyle(bundle, entry.id)}>
+                {entry.team.paste ? (
+                  <a href={entry.team.paste} target="_blank" rel="noreferrer" className="chip">
+                    Show original sheet →
+                  </a>
+                ) : null}
                 <div className="grid grid-2">
                   {entry.team.sets.map((set) => {
                     const games = broughtGames(match, side, set.id);

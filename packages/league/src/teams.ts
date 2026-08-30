@@ -131,7 +131,7 @@ function readProvenance(entry: JsonObject): TeamProvenance | undefined {
     player: text(record.player),
     handle: text(record.handle),
     swiss: text(record.swiss),
-    paste: text(record.paste),
+    paste: text(record.paste) || text(record.teamlist),
   };
 }
 

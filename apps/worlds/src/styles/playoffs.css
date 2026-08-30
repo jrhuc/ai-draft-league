@@ -25,9 +25,17 @@
   left: 0;
 }
 
+/* Narrow columns wrap long model names to two lines; keep every card the same
+   height so the connector geometry derived from --match-h stays true. */
+@media (max-width: 60rem) {
+  .bracket {
+    --match-h: 8.9rem;
+  }
+}
+
 .bracket-match {
   display: grid;
-  height: var(--match-h);
+  min-height: var(--match-h);
 }
 
 .bracket-round:nth-child(2) .bracket-match {

@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { EntrantTag, entrantStyle, ordinal } from "@/components/entrant";
 import { Mark } from "@/components/mark";
+import { SetCard } from "@/components/set-card";
 import { Sprite } from "@/components/sprite";
 import { useTitle, useTournament } from "@/lib/context";
 import { formatLabel, modelLabel, modelProvider, tokens } from "@/lib/format";
@@ -11,6 +13,8 @@ function TeamCard({ entry }: { entry: Entrant }) {
   const bundle = useTournament();
   const team = entry.team;
   const provider = modelProvider(entry.model);
+  const [openSetId, setOpenSetId] = useState<string | null>(null);
+  const openSet = team.sets.find((set) => set.id === openSetId);
   return (
     <article className="card card-pad team-card" style={entrantStyle(bundle, entry.id)}>
       <div className="head">
@@ -27,12 +31,21 @@ function TeamCard({ entry }: { entry: Entrant }) {
       </span>
       <span className="sprite-row">
         {team.sets.map((set) => (
-          <Sprite key={set.id} id={set.spriteId} name={set.species} size={40} />
+          <button
+            key={set.id}
+            type="button"
+            className={`mon-toggle${openSetId === set.id ? " open" : ""}`}
+            aria-pressed={openSetId === set.id}
+            onClick={() => setOpenSetId(openSetId === set.id ? null : set.id)}
+          >
+            <Sprite id={set.spriteId} name={set.species} size={40} />
+          </button>
         ))}
       </span>
+      {openSet ? <SetCard set={openSet} /> : null}
       {team.paste ? (
         <a href={team.paste} target="_blank" rel="noreferrer" className="chip">
-          Original paste →
+          Show original sheet →
         </a>
       ) : null}
     </article>

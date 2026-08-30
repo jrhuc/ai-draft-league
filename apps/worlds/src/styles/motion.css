@@ -97,10 +97,12 @@ a:hover .sprite-row .sprite,
   overflow: hidden;
 }
 
+/* The band is skewed and 180% tall, so its corners reach far sideways on a
+   tall (mobile) banner; park it several widths offscreen between sweeps. */
 .champion::after {
   content: "";
   position: absolute;
-  inset: -40% auto -40% -30%;
+  inset: -40% auto -40% 0;
   width: 24%;
   background: linear-gradient(
     105deg,
@@ -108,7 +110,7 @@ a:hover .sprite-row .sprite,
     color-mix(in srgb, var(--poke-yellow) 30%, transparent),
     transparent
   );
-  transform: skewX(-18deg);
+  transform: translateX(-500%) skewX(-18deg);
   animation: shine-sweep 5.5s ease-in-out infinite;
   pointer-events: none;
 }
@@ -116,11 +118,11 @@ a:hover .sprite-row .sprite,
 @keyframes shine-sweep {
   0%,
   55% {
-    left: -30%;
+    transform: translateX(-500%) skewX(-18deg);
   }
   85%,
   100% {
-    left: 130%;
+    transform: translateX(800%) skewX(-18deg);
   }
 }
 
