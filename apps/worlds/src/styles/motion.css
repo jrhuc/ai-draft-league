@@ -98,7 +98,8 @@ a:hover .sprite-row .sprite,
 }
 
 /* The band is skewed and 180% tall, so its corners reach far sideways on a
-   tall (mobile) banner; park it several widths offscreen between sweeps. */
+   tall (mobile) banner; park it far enough offscreen between sweeps, with the
+   travel window sized to keep the original crossing speed. */
 .champion::after {
   content: "";
   position: absolute;
@@ -110,19 +111,19 @@ a:hover .sprite-row .sprite,
     color-mix(in srgb, var(--poke-yellow) 30%, transparent),
     transparent
   );
-  transform: translateX(-500%) skewX(-18deg);
+  transform: translateX(-300%) skewX(-18deg);
   animation: shine-sweep 5.5s ease-in-out infinite;
   pointer-events: none;
 }
 
 @keyframes shine-sweep {
   0%,
-  55% {
-    transform: translateX(-500%) skewX(-18deg);
+  50% {
+    transform: translateX(-300%) skewX(-18deg);
   }
-  85%,
+  90%,
   100% {
-    transform: translateX(800%) skewX(-18deg);
+    transform: translateX(600%) skewX(-18deg);
   }
 }
 
