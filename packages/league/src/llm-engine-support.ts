@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
   applyMemoryUpdate,
+  createBattleMemory,
   DECISION_NOTE_LIMIT,
   type BattleMemory,
   type MemoryUpdate,
@@ -10,7 +11,6 @@ import {
 import type { SlotMenu } from "./choices.js";
 import type { SheetPolicy } from "./prompts.js";
 import { DEX_TOOLS } from "./reference.js";
-import { normalizeStageEvidence, type StageEvidence } from "./stage-evidence.js";
 import type {
   BattleRequest,
   JsonObject,
@@ -19,12 +19,24 @@ import type {
   ToolCall,
   ToolDefinition,
 } from "./types.js";
-import { clip, isRecord } from "./value.js";
+import { clip, isRecord, isText } from "./value.js";
+
+interface EvidenceSupplied {
+  rationale: boolean;
+  notebookUpdate: boolean;
+}
+
+export interface DecisionEvidence {
+  rationale: string;
+  memory: BattleMemory;
+  memoryUpdate: MemoryUpdate;
+  supplied: EvidenceSupplied;
+}
 
 export interface ParsedDecision {
   choices: number[];
   rationale?: string;
-  evidence: StageEvidence;
+  evidence: DecisionEvidence;
 }
 
 export interface Reflection {
@@ -48,7 +60,7 @@ export interface ToolTrace extends JsonObject {
 export interface PendingDecision {
   prompt?: string;
   rawResponse?: string;
-  evidence?: StageEvidence;
+  evidence?: DecisionEvidence;
   reasoning?: string;
   generation: number;
   usage?: Record<string, number>;
@@ -284,8 +296,12 @@ export function decisionRequestDigest(input: {
 export function extractChoices(
   response: string,
   menus: SlotMenu[],
-  currentMemory: BattleMemory,
+  currentMemory: BattleMemory | string = "",
 ): ParsedDecision {
+  const memory =
+    typeof currentMemory === "string"
+      ? createBattleMemory(currentMemory, "unbound-reference")
+      : currentMemory;
   const objects = jsonObjects(response, true).filter(
     (value) => "choices" in value || "choice" in value,
   );
@@ -293,7 +309,7 @@ export function extractChoices(
   let failure: unknown;
   for (const object of objects.reverse()) {
     try {
-      return parseDecision(object, menus, currentMemory);
+      return parseDecision(object, menus, memory);
     } catch (caught) {
       failure ??= caught;
     }
@@ -319,13 +335,35 @@ function parseDecision(
       );
     return index;
   });
-  const evidence = normalizeStageEvidence(object.rationale, object.notebook, {
-    currentMemory,
-    rationaleLimit: DECISION_RATIONALE_LIMIT,
-  });
+  const evidence = normalizeDecisionEvidence(object.rationale, object.notebook, currentMemory);
   const decision: ParsedDecision = { choices, evidence };
   if (evidence.supplied.rationale) decision.rationale = evidence.rationale;
   return decision;
+}
+
+function normalizeDecisionEvidence(
+  rationale: JsonValue | undefined,
+  notebook: JsonValue | undefined,
+  currentMemory: BattleMemory,
+): DecisionEvidence {
+  const hasRationale = isText(rationale);
+  const memoryUpdate = applyMemoryUpdate(currentMemory, notebook);
+  return {
+    rationale: hasRationale ? clip(rationale.trim(), DECISION_RATIONALE_LIMIT) : "",
+    memory: memoryUpdate.memory,
+    memoryUpdate,
+    supplied: { rationale: hasRationale, notebookUpdate: memoryUpdate.supplied },
+  };
+}
+
+export function noDecisionEvidence(currentMemory: BattleMemory): DecisionEvidence {
+  const memoryUpdate = applyMemoryUpdate(currentMemory, undefined);
+  return {
+    rationale: "",
+    memory: currentMemory,
+    memoryUpdate,
+    supplied: { rationale: false, notebookUpdate: false },
+  };
 }
 
 export function extractReflection(response: string, currentMemory: BattleMemory): Reflection {
