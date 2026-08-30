@@ -114,9 +114,9 @@ function serializeMemory(memory: StrategicMemory): string {
 export function parseStrategicMemory(value: string): StrategicMemory {
   const normalized = value.trim();
   if (!normalized) return emptyMemory();
-  let parsed: JsonValue;
+  let parsed: unknown;
   try {
-    parsed = JSON.parse(normalized) as JsonValue;
+    parsed = JSON.parse(normalized);
   } catch {
     return validateMemory({ ...emptyMemory(), teamPlaybook: normalized });
   }
@@ -143,13 +143,13 @@ function parseUpdate(value: JsonValue, scope: MemoryUpdateScope): ParsedUpdate {
         : rematchUpdateSchema;
   const parsed = schema.safeParse(value);
   if (!parsed.success) {
-    const shape =
+    const fields =
       scope === "series"
         ? "team_playbook, series_memory, and next_game_plan"
         : scope === "next-round"
           ? "team_playbook"
           : "team_playbook and series_memory";
-    throw new Error(`notebook must be an object containing exactly ${shape}`);
+    throw new Error(`notebook must be an object containing exactly ${fields}`);
   }
   return parsed.data;
 }
