@@ -921,11 +921,7 @@ export class LLMEngine extends BaseEngine {
     const retrospective =
       context.tournamentStatus === "eliminated" || context.tournamentStatus === "champion";
     const memoryScope: MemoryUpdateScope =
-      context.tournamentStatus === "advancing"
-        ? "next-round"
-        : seriesOver
-          ? "rematch"
-          : "series";
+      context.tournamentStatus === "advancing" ? "next-round" : seriesOver ? "rematch" : "series";
     const prompt = reflectionPrompt({
       seriesId: this.seriesId,
       gameNumber: context.gameNumber,

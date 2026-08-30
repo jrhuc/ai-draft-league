@@ -337,7 +337,9 @@ export function extractReflection(
   if (!object) throw new Error("no JSON game review found");
   const parsed = reflectionSchema.safeParse(object);
   if (!parsed.success)
-    throw new Error("review must contain string summary and adjustment fields plus a notebook object");
+    throw new Error(
+      "review must contain string summary and adjustment fields plus a notebook object",
+    );
   return {
     summary: clip(parsed.data.summary, DECISION_RATIONALE_LIMIT),
     adjustment: clip(parsed.data.adjustment, DECISION_RATIONALE_LIMIT),

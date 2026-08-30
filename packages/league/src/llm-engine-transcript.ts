@@ -1,8 +1,5 @@
 import { summarizeBattleEvents } from "./battle-transcript.js";
-import {
-  TRANSCRIPT_CHARACTER_LIMIT,
-  TRANSCRIPT_CLIP_MARKER,
-} from "./llm-engine-support.js";
+import { TRANSCRIPT_CHARACTER_LIMIT, TRANSCRIPT_CLIP_MARKER } from "./llm-engine-support.js";
 import type { Pid } from "./types.js";
 
 const FACT_CHARACTER_LIMIT = 4000;

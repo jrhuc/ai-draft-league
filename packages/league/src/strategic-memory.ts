@@ -31,12 +31,7 @@ interface ParsedUpdate {
   next_game_plan?: string;
 }
 
-const REFERENCE_TOOLS = new Set([
-  "lookup_species",
-  "lookup_move",
-  "lookup_item",
-  "lookup_ability",
-]);
+const REFERENCE_TOOLS = new Set(["lookup_species", "lookup_move", "lookup_item", "lookup_ability"]);
 const referenceSchema = z
   .object({
     tool: z.string(),

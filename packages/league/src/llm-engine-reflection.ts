@@ -187,7 +187,8 @@ export async function requestReflection(input: {
   if (!input.retrospective) {
     let notebook = review.notebook;
     for (const call of toolCalls) {
-      if (call.result.startsWith("Not executed:") || call.result.startsWith("Tool error:")) continue;
+      if (call.result.startsWith("Not executed:") || call.result.startsWith("Tool error:"))
+        continue;
       notebook = rememberVerifiedReference(notebook, {
         tool: call.name,
         arguments: call.arguments,
