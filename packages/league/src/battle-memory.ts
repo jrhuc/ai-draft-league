@@ -85,8 +85,8 @@ export function createBattleMemory(input: string | undefined, authority: string)
   } catch {
     return legacyBattleMemory(value, authority);
   }
-  if (!isRecord(decoded)) return legacyBattleMemory(value, authority);
-  if (decoded.version !== 1) throw new Error("invalid battle memory state");
+  if (typeof decoded !== "object" || decoded === null || Array.isArray(decoded))
+    return legacyBattleMemory(value, authority);
   const parsed = storedMemorySchema.safeParse(decoded);
   if (!parsed.success) throw new Error("invalid battle memory state");
   const memory: BattleMemory = {
@@ -261,7 +261,21 @@ export function rememberVerifiedReference(
 }
 
 function legacyBattleMemory(value: string, authority: string): BattleMemory {
-  const memory = { ...emptyBattleMemory(authority), seriesMemory: value };
+  if (value.length > DECISION_NOTE_LIMIT)
+    throw new Error(`legacy battle memory exceeds ${DECISION_NOTE_LIMIT} characters`);
+  const memory = emptyBattleMemory(authority);
+  if (value.length <= TEAM_PLAYBOOK_CHAR_LIMIT) memory.teamPlaybook = value;
+  else {
+    memory.teamPlaybook = value.slice(0, TEAM_PLAYBOOK_CHAR_LIMIT);
+    memory.seriesMemory = value.slice(
+      TEAM_PLAYBOOK_CHAR_LIMIT,
+      TEAM_PLAYBOOK_CHAR_LIMIT + SERIES_MEMORY_CHAR_LIMIT,
+    );
+    memory.nextGamePlan = value.slice(
+      TEAM_PLAYBOOK_CHAR_LIMIT + SERIES_MEMORY_CHAR_LIMIT,
+      DECISION_NOTE_LIMIT,
+    );
+  }
   assertMemoryLimits(memory);
   return memory;
 }
