@@ -143,7 +143,9 @@ export function HomePage() {
                     {href ? (
                       <Link to={href}>
                         {body}
-                        <span className="go">Watch →</span>
+                        <span className="go">
+                          Watch <span className="arrow">→</span>
+                        </span>
                       </Link>
                     ) : (
                       <div>{body}</div>

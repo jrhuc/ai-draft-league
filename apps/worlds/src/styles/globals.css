@@ -15,7 +15,6 @@
   --bad: #c4351c;
   --warn: #806000;
   --link: #2368a6;
-  --accent: #c92e0a;
   --ball-red: #c92e0a;
   --ball-dark: #22262e;
   --poke-blue: #2a75bb;
@@ -54,17 +53,13 @@ body {
 }
 
 .mono,
-code,
-kbd,
 .num,
-table,
 .chip,
 .label {
   font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-.num,
-table {
+.num {
   font-variant-numeric: tabular-nums;
 }
 
@@ -83,7 +78,6 @@ a {
 }
 
 p a,
-.prose a,
 .foot a {
   color: var(--link);
   text-decoration: underline;
@@ -94,7 +88,7 @@ p a,
 :focus-visible {
   outline: 2px solid var(--poke-blue);
   outline-offset: 2px;
-  border-radius: 2px;
+  border-radius: var(--r);
 }
 
 .page:focus {
@@ -133,6 +127,24 @@ p {
 img {
   display: block;
   max-width: 100%;
+}
+
+summary {
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--font-mono), monospace;
+}
+
+summary::-webkit-details-marker {
+  display: none;
+}
+
+details > summary::before {
+  content: "▸ ";
+}
+
+details[open] > summary::before {
+  content: "▾ ";
 }
 
 button {
@@ -294,16 +306,12 @@ button {
   gap: 3rem;
 }
 
-/* Grid items keep their automatic minimum size, so a wide child (the standings
-   table, a long rationale) can push its section past a minmax(0, 1fr) track and
-   widen the whole page. Zero the minimum along every layout branch instead. */
+/* Grid items keep their automatic minimum size, so a wide child can push its
+   section past a minmax(0, 1fr) track and widen the whole page. Zero the
+   minimum along every layout branch instead. */
 .page > *,
-.home-grid > *,
 .two-col > *,
-.grid > *,
-.grid-2 > *,
-.grid-3 > *,
-.grid-6 > * {
+.grid > * {
   min-width: 0;
 }
 
@@ -365,13 +373,6 @@ button {
   font-size: 1.02rem;
 }
 
-.hero-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem 1.5rem;
-  align-items: center;
-}
-
 .facts {
   display: flex;
   flex-wrap: wrap;
@@ -422,8 +423,7 @@ button {
   width: 0.55rem;
   height: 0.55rem;
   border-radius: 50%;
-  background: var(--ball-red);
-  box-shadow: inset 0 -0.28rem 0 rgb(255 255 255 / 85%);
+  background: linear-gradient(var(--ball-red) 50%, #fff 50%);
   border: 1.5px solid var(--ball-dark);
   flex: none;
 }
@@ -431,6 +431,16 @@ button {
 .section-head p {
   color: var(--t4);
   font-size: 0.85rem;
+}
+
+.rationale {
+  color: var(--t2);
+  max-width: 78ch;
+  font-size: 0.9rem;
+}
+
+.rationale + .rationale {
+  margin-top: 0.6rem;
 }
 
 .two-col {
@@ -442,8 +452,6 @@ button {
 
 @media (max-width: 60rem) {
   .two-col {
-    /* minmax(0, …) so wide children (e.g. the standings table) scroll inside
-       .table-wrap instead of forcing the column past the viewport. */
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -454,14 +462,6 @@ button {
   border: 1px solid var(--line);
   border-radius: var(--r);
   background: var(--card);
-  transition:
-    border-color 150ms,
-    background 150ms;
-}
-
-a.card:hover,
-.card.hoverable:hover {
-  border-color: var(--line-2);
 }
 
 .card-pad {
@@ -477,71 +477,6 @@ a.card:hover,
   grid-template-columns: repeat(auto-fill, minmax(min(22rem, 100%), 1fr));
 }
 
-.grid-3 {
-  grid-template-columns: repeat(auto-fill, minmax(min(17rem, 100%), 1fr));
-}
-
-.grid-6 {
-  grid-template-columns: repeat(auto-fill, minmax(min(13.5rem, 100%), 1fr));
-}
-
-/* ---- tables ---- */
-
-.table-wrap {
-  overflow-x: auto;
-  border: 1px solid var(--line);
-  border-radius: var(--r);
-  background: var(--card);
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.82rem;
-}
-
-th {
-  text-align: left;
-  font-weight: 500;
-  font-size: 0.66rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--t4);
-  padding: 0.6rem 0.85rem;
-  border-bottom: 1px solid var(--line);
-  white-space: nowrap;
-}
-
-td {
-  padding: 0.6rem 0.85rem;
-  border-bottom: 1px solid var(--line);
-  vertical-align: middle;
-  white-space: nowrap;
-}
-
-tr:last-child td {
-  border-bottom: 0;
-}
-
-td.r,
-th.r {
-  text-align: right;
-}
-
-tbody tr:hover td {
-  background: var(--card-2);
-}
-
-td.team {
-  font-family: var(--font-sans), system-ui, sans-serif;
-  font-size: 0.9rem;
-  color: var(--t1);
-}
-
-.playoff-line td {
-  border-top: 1px dashed var(--line-2);
-}
-
 /* ---- team identity ---- */
 
 .team-tag {
@@ -550,14 +485,6 @@ td.team {
   gap: 0.5rem;
   color: var(--t1);
   font-weight: 500;
-}
-
-.team-tag .swatch {
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 2px;
-  background: var(--tone);
-  flex: none;
 }
 
 .team-tag.muted {
@@ -658,19 +585,6 @@ td.team {
 
 /* ---- standings/home ---- */
 
-.home-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 2rem;
-  align-items: start;
-}
-
-@media (max-width: 64rem) {
-  .home-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
 .champion {
   display: flex;
   align-items: center;
@@ -697,107 +611,5 @@ td.team {
   .champion {
     align-items: flex-start;
     flex-wrap: wrap;
-  }
-}
-
-/* ---- match list ---- */
-
-.match-list {
-  display: grid;
-  gap: 0.5rem;
-}
-
-.week-head {
-  display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
-  margin-top: 0.75rem;
-}
-
-.week-head h3 {
-  font-size: 0.8rem;
-  font-family: var(--font-mono), monospace;
-  font-weight: 500;
-  color: var(--t3);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.match-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.75rem 1rem;
-  padding: 0.7rem 1rem;
-}
-
-.match-row .side {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  min-width: 0;
-}
-
-.match-row .side.right {
-  justify-content: flex-end;
-  text-align: right;
-}
-
-.match-row .side .name {
-  color: var(--t1);
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.match-row .side.lost .name {
-  color: var(--t4);
-  font-weight: 400;
-}
-
-.match-row .score {
-  font-family: var(--font-mono), monospace;
-  font-size: 1rem;
-  color: var(--t1);
-  min-width: 3.2rem;
-  text-align: center;
-}
-
-.match-row .score small {
-  color: var(--t5);
-  font-size: 0.7rem;
-  display: block;
-  line-height: 1;
-}
-
-.match-row .go {
-  color: var(--t4);
-  font-family: var(--font-mono), monospace;
-  font-size: 0.75rem;
-}
-
-a.match-row:hover .go {
-  color: var(--t1);
-}
-
-@media (max-width: 40rem) {
-  .match-row {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .match-row .side.right {
-    grid-column: 1;
-    justify-content: flex-start;
-    text-align: left;
-  }
-
-  .match-row .score {
-    grid-row: 1 / span 2;
-    grid-column: 2;
-  }
-
-  .match-row .go {
-    display: none;
   }
 }

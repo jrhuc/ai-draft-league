@@ -9,12 +9,9 @@
   border-bottom: 1px solid var(--line);
 }
 
-.match-hero > .label {
+.match-hero > h1 {
   grid-column: 1 / -1;
-}
-
-.build .grid-2 {
-  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  font-size: clamp(1.4rem, 2.6vw, 2.1rem);
 }
 
 .match-hero .side {
@@ -27,11 +24,7 @@
   justify-items: end;
 }
 
-.match-hero h1 {
-  font-size: clamp(1.4rem, 2.6vw, 2.1rem);
-}
-
-.match-hero .side.lost h1 {
+.match-hero .side.lost h2 {
   color: var(--t3);
 }
 
@@ -77,6 +70,10 @@
   margin-bottom: -1px;
 }
 
+.game-tabs button:hover {
+  color: var(--t1);
+}
+
 .game-tabs button[aria-pressed="true"] {
   color: var(--t1);
   border-bottom-color: var(--ball-red);
@@ -103,17 +100,14 @@
   background: var(--card);
 }
 
-.player-note {
-  font-family: var(--font-mono), monospace;
-  font-size: 0.68rem;
-}
-
 .player-loaded {
   display: grid;
   gap: 0.4rem;
 }
 
 .player-note {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.68rem;
   color: var(--t4);
 }
 
@@ -191,8 +185,8 @@
 }
 
 .dec summary {
+  font-size: 0.72rem;
   color: var(--good);
-  cursor: pointer;
 }
 
 .dec details.notebook summary {
@@ -224,20 +218,9 @@
 }
 
 .full-log > summary {
-  cursor: pointer;
-  list-style: none;
   padding: 0.7rem 1rem;
-  font-family: var(--font-mono), monospace;
   font-size: 0.75rem;
   color: var(--t3);
-}
-
-.full-log > summary::before {
-  content: "▸ ";
-}
-
-.full-log[open] > summary::before {
-  content: "▾ ";
 }
 
 .full-log .log-body {
@@ -259,8 +242,7 @@
   color: var(--t1);
 }
 
-.log .switch,
-.log .preview {
+.log .switch {
   color: var(--link);
 }
 
@@ -354,35 +336,26 @@
 }
 
 .reflection details.notebook summary {
-  cursor: pointer;
-  list-style: none;
-  font-family: var(--font-mono), monospace;
   font-size: 0.72rem;
   color: var(--link);
 }
 
-.reflection details.notebook summary::before {
-  content: "▸ ";
-}
-
-.reflection details.notebook[open] summary::before {
-  content: "▾ ";
-}
-
 .game-usage {
   list-style: none;
-  margin: 10px 0 0;
+  margin: 0.6rem 0 0;
   padding: 0;
   display: grid;
-  gap: 8px;
+  gap: 0.5rem;
 }
+
 .game-usage li {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 10px;
+  gap: 0.35rem 0.6rem;
   align-items: baseline;
   font-size: 0.9rem;
 }
+
 .game-usage .label {
   min-width: 9ch;
 }

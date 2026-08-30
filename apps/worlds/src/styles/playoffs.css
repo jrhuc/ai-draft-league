@@ -1,6 +1,8 @@
 /* ---- bracket ---- */
 
 .bracket {
+  --match-h: 7.4rem;
+  --row: calc(var(--match-h) + 1rem);
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(16rem, 1fr);
@@ -24,10 +26,16 @@
 }
 
 .bracket-match {
-  position: relative;
   display: grid;
-  height: 7.4rem;
-  overflow: visible;
+  height: var(--match-h);
+}
+
+.bracket-round:nth-child(2) .bracket-match {
+  --connector-span: var(--row);
+}
+
+.bracket-round:nth-child(3) .bracket-match {
+  --connector-span: calc(var(--row) * 2);
 }
 
 .bracket-round:not(:first-child) .bracket-slot + .bracket-slot {
@@ -38,31 +46,22 @@
 .bracket-round:not(:first-child) .bracket-slot + .bracket-slot::after {
   content: "";
   position: absolute;
-  top: -1px;
+  width: calc(1rem + 1px);
+  border: 0 solid var(--line-2);
   pointer-events: none;
 }
 
 .bracket-round:not(:first-child) .bracket-slot + .bracket-slot::before {
-  right: calc(100% - 1px);
-  width: calc(1rem + 1px);
-  border-top: 1px solid var(--line-2);
+  top: -1px;
+  right: 100%;
+  border-top-width: 1px;
 }
 
 .bracket-round:not(:first-child) .bracket-slot + .bracket-slot::after {
-  right: calc(100% + 1rem - 1px);
-  width: calc(1rem + 2px);
-  height: var(--connector-span);
-  border: solid var(--line-2);
+  top: calc(var(--connector-span) / -2 - 1px);
+  right: calc(100% + 1rem + 1px);
+  height: calc(var(--connector-span) + 1px);
   border-width: 1px 1px 1px 0;
-  transform: translateY(-50%);
-}
-
-.bracket-round:nth-child(2) .bracket-match {
-  --connector-span: 8.4rem;
-}
-
-.bracket-round:nth-child(3) .bracket-match {
-  --connector-span: 16.8rem;
 }
 
 .bracket-match a,
@@ -70,10 +69,6 @@
   display: grid;
   color: inherit;
   text-decoration: none;
-}
-
-.bracket-match a:hover .go {
-  color: var(--t1);
 }
 
 .bracket-match .bracket-slot {
@@ -88,6 +83,10 @@
   border-top: 1px solid var(--line);
 }
 
+.bracket-match a .bracket-slot + .bracket-slot {
+  border-bottom: 1px solid var(--line);
+}
+
 .bracket-slot .num {
   color: var(--t1);
 }
@@ -100,17 +99,20 @@
   color: var(--t5);
 }
 
-.game-tabs button:hover {
-  color: var(--t1);
-}
-
 .bracket-match .go {
   padding: 0.4rem 0.85rem;
   text-align: right;
-  border-top: 1px solid var(--line);
   font-family: var(--font-mono), monospace;
   font-size: 0.7rem;
   color: var(--t4);
+}
+
+.bracket-match .go .arrow {
+  display: inline-block;
+}
+
+.bracket-match a:hover .go {
+  color: var(--t1);
 }
 
 .void {
@@ -118,12 +120,4 @@
   gap: 0.5rem;
   padding: 2rem 0;
   color: var(--t3);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    transition: none !important;
-  }
 }

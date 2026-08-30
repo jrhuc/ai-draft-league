@@ -60,21 +60,17 @@
 }
 
 a.card:hover,
-a.card:focus-visible,
-.hoverable:hover {
+a.card:focus-visible {
   border-color: var(--line-2);
   transform: translateY(-2px);
   box-shadow: 0 10px 30px -18px rgb(74 60 24 / 45%);
 }
 
-.match-row .go,
-.bracket-match .go {
+.bracket-match .arrow {
   transition: transform 150ms ease-out;
 }
 
-a:hover > * > .go,
-a:hover .go,
-.bracket-match a:hover .go {
+.bracket-match a:hover .arrow {
   transform: translateX(3px);
 }
 
@@ -161,24 +157,6 @@ a:hover .sprite-row .sprite,
   50% {
     transform: rotate(14deg);
   }
-}
-
-/* ---------- Tables ---------- */
-
-tbody tr {
-  transition: background-color 120ms ease-out;
-}
-
-tbody tr:hover {
-  background: color-mix(in srgb, var(--card-2) 70%, transparent);
-}
-
-a:focus-visible,
-button:focus-visible,
-summary:focus-visible {
-  outline: 2px solid var(--poke-blue);
-  outline-offset: 2px;
-  border-radius: var(--r);
 }
 
 /* ---------- Reduced motion: switch it all off ---------- */
