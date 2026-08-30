@@ -27,12 +27,11 @@ export function normalizeStageEvidence(
   const hasRationale = isText(rationale);
   const hasNotebook =
     options.notebookLimit === undefined ? notebook !== undefined : isText(notebook);
-  const nextNotebook =
-    !hasNotebook || notebook === undefined
-      ? options.currentNotebook
-      : options.notebookLimit === undefined
-        ? applyStrategicMemoryUpdate(options.currentNotebook, notebook, "series")
-        : clip((notebook as string).trim(), options.notebookLimit);
+  let nextNotebook = options.currentNotebook;
+  if (options.notebookLimit === undefined && notebook !== undefined)
+    nextNotebook = applyStrategicMemoryUpdate(options.currentNotebook, notebook, "series");
+  else if (options.notebookLimit !== undefined && isText(notebook))
+    nextNotebook = clip(notebook.trim(), options.notebookLimit);
   return {
     rationale: hasRationale ? clip(rationale.trim(), options.rationaleLimit) : "",
     notebook: nextNotebook,
