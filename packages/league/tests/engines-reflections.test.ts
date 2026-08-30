@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import { LLMEngine } from "../src/llm-engine.js";
 import { ApiError } from "../src/providers.js";
+import { parseStrategicMemory } from "../src/strategic-memory.js";
 import type { JsonObject } from "../src/types.js";
 import { text } from "../src/value.js";
 import {
   acceptedAct,
   decision,
   emptyStats,
+  memory,
+  notebookUpdate,
   oneMoveStats,
   request,
   ScriptedProvider,
@@ -36,7 +39,11 @@ test("readable decisions, technical traces, and post-game reflections stay separ
     JSON.stringify({
       summary: "Won by preserving the endgame attacker.",
       adjustment: "Keep tracking opposing speed order.",
-      notebook: "Mon1 is the preferred endgame; verify opposing speed order.",
+      notebook: notebookUpdate(
+        "Mon1 is the preferred endgame.",
+        "Verify opposing speed order.",
+        "Preserve Mon1 while checking speed order.",
+      ),
     }),
   ]);
   const decisions: JsonObject[] = [];
@@ -74,7 +81,7 @@ test("readable decisions, technical traces, and post-game reflections stay separ
 
   assert.equal(decisions[0]!.kind, "decision");
   assert.equal(decisions[0]!.rationale, "Second is safer into the shown board.");
-  assert.equal(decisions[0]!.notebook, "Preserve Mon1 for the endgame.");
+  assert.equal(decisions[0]!.notebook, memory("", "Preserve Mon1 for the endgame."));
   assert.ok(!("raw_response" in decisions[0]!));
   assert.ok(!("menus" in decisions[0]!));
   assert.equal(decisions[1]!.kind, "game_reflection");
@@ -102,10 +109,13 @@ test("readable decisions, technical traces, and post-game reflections stay separ
     /Second is safer into the shown board/,
   );
   assert.match(String(provider.calls[2]!.messages.at(-1)?.content), /Move Protect:/);
-  assert.equal(
-    engine.coachingNote(),
-    "Mon1 is the preferred endgame; verify opposing speed order.",
-  );
+  const coaching = parseStrategicMemory(engine.coachingNote());
+  assert.equal(coaching.teamPlaybook, "Mon1 is the preferred endgame.");
+  assert.equal(coaching.seriesMemory, "Verify opposing speed order.");
+  assert.equal(coaching.nextGamePlan, "Preserve Mon1 while checking speed order.");
+  assert.equal(coaching.verifiedReferences[0]?.tool, "lookup_move");
+  assert.deepEqual(coaching.verifiedReferences[0]?.arguments, { name: "Protect" });
+  assert.match(coaching.verifiedReferences[0]?.result ?? "", /Move Protect:/);
   assert.deepEqual(engine.decisionStats(), {
     ...oneMoveStats,
     reflections: 1,
@@ -191,7 +201,7 @@ test("game transcripts reset while notebook and score persist, with a marked cha
   const nextGamePrompt = String(provider.calls[1]!.messages[0]!.content);
   assert.doesNotMatch(nextGamePrompt, /Ancient Memory|\[Game 1 begins/);
   assert.match(nextGamePrompt, /\[Game 2 begins; series score you 1, opponent 0\]/);
-  assert.match(nextGamePrompt, /Private notebook: durable series note/);
+  assert.match(nextGamePrompt, /Series memory:\ndurable series note/);
   assert.match(nextGamePrompt, /Series series-1; game 2; score you 1, opponent 0/);
 
   engine.observe([`|move|p2a: NewMon|${"x".repeat(26_000)}LATEST|p1a: Mon1`]);
@@ -204,6 +214,18 @@ test("game transcripts reset while notebook and score persist, with a marked cha
   assert.ok(timeline.length <= 24_100, `timeline stayed near the cap (${timeline.length})`);
   assert.match(timeline, /^\[Earlier turns are omitted from this timeline\.\]/);
   assert.match(timeline, /LATEST into Mon1\.$/);
+});
+
+test("clipped game transcripts retain salient early facts", async () => {
+  const provider = new ScriptedProvider([decision([0], "retain reveal")]);
+  const engine = new LLMEngine("p1", "scripted", { provider, decisionLog: [] });
+  engine.beginGame({ gameId: "game-1", gameNumber: 1, seriesId: "series-1" });
+  engine.observe(["|-ability|p2a: Foe|Prankster"]);
+  engine.observe([`|move|p2a: Foe|${"x".repeat(26_000)}LATEST|p1a: Mon1`]);
+  await acceptedAct(engine, request(), { povLines: [] });
+  const prompt = String(provider.calls[0]!.messages[0]!.content);
+  assert.match(prompt, /\[Earlier revealed facts retained:\][\s\S]*Foe revealed Prankster\./);
+  assert.match(prompt, /LATEST into Mon1\.$/m);
 });
 
 test("turn timeline uses one percentage-only line per turn", async () => {
@@ -252,7 +274,7 @@ test("readable logs suppress unchanged notebooks and tendency counters remain po
   await acceptedAct(engine, protectRequest, { povLines: ["|turn|1"] });
   await acceptedAct(engine, protectRequest, { povLines: ["|turn|2"] });
 
-  assert.equal(logs[0]!.notebook, "Preserve the attacker.");
+  assert.equal(logs[0]!.notebook, memory("", "Preserve the attacker."));
   assert.ok(!("notebook" in logs[1]!));
   assert.deepEqual(engine.decisionStats(), {
     ...emptyStats,
@@ -292,18 +314,21 @@ test("team-preview adaptation counters compare public bring and lead choices", a
   });
 });
 
-test("an advancing tournament entrant writes notes for the next round", async () => {
+test("an advancing tournament entrant writes only transferable next-round notes", async () => {
   const decisions: JsonObject[] = [];
   const provider = new ScriptedProvider([
     JSON.stringify({
       summary: "Won by preserving the fast mode.",
       adjustment: "Keep the mode available without assuming the same damage ranges.",
-      notebook: "The fast mode is a reliable option when speed control is contested.",
+      notebook: {
+        team_playbook: "The fast mode is reliable when speed control is contested.",
+      },
     }),
   ]);
   const engine = new LLMEngine("p1", "scripted", {
     provider,
     decisionLog: decisions,
+    initialNotebook: memory("Old team plan.", "Old opponent facts.", "Old next-game plan."),
   });
   engine.beginGame({
     gameId: "game-2",
@@ -326,4 +351,39 @@ test("an advancing tournament entrant writes notes for the next round", async ()
     String(provider.calls[0]!.messages[0]!.content),
     /advance to the next round with the same team/,
   );
+  assert.deepEqual(parseStrategicMemory(engine.coachingNote()), {
+    teamPlaybook: "The fast mode is reliable when speed control is contested.",
+    seriesMemory: "",
+    nextGamePlan: "",
+    verifiedReferences: [],
+  });
+});
+
+test("oversized reflection notebooks are compressed on retry instead of clipped", async () => {
+  const traces: JsonObject[] = [];
+  const provider = new ScriptedProvider([
+    JSON.stringify({
+      summary: "First pass.",
+      adjustment: "Compress it.",
+      notebook: notebookUpdate("x".repeat(3501), "", ""),
+    }),
+    JSON.stringify({
+      summary: "Compressed pass.",
+      adjustment: "Keep only durable lessons.",
+      notebook: notebookUpdate("Compact team lesson.", "Opponent fact.", "Next plan."),
+    }),
+  ]);
+  const engine = new LLMEngine("p1", "scripted", { provider, traceLog: traces });
+  await engine.endGame({
+    gameNumber: 1,
+    seriesOver: false,
+    outcome: { winner: "p1-scripted", won: true, turns: 1 },
+    seriesScore: { p1: 1, p2: 0 },
+  });
+  assert.equal(provider.calls.length, 2);
+  assert.match(String(provider.calls[1]!.messages.at(-1)?.content), /Compress the notebook/);
+  assert.equal(traces[0]!.fallback, false);
+  assert.equal((traces[0]!.failed_attempts as unknown[])?.length, 1);
+  assert.doesNotMatch(engine.coachingNote(), /\[clipped\]/);
+  assert.equal(parseStrategicMemory(engine.coachingNote()).teamPlaybook, "Compact team lesson.");
 });
