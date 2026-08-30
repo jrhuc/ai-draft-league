@@ -173,8 +173,11 @@ export class LLMEngine extends BaseEngine {
       }),
       (row) => this.writeLog(this.options.contextLog, row),
     );
-    this.notebook = normalizeStrategicMemory(options.initialNotebook?.trim() ?? "");
-    this.carryInNotebook = normalizeStrategicMemory(options.carryInNotebook?.trim() ?? "");
+    this.notebook = normalizeStrategicMemory(options.initialNotebook?.trim() ?? "", this.reference);
+    this.carryInNotebook = normalizeStrategicMemory(
+      options.carryInNotebook?.trim() ?? "",
+      this.reference,
+    );
     this.gameId = spec;
   }
 
@@ -285,7 +288,7 @@ export class LLMEngine extends BaseEngine {
       return undefined;
     }
     if (row.notebook !== undefined) {
-      this.notebook = normalizeStrategicMemory(row.notebook);
+      this.notebook = normalizeStrategicMemory(row.notebook, this.reference);
       this.loggedNotebook = this.notebook;
     }
     this.transcript.rememberTurnDetail(`Decision: ${row.action}`);

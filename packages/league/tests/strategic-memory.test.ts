@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import {
   applyStrategicMemoryUpdate,
+  normalizeStrategicMemory,
   parseStrategicMemory,
   rememberVerifiedReference,
   scopeStrategicMemory,
@@ -16,44 +17,30 @@ const update = {
 test("strategic memory expires scopes at their lifecycle boundaries", () => {
   const current = applyStrategicMemoryUpdate("", update, "series");
 
-  assert.deepEqual(
-    parseStrategicMemory(scopeStrategicMemory(current, current, "series")),
-    {
-      teamPlaybook: "Team lesson.",
-      seriesMemory: "Opponent fact.",
-      nextGamePlan: "",
-      verifiedReferences: [],
-    },
-  );
-  assert.deepEqual(
-    parseStrategicMemory(scopeStrategicMemory(current, current, "rematch")),
-    {
-      teamPlaybook: "Team lesson.",
-      seriesMemory: "Opponent fact.",
-      nextGamePlan: "",
-      verifiedReferences: [],
-    },
-  );
-  assert.deepEqual(
-    parseStrategicMemory(scopeStrategicMemory(current, current, "next-round")),
-    {
-      teamPlaybook: "Team lesson.",
-      seriesMemory: "",
-      nextGamePlan: "",
-      verifiedReferences: [],
-    },
-  );
+  assert.deepEqual(parseStrategicMemory(scopeStrategicMemory(current, current, "series")), {
+    teamPlaybook: "Team lesson.",
+    seriesMemory: "Opponent fact.",
+    nextGamePlan: "",
+    verifiedReferences: [],
+  });
+  assert.deepEqual(parseStrategicMemory(scopeStrategicMemory(current, current, "rematch")), {
+    teamPlaybook: "Team lesson.",
+    seriesMemory: "Opponent fact.",
+    nextGamePlan: "",
+    verifiedReferences: [],
+  });
+  assert.deepEqual(parseStrategicMemory(scopeStrategicMemory(current, current, "next-round")), {
+    teamPlaybook: "Team lesson.",
+    seriesMemory: "",
+    nextGamePlan: "",
+    verifiedReferences: [],
+  });
 });
 
 test("strategic memory rejects oversized replacements instead of clipping them", () => {
   assert.throws(
-    () =>
-      applyStrategicMemoryUpdate(
-        "",
-        { ...update, team_playbook: "x".repeat(3501) },
-        "series",
-      ),
-    /team_playbook exceeds 3500 characters/,
+    () => applyStrategicMemoryUpdate("", { ...update, team_playbook: "x".repeat(3501) }, "series"),
+    /team_playbook is 3501 characters; limit 3500/,
   );
 });
 
@@ -65,6 +52,11 @@ test("verified references retain only the active format revision", () => {
     revision: "old",
     result: "Old result.",
   });
+  assert.equal(
+    parseStrategicMemory(normalizeStrategicMemory(first, { format: "format", revision: "current" }))
+      .verifiedReferences.length,
+    0,
+  );
   const current = rememberVerifiedReference(first, {
     tool: "lookup_ability",
     arguments: { name: "Prankster" },

@@ -217,10 +217,7 @@ export function scopeStrategicMemory(
   });
 }
 
-export function rememberVerifiedReference(
-  notebook: string,
-  input: VerifiedReference,
-): string {
+export function rememberVerifiedReference(notebook: string, input: VerifiedReference): string {
   if (!REFERENCE_TOOLS.has(input.tool)) return notebook;
   const result = input.result.trim();
   if (!result) return notebook;
