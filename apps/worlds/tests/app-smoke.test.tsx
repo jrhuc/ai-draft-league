@@ -56,4 +56,20 @@ test("a failed bundle load can retry and show team selections", async () => {
   );
   await until(() => document.title.includes("Quarterfinal"));
   expect(document.title).toContain("Quarterfinal");
+
+  const frame = document.querySelector<HTMLIFrameElement>(".ps-frame");
+  expect(frame?.srcdoc).toContain("battle-log-data");
+  expect(frame?.srcdoc).toContain("ps-height");
+  expect(frame?.contentWindow).not.toBeNull();
+  const report = (source: Window | null, height: number) =>
+    window.dispatchEvent(
+      new MessageEvent("message", { data: { type: "ps-height", height }, source }),
+    );
+  report(null, 555);
+  report(frame!.contentWindow, Number.NaN);
+  expect(frame!.style.height).toBe("");
+  report(frame!.contentWindow, 321.4);
+  await until(() => frame!.style.height === "322px");
+  report(frame!.contentWindow, 20);
+  await until(() => frame!.style.height === "240px");
 });

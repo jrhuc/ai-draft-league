@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { z } from "zod";
 import { Mark } from "@/components/mark";
 import { seconds, toneStyle, tokens } from "@/lib/format";
 import type { Decision, Reflection, Replay, ReplayEvent, ReplayGame } from "@/lib/tournament";
@@ -35,20 +36,49 @@ function replayDoc(raw: string, teams: [Team, Team], title: string): string {
 <script type="text/plain" class="battle-log-data">${escapeLog(log)}</script>
 </div>
 <script src="https://play.pokemonshowdown.com/js/replay-embed.js"></script>
+<script>
+new ResizeObserver(() => {
+  const style = getComputedStyle(document.body);
+  const height =
+    document.body.getBoundingClientRect().height +
+    parseFloat(style.marginTop) +
+    parseFloat(style.marginBottom);
+  parent.postMessage({ type: "ps-height", height }, "*");
+}).observe(document.body);
+</script>
 `;
 }
+
+const heightReport = z.object({ type: z.literal("ps-height"), height: z.number().finite() });
 
 function ShowdownPlayer({ game, teams }: { game: ReplayGame; teams: [Team, Team] }) {
   const title = `${teams[0].name} vs ${teams[1].name} — Game ${game.number}`;
   const doc = useMemo(() => replayDoc(game.raw, teams, title), [game.raw, teams, title]);
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const [height, setHeight] = useState(0);
+  /* The sandbox denies same-origin access, so the frame posts its rendered
+     height; until the first report the CSS estimate holds. */
+  useEffect(() => {
+    function onHeight(event: MessageEvent) {
+      const frame = frameRef.current;
+      if (!frame?.contentWindow || event.source !== frame.contentWindow) return;
+      const report = heightReport.safeParse(event.data);
+      if (!report.success) return;
+      setHeight(Math.min(Math.max(Math.ceil(report.data.height), 240), 960));
+    }
+    window.addEventListener("message", onHeight);
+    return () => window.removeEventListener("message", onHeight);
+  }, []);
   return (
     <div className="player-loaded">
       <iframe
+        ref={frameRef}
         className="ps-frame"
         srcDoc={doc}
         title={title}
         sandbox="allow-scripts"
         referrerPolicy="no-referrer"
+        style={height ? { height } : undefined}
       />
       <p className="player-note">
         If the animation is unavailable, the turn reasoning and full text log remain below.
