@@ -5,6 +5,12 @@ import {
   type Reflection,
 } from "./llm-engine-support.js";
 import {
+  rememberVerifiedReference,
+  renderStrategicMemory,
+  scopeStrategicMemory,
+  type MemoryUpdateScope,
+} from "./strategic-memory.js";
+import {
   assistantToolMessage,
   classifyProviderFailure,
   toolResultMessage,
@@ -61,7 +67,7 @@ export function reflectionPrompt(input: {
     "",
     ...(input.retrospective
       ? []
-      : [`Current private notebook: ${input.notebook || "(empty)"}`, ""]),
+      : ["Current private notebook:", renderStrategicMemory(input.notebook), ""]),
     input.retrospective
       ? "Return the required concise tournament retrospective. Do not return or update the private notebook."
       : "Return the required concise game review and updated notebook.",
@@ -72,6 +78,8 @@ export async function requestReflection(input: {
   prompt: string;
   currentNotebook: string;
   fallbackNotebook: string;
+  memoryScope: MemoryUpdateScope;
+  reference: { format: string; revision: string };
   result: string;
   spec: string;
   tools: ToolDefinition[];
@@ -82,12 +90,13 @@ export async function requestReflection(input: {
   const messages: ProviderMessage[] = [{ role: "user", content: input.prompt }];
   const usage: Record<string, number> = {};
   let rawResponse = "";
-  let parsed;
+  let parsed: Reflection | undefined;
   let error: string | undefined;
   let failureSummary: string | undefined;
   let failureKind: string | undefined;
   let toolRounds = 0;
   const toolCalls: Array<{ name: string; arguments: JsonObject; result: string }> = [];
+  const failedAttempts: Array<{ response: string; error: string }> = [];
   const offered = new Set(input.tools.map((tool) => tool.name));
   try {
     for (let attempt = 0; attempt < 2 && !parsed; attempt += 1) {
@@ -127,17 +136,18 @@ export async function requestReflection(input: {
         try {
           if (input.retrospective)
             extractTournamentRetrospective(completion.reasoning, input.currentNotebook);
-          else extractReflection(completion.reasoning);
+          else extractReflection(completion.reasoning, input.currentNotebook, input.memoryScope);
           rawResponse = completion.reasoning;
         } catch {}
       }
       try {
         parsed = input.retrospective
           ? extractTournamentRetrospective(rawResponse, input.currentNotebook)
-          : extractReflection(rawResponse);
+          : extractReflection(rawResponse, input.currentNotebook, input.memoryScope);
         error = undefined;
       } catch (caught) {
         error = caught instanceof Error ? caught.message : String(caught);
+        failedAttempts.push({ response: rawResponse, error });
         if (attempt === 0) {
           messages.push({
             role: "assistant",
@@ -145,7 +155,7 @@ export async function requestReflection(input: {
           });
           messages.push({
             role: "user",
-            content: `Invalid review: ${error}. Reply with exactly the required JSON object.`,
+            content: `Invalid review: ${error}. Compress the notebook within its stated section limits and reply with exactly the required JSON object.`,
           });
         }
       }
@@ -158,19 +168,36 @@ export async function requestReflection(input: {
   }
   const fallback = !parsed;
   const fallbackReason = `Game ${input.result}; model reflection unavailable (${failureSummary ?? error ?? "unparseable review"}).`;
-  const review =
+  const fallbackValue = input.retrospective
+    ? input.currentNotebook
+    : scopeStrategicMemory(input.fallbackNotebook, input.currentNotebook, input.memoryScope);
+  let review =
     parsed ??
     (input.retrospective
       ? ({
           summary: fallbackReason,
           adjustment: "",
-          notebook: input.fallbackNotebook,
+          notebook: fallbackValue,
         } satisfies Reflection)
       : ({
           summary: fallbackReason,
           adjustment: "No model-authored adjustment was recorded.",
-          notebook: input.fallbackNotebook,
+          notebook: fallbackValue,
         } satisfies Reflection));
+  if (!input.retrospective) {
+    let notebook = review.notebook;
+    for (const call of toolCalls) {
+      if (call.result.startsWith("Not executed:") || call.result.startsWith("Tool error:")) continue;
+      notebook = rememberVerifiedReference(notebook, {
+        tool: call.name,
+        arguments: call.arguments,
+        format: input.reference.format,
+        revision: input.reference.revision,
+        result: call.result,
+      });
+    }
+    review = { ...review, notebook };
+  }
   return {
     usage,
     rawResponse,
@@ -181,5 +208,6 @@ export async function requestReflection(input: {
     review,
     toolRounds,
     toolCalls,
+    failedAttempts,
   };
 }
