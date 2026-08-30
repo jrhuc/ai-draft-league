@@ -31,8 +31,18 @@ export function request(activeCount = 1): BattleRequest {
   };
 }
 
-export const decision = (choices: number[], rationale = "test choice", notebook = "") =>
-  JSON.stringify({ choices, rationale, notebook });
+export const notebook = (
+  seriesMemory = "",
+  teamPlaybook = "",
+  nextGamePlan = "",
+) => ({
+  team_playbook: teamPlaybook,
+  series_memory: seriesMemory,
+  next_game_plan: nextGamePlan,
+});
+
+export const decision = (choices: number[], rationale = "test choice", note = "") =>
+  JSON.stringify({ choices, rationale, notebook: notebook(note) });
 
 export const emptyStats = {
   decisions: 0,
