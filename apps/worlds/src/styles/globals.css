@@ -191,6 +191,11 @@ button {
   line-height: 1.5;
 }
 
+a.chip {
+  min-height: 2.75rem;
+  padding-inline: 0.75rem;
+}
+
 .chip-good {
   color: var(--good);
   border-color: color-mix(in srgb, var(--good) 45%, transparent);
@@ -253,6 +258,7 @@ button {
 
 .wordmark {
   display: inline-flex;
+  min-height: 2.75rem;
   align-items: center;
   gap: 0.55rem;
   color: var(--t1);
@@ -282,6 +288,8 @@ button {
 .repo-link {
   margin-left: auto;
   display: inline-grid;
+  width: 2.75rem;
+  height: 2.75rem;
   place-items: center;
   color: var(--t3);
   flex: none;
@@ -310,6 +318,7 @@ button {
    section past a minmax(0, 1fr) track and widen the whole page. Zero the
    minimum along every layout branch instead. */
 .page > *,
+.section > *,
 .two-col > *,
 .grid > * {
   min-width: 0;
@@ -608,8 +617,18 @@ button {
 }
 
 @media (max-width: 40rem) {
+  .top-inner,
+  .page,
+  .foot-inner {
+    padding-inline: 1rem;
+  }
+
   .champion {
     align-items: flex-start;
     flex-wrap: wrap;
+  }
+
+  .champion .sprite-row {
+    gap: 0;
   }
 }

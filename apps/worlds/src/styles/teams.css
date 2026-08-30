@@ -103,3 +103,9 @@
 .build .grid-2 {
   grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
 }
+
+@media (max-width: 40rem) {
+  .team-card .head {
+    flex-wrap: wrap;
+  }
+}
