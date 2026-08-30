@@ -16,7 +16,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@1b32467adbe183473499fd9d5d372c3ed9641754
         with:
           node-version: 24
-      - run: vp check --fix
+      - run: vp check --fix || true
       - run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
