@@ -163,7 +163,7 @@ export function HomePage() {
           <h2>The teams</h2>
           <p>
             {event
-              ? `Each model pilots one of ${event.name}’s top ${event.cut ?? bundle.entrants.length} teams, seeded by finish.`
+              ? `Each model pilots one of ${event.name}’s top ${event.cut ?? bundle.entrants.length} teams${event.seeding ? `, ${event.seeding}` : ""}.`
               : "Each model pilots a real top-cut team."}
             {event?.reconstructedSpreads
               ? " Published lists omitted stat spreads; these use public sets for the same Pokémon."

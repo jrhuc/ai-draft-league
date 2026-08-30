@@ -42,7 +42,7 @@ test("a failed bundle load can retry and show team selections", async () => {
     .mockResolvedValueOnce(new Response(JSON.stringify(bundle), { status: 200 }));
   vi.stubGlobal("fetch", fetchBundle);
   vi.stubGlobal("scrollTo", vi.fn());
-  mount("/matches/91727fe9d639");
+  mount(`/matches/${bundle.bracket.rounds[0][0].match.seriesId}`);
 
   await until(() => document.body.textContent?.includes("Could not load the tournament") ?? false);
   document.querySelector<HTMLButtonElement>(".retry")?.click();
