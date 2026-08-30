@@ -4,7 +4,8 @@ import type { JsonObject, JsonValue } from "./types.js";
 export const TEAM_PLAYBOOK_LIMIT = 3500;
 export const SERIES_MEMORY_LIMIT = 3000;
 export const NEXT_GAME_PLAN_LIMIT = 1500;
-export const STRATEGIC_MEMORY_LIMIT = 8000;
+export const STRATEGIC_MEMORY_LIMIT =
+  TEAM_PLAYBOOK_LIMIT + SERIES_MEMORY_LIMIT + NEXT_GAME_PLAN_LIMIT;
 export const VERIFIED_REFERENCE_LIMIT = 2000;
 export const VERIFIED_REFERENCE_COUNT_LIMIT = 24;
 
@@ -72,7 +73,7 @@ function boundedText(name: string, value: string, limit: number): string {
   const normalized = value.trim();
   if (normalized.length > limit)
     throw new Error(
-      `${name} exceeds ${limit} characters; compress it to the durable facts that change future choices`,
+      `${name} is ${normalized.length} characters; limit ${limit}; compress it to the durable facts that change future choices`,
     );
   return normalized;
 }
@@ -111,6 +112,15 @@ function serializeMemory(memory: StrategicMemory): string {
   });
 }
 
+function scopedReferences(
+  references: VerifiedReference[],
+  scope: Pick<VerifiedReference, "format" | "revision">,
+): VerifiedReference[] {
+  return references.filter(
+    (reference) => reference.format === scope.format && reference.revision === scope.revision,
+  );
+}
+
 export function parseStrategicMemory(value: string): StrategicMemory {
   const normalized = value.trim();
   if (!normalized) return emptyMemory();
@@ -130,8 +140,17 @@ export function parseStrategicMemory(value: string): StrategicMemory {
   });
 }
 
-export function normalizeStrategicMemory(value: string): string {
-  return serializeMemory(parseStrategicMemory(value));
+export function normalizeStrategicMemory(
+  value: string,
+  reference?: Pick<VerifiedReference, "format" | "revision">,
+): string {
+  const memory = parseStrategicMemory(value);
+  return serializeMemory({
+    ...memory,
+    verifiedReferences: reference
+      ? scopedReferences(memory.verifiedReferences, reference)
+      : memory.verifiedReferences,
+  });
 }
 
 function parseUpdate(value: JsonValue, scope: MemoryUpdateScope): ParsedUpdate {
@@ -200,34 +219,25 @@ export function scopeStrategicMemory(
 
 export function rememberVerifiedReference(
   notebook: string,
-  input: {
-    tool: string;
-    arguments: JsonObject;
-    format: string;
-    revision: string;
-    result: string;
-  },
+  input: VerifiedReference,
 ): string {
   if (!REFERENCE_TOOLS.has(input.tool)) return notebook;
   const result = input.result.trim();
   if (!result) return notebook;
   const memory = parseStrategicMemory(notebook);
   const key = `${input.tool}:${JSON.stringify(input.arguments)}`;
-  const entry: VerifiedReference = { ...input, result };
-  const references = memory.verifiedReferences.filter(
-    (reference) =>
-      reference.format === input.format &&
-      reference.revision === input.revision &&
-      `${reference.tool}:${JSON.stringify(reference.arguments)}` !== key,
+  const references = scopedReferences(memory.verifiedReferences, input).filter(
+    (reference) => `${reference.tool}:${JSON.stringify(reference.arguments)}` !== key,
   );
+  const entry = { ...input, result };
+  if (JSON.stringify([entry]).length > VERIFIED_REFERENCE_LIMIT)
+    return serializeMemory({ ...memory, verifiedReferences: references });
   references.push(entry);
   while (
     references.length > VERIFIED_REFERENCE_COUNT_LIMIT ||
     JSON.stringify(references).length > VERIFIED_REFERENCE_LIMIT
-  ) {
-    if (references.length === 1) return notebook;
+  )
     references.shift();
-  }
   return serializeMemory({ ...memory, verifiedReferences: references });
 }
 
