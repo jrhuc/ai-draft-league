@@ -99,6 +99,9 @@ export abstract class BaseEngine implements BattleAgent {
   coachingNote(): string {
     return "";
   }
+  coachingState(): string {
+    return this.coachingNote();
+  }
 
   async submit(
     request: BattleRequest,
@@ -119,10 +122,9 @@ export abstract class BaseEngine implements BattleAgent {
   async act(request: BattleRequest, context: AgentContext): Promise<string> {
     const menus = buildMenus(request, this.menuHints(request));
     if (!menus.length) return "";
-    /** Forfeit is always present on real turns, so it must not turn a single-option forced turn into a
-     * model consultation; the concession option is only meaningful when there is also a real choice. */
     let automatic = menus.every(
-      (menu) => menu.filter((item) => item.kind !== "forfeit").length === 1,
+      (menu) =>
+        menu.filter((item) => item.kind !== "forfeit").length === 1,
     );
     let choices = automatic ? menus.map(() => 0) : await this.decideJoint(menus, request, context);
     let parts: string[];
