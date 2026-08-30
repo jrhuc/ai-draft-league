@@ -39,6 +39,7 @@ export interface PoolEvent {
   structure: string;
   url: string;
   cut: number | null;
+  seeding: string;
   reconstructedSpreads: boolean;
 }
 
@@ -116,6 +117,7 @@ function readEvent(manifest: JsonObject): PoolEvent | null {
     structure: text(event.structure),
     url: text(event.url),
     cut: cut.success ? cut.data : null,
+    seeding: text(event.seeding),
     reconstructedSpreads: spreads.reconstructed === true,
   };
 }

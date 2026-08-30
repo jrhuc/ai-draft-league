@@ -106,6 +106,29 @@ async function fetchText(url: string, accept: string): Promise<string> {
   return response.text();
 }
 
+function toOpenSet(set: JsonObject): OpenSet {
+  return {
+    species: text(set.species),
+    item: text(set.item),
+    ability: text(set.ability),
+    nature: text(set.nature),
+    level: levelSchema.parse(set.level),
+    moves: jsonListSchema.parse(set.moves).map(String),
+  };
+}
+
+/** Open lists an event publishes itself, keyed by team, for sources with no paste host. */
+function readSheets(poolDir: string, file: string): Map<string, OpenSet[]> {
+  const raw = jsonObjectSchema.parse(JSON.parse(fs.readFileSync(path.join(poolDir, file), "utf8")));
+  const sheets = new Map<string, OpenSet[]>();
+  for (const [key, value] of Object.entries(raw)) {
+    const sets = jsonObjectListSchema.parse(value).map(toOpenSet);
+    if (!sets.length) throw new Error(`${file}: ${key} lists no sets`);
+    sheets.set(key, sets);
+  }
+  return sheets;
+}
+
 async function fetchOpenList(url: string): Promise<OpenSet[]> {
   const id = url.replace(/\/$/, "").split("/").pop() ?? "";
   if (!/^[A-Za-z0-9_-]+$/.test(id)) throw new Error(`could not read a paste id from ${url}`);
@@ -121,14 +144,7 @@ async function fetchOpenList(url: string): Promise<OpenSet[]> {
     );
   const sets = jsonObjectListSchema.parse(record.teams);
   if (!sets.length) throw new Error(`${url} returned no team`);
-  return sets.map((set) => ({
-    species: text(set.species),
-    item: text(set.item),
-    ability: text(set.ability),
-    nature: text(set.nature),
-    level: levelSchema.parse(set.level),
-    moves: jsonListSchema.parse(set.moves).map(String),
-  }));
+  return sets.map(toOpenSet);
 }
 
 async function fetchCorpus(csvUrl: string, psDir: string): Promise<CorpusSet[]> {
@@ -234,7 +250,18 @@ async function buildEventPool(manifestFile: string): Promise<string> {
     throw new Error(`invalid manifest ${manifestPath}`);
 
   const psDir = defaultPsDir();
-  const corpus = await fetchCorpus(text(spreads.corpus), psDir);
+  const sheetsFile = text(manifest.sheets);
+  const sheets = sheetsFile ? readSheets(poolDir, sheetsFile) : null;
+  const corpusUrl = text(spreads.corpus);
+  let corpus: CorpusSet[] | null = null;
+  const loadCorpus = async (): Promise<CorpusSet[]> => {
+    if (!corpus) {
+      if (!corpusUrl)
+        throw new Error(`${manifestPath}: a set needs a corpus spread but spreads.corpus is unset`);
+      corpus = await fetchCorpus(corpusUrl, psDir);
+    }
+    return corpus;
+  };
   const teams: Array<{ id: string; packed: string; entry: JsonObject }> = [];
   const audit: JsonObject[] = [];
   const flagged: string[] = [];
@@ -246,22 +273,29 @@ async function buildEventPool(manifestFile: string): Promise<string> {
     for (const override of jsonObjectListSchema.parse(source.overrides)) {
       overrides.set(slug(text(override.species)), override);
     }
-    const open = await fetchOpenList(text(source.paste));
-    const resolved = open.map((set) => {
+    const sheetKey = text(source.sheet);
+    let open: OpenSet[];
+    if (sheetKey) {
+      const listed = sheets?.get(sheetKey);
+      if (!listed) throw new Error(`${id}: no sheet ${JSON.stringify(sheetKey)} in ${sheetsFile}`);
+      open = listed;
+    } else open = await fetchOpenList(text(source.paste));
+    const resolved: Array<{ set: OpenSet } & ResolvedSpread> = [];
+    for (const set of open) {
       const label = `${id} ${set.species}`;
       const override = overrides.get(slug(set.species));
       if (override) {
-        const evs = parseSpread(text(override.evs), label);
-        return {
+        resolved.push({
           set,
-          evs,
+          evs: parseSpread(text(override.evs), label),
           basis: text(override.why),
           from: "authored",
           itemMatched: true,
           shared: set.moves.length,
-        };
+        });
+        continue;
       }
-      const choice = chooseSpread(set, corpus);
+      const choice = chooseSpread(set, await loadCorpus());
       if (!choice)
         throw new Error(
           `${label}: no ${set.nature} ${set.species} in the corpus and no override supplied`,
@@ -269,8 +303,8 @@ async function buildEventPool(manifestFile: string): Promise<string> {
       checkSpread(choice.evs, label);
       if (!choice.itemMatched || choice.shared < set.moves.length)
         flagged.push(`${label} @ ${set.item}: ${choice.basis}`);
-      return { set, ...choice };
-    });
+      resolved.push({ set, ...choice });
+    }
     for (const species of overrides.keys()) {
       if (!open.some((set) => slug(set.species) === species))
         throw new Error(`${id}: override for absent ${species}`);
@@ -282,9 +316,11 @@ async function buildEventPool(manifestFile: string): Promise<string> {
       format,
     );
     validateTeam(packed, format, psDir);
-    const { id: _id, overrides: _overrides, ...metadata } = source;
+    const { id: _id, overrides: _overrides, sheet: _sheet, seed: given, ...metadata } = source;
+    const seed = z.number().int().positive().safeParse(given);
     let entry: JsonObject;
-    if (metadata.placement === undefined) entry = { id, file: `${id}.team`, source: metadata };
+    if (seed.success) entry = { id, file: `${id}.team`, seed: seed.data, source: metadata };
+    else if (metadata.placement === undefined) entry = { id, file: `${id}.team`, source: metadata };
     else entry = { id, file: `${id}.team`, seed: metadata.placement, source: metadata };
     teams.push({ id, packed, entry });
     audit.push({

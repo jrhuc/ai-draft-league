@@ -1,0 +1,112 @@
+{
+  "id": "worlds26-top8",
+  "format": "gen9championsvgc2026regmbbo3",
+  "event": {
+    "name": "2026 Pokémon VGC World Championship",
+    "game": "Pokémon Champions",
+    "regulation": "VGC Regulation Set M-B",
+    "dates": "28-30 August 2026",
+    "players": 395,
+    "structure": "Swiss into a single-elimination top cut, open team lists",
+    "url": "https://rk9.gg/tournament/WCS02wAQpCIaqFmXxER4",
+    "cut": 8,
+    "seeding": "seeded so the quarter-final pairings match the real bracket"
+  },
+  "spreads": {
+    "published": false,
+    "corpusName": "VGCPastes Repository (Champions M-B)",
+    "corpus": "https://docs.google.com/spreadsheets/d/1axlwmzPA49rYkqXh7zHvAtSP-TKbM0ijGYBPRflLSWw/export?format=csv&gid=1458357160",
+    "reason": "The rk9 open team lists publish species, held item, ability, nature and all four moves verbatim, but no stat points. Champions allots 66 stat points with a per-stat cap of 32, so a zero-point team is not the team that made this top cut. Every spread here was recreated: first from the Day 2 broadcast where a damage or turn-order read pins a stat against an already-pinned opponent, and otherwise by adopting a real spread from a same-species, same-item, same-nature set in the corpus. Where the two disagree the footage wins. Working notes and the per-set derivations live outside this repo; each set carries its own basis in spreads.json.",
+    "reconstructed": true
+  },
+  "teams": [
+    {
+      "id": "onishi-charizard-whimsicott",
+      "file": "onishi-charizard-whimsicott.team",
+      "seed": 1,
+      "source": {
+        "player": "Hiroshi Onishi",
+        "handle": "coな",
+        "country": "JP",
+        "teamlist": "https://rk9.gg/teamlist/public/WCS02wAQpCIaqFmXxER4/zQSjw85uxlz690ShQNiG"
+      }
+    },
+    {
+      "id": "yamazaki-dragonite-sneasler",
+      "file": "yamazaki-dragonite-sneasler.team",
+      "seed": 2,
+      "source": {
+        "player": "Takuma Yamazaki",
+        "handle": "ワトソン",
+        "country": "JP",
+        "teamlist": "https://rk9.gg/teamlist/public/WCS02wAQpCIaqFmXxER4/vNFhoueupPbBpYYYSUPK"
+      }
+    },
+    {
+      "id": "weed-froslass-lycanroc",
+      "file": "weed-froslass-lycanroc.team",
+      "seed": 3,
+      "source": {
+        "player": "Zachary Weed",
+        "handle": "Zach",
+        "country": "US",
+        "teamlist": "https://rk9.gg/teamlist/public/WCS02wAQpCIaqFmXxER4/bunpK59QyZm9f4p9Ryty"
+      }
+    },
+    {
+      "id": "leite-froslass-sneasler",
+      "file": "leite-froslass-sneasler.team",
+      "seed": 4,
+      "source": {
+        "player": "João Felipe Leite",
+        "handle": "Thacrow",
+        "country": "BR",
+        "teamlist": "https://rk9.gg/teamlist/public/WCS02wAQpCIaqFmXxER4/cdj4Zi0xQo0jiJ4lnkHh"
+      }
+    },
+    {
+      "id": "piscitelli-charizard-floette",
+      "file": "piscitelli-charizard-floette.team",
+      "seed": 5,
+      "source": {
+        "player": "Giovanni Piscitelli",
+        "handle": "Genius",
+        "country": "IT",
+        "teamlist": "https://rk9.gg/teamlist/public/WCS02wAQpCIaqFmXxER4/PZvi1hgblWVj9obq5Fcj"
+      }
+    },
+    {
+      "id": "wakasugi-dragonite-whimsicott",
+      "file": "wakasugi-dragonite-whimsicott.team",
+      "seed": 6,
+      "source": {
+        "player": "Yuya Wakasugi",
+        "handle": "ゆー",
+        "country": "JP",
+        "teamlist": "https://rk9.gg/teamlist/public/WCS02wAQpCIaqFmXxER4/j478dNnHDS9DrcZL2p9g"
+      }
+    },
+    {
+      "id": "greppi-aerodactyl-farigiraf",
+      "file": "greppi-aerodactyl-farigiraf.team",
+      "seed": 7,
+      "source": {
+        "player": "Stefano Greppi",
+        "handle": "Ste",
+        "country": "IT",
+        "teamlist": "https://rk9.gg/teamlist/public/WCS02wAQpCIaqFmXxER4/9Rhiqn5hn9fJWpxAHMun"
+      }
+    },
+    {
+      "id": "sanchez-charizard-toxapex",
+      "file": "sanchez-charizard-toxapex.team",
+      "seed": 8,
+      "source": {
+        "player": "Antonio Sánchez",
+        "handle": "Antonio",
+        "country": "ES",
+        "teamlist": "https://rk9.gg/teamlist/public/WCS02wAQpCIaqFmXxER4/HMsNPyHVD6Hm0d8hzvrO"
+      }
+    }
+  ]
+}

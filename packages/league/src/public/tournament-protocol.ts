@@ -111,6 +111,7 @@ export const publicTournamentBundleSchema = z
         structure: z.string(),
         url: z.string(),
         cut: z.number().int().positive().nullable(),
+        seeding: z.string().default(""),
         reconstructedSpreads: z.boolean(),
       })
       .nullable(),

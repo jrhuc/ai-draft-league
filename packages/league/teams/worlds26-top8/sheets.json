@@ -1,0 +1,402 @@
+{
+  "greppi": [
+    {
+      "species": "Sylveon",
+      "item": "Fairy Feather",
+      "ability": "Pixilate",
+      "nature": "Modest",
+      "level": 50,
+      "moves": ["Hyper Voice", "Hyper Beam", "Quick Attack", "Protect"]
+    },
+    {
+      "species": "Aerodactyl",
+      "item": "Aerodactylite",
+      "ability": "Unnerve",
+      "nature": "Jolly",
+      "level": 50,
+      "moves": ["Rock Slide", "Dual Wingbeat", "Tailwind", "Ice Fang"]
+    },
+    {
+      "species": "Farigiraf",
+      "item": "Sitrus Berry",
+      "ability": "Armor Tail",
+      "nature": "Bold",
+      "level": 50,
+      "moves": ["Psychic", "Thunderbolt", "Trick Room", "Protect"]
+    },
+    {
+      "species": "Garchomp",
+      "item": "Life Orb",
+      "ability": "Rough Skin",
+      "nature": "Jolly",
+      "level": 50,
+      "moves": ["Earthquake", "Rock Tomb", "Dragon Claw", "Protect"]
+    },
+    {
+      "species": "Kingambit",
+      "item": "Focus Sash",
+      "ability": "Defiant",
+      "nature": "Adamant",
+      "level": 50,
+      "moves": ["Kowtow Cleave", "Sucker Punch", "Iron Head", "Low Kick"]
+    },
+    {
+      "species": "Charizard",
+      "item": "Charizardite Y",
+      "ability": "Blaze",
+      "nature": "Modest",
+      "level": 50,
+      "moves": ["Heat Wave", "Weather Ball", "Solar Beam", "Protect"]
+    }
+  ],
+  "leite": [
+    {
+      "species": "Froslass",
+      "item": "Froslassite",
+      "ability": "Cursed Body",
+      "nature": "Timid",
+      "level": 50,
+      "moves": ["Blizzard", "Shadow Ball", "Aurora Veil", "Protect"]
+    },
+    {
+      "species": "Kingambit",
+      "item": "Black Glasses",
+      "ability": "Defiant",
+      "nature": "Adamant",
+      "level": 50,
+      "moves": ["Kowtow Cleave", "Sucker Punch", "Swords Dance", "Protect"]
+    },
+    {
+      "species": "Sneasler",
+      "item": "White Herb",
+      "ability": "Unburden",
+      "nature": "Adamant",
+      "level": 50,
+      "moves": ["Fake Out", "Close Combat", "Dire Claw", "Protect"]
+    },
+    {
+      "species": "Lycanroc-Dusk",
+      "item": "Focus Sash",
+      "ability": "Tough Claws",
+      "nature": "Adamant",
+      "level": 50,
+      "moves": ["Accelerock", "Close Combat", "Rock Slide", "Protect"]
+    },
+    {
+      "species": "Basculegion",
+      "item": "Life Orb",
+      "ability": "Adaptability",
+      "nature": "Adamant",
+      "level": 50,
+      "moves": ["Wave Crash", "Last Respects", "Aqua Jet", "Protect"]
+    },
+    {
+      "species": "Scovillain",
+      "item": "Scovillainite",
+      "ability": "Moody",
+      "nature": "Bold",
+      "level": 50,
+      "moves": ["Overheat", "Giga Drain", "Rage Powder", "Protect"]
+    }
+  ],
+  "onishi": [
+    {
+      "species": "Kingambit",
+      "item": "Occa Berry",
+      "ability": "Defiant",
+      "nature": "Adamant",
+      "level": 50,
+      "moves": ["Kowtow Cleave", "Sucker Punch", "Iron Head", "Low Kick"]
+    },
+    {
+      "species": "Basculegion",
+      "item": "Life Orb",
+      "ability": "Adaptability",
+      "nature": "Adamant",
+      "level": 50,
+      "moves": ["Wave Crash", "Last Respects", "Aqua Jet", "Protect"]
+    },
+    {
+      "species": "Garchomp",
+      "item": "Sitrus Berry",
+      "ability": "Rough Skin",
+      "nature": "Jolly",
+      "level": 50,
+      "moves": ["Dragon Claw", "Earthquake", "Rock Slide", "Protect"]
+    },
+    {
+      "species": "Charizard",
+      "item": "Charizardite Y",
+      "ability": "Blaze",
+      "nature": "Timid",
+      "level": 50,
+      "moves": ["Heat Wave", "Weather Ball", "Ancient Power", "Protect"]
+    },
+    {
+      "species": "Whimsicott",
+      "item": "Focus Sash",
+      "ability": "Prankster",
+      "nature": "Timid",
+      "level": 50,
+      "moves": ["Moonblast", "Tailwind", "Encore", "Protect"]
+    },
+    {
+      "species": "Floette-Eternal",
+      "item": "Floettite",
+      "ability": "Flower Veil",
+      "nature": "Modest",
+      "level": 50,
+      "moves": ["Moonblast", "Dazzling Gleam", "Light of Ruin", "Protect"]
+    }
+  ],
+  "piscitelli": [
+    {
+      "species": "Garchomp",
+      "item": "Life Orb",
+      "ability": "Rough Skin",
+      "nature": "Jolly",
+      "level": 50,
+      "moves": ["Earthquake", "Dragon Claw", "Rock Slide", "Protect"]
+    },
+    {
+      "species": "Kingambit",
+      "item": "Chople Berry",
+      "ability": "Defiant",
+      "nature": "Adamant",
+      "level": 50,
+      "moves": ["Kowtow Cleave", "Iron Head", "Sucker Punch", "Low Kick"]
+    },
+    {
+      "species": "Charizard",
+      "item": "Charizardite Y",
+      "ability": "Blaze",
+      "nature": "Modest",
+      "level": 50,
+      "moves": ["Heat Wave", "Weather Ball", "Ancient Power", "Protect"]
+    },
+    {
+      "species": "Whimsicott",
+      "item": "Focus Sash",
+      "ability": "Prankster",
+      "nature": "Timid",
+      "level": 50,
+      "moves": ["Moonblast", "Encore", "Tailwind", "Protect"]
+    },
+    {
+      "species": "Basculegion",
+      "item": "Mystic Water",
+      "ability": "Adaptability",
+      "nature": "Adamant",
+      "level": 50,
+      "moves": ["Wave Crash", "Last Respects", "Aqua Jet", "Protect"]
+    },
+    {
+      "species": "Floette-Eternal",
+      "item": "Floettite",
+      "ability": "Flower Veil",
+      "nature": "Modest",
+      "level": 50,
+      "moves": ["Moonblast", "Dazzling Gleam", "Light of Ruin", "Protect"]
+    }
+  ],
+  "sanchez": [
+    {
+      "species": "Incineroar",
+      "item": "Sitrus Berry",
+      "ability": "Intimidate",
+      "nature": "Impish",
+      "level": 50,
+      "moves": ["Fake Out", "Parting Shot", "Flare Blitz", "Protect"]
+    },
+    {
+      "species": "Toxapex",
+      "item": "Leftovers",
+      "ability": "Regenerator",
+      "nature": "Relaxed",
+      "level": 50,
+      "moves": ["Baneful Bunker", "Infestation", "Toxic", "Wide Guard"]
+    },
+    {
+      "species": "Garchomp",
+      "item": "Choice Scarf",
+      "ability": "Rough Skin",
+      "nature": "Adamant",
+      "level": 50,
+      "moves": ["Stomping Tantrum", "Earthquake", "Dragon Claw", "Rock Slide"]
+    },
+    {
+      "species": "Charizard",
+      "item": "Charizardite Y",
+      "ability": "Blaze",
+      "nature": "Timid",
+      "level": 50,
+      "moves": ["Protect", "Heat Wave", "Solar Beam", "Weather Ball"]
+    },
+    {
+      "species": "Venusaur",
+      "item": "Focus Sash",
+      "ability": "Chlorophyll",
+      "nature": "Modest",
+      "level": 50,
+      "moves": ["Protect", "Sludge Bomb", "Earth Power", "Sleep Powder"]
+    },
+    {
+      "species": "Sylveon",
+      "item": "Fairy Feather",
+      "ability": "Pixilate",
+      "nature": "Quiet",
+      "level": 50,
+      "moves": ["Detect", "Hyper Voice", "Quick Attack", "Yawn"]
+    }
+  ],
+  "wakasugi": [
+    {
+      "species": "Whimsicott",
+      "item": "Focus Sash",
+      "ability": "Prankster",
+      "nature": "Timid",
+      "level": 50,
+      "moves": ["Moonblast", "Tailwind", "Encore", "Protect"]
+    },
+    {
+      "species": "Basculegion",
+      "item": "Life Orb",
+      "ability": "Adaptability",
+      "nature": "Adamant",
+      "level": 50,
+      "moves": ["Wave Crash", "Last Respects", "Aqua Jet", "Protect"]
+    },
+    {
+      "species": "Floette-Eternal",
+      "item": "Floettite",
+      "ability": "Flower Veil",
+      "nature": "Timid",
+      "level": 50,
+      "moves": ["Moonblast", "Dazzling Gleam", "Light of Ruin", "Protect"]
+    },
+    {
+      "species": "Dragonite",
+      "item": "Dragoninite",
+      "ability": "Inner Focus",
+      "nature": "Modest",
+      "level": 50,
+      "moves": ["Dragon Pulse", "Heat Wave", "Thunderbolt", "Protect"]
+    },
+    {
+      "species": "Sneasler",
+      "item": "White Herb",
+      "ability": "Unburden",
+      "nature": "Jolly",
+      "level": 50,
+      "moves": ["Dire Claw", "Close Combat", "Rock Slide", "Fake Out"]
+    },
+    {
+      "species": "Kingambit",
+      "item": "Chople Berry",
+      "ability": "Defiant",
+      "nature": "Adamant",
+      "level": 50,
+      "moves": ["Kowtow Cleave", "Iron Head", "Low Kick", "Sucker Punch"]
+    }
+  ],
+  "weed": [
+    {
+      "species": "Froslass",
+      "item": "Froslassite",
+      "ability": "Cursed Body",
+      "nature": "Timid",
+      "level": 50,
+      "moves": ["Blizzard", "Shadow Ball", "Aurora Veil", "Protect"]
+    },
+    {
+      "species": "Sneasler",
+      "item": "White Herb",
+      "ability": "Unburden",
+      "nature": "Adamant",
+      "level": 50,
+      "moves": ["Close Combat", "Gunk Shot", "Fake Out", "Protect"]
+    },
+    {
+      "species": "Lycanroc-Dusk",
+      "item": "Focus Sash",
+      "ability": "Tough Claws",
+      "nature": "Adamant",
+      "level": 50,
+      "moves": ["Rock Slide", "Close Combat", "Accelerock", "Protect"]
+    },
+    {
+      "species": "Basculegion",
+      "item": "Life Orb",
+      "ability": "Adaptability",
+      "nature": "Jolly",
+      "level": 50,
+      "moves": ["Wave Crash", "Last Respects", "Aqua Jet", "Protect"]
+    },
+    {
+      "species": "Kingambit",
+      "item": "Black Glasses",
+      "ability": "Defiant",
+      "nature": "Adamant",
+      "level": 50,
+      "moves": ["Kowtow Cleave", "Sucker Punch", "Swords Dance", "Protect"]
+    },
+    {
+      "species": "Scovillain",
+      "item": "Scovillainite",
+      "ability": "Moody",
+      "nature": "Bold",
+      "level": 50,
+      "moves": ["Overheat", "Giga Drain", "Rage Powder", "Protect"]
+    }
+  ],
+  "yamazaki": [
+    {
+      "species": "Floette-Eternal",
+      "item": "Floettite",
+      "ability": "Flower Veil",
+      "nature": "Timid",
+      "level": 50,
+      "moves": ["Moonblast", "Dazzling Gleam", "Light of Ruin", "Protect"]
+    },
+    {
+      "species": "Basculegion",
+      "item": "Life Orb",
+      "ability": "Adaptability",
+      "nature": "Adamant",
+      "level": 50,
+      "moves": ["Wave Crash", "Last Respects", "Aqua Jet", "Protect"]
+    },
+    {
+      "species": "Kingambit",
+      "item": "Chople Berry",
+      "ability": "Defiant",
+      "nature": "Adamant",
+      "level": 50,
+      "moves": ["Sucker Punch", "Kowtow Cleave", "Low Kick", "Iron Head"]
+    },
+    {
+      "species": "Dragonite",
+      "item": "Dragoninite",
+      "ability": "Multiscale",
+      "nature": "Modest",
+      "level": 50,
+      "moves": ["Dragon Pulse", "Heat Wave", "Extreme Speed", "Protect"]
+    },
+    {
+      "species": "Garchomp",
+      "item": "Choice Scarf",
+      "ability": "Rough Skin",
+      "nature": "Adamant",
+      "level": 50,
+      "moves": ["Dragon Claw", "Stomping Tantrum", "Earthquake", "Rock Slide"]
+    },
+    {
+      "species": "Sneasler",
+      "item": "Focus Sash",
+      "ability": "Poison Touch",
+      "nature": "Jolly",
+      "level": 50,
+      "moves": ["Close Combat", "Dire Claw", "Fake Out", "Feint"]
+    }
+  ]
+}

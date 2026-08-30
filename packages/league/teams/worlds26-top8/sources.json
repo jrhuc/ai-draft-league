@@ -1,0 +1,352 @@
+{
+  "id": "worlds26-top8",
+  "format": "gen9championsvgc2026regmbbo3",
+  "sheets": "sheets.json",
+  "event": {
+    "name": "2026 Pokémon VGC World Championship",
+    "game": "Pokémon Champions",
+    "regulation": "VGC Regulation Set M-B",
+    "dates": "28-30 August 2026",
+    "players": 395,
+    "structure": "Swiss into a single-elimination top cut, open team lists",
+    "url": "https://rk9.gg/tournament/WCS02wAQpCIaqFmXxER4",
+    "cut": 8,
+    "seeding": "seeded so the quarter-final pairings match the real bracket"
+  },
+  "spreads": {
+    "published": false,
+    "corpusName": "VGCPastes Repository (Champions M-B)",
+    "corpus": "https://docs.google.com/spreadsheets/d/1axlwmzPA49rYkqXh7zHvAtSP-TKbM0ijGYBPRflLSWw/export?format=csv&gid=1458357160",
+    "reason": "The rk9 open team lists publish species, held item, ability, nature and all four moves verbatim, but no stat points. Champions allots 66 stat points with a per-stat cap of 32, so a zero-point team is not the team that made this top cut. Every spread here was recreated: first from the Day 2 broadcast where a damage or turn-order read pins a stat against an already-pinned opponent, and otherwise by adopting a real spread from a same-species, same-item, same-nature set in the corpus. Where the two disagree the footage wins. Working notes and the per-set derivations live outside this repo; each set carries its own basis in spreads.json."
+  },
+  "teams": [
+    {
+      "id": "onishi-charizard-whimsicott",
+      "seed": 1,
+      "sheet": "onishi",
+      "player": "Hiroshi Onishi",
+      "handle": "coな",
+      "country": "JP",
+      "teamlist": "https://rk9.gg/teamlist/public/WCS02wAQpCIaqFmXxER4/zQSjw85uxlz690ShQNiG",
+      "overrides": [
+        {
+          "species": "Kingambit",
+          "evs": "32 Atk / 32 HP / 2 Def",
+          "why": "Occa Berry exists to survive Charizard-Y Heat Wave (138-164% unresisted at 0 HP), which only pays off with real HP investment. Sucker Punch covers the Speed deficit."
+        },
+        {
+          "species": "Basculegion",
+          "evs": "32 Atk / 13 Def / 21 Spe",
+          "why": "CORPUS SUBSTITUTION. Modal verified Adamant Life Orb Basculegion (x5 of 48); the 20-23 Spe band holds 18 of 48 sets against 12 at max. The old max-Speed entry rested on a mirror arms-race argument that does not survive: Weed's Jolly Basculegion (143) beats the Adamant ones whether they sit at 130 or at 119, so it never implied they were max. No VOD turn-order read touches any Basculegion, and the 8A Flare Blitz read cannot discriminate (0 Def gives 40.6-48.2% in sun, 13 Def gives 35.9-42.6%; the observed 41% sits in both). VGCPastes Champions M-B repository (773 teams, 4199 sets, all 66 SP), filtered to the same species + item + nature."
+        },
+        {
+          "species": "Garchomp",
+          "evs": "32 Spe / 16 Atk / 12 HP / 6 SpD",
+          "why": "Jolly is paid for Speed; 32 SP reaches 169, one point above Timid Charizard-Y's 167. The Atk/HP split is now constrained, not assumed: 8A, Sanchez's Mega Charizard Y Weather Ball in sun took this Garchomp 100% -> 59% (41%). Anchoring the attacker at its own high-confidence 32 SpA (211), 41% requires >= 15 SP of special bulk - the old 32 Atk / 32 Spe / 2 HP is infeasible. Cheapest fits: 0 HP/15 SpD, 8 HP/9 SpD, 12 HP/6 SpD. Sitrus Berry favours the HP lean, and 12 HP/6 SpD leaves the most Attack (16). The read only disappears if Sanchez's Charizard is at <= 6 SP SpA, which contradicts its own entry."
+        },
+        {
+          "species": "Charizard",
+          "evs": "32 SpA / 32 Spe / 2 HP",
+          "why": "Same as any Timid Mega Charizard Y: the nature is bought for the 167 Speed tier."
+        },
+        {
+          "species": "Whimsicott",
+          "evs": "32 Spe / 32 SpA / 2 HP",
+          "why": "Focus Sash prior: the Sash already buys the one survival it needs, so the spread is max offence / max Speed with no bulk. Confirmed observationally on the third Sash Whimsicott in the field - Wakasugi's, 8D g1 t1, where a spread Rock Slide's 47% admitted no defensive investment at any feasible attacker spread. The earlier 16 SpA / 18 HP guess was unconstrained by anything observed and contradicts the item."
+        },
+        {
+          "species": "Floette-Eternal",
+          "evs": "2 HP / 32 SpA / 32 Spe",
+          "why": "CORPUS SUBSTITUTION. Modal verified Modest Floettite set (x16 of 74). The old 24 Spe was arbitrary: 48 of 74 Modest Mega Floette run max Speed (the 24-27 band holds one set), so Modest here buys power without giving up the 154 tier that ties Adamant Garchomp. Still resolvable from semifinal 1 footage. VGCPastes Champions M-B repository (773 teams, 4199 sets, all 66 SP), filtered to the same species + item + nature."
+        }
+      ]
+    },
+    {
+      "id": "yamazaki-dragonite-sneasler",
+      "seed": 2,
+      "sheet": "yamazaki",
+      "player": "Takuma Yamazaki",
+      "handle": "ワトソン",
+      "country": "JP",
+      "teamlist": "https://rk9.gg/teamlist/public/WCS02wAQpCIaqFmXxER4/vNFhoueupPbBpYYYSUPK",
+      "overrides": [
+        {
+          "species": "Floette-Eternal",
+          "evs": "32 SpA / 32 Spe / 2 HP",
+          "why": "Timid (unlike Onishi's and Piscitelli's Modest) buys the 169 tier, tying Jolly Garchomp - that is the whole point of the nature, so Speed should be near max."
+        },
+        {
+          "species": "Basculegion",
+          "evs": "32 Atk / 13 Def / 21 Spe",
+          "why": "As Onishi's: modal verified Adamant Life Orb set. VGCPastes Champions M-B repository (773 teams, 4199 sets, all 66 SP), filtered to the same species + item + nature."
+        },
+        {
+          "species": "Kingambit",
+          "evs": "32 Atk / 32 HP / 2 Def",
+          "why": "As Piscitelli's."
+        },
+        {
+          "species": "Dragonite",
+          "evs": "2 HP / 32 SpA / 32 Spe",
+          "why": "CORPUS SUBSTITUTION. Modal verified Modest Dragoninite set (x6 of 22). The old 32 HP Multiscale reasoning is contradicted by the corpus: 10 of 22 Modest Mega Dragonite run 0-3 HP and 11 of 22 run max Speed, i.e. it is played as a fast special attacker that uses Multiscale as a free cushion rather than paying HP for it. Still the best target in semifinal 2 footage. VGCPastes Champions M-B repository (773 teams, 4199 sets, all 66 SP), filtered to the same species + item + nature."
+        },
+        {
+          "species": "Garchomp",
+          "evs": "32 Atk / 32 Spe / 2 HP",
+          "why": "As Sanchez's scarf Garchomp."
+        },
+        {
+          "species": "Sneasler",
+          "evs": "32 Atk / 32 Spe / 2 HP",
+          "why": "Jolly + Focus Sash + Fake Out/Feint is the fast disruption lead; 189 ties Mega Froslass and loses only to Mega Aerodactyl."
+        }
+      ]
+    },
+    {
+      "id": "weed-froslass-lycanroc",
+      "seed": 3,
+      "sheet": "weed",
+      "player": "Zachary Weed",
+      "handle": "Zach",
+      "country": "US",
+      "teamlist": "https://rk9.gg/teamlist/public/WCS02wAQpCIaqFmXxER4/bunpK59QyZm9f4p9Ryty",
+      "overrides": [
+        {
+          "species": "Froslass",
+          "evs": "14 HP / 20 SpA / 32 Spe",
+          "why": "As Leite's; same snow shell, same corpus substitution and downgrade from high. VGCPastes Champions M-B repository (773 teams, 4199 sets, all 66 SP), filtered to the same species + item + nature."
+        },
+        {
+          "species": "Sneasler",
+          "evs": "32 Atk / 32 Spe / 2 HP",
+          "why": "As Leite's, with Gunk Shot over Dire Claw."
+        },
+        {
+          "species": "Lycanroc-Dusk",
+          "evs": "32 Atk / 32 Spe / 2 HP",
+          "why": "Corroborated by 8D g1 t1: no Whimsicott bulk allocation reproduces the observed 47% spread Rock Slide unless Lycanroc has >= ~24 Atk SP."
+        },
+        {
+          "species": "Basculegion",
+          "evs": "32 Atk / 32 Spe / 2 HP",
+          "why": "The only Jolly Basculegion in the cut. Jolly exists solely to reach 143 and beat the four Adamant Basculegion at 130, so Speed must be at or near max or the nature is wasted."
+        },
+        {
+          "species": "Kingambit",
+          "evs": "32 Atk / 32 HP / 2 Def",
+          "why": "As Leite's Swords Dance Kingambit."
+        },
+        {
+          "species": "Scovillain",
+          "evs": "32 HP / 15 Def / 19 SpD",
+          "why": "As Leite's: modal verified Bold Scovillainite set. VGCPastes Champions M-B repository (773 teams, 4199 sets, all 66 SP), filtered to the same species + item + nature."
+        }
+      ]
+    },
+    {
+      "id": "leite-froslass-sneasler",
+      "seed": 4,
+      "sheet": "leite",
+      "player": "João Felipe Leite",
+      "handle": "Thacrow",
+      "country": "BR",
+      "teamlist": "https://rk9.gg/teamlist/public/WCS02wAQpCIaqFmXxER4/cdj4Zi0xQo0jiJ4lnkHh",
+      "overrides": [
+        {
+          "species": "Froslass",
+          "evs": "14 HP / 20 SpA / 32 Spe",
+          "why": "CORPUS SUBSTITUTION, and a confidence downgrade from high. Timid Mega Froslass is predominantly a snow/Aurora Veil support body, not a max-SpA attacker: median SpA across 26 corpus sets is 12, and only 3 reach max. Max Speed survives the substitution (12 of 26 at 32, and the Timid nature is bought for the 189 tier), so a verified set that keeps 32 Spe and moderates SpA was chosen. The old entry was reasoning-only with no observation behind it. VGCPastes Champions M-B repository (773 teams, 4199 sets, all 66 SP), filtered to the same species + item + nature."
+        },
+        {
+          "species": "Kingambit",
+          "evs": "32 Atk / 32 HP / 2 Def",
+          "why": "Swords Dance + Black Glasses is a setup sweeper that needs to survive a turn to set up; Sucker Punch means Speed is close to dead weight."
+        },
+        {
+          "species": "Sneasler",
+          "evs": "32 Atk / 32 Spe / 2 HP",
+          "why": "White Herb + Unburden doubles Speed on the first Close Combat drop (172 -> 344 at 32 SP), but the pre-trigger tier still decides the Fake Out war, so Speed stays high."
+        },
+        {
+          "species": "Lycanroc-Dusk",
+          "evs": "32 Atk / 32 Spe / 2 HP",
+          "why": "Focus Sash guarantees one turn, so no HP is worth buying; Accelerock covers what Speed misses. 162 at 32 SP sits just under Timid Charizard-Y."
+        },
+        {
+          "species": "Basculegion",
+          "evs": "32 Atk / 13 Def / 21 Spe",
+          "why": "As Onishi's: modal verified Adamant Life Orb set. VGCPastes Champions M-B repository (773 teams, 4199 sets, all 66 SP), filtered to the same species + item + nature."
+        },
+        {
+          "species": "Scovillain",
+          "evs": "32 HP / 15 Def / 19 SpD",
+          "why": "CORPUS SUBSTITUTION. Modal verified Bold Scovillainite set (x2 of 10). A Rage Powder redirection body is aimed at both attack categories, and the corpus splits the non-HP budget rather than maxing Defense; the old 32 Def / 2 SpD sat at the extreme. VGCPastes Champions M-B repository (773 teams, 4199 sets, all 66 SP), filtered to the same species + item + nature."
+        }
+      ]
+    },
+    {
+      "id": "piscitelli-charizard-floette",
+      "seed": 5,
+      "sheet": "piscitelli",
+      "player": "Giovanni Piscitelli",
+      "handle": "Genius",
+      "country": "IT",
+      "teamlist": "https://rk9.gg/teamlist/public/WCS02wAQpCIaqFmXxER4/PZvi1hgblWVj9obq5Fcj",
+      "overrides": [
+        {
+          "species": "Garchomp",
+          "evs": "32 Atk / 32 Spe / 2 HP",
+          "why": "Jolly + Life Orb + Protect is the standard fast attacker; 169 is the tier it is buying."
+        },
+        {
+          "species": "Kingambit",
+          "evs": "32 Atk / 32 HP / 2 Def",
+          "why": "Chople Berry halves Close Combat/Low Kick from the four Sneaslers in the cut, which needs HP behind it to matter."
+        },
+        {
+          "species": "Charizard",
+          "evs": "30 HP / 30 Def / 1 SpA / 5 Spe",
+          "why": "CORPUS SUBSTITUTION, and the most consequential change in this audit. Modest Mega Charizard Y is overwhelmingly a BULKY sun-setter in the corpus, not a special attacker: 94 of 119 Modest sets run SpA <= 11, and the median is 9. The mega slot is being paid for Drought and bulk while the team does the damage - which is exactly why these players chose Modest over Timid (Timid Mega-Y, by contrast, is the offensive one: 6 of 13 run max SpA). The old 32 SpA / 20 Spe / 14 HP sat at the 92nd percentile of SpA. Adopted the modal verified set inside the dominant archetype. NOTE the distribution is bimodal: the single most common exact spread is still the offensive 2 HP / 32 SpA / 32 Spe (x8), so if this looks wrong on tape, that is the alternative. VGCPastes Champions M-B repository (773 teams, 4199 sets, all 66 SP), filtered to the same species + item + nature."
+        },
+        {
+          "species": "Whimsicott",
+          "evs": "32 Spe / 32 SpA / 2 HP",
+          "why": "Focus Sash prior: the Sash already buys the one survival it needs, so the spread is max offence / max Speed with no bulk. Confirmed observationally on the third Sash Whimsicott in the field - Wakasugi's, 8D g1 t1, where a spread Rock Slide's 47% admitted no defensive investment at any feasible attacker spread. The earlier 16 SpA / 18 HP guess was unconstrained by anything observed and contradicts the item."
+        },
+        {
+          "species": "Basculegion",
+          "evs": "4 HP / 31 Atk / 11 Def / 20 Spe",
+          "why": "CORPUS SUBSTITUTION, and the sharpest flag of the whole audit: of 41 Adamant Mystic Water Basculegion in the corpus, ZERO run 32 Speed - the maximum observed is in the 28-31 band (one set), and 18 of 41 sit at 20-23. The old 32 Atk / 32 Spe / 2 HP was outside the corpus entirely. Adopted the modal verified set (x10 of 41). VGCPastes Champions M-B repository (773 teams, 4199 sets, all 66 SP), filtered to the same species + item + nature."
+        },
+        {
+          "species": "Floette-Eternal",
+          "evs": "2 HP / 32 SpA / 32 Spe",
+          "why": "As Onishi's: modal verified Modest Floettite set. Never appeared in the aired games. VGCPastes Champions M-B repository (773 teams, 4199 sets, all 66 SP), filtered to the same species + item + nature."
+        }
+      ]
+    },
+    {
+      "id": "wakasugi-dragonite-whimsicott",
+      "seed": 6,
+      "sheet": "wakasugi",
+      "player": "Yuya Wakasugi",
+      "handle": "ゆー",
+      "country": "JP",
+      "teamlist": "https://rk9.gg/teamlist/public/WCS02wAQpCIaqFmXxER4/j478dNnHDS9DrcZL2p9g",
+      "overrides": [
+        {
+          "species": "Whimsicott",
+          "evs": "32 Spe / 32 SpA / 2 HP",
+          "why": "8D g1 t1: the opposing Lycanroc's spread Rock Slide took it 100% -> 53%. At Lycanroc 32 Atk SP that admits only hp<=7 / def<=6 (jointly tiny); at 24 SP only hp<=1 / def<=1; below ~24 SP nothing fits, so Lycanroc is near-max Attack and Whimsicott carries no defensive investment - the old 18 HP guess is infeasible at every attacker spread. Same turn, Moonblast (0 priority) resolved before that Rock Slide, so Spe >= Lycanroc's (>= 12 SP if Lycanroc is max Speed). See games/8D-game1.md."
+        },
+        {
+          "species": "Basculegion",
+          "evs": "32 Atk / 13 Def / 21 Spe",
+          "why": "As Onishi's: modal verified Adamant Life Orb set. VGCPastes Champions M-B repository (773 teams, 4199 sets, all 66 SP), filtered to the same species + item + nature."
+        },
+        {
+          "species": "Floette-Eternal",
+          "evs": "32 SpA / 32 Spe / 2 HP",
+          "why": "As Yamazaki's Timid Floette."
+        },
+        {
+          "species": "Dragonite",
+          "evs": "2 HP / 32 SpA / 32 Spe",
+          "why": "As Yamazaki's: modal verified Modest Dragoninite set. PERMANENTLY UNRESOLVABLE from this VOD - Wakasugi lost 8D 1-2 to Weed and brought the same four (Basculegion / Whimsicott / Floette / Sneasler) in all three games, so Dragonite never appeared and he is eliminated. VGCPastes Champions M-B repository (773 teams, 4199 sets, all 66 SP), filtered to the same species + item + nature."
+        },
+        {
+          "species": "Sneasler",
+          "evs": "32 Atk / 32 Spe / 2 HP",
+          "why": "Jolly + White Herb Unburden: 189 before the trigger, 378 after. Speed is the entire point."
+        },
+        {
+          "species": "Kingambit",
+          "evs": "32 Atk / 32 HP / 2 Def",
+          "why": "As Piscitelli's."
+        }
+      ]
+    },
+    {
+      "id": "greppi-aerodactyl-farigiraf",
+      "seed": 7,
+      "sheet": "greppi",
+      "player": "Stefano Greppi",
+      "handle": "Ste",
+      "country": "IT",
+      "teamlist": "https://rk9.gg/teamlist/public/WCS02wAQpCIaqFmXxER4/9Rhiqn5hn9fJWpxAHMun",
+      "overrides": [
+        {
+          "species": "Sylveon",
+          "evs": "13 HP / 32 Def / 21 SpA",
+          "why": "CORPUS SUBSTITUTION, chosen to satisfy the 8C g1 t1 Rock Slide read (Sylveon 100%->83%->59%, the 24% hit) which forces real Defense - the read needs def >= 14 SP at 9 HP, and the old 0 Def entry failed it outright. Among verified Modest Fairy Feather sets this one clears the read comfortably and keeps Speed at 0, which is what Greppi's own Farigiraf Trick Room wants. VGCPastes Champions M-B repository (773 teams, 4199 sets, all 66 SP), filtered to the same species + item + nature."
+        },
+        {
+          "species": "Aerodactyl",
+          "evs": "28 HP / 11 Atk / 9 Def / 1 SpD / 17 Spe",
+          "why": "Same two-form Rock Slide pair as before (8C g1 t1 base form 59%, 8C g2 t1 mega form 45%, both from Yamazaki's Choice Scarf Adamant Garchomp at 32 Atk = 200), but now satisfied by a VERIFIED corpus set instead of a constructed one. The reads demand ~16 SP of bulk; the old 11 Def / 5 HP split was the cheapest fit but sat at the corpus extreme (27 of 35 Jolly Aerodactylite sets run 0-3 Def, buying bulk as HP). This set is the only verified Jolly Aerodactylite spread that satisfies BOTH reads, and it costs nothing competitively: at 17 SP Mega Aerodactyl is still 204 Speed, above everything else in the field (next is 189). VGCPastes Champions M-B repository (773 teams, 4199 sets, all 66 SP), filtered to the same species + item + nature."
+        },
+        {
+          "species": "Farigiraf",
+          "evs": "25 HP / 26 Def / 15 SpD",
+          "why": "CORPUS SUBSTITUTION. Modal verified Bold Sitrus Farigiraf (x4 of 24). Both VOD constraints survive: the 8C g2 joint damage solve needs Def >= 6 (26 clears it), and the turn-6 Trick Room order caps Spe at SP_K-10 <= 22 (this set runs 0 Spe). The old 32 HP / 32 Def / 2 SpD dumped SpD, which no Bold corpus Farigiraf does. VGCPastes Champions M-B repository (773 teams, 4199 sets, all 66 SP), filtered to the same species + item + nature."
+        },
+        {
+          "species": "Garchomp",
+          "evs": "32 Atk / 32 Spe / 2 HP",
+          "why": "Rock Tomb instead of Protect makes it a speed-control attacker, which wants to move first."
+        },
+        {
+          "species": "Kingambit",
+          "evs": "32 Atk / 32 Spe / 2 HP",
+          "why": "Speed is now observed, not guessed. 8C game 2 turn 6 ran under Trick Room (proved independently: Yamazaki's Adamant Garchomp, >=122 Spe before its Choice Scarf and unparalysed, moved LAST), and Greppi's own Farigiraf moved BEFORE his Kingambit. Under TR the slower acts first, so Spe(Farigiraf) <= Spe(Kingambit): 80+SP_F <= 70+SP_K, i.e. SP_K >= SP_F+10 >= 10. A speed tie does not weaken this - it forces SP_K = SP_F+10 exactly, still >=10. With Farigiraf at the estimated 0-4 Spe this reads SP_K >= 10-14. Separately, Earthquake from that Garchomp (spread, 2x into Dark/Steel) took Kingambit 100%->31% = 69%, which excludes physically bulky allocations: 32 HP/12 Def caps at 61.8-63.8% and 16 HP/20 Def at 62.8-67%, both short of 69% even at max Garchomp Attack. So low Def, limited HP, real Speed - Trick Room is the side mode on this team, not the plan."
+        },
+        {
+          "species": "Charizard",
+          "evs": "30 HP / 30 Def / 1 SpA / 5 Spe",
+          "why": "As Piscitelli's Modest Mega Charizard Y: bulky sun-setter archetype, modal verified set. VGCPastes Champions M-B repository (773 teams, 4199 sets, all 66 SP), filtered to the same species + item + nature."
+        }
+      ]
+    },
+    {
+      "id": "sanchez-charizard-toxapex",
+      "seed": 8,
+      "sheet": "sanchez",
+      "player": "Antonio Sánchez",
+      "handle": "Antonio",
+      "country": "ES",
+      "teamlist": "https://rk9.gg/teamlist/public/WCS02wAQpCIaqFmXxER4/HMsNPyHVD6Hm0d8hzvrO",
+      "overrides": [
+        {
+          "species": "Incineroar",
+          "evs": "32 HP / 8 Def / 26 SpD",
+          "why": "8A g1 t4 Heat Wave read (100%->77%, exactly 23%) re-solved for internal consistency. Against Onishi's Timid Mega Charizard Y at its own recorded 32 SpA (211) the feasible set is HP>=26 AND SpD>=26, so the previous 22 SpD was INFEASIBLE against the anchor this file already assumes. 32 HP / 8 Def / 26 SpD is the max-bulk fit. The Last Respects read adds nothing (engine always computes Last Respects at BP 50; fainted count and attack stage unknown), so it imposes no Def floor. CAVEAT: 26 SpD is a corpus outlier (1 of 43 Impish Sitrus Incineroar sit above 23 SpD). The read is monotone in the attacker: a Charizard at ~16 SpA instead would need only ~16 SpD, giving the corpus-normal 32 HP / 18 Def / 16 SpD. Both branches fit the footage; this one keeps the recorded Charizard entry."
+        },
+        {
+          "species": "Toxapex",
+          "evs": "32 HP / 8 Def / 26 SpD",
+          "why": "CORPUS SUBSTITUTION. The old 32 HP / 32 Def / 2 SpD was reasoning-only and is outside the entire corpus: no Leftovers Toxapex of any nature runs above 27 Def, and 14 of 22 sit at 16-19 Def with the rest of the budget in SpD. The single Relaxed Leftovers Toxapex in the corpus is exactly 32 HP / 8 Def / 26 SpD, adopted verbatim. VGCPastes Champions M-B repository (773 teams, 4199 sets, all 66 SP), filtered to the same species + item + nature."
+        },
+        {
+          "species": "Garchomp",
+          "evs": "32 Atk / 32 Spe / 2 HP",
+          "why": "Four attacking moves on a Choice Scarf. Adamant 122-154 becomes 183-231 scarfed; max Speed clears Mega Aerodactyl (222), the only thing above it."
+        },
+        {
+          "species": "Charizard",
+          "evs": "32 SpA / 32 Spe / 2 HP",
+          "why": "Timid is paid for Speed; 32 SP reaches 167, above Jolly Garchomp (169 needs 31 of Garchomp's own). Sole special attacker on a sun team."
+        },
+        {
+          "species": "Venusaur",
+          "evs": "32 SpA / 32 Spe / 2 HP",
+          "why": "Chlorophyll doubles Speed under its own Charizard-Y sun (132 -> 264 at 32 SP), so Speed is only live out of sun; Focus Sash removes the reason to buy HP."
+        },
+        {
+          "species": "Sylveon",
+          "evs": "21 HP / 13 Def / 32 SpA",
+          "why": "CORPUS SUBSTITUTION. Modal verified Quiet Fairy Feather Sylveon (x2 of 9). Quiet still means Speed is deliberately dumped, which the old entry got right, but the corpus buys Defense with the spare points rather than piling everything into HP. VGCPastes Champions M-B repository (773 teams, 4199 sets, all 66 SP), filtered to the same species + item + nature."
+        }
+      ]
+    }
+  ]
+}
