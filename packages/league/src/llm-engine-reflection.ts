@@ -1,3 +1,11 @@
+import {
+  applyMemoryUpdate,
+  type BattleMemory,
+  memoryUpdateTelemetry,
+  MemoryUpdateError,
+  renderStrategicMemory,
+  renderVerifiedReferenceMemory,
+} from "./battle-memory.js";
 import type { GameEnd } from "./battle-agent.js";
 import {
   extractReflection,
@@ -27,7 +35,7 @@ export function reflectionPrompt(input: {
   finalState: string;
   timeline: string[];
   gameLog: string[];
-  notebook: string;
+  memory: BattleMemory;
   tournamentStatus?: GameEnd["tournamentStatus"];
   retrospective: boolean;
 }): string {
@@ -61,7 +69,14 @@ export function reflectionPrompt(input: {
     "",
     ...(input.retrospective
       ? []
-      : [`Current private notebook: ${input.notebook || "(empty)"}`, ""]),
+      : [
+          "Current private strategic memory:",
+          renderStrategicMemory(input.memory),
+          "",
+          "Verified reference memory from authoritative lookups:",
+          renderVerifiedReferenceMemory(input.memory),
+          "",
+        ]),
     input.retrospective
       ? "Return the required concise tournament retrospective. Do not return or update the private notebook."
       : "Return the required concise game review and updated notebook.",
@@ -70,8 +85,8 @@ export function reflectionPrompt(input: {
 
 export async function requestReflection(input: {
   prompt: string;
-  currentNotebook: string;
-  fallbackNotebook: string;
+  currentMemory: () => BattleMemory;
+  fallbackMemory: () => BattleMemory;
   result: string;
   spec: string;
   tools: ToolDefinition[];
@@ -82,11 +97,13 @@ export async function requestReflection(input: {
   const messages: ProviderMessage[] = [{ role: "user", content: input.prompt }];
   const usage: Record<string, number> = {};
   let rawResponse = "";
-  let parsed;
+  let parsed: Reflection | undefined;
   let error: string | undefined;
   let failureSummary: string | undefined;
   let failureKind: string | undefined;
   let toolRounds = 0;
+  let memoryRepairAttempts = 0;
+  let rejectedMemoryUpdate: JsonObject | undefined;
   const toolCalls: Array<{ name: string; arguments: JsonObject; result: string }> = [];
   const offered = new Set(input.tools.map((tool) => tool.name));
   try {
@@ -126,18 +143,22 @@ export async function requestReflection(input: {
       if (!rawResponse.trim() && completion.reasoning) {
         try {
           if (input.retrospective)
-            extractTournamentRetrospective(completion.reasoning, input.currentNotebook);
-          else extractReflection(completion.reasoning);
+            extractTournamentRetrospective(completion.reasoning, input.currentMemory());
+          else extractReflection(completion.reasoning, input.currentMemory());
           rawResponse = completion.reasoning;
         } catch {}
       }
       try {
         parsed = input.retrospective
-          ? extractTournamentRetrospective(rawResponse, input.currentNotebook)
-          : extractReflection(rawResponse);
+          ? extractTournamentRetrospective(rawResponse, input.currentMemory())
+          : extractReflection(rawResponse, input.currentMemory());
         error = undefined;
       } catch (caught) {
         error = caught instanceof Error ? caught.message : String(caught);
+        if (caught instanceof MemoryUpdateError) {
+          memoryRepairAttempts += 1;
+          rejectedMemoryUpdate = memoryUpdateTelemetry(caught.update);
+        }
         if (attempt === 0) {
           messages.push({
             role: "assistant",
@@ -145,7 +166,10 @@ export async function requestReflection(input: {
           });
           messages.push({
             role: "user",
-            content: `Invalid review: ${error}. Reply with exactly the required JSON object.`,
+            content:
+              caught instanceof MemoryUpdateError
+                ? `Invalid review: ${error}. Compress the three notebook fields without dropping verified or decisive strategic facts, then reply with exactly the required JSON object.`
+                : `Invalid review: ${error}. Reply with exactly the required JSON object.`,
           });
         }
       }
@@ -158,18 +182,21 @@ export async function requestReflection(input: {
   }
   const fallback = !parsed;
   const fallbackReason = `Game ${input.result}; model reflection unavailable (${failureSummary ?? error ?? "unparseable review"}).`;
+  const fallbackMemory = input.fallbackMemory();
   const review =
     parsed ??
     (input.retrospective
       ? ({
           summary: fallbackReason,
           adjustment: "",
-          notebook: input.fallbackNotebook,
+          memory: fallbackMemory,
+          memoryUpdate: applyMemoryUpdate(fallbackMemory, undefined),
         } satisfies Reflection)
       : ({
           summary: fallbackReason,
           adjustment: "No model-authored adjustment was recorded.",
-          notebook: input.fallbackNotebook,
+          memory: fallbackMemory,
+          memoryUpdate: applyMemoryUpdate(fallbackMemory, undefined),
         } satisfies Reflection));
   return {
     usage,
@@ -181,5 +208,7 @@ export async function requestReflection(input: {
     review,
     toolRounds,
     toolCalls,
+    memoryRepairAttempts,
+    rejectedMemoryUpdate,
   };
 }
