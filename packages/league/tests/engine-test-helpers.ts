@@ -31,8 +31,29 @@ export function request(activeCount = 1): BattleRequest {
   };
 }
 
+export const notebookUpdate = (
+  teamPlaybook = "",
+  seriesMemory = "",
+  nextGamePlan = "",
+) => ({
+  team_playbook: teamPlaybook,
+  series_memory: seriesMemory,
+  next_game_plan: nextGamePlan,
+});
+
+export const memory = (
+  teamPlaybook = "",
+  seriesMemory = "",
+  nextGamePlan = "",
+  verifiedReferences: unknown[] = [],
+) =>
+  JSON.stringify({
+    ...notebookUpdate(teamPlaybook, seriesMemory, nextGamePlan),
+    verified_references: verifiedReferences,
+  });
+
 export const decision = (choices: number[], rationale = "test choice", notebook = "") =>
-  JSON.stringify({ choices, rationale, notebook });
+  JSON.stringify({ choices, rationale, notebook: notebookUpdate("", notebook, "") });
 
 export const emptyStats = {
   decisions: 0,
