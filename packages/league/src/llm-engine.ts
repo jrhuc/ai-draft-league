@@ -16,7 +16,6 @@ import {
   DECISION_MAX_ORDER_TOOL_CALLS,
   DECISION_MAX_STANDARD_TOOL_CALLS,
   DECISION_MAX_TOOL_ROUNDS,
-  DECISION_NOTE_LIMIT,
   DECISION_PARSE_ATTEMPTS,
   DECISION_PREFILL,
   decisionPhase,
@@ -67,6 +66,11 @@ import {
 } from "./providers.js";
 import { ShowdownReference } from "./reference.js";
 import { noStageEvidence } from "./stage-evidence.js";
+import {
+  type MemoryUpdateScope,
+  normalizeStrategicMemory,
+  rememberVerifiedReference,
+} from "./strategic-memory.js";
 import { BattleState } from "./state.js";
 import type {
   ActionSubmission,
@@ -81,7 +85,7 @@ import type {
   SubmissionSource,
   ToolDefinition,
 } from "./types.js";
-import { clip, text } from "./value.js";
+import { text } from "./value.js";
 
 /** Thrown when a decision was superseded or yielded to the battle timer; the stale act() must not commit. */
 class DecisionAbandonedError extends Error {
@@ -169,8 +173,8 @@ export class LLMEngine extends BaseEngine {
       }),
       (row) => this.writeLog(this.options.contextLog, row),
     );
-    this.notebook = clip(options.initialNotebook?.trim() ?? "", DECISION_NOTE_LIMIT);
-    this.carryInNotebook = clip(options.carryInNotebook?.trim() ?? "", DECISION_NOTE_LIMIT);
+    this.notebook = normalizeStrategicMemory(options.initialNotebook?.trim() ?? "");
+    this.carryInNotebook = normalizeStrategicMemory(options.carryInNotebook?.trim() ?? "");
     this.gameId = spec;
   }
 
@@ -281,8 +285,8 @@ export class LLMEngine extends BaseEngine {
       return undefined;
     }
     if (row.notebook !== undefined) {
-      this.notebook = row.notebook;
-      this.loggedNotebook = row.notebook;
+      this.notebook = normalizeStrategicMemory(row.notebook);
+      this.loggedNotebook = this.notebook;
     }
     this.transcript.rememberTurnDetail(`Decision: ${row.action}`);
     this.context.append("decision", {
@@ -326,17 +330,26 @@ export class LLMEngine extends BaseEngine {
   private lookupReferenceTool(name: string, args: JsonObject): string {
     const key = `${name} ${JSON.stringify(args)}`;
     const cached = this.dexLookupCache.get(key);
+    let result: string;
     if (cached !== undefined) {
       this.dexLookupCache.delete(key);
       this.dexLookupCache.set(key, cached);
-      return cached;
+      result = cached;
+    } else {
+      result = this.reference.lookup(name, args);
+      this.dexLookupCache.set(key, result);
+      if (this.dexLookupCache.size > DEX_LOOKUP_CACHE_LIMIT) {
+        const oldest = this.dexLookupCache.keys().next().value;
+        if (oldest !== undefined) this.dexLookupCache.delete(oldest);
+      }
     }
-    const result = this.reference.lookup(name, args);
-    this.dexLookupCache.set(key, result);
-    if (this.dexLookupCache.size > DEX_LOOKUP_CACHE_LIMIT) {
-      const oldest = this.dexLookupCache.keys().next().value;
-      if (oldest !== undefined) this.dexLookupCache.delete(oldest);
-    }
+    this.notebook = rememberVerifiedReference(this.notebook, {
+      tool: name,
+      arguments: args,
+      format: this.reference.format,
+      revision: this.reference.revision,
+      result,
+    });
     return result;
   }
 
@@ -907,6 +920,12 @@ export class LLMEngine extends BaseEngine {
     const draft = this.options.draftRoster !== undefined;
     const retrospective =
       context.tournamentStatus === "eliminated" || context.tournamentStatus === "champion";
+    const memoryScope: MemoryUpdateScope =
+      context.tournamentStatus === "advancing"
+        ? "next-round"
+        : seriesOver
+          ? "rematch"
+          : "series";
     const prompt = reflectionPrompt({
       seriesId: this.seriesId,
       gameNumber: context.gameNumber,
@@ -952,11 +971,14 @@ export class LLMEngine extends BaseEngine {
       review,
       toolRounds,
       toolCalls,
+      failedAttempts,
     } = await requestReflection({
       prompt,
       currentNotebook: this.notebook,
       fallbackNotebook:
         context.tournamentStatus === "advancing" ? this.carryInNotebook : this.notebook,
+      memoryScope,
+      reference: { format: this.reference.format, revision: this.reference.revision },
       result,
       spec: this.spec,
       tools: this.reflectionTools,
@@ -1034,6 +1056,7 @@ export class LLMEngine extends BaseEngine {
       error: error ?? null,
       error_summary: failureSummary || undefined,
       failure_kind: failureKind || undefined,
+      failed_attempts: failedAttempts.length ? failedAttempts : undefined,
     };
     this.writeLog(this.options.decisionLog, reflectionLog);
     this.writeLog(this.options.traceLog, reflectionTrace);
