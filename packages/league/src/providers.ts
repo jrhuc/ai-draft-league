@@ -1,5 +1,6 @@
 import { appendFileSync } from "node:fs";
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible, type MetadataExtractor } from "@ai-sdk/openai-compatible";
 import {
@@ -127,18 +128,14 @@ export function validateReasoning(spec: ProviderSpec, level?: string): void {
   }
 }
 
-export type OpenCodeApi = "chat" | "messages" | "responses";
+export type OpenCodeApi = "chat" | "messages" | "responses" | "google";
 
 /** OpenCode serves each model through exactly one API shape (https://opencode.ai/docs/zen, /docs/go):
  * GPT, Grok and Muse through the Responses API, Claude and Qwen (and MiniMax on Go) through the
- * Anthropic Messages API, and the rest through chat completions. Gemini needs the Google API, which
- * this harness does not speak. */
+ * Anthropic Messages API, Gemini through generateContent, and the rest through chat completions. */
 export function opencodeApi(provider: "opencode-go" | "opencode-zen", model: string): OpenCodeApi {
   const id = model.toLowerCase();
-  if (id.startsWith("gemini-"))
-    throw new Error(
-      `${provider}:${model} is served through the Google API, which is not supported`,
-    );
+  if (id.startsWith("gemini-")) return "google";
   if (/^(?:gpt-|grok-|muse-)/.test(id)) return "responses";
   if (/^(?:claude-|qwen)/.test(id)) return "messages";
   if (provider === "opencode-go" && id.startsWith("minimax-")) return "messages";
@@ -656,6 +653,9 @@ class SdkProvider implements Provider {
         ...transport,
       })(this.model);
     }
+    if (this.api === "google") {
+      return createGoogleGenerativeAI({ baseURL, apiKey, ...transport })(this.model);
+    }
     if (this.spec.provider === "openrouter") {
       return createOpenAICompatible({
         name: this.spec.provider,
@@ -806,16 +806,12 @@ class SdkProvider implements Provider {
       /** Cache breakpoints stay claude-only: other Messages-shaped gateways may reject cache_control. */
       const cacheBreakpoints = this.api === "messages" && this.model.includes("claude");
       if (cacheBreakpoints) markFirstUserBreakpoint(converted);
-      const systemMessage: ModelMessage = {
-        role: "system",
-        content: system,
-        providerOptions: EPHEMERAL_CACHE,
-      };
       const stream = streamText({
         model,
-        ...(cacheBreakpoints
-          ? { messages: [systemMessage, ...converted] }
-          : { system, messages: converted }),
+        instructions: cacheBreakpoints
+          ? { role: "system", content: system, providerOptions: EPHEMERAL_CACHE }
+          : system,
+        messages: converted,
         ...toolOptions,
         ...reasoningOptions,
         maxOutputTokens: options.maxTokens ?? 1200,

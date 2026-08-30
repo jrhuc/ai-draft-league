@@ -546,7 +546,7 @@ test("OpenCode models are routed to the one API shape that serves them", async (
   assert.equal(opencodeApi("opencode-zen", "minimax-m3"), "chat");
   assert.equal(opencodeApi("opencode-go", "qwen3.8-max"), "messages");
   assert.equal(opencodeApi("opencode-zen", "claude-fable-5"), "messages");
-  assert.throws(() => opencodeApi("opencode-zen", "gemini-3.5-flash"), /Google API/);
+  assert.equal(opencodeApi("opencode-zen", "gemini-3.5-flash"), "google");
 
   const requests: Array<{ url: string; body: JsonObject }> = [];
   const fetch: typeof globalThis.fetch = async (input, init) => {
