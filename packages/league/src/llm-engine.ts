@@ -36,6 +36,7 @@ import {
   extractChoices,
   FORCE_COMMIT_MS,
   FORCE_COMMIT_TURN_FRACTION,
+  noDecisionEvidence,
   type ParsedDecision,
   type PendingDecision,
   reasoningField,
@@ -75,7 +76,6 @@ import {
   uniqueToolCalls,
 } from "./providers.js";
 import { ShowdownReference } from "./reference.js";
-import { noStageEvidence } from "./stage-evidence.js";
 import { BattleState } from "./state.js";
 import type {
   ActionSubmission,
@@ -677,7 +677,7 @@ export class LLMEngine extends BaseEngine {
       ({
         choices: BaseEngine.defaults(menus)[0],
         evidence: {
-          ...noStageEvidence(this.memory),
+          ...noDecisionEvidence(this.memory),
           rationale: `No valid decision (${error}); defaulted to the first legal option for each slot.`,
         },
       } satisfies ParsedDecision);
@@ -761,8 +761,8 @@ export class LLMEngine extends BaseEngine {
     this.pending = undefined;
     if (!pending || pending.generation !== this.generation) return;
     const evidence = automatic
-      ? noStageEvidence(this.memory)
-      : (pending.evidence ?? noStageEvidence(this.memory));
+      ? noDecisionEvidence(this.memory)
+      : (pending.evidence ?? noDecisionEvidence(this.memory));
     const rationale = automatic
       ? "Automatic: only one legal joint action."
       : evidence.rationale || "No rationale supplied.";
@@ -979,9 +979,7 @@ export class LLMEngine extends BaseEngine {
       prompt,
       currentMemory: () => this.memory,
       fallbackMemory: () =>
-        context.tournamentStatus === "advancing"
-          ? nextOpponentMemory(this.memory)
-          : this.memory,
+        context.tournamentStatus === "advancing" ? nextOpponentMemory(this.memory) : this.memory,
       result,
       spec: this.spec,
       tools: this.reflectionTools,
