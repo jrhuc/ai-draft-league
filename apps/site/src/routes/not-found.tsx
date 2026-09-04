@@ -1,6 +1,8 @@
 import { Link } from "react-router-dom";
+import { useTitle } from "@/lib/season-context";
 
 export function NotFoundPage() {
+  useTitle("Nothing here");
   return (
     <section className="void">
       <h1>Nothing here</h1>

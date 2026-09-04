@@ -1,5 +1,5 @@
 /* Runs inside the replay iframe before replay-embed.js (the site CSP bars
- * inline scripts there, so this lives at /replay-frame.js).
+ * inline scripts there, so this ships as its own asset).
  *
  * replay-embed.js injects its dependencies without async=false, so they
  * execute in download-completion order. When graphics.js lands before

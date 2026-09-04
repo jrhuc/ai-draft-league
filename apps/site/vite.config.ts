@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import type { Plugin } from "vite";
 import { defineConfig } from "vite-plus";
@@ -64,6 +65,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": "/src",
+      ui: fileURLToPath(new URL("../../packages/ui/src", import.meta.url)),
     },
   },
   test: {

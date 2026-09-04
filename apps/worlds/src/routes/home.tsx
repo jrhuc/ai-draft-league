@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { EntrantTag, entrantStyle, ordinal } from "@/components/entrant";
-import { Mark } from "@/components/mark";
-import { SetCard } from "@/components/set-card";
-import { Sprite } from "@/components/sprite";
 import { useTitle, useTournament } from "@/lib/context";
-import { formatLabel, modelLabel, modelProvider, seconds, tokens } from "@/lib/format";
+import { Mark } from "ui/components/mark";
+import { SetCard } from "ui/components/set-card";
+import { Sprite } from "ui/components/sprite";
+import { formatLabel, modelLabel, modelProvider, seconds, tokens } from "ui/lib/format";
 import { entrant, entrantStats, roundLabel, tapeStats } from "@/lib/load";
 import type { Entrant } from "@/lib/tournament";
 

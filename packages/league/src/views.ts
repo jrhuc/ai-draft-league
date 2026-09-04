@@ -398,6 +398,8 @@ export interface LeagueGameResponse {
   live: boolean;
   /** Battlefield state for a game still in progress; null once the game has a result. */
   snapshot: BattleSnapshot | null;
+  /** The verbatim Showdown protocol log, exactly as the sim emitted it. */
+  raw: string;
   log: BattleLogEntryView[];
   decisions: LeagueGameDecisionView[];
   reflections: LeagueGameReflectionView[];

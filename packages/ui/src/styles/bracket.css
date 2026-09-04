@@ -120,10 +120,6 @@
   color: var(--t4);
 }
 
-.bracket-match .go .arrow {
-  display: inline-block;
-}
-
 .bracket-match a:hover .go {
   color: var(--t1);
 }

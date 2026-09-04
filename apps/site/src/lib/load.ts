@@ -102,9 +102,3 @@ export function matchBySeries(season: SeasonBundle, seriesId: string): Scheduled
 export function matchesFor(season: SeasonBundle, franchiseId: string): ScheduledMatch[] {
   return allMatches(season).filter((row) => row.match.franchises.includes(franchiseId));
 }
-
-export function releasedSeriesIds(season: SeasonBundle): string[] {
-  return allMatches(season)
-    .map((row) => row.match.seriesId)
-    .filter((id): id is string => id !== null && season.replays[id] !== undefined);
-}

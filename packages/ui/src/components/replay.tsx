@@ -1,10 +1,45 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { z } from "zod";
-import { Mark } from "@/components/mark";
-import { seconds, toneStyle, tokens } from "@/lib/format";
-import type { Decision, Reflection, Replay, ReplayEvent, ReplayGame } from "@/lib/tournament";
+import frameScript from "../frame/replay-frame.js?url&no-inline";
+import { seconds, toneStyle, tokens } from "../lib/format";
+import { Mark } from "./mark";
 
-type Team = { id: string; name: string; tone: string; model: string };
+export type Team = { id: string; name: string; tone: string; model: string };
+
+export type ReplayEvent = { turn: number; kind: string; text: string };
+
+export type ReplayDecision = {
+  team: Team;
+  turn: number;
+  phase: string;
+  action: string;
+  selection: string[];
+  rationale: string;
+  notebook?: string;
+  fallback: boolean;
+  automatic: boolean;
+  latencyMs: number | null;
+  reasoningTokens: number | null;
+};
+
+export type ReplayReflection = {
+  team: Team;
+  result: "won" | "lost" | "tied";
+  summary: string;
+  adjustment: string;
+  notebook?: string;
+  retrospective?: { didWell: string; didPoorly: string; wouldChange: string };
+};
+
+export type ReplayGameView = {
+  number: number;
+  turns: number;
+  winner: Team | null;
+  raw: string;
+  events: ReplayEvent[];
+  decisions: ReplayDecision[];
+  reflections: ReplayReflection[];
+};
 
 function escapeLog(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;");
@@ -14,7 +49,7 @@ function escapeLog(value: string): string {
  * The "downloaded replay" document the official client publishes for offline
  * viewing: replay-embed.js reads .battle-log-data and renders the animated
  * battle. Only the log travels; every script and sprite stays on Showdown's
- * own server. /replay-frame.js must run first (see that file), and stays an
+ * own server. The frame script must run first (see that file), and stays an
  * external script because the site CSP bars inline scripts, which the srcdoc
  * inherits.
  */
@@ -27,24 +62,25 @@ function replayDoc(raw: string, teams: [Team, Team], title: string): string {
     const label = collide ? `${team.name} (${pid?.toUpperCase()})` : team.name;
     log = log.replaceAll(recorded!, label);
   }
+  const replayId = title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
   return `<!DOCTYPE html>
 <meta charset="utf-8" />
 <meta name="referrer" content="no-referrer" />
 <!-- version 1 -->
 <title>${escapeLog(title)}</title>
 <div class="wrapper replay-wrapper" style="max-width:1180px;margin:0 auto">
-<input type="hidden" name="replayid" value="ai-pokemon-worlds-2026" />
+<input type="hidden" name="replayid" value="${replayId}" />
 <div class="battle"></div><div class="battle-log"></div><div class="replay-controls"></div><div class="replay-controls-2"></div>
 <script type="text/plain" class="battle-log-data">${escapeLog(log)}</script>
 </div>
-<script src="/replay-frame.js"></script>
+<script src="${frameScript}"></script>
 <script src="https://play.pokemonshowdown.com/js/replay-embed.js"></script>
 `;
 }
 
 const heightReport = z.object({ type: z.literal("ps-height"), height: z.number().finite() });
 
-function ShowdownPlayer({ game, teams }: { game: ReplayGame; teams: [Team, Team] }) {
+function ShowdownPlayer({ game, teams }: { game: ReplayGameView; teams: [Team, Team] }) {
   const title = `${teams[0].name} vs ${teams[1].name} — Game ${game.number}`;
   const doc = useMemo(() => replayDoc(game.raw, teams, title), [game.raw, teams, title]);
   const frameRef = useRef<HTMLIFrameElement>(null);
@@ -89,7 +125,7 @@ function narrate(text: string, teams: [Team, Team]): string {
     );
 }
 
-function describeSelection(decision: Decision): string {
+function describeSelection(decision: ReplayDecision): string {
   const picks = decision.selection;
   if (!picks.length) return decision.action || decision.phase;
   if (picks.every((pick) => pick.startsWith("Pick ")))
@@ -97,15 +133,8 @@ function describeSelection(decision: Decision): string {
   return picks.join(" · ").replaceAll(" -> ", " → ");
 }
 
-function DecisionRow({
-  decision,
-  team,
-  position,
-}: {
-  decision: Decision;
-  team: Team;
-  position: number;
-}) {
+function DecisionRow({ decision, position }: { decision: ReplayDecision; position: number }) {
+  const { team } = decision;
   const choice = describeSelection(decision);
   const context = decision.turn === 0 ? "team preview" : `turn ${decision.turn}`;
   const rationaleLabel = `${team.name} rationale for ${choice}, ${context}, decision ${position + 1}`;
@@ -143,13 +172,12 @@ function DecisionRow({
 
 function ReflectionCard({
   reflection,
-  team,
   lastGame,
 }: {
-  reflection: Reflection;
-  team: Team;
+  reflection: ReplayReflection;
   lastGame: boolean;
 }) {
+  const { team } = reflection;
   const won = reflection.result === "won";
   const lost = reflection.result === "lost";
   const eliminated = lastGame && lost;
@@ -203,14 +231,13 @@ function Game({
   lastGame,
   sheets,
 }: {
-  game: ReplayGame;
+  game: ReplayGameView;
   teams: [Team, Team];
   lastGame: boolean;
   sheets?: ReactNode;
 }) {
-  const teamFor = (id: string) => (teams[0].id === id ? teams[0] : teams[1]);
   const turns = useMemo(() => {
-    const rows: Array<{ turn: number; decisions: Array<[Decision, number]> }> = [];
+    const rows: Array<{ turn: number; decisions: Array<[ReplayDecision, number]> }> = [];
     for (const [position, decision] of game.decisions.entries()) {
       const last = rows[rows.length - 1];
       if (!last || last.turn !== decision.turn)
@@ -241,9 +268,8 @@ function Game({
             <div className="turn-head">{turn === 0 ? "Team preview" : `Turn ${turn}`}</div>
             {decisions.map(([decision, position]) => (
               <DecisionRow
-                key={`${turn}-${decision.entrantId}-${position}`}
+                key={`${turn}-${decision.team.id}-${position}`}
                 decision={decision}
-                team={teamFor(decision.entrantId)}
                 position={position}
               />
             ))}
@@ -272,12 +298,7 @@ function Game({
       {game.reflections.length > 0 ? (
         <div className="reflections">
           {game.reflections.map((reflection) => (
-            <ReflectionCard
-              key={reflection.entrantId}
-              reflection={reflection}
-              team={teamFor(reflection.entrantId)}
-              lastGame={lastGame}
-            />
+            <ReflectionCard key={reflection.team.id} reflection={reflection} lastGame={lastGame} />
           ))}
         </div>
       ) : null}
@@ -286,48 +307,40 @@ function Game({
 }
 
 export function ReplayViewer({
-  replay,
+  games,
   teams,
   sheets,
 }: {
-  replay: Replay;
+  games: ReplayGameView[];
   teams: [Team, Team];
   sheets?: ReactNode;
 }) {
   const [index, setIndex] = useState(0);
-  const game = replay.games[index] ?? replay.games[0];
+  const game = games[index] ?? games[0];
   if (!game) return null;
   return (
     <div>
       <div className="game-tabs" role="group" aria-label="Games">
-        {replay.games.map((entry, i) => {
-          const winner =
-            entry.winnerId === teams[0].id
-              ? teams[0]
-              : entry.winnerId === teams[1].id
-                ? teams[1]
-                : null;
-          return (
-            <button
-              key={entry.number}
-              type="button"
-              aria-pressed={i === index}
-              onClick={() => setIndex(i)}
-            >
-              Game {entry.number}{" "}
-              <small>
-                {entry.turns} turns
-                {winner ? ` · ${winner.name} won` : ""}
-              </small>
-            </button>
-          );
-        })}
+        {games.map((entry, i) => (
+          <button
+            key={entry.number}
+            type="button"
+            aria-pressed={i === index}
+            onClick={() => setIndex(i)}
+          >
+            Game {entry.number}{" "}
+            <small>
+              {entry.turns} turns
+              {entry.winner ? ` · ${entry.winner.name} won` : ""}
+            </small>
+          </button>
+        ))}
       </div>
       <Game
         key={game.number}
         game={game}
         teams={teams}
-        lastGame={index === replay.games.length - 1}
+        lastGame={index === games.length - 1}
         sheets={sheets}
       />
     </div>

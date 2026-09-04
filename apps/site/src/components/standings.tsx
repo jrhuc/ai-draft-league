@@ -1,5 +1,5 @@
 import { TeamTag } from "@/components/team";
-import { modelLabel } from "@/lib/format";
+import { modelLabel } from "ui/lib/format";
 import { franchise } from "@/lib/load";
 import { useSeason } from "@/lib/season-context";
 

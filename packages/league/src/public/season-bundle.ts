@@ -23,7 +23,7 @@ import {
 
 export type PublicSeasonGameInput = Pick<
   LeagueGameResponse,
-  "game" | "winner" | "log" | "decisions" | "reflections"
+  "game" | "winner" | "raw" | "log" | "decisions" | "reflections"
 >;
 
 export interface BuildPublicSeasonBundleOptions {
@@ -242,6 +242,7 @@ export function buildPublicSeasonBundle(
           brought: summary.brought,
           megaEvolved: summary.megaEvolved,
           faints: summary.faints,
+          raw: game.raw,
           events: game.log.map(publicEvent),
           decisions: game.decisions.map((decision) => ({
             franchiseId: franchiseId(sides[decision.side]),

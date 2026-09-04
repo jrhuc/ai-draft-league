@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Mark, Model } from "@/components/mark";
+import { Mark, Model } from "ui/components/mark";
 import { TeamTag, teamStyle } from "@/components/team";
 import { franchise, playoffRoundLabel } from "@/lib/load";
 import { useSeason, useTitle } from "@/lib/season-context";
@@ -60,7 +60,9 @@ export function PlayoffsPage() {
                     {href ? (
                       <Link to={href}>
                         {body}
-                        <span className="go">Watch →</span>
+                        <span className="go">
+                          Watch <span className="arrow">→</span>
+                        </span>
                       </Link>
                     ) : (
                       <div>{body}</div>

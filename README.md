@@ -5,6 +5,7 @@ A pnpm and Vite Plus (`vp`) monorepo for model-driven competitive Pokémon:
 - [`packages/league`](packages/league): the draft, tournament, season, battle, and recording harness
 - [`apps/site`](apps/site): a static spectator app for one exported [`season-bundle.json`](apps/site/public/season-bundle.json)
 - [`apps/worlds`](apps/worlds): a static Pokémon Worlds exhibition app for one exported [`tournament-bundle.json`](apps/worlds/public/tournament-bundle.json)
+- [`packages/ui`](packages/ui): the theme, Showdown replay viewer, and components both apps share
 
 The spectator sites show specific recorded runs. Their standings and champions are not general model rankings.
 
@@ -22,7 +23,7 @@ pnpm dev
 vp run worlds#dev
 ```
 
-`pnpm dev` serves the spectator app at `http://localhost:5173`; `/watch` is available only in development. Run `pnpm run vgcleague --help` from `packages/league` for harness commands. See the [league README](packages/league/README.md) and [usage guide](packages/league/docs/usage.md).
+`pnpm dev` serves the spectator app at `http://localhost:5173`; `/live` and `/archive` are available only in development. Run `pnpm run vgcleague --help` from `packages/league` for harness commands. See the [league README](packages/league/README.md) and [usage guide](packages/league/docs/usage.md).
 
 ## Publish a season
 
@@ -40,7 +41,7 @@ pnpm run export:season \
 
 `--through-week` is required. Newer private results never advance a release. The exporter validates the projection before writing it.
 
-Sprites are optional presentation assets in `apps/site/public/sprites/`. Missing sprites use a stable text marker.
+Sprites are optional presentation assets in `apps/site/public/sprites/`. Missing sprites use a stable text marker. Battle animations embed the exported Showdown log in the official replay player, so match pages need `play.pokemonshowdown.com` reachable.
 
 ## Deploy the sites
 

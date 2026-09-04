@@ -230,6 +230,7 @@ function gamesFor(series: LeagueSeriesView[]): Map<string, PublicSeasonGameInput
       entry.games.map((game, index) => ({
         game: index + 1,
         winner: game.winner,
+        raw: `|player|p1|Franchise ${game.winner}|\n|win|Franchise ${game.winner}`,
         log: [
           {
             turn: 0,

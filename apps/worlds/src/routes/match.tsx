@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { entrantStyle, ordinal } from "@/components/entrant";
-import { Mark } from "@/components/mark";
-import { ReplayViewer } from "@/components/replay";
-import { SetCard } from "@/components/set-card";
 import { useTitle, useTournament } from "@/lib/context";
-import { modelLabel, modelProvider, tone } from "@/lib/format";
+import { Mark } from "ui/components/mark";
+import { ReplayViewer, type Team } from "ui/components/replay";
+import { SetCard } from "ui/components/set-card";
+import { modelLabel, modelProvider, tone } from "ui/lib/format";
 import { entrant, entrantIndex, matchBySeries, monName } from "@/lib/load";
 import type { Match } from "@/lib/tournament";
 import { NotFoundPage } from "@/routes/not-found";
@@ -36,12 +36,24 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
   useTitle(
     `${modelLabel(entrant(bundle, a).model)} vs ${modelLabel(entrant(bundle, b).model)} · ${label}`,
   );
-  const team = (id: string) => ({
+  const team = (id: string): Team => ({
     id,
     name: modelLabel(entrant(bundle, id).model),
     tone: tone(entrantIndex(bundle, id)),
     model: entrant(bundle, id).model,
   });
+  const teams: [Team, Team] = [team(a), team(b)];
+  const teamFor = (id: string | null): Team | null =>
+    teams.find((entry) => entry.id === id) ?? null;
+  const games = replay.games.map((game) => ({
+    ...game,
+    winner: teamFor(game.winnerId),
+    decisions: game.decisions.map((decision) => ({ ...decision, team: team(decision.entrantId) })),
+    reflections: game.reflections.map((reflection) => ({
+      ...reflection,
+      team: team(reflection.entrantId),
+    })),
+  }));
   function Side({ id, right = false }: { id: string; right?: boolean }) {
     const entry = entrant(bundle, id);
     const lost = match.winnerId !== id;
@@ -86,8 +98,8 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
           </p>
         </div>
         <ReplayViewer
-          replay={replay}
-          teams={[team(a), team(b)]}
+          games={games}
+          teams={teams}
           sheets={
             <details
               className="sheets"

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { Mark } from "@/components/mark";
-import { Sprite } from "@/components/sprite";
-import { tone, toneStyle } from "@/lib/format";
+import { Mark } from "ui/components/mark";
+import { Sprite } from "ui/components/sprite";
+import { tone, toneStyle } from "ui/lib/format";
 import type { TeamRef } from "@/components/pick-path";
 import type { BoardMon } from "@/lib/season";
 

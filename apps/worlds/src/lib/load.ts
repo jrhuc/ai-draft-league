@@ -1,4 +1,4 @@
-import { displaySpecies } from "./format";
+import { displaySpecies } from "ui/lib/format";
 import type { Entrant, Match, TournamentBundle } from "./tournament";
 
 /**

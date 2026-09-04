@@ -35,7 +35,7 @@ export function modelProvider(spec: string): string {
   return provider.startsWith("opencode") ? "opencode" : provider;
 }
 
-export const FRANCHISE_TONES = [
+export const TONES = [
   "#C7420F",
   "#2A75BB",
   "#187F4B",
@@ -47,9 +47,7 @@ export const FRANCHISE_TONES = [
 ];
 
 export function tone(index: number): string {
-  return FRANCHISE_TONES[
-    ((index % FRANCHISE_TONES.length) + FRANCHISE_TONES.length) % FRANCHISE_TONES.length
-  ]!;
+  return TONES[((index % TONES.length) + TONES.length) % TONES.length]!;
 }
 export function toneStyle(color: string): CSSProperties & { "--tone": string } {
   return { "--tone": color };
@@ -92,19 +90,6 @@ export function displaySpecies(species: string): string {
 
 export function spriteKey(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
-const STATUS_LABELS = new Map([
-  ["brn", "burned"],
-  ["par", "paralyzed"],
-  ["slp", "asleep"],
-  ["frz", "frozen"],
-  ["psn", "poisoned"],
-  ["tox", "poisoned"],
-]);
-
-export function statusLabel(code: string | null | undefined): string {
-  return code ? (STATUS_LABELS.get(code) ?? code) : "";
 }
 
 export function formatLabel(id: string): string {

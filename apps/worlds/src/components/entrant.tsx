@@ -1,6 +1,6 @@
-import { Mark } from "@/components/mark";
+import { Mark } from "ui/components/mark";
 import { useTournament } from "@/lib/context";
-import { modelLabel, tone, toneStyle } from "@/lib/format";
+import { modelLabel, tone, toneStyle } from "ui/lib/format";
 import { entrant, entrantIndex } from "@/lib/load";
 import type { TournamentBundle } from "@/lib/tournament";
 

@@ -1,10 +1,19 @@
-import { ItemIcon } from "@/components/item-icon";
-import { Sprite } from "@/components/sprite";
-import { evLine, titleCase } from "@/lib/format";
-import type { BuildSet } from "@/lib/season";
+import { evLine, titleCase } from "../lib/format";
+import { ItemIcon } from "./item-icon";
+import { Sprite } from "./sprite";
 
-export function SetCard({ set, games }: { set: BuildSet; games: number[] | null }) {
-  const bench = games !== null && games.length === 0;
+export type SetView = {
+  species: string;
+  spriteId: string;
+  item: string;
+  ability: string;
+  nature: string;
+  moves: string[];
+  evs: { [stat: string]: number };
+};
+
+export function SetCard({ set, games }: { set: SetView; games?: number[] }) {
+  const bench = games !== undefined && games.length === 0;
   return (
     <article className={`card setcard${bench ? " bench" : ""}`}>
       <header>
@@ -27,7 +36,7 @@ export function SetCard({ set, games }: { set: BuildSet; games: number[] | null 
       </ul>
       <footer>
         <span>{evLine(set.evs) || "no investment"}</span>
-        {games === null ? null : bench ? (
+        {games === undefined ? null : bench ? (
           <span>bench</span>
         ) : (
           <em>{games.map((n) => `G${n}`).join(" · ")}</em>

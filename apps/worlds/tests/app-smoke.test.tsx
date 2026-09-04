@@ -5,7 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, test, vi } from "vite-plus/test";
 import { App } from "../src/App";
 import { TournamentProvider } from "../src/lib/context";
-import { modelLabel } from "../src/lib/format";
+import { modelLabel } from "ui/lib/format";
 import bundle from "../public/tournament-bundle.json";
 
 const roots: Root[] = [];
@@ -60,7 +60,7 @@ test("a failed bundle load can retry and show team selections", async () => {
 
   const frame = document.querySelector<HTMLIFrameElement>(".ps-frame");
   expect(frame?.srcdoc).toContain("battle-log-data");
-  expect(frame?.srcdoc).toContain('<script src="/replay-frame.js">');
+  expect(frame?.srcdoc).toMatch(/<script src="[^"]*replay-frame[^"]*">/);
   expect(frame?.contentWindow).not.toBeNull();
   const report = (source: Window | null, height: number) =>
     window.dispatchEvent(

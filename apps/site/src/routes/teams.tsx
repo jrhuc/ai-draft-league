@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
-import { Model } from "@/components/mark";
-import { Sprite } from "@/components/sprite";
+import { Model } from "ui/components/mark";
+import { Sprite } from "ui/components/sprite";
 import { TeamTag, teamStyle } from "@/components/team";
 import { useSeason, useTitle } from "@/lib/season-context";
 

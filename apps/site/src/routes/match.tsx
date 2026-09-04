@@ -1,11 +1,12 @@
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Mark, Model } from "@/components/mark";
-import { ReplayViewer } from "@/components/replay";
-import { SetCard } from "@/components/set-card";
+import { Mark, Model } from "ui/components/mark";
+import { ReplayViewer, type Team } from "ui/components/replay";
+import { SetCard } from "ui/components/set-card";
+import { tone } from "ui/lib/format";
 import { TeamTag, teamStyle } from "@/components/team";
-import { spriteKey, tone } from "@/lib/format";
 import { franchise, franchiseIndex, matchBySeries, monName } from "@/lib/load";
-import type { Match, SeasonBundle } from "@/lib/season";
+import type { Match } from "@/lib/season";
 import { useSeason, useTitle } from "@/lib/season-context";
 import { NotFoundPage } from "@/routes/not-found";
 
@@ -13,19 +14,6 @@ function broughtGames(match: Match, side: 0 | 1, draftId: string): number[] {
   return match.games
     .filter((game) => game.brought[side].includes(draftId))
     .map((game) => game.number);
-}
-
-function spriteMap(season: SeasonBundle, match: Match): Array<[string, string]> {
-  const pairs = new Map<string, string>();
-  for (const mon of season.board) {
-    pairs.set(spriteKey(mon.name), mon.spriteId);
-    pairs.set(spriteKey(mon.id), mon.spriteId);
-    const mega = mon.name.match(/^Mega (.+?)(?: ([XY]))?$/);
-    if (mega) pairs.set(spriteKey(`${mega[1]} Mega ${mega[2] ?? ""}`), mon.spriteId);
-  }
-  for (const build of match.builds)
-    for (const set of build.sets ?? []) pairs.set(spriteKey(set.species), set.spriteId);
-  return [...pairs];
 }
 
 export function MatchPage() {
@@ -39,18 +27,34 @@ export function MatchPage() {
 
 function MatchPageBody({ seriesId }: { seriesId: string }) {
   const season = useSeason();
+  const [sheetsOpen, setSheetsOpen] = useState(false);
   const row = matchBySeries(season, seriesId);
   const replay = season.replays[seriesId];
   if (!row || !replay) throw new Error(`series ${seriesId} is not released`);
   const { match, label } = row;
   const [a, b] = match.franchises;
   useTitle(`${franchise(season, a).name} vs ${franchise(season, b).name} · ${label}`);
-  const team = (id: string) => ({
+  const team = (id: string): Team => ({
     id,
     name: franchise(season, id).name,
     tone: tone(franchiseIndex(season, id)),
     model: franchise(season, id).model,
   });
+  const teams: [Team, Team] = [team(a), team(b)];
+  const teamFor = (id: string | null): Team | null =>
+    teams.find((entry) => entry.id === id) ?? null;
+  const games = replay.games.map((game) => ({
+    ...game,
+    winner: teamFor(game.winnerId),
+    decisions: game.decisions.map((decision) => ({
+      ...decision,
+      team: team(decision.franchiseId),
+    })),
+    reflections: game.reflections.map((reflection) => ({
+      ...reflection,
+      team: team(reflection.franchiseId),
+    })),
+  }));
   function Side({ id, right = false }: { id: string; right?: boolean }) {
     const lost = match.winnerId !== null && match.winnerId !== id;
     return (
@@ -82,65 +86,86 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
 
       <section className="section">
         <div className="section-head">
-          <h2>Team sheets</h2>
+          <h2>Replay</h2>
           <p>
-            Each team registers six before the series and brings four to every game. Each card lists
-            the games it was brought to.
+            Replay via <a href="https://pokemonshowdown.com/">Pokémon Showdown</a>. Model reasoning
+            follows each turn. AUTO marks a forced choice.
           </p>
         </div>
-        <div className="two-col">
-          {([0, 1] as const).map((side) => {
-            const build = match.builds[side];
-            if (!build) throw new Error(`match ${match.id} has no build for side ${side}`);
-            return (
-              <div
-                key={build.franchiseId}
-                className="build"
-                style={teamStyle(season, build.franchiseId)}
-              >
-                {build.attempts > 1 ? (
-                  <div className="build-head">
-                    <span className="chip chip-warn">{build.attempts} attempts</span>
-                  </div>
-                ) : null}
-                <details>
-                  <summary>Why this team</summary>
-                  <p className="rationale">{build.rationale || "No build reasoning recorded."}</p>
-                </details>
-                {build.sets ? (
-                  <div className="grid grid-2">
-                    {build.sets.map((set, index) => {
-                      const draftId = build.prepared[index];
-                      if (!draftId)
-                        throw new Error(
-                          `build ${build.franchiseId} has a set without a draft pick`,
-                        );
-                      return (
-                        <SetCard
-                          key={draftId}
-                          set={set}
-                          games={broughtGames(match, side, draftId)}
-                        />
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="closed-note">
-                    Registered: {build.prepared.map((mon) => monName(season, mon)).join(", ")}. Full
-                    sets are published when the season ends.
-                  </p>
-                )}
+        <ReplayViewer
+          games={games}
+          teams={teams}
+          sheets={
+            <details
+              className="sheets"
+              open={sheetsOpen}
+              onToggle={(event) => setSheetsOpen(event.currentTarget.open)}
+            >
+              <summary>
+                Team sheets
+                <span className="hint">
+                  The 6 registered before the series, 4 brought per game.
+                  {season.season.sheets === "closed" && season.season.status !== "complete"
+                    ? " Full sets are published when the season ends."
+                    : ""}
+                </span>
+              </summary>
+              <div className="two-col">
+                {([0, 1] as const).map((side) => {
+                  const build = match.builds[side];
+                  if (!build) throw new Error(`match ${match.id} has no build for side ${side}`);
+                  return (
+                    <div
+                      key={build.franchiseId}
+                      className="build"
+                      style={teamStyle(season, build.franchiseId)}
+                    >
+                      {build.attempts > 1 ? (
+                        <span className="chip chip-warn">{build.attempts} attempts</span>
+                      ) : null}
+                      <details>
+                        <summary>Why this team</summary>
+                        <p className="rationale">
+                          {build.rationale || "No build reasoning recorded."}
+                        </p>
+                      </details>
+                      {build.sets ? (
+                        <div className="grid grid-2">
+                          {build.sets.map((set, index) => {
+                            const draftId = build.prepared[index];
+                            if (!draftId)
+                              throw new Error(
+                                `build ${build.franchiseId} has a set without a draft pick`,
+                              );
+                            return (
+                              <SetCard
+                                key={draftId}
+                                set={set}
+                                games={broughtGames(match, side, draftId)}
+                              />
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="closed-note">
+                          Registered: {build.prepared.map((mon) => monName(season, mon)).join(", ")}
+                          .
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
-        </div>
+            </details>
+          }
+        />
       </section>
 
       {match.games.some((game) => game.brought[0].length || game.brought[1].length) ? (
         <section className="section">
           <div className="section-head">
             <h2>Game by game</h2>
-            <p>The four each side brought, lead pair first.</p>
+            <p>The 4 each side brought, leads first.</p>
           </div>
           <div className="two-col">
             {([0, 1] as const).map((side) => (
@@ -178,21 +203,6 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
           </div>
         </section>
       ) : null}
-
-      <section className="section">
-        <div className="section-head">
-          <h2>Replay</h2>
-          <p>
-            Step through each turn. Every choice includes the model’s reasoning. AUTO marks a turn
-            the harness had to pick for it.
-          </p>
-        </div>
-        <ReplayViewer
-          replay={replay}
-          teams={[team(a), team(b)]}
-          sprites={spriteMap(season, match)}
-        />
-      </section>
     </>
   );
 }

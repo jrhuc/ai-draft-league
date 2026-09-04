@@ -5,6 +5,8 @@
 - `packages/league` — the harness: draft engine, battle sim integration,
   provider clients, and the `vgcleague` CLI. Runs execute here; `runs/`,
   `records/`, and `.env` are local state and are never committed.
+- `packages/ui` — the theme, Showdown replay viewer, bundle store, and
+  components both apps share; apps reach it through the `ui/*` alias.
 - `apps/site` — the spectator app, deployed to Cloudflare as static assets.
 - `apps/worlds` — the Worlds exhibition microsite, deployed as a separate
   static-assets Worker from one exported tournament bundle.
