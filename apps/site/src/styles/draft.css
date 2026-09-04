@@ -134,7 +134,7 @@
   border: 1px solid color-mix(in srgb, var(--tone) 45%, var(--line-2));
   border-radius: var(--r);
   background: var(--card-2);
-  box-shadow: 0 12px 32px rgb(0 0 0 / 0.55);
+  box-shadow: 0 14px 34px -16px rgb(74 60 24 / 45%);
 }
 
 .pick-pop.flip {
@@ -179,6 +179,14 @@
   color: var(--t2);
   font-size: 0.85rem;
   line-height: 1.55;
+}
+
+.team-tag .swatch {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 2px;
+  background: var(--tone);
+  flex: none;
 }
 
 .hint {

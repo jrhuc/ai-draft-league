@@ -2,6 +2,13 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "pokeaiworlds",
   "compatibility_date": "2026-08-18",
+  // The site lives only on the custom domain; keep deploys from re-enabling
+  // the workers.dev subdomain.
+  "workers_dev": false,
+  "routes": [
+    { "pattern": "pokeaiworlds.com", "custom_domain": true },
+    { "pattern": "www.pokeaiworlds.com", "custom_domain": true },
+  ],
   // Assets-only Worker: no script is deployed, so asset requests are free and
   // unlimited and nothing else is billable. SPA fallback serves index.html for
   // client-side routes that do not match a file.

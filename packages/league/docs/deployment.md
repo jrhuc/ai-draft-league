@@ -1,31 +1,28 @@
 # Publish a season bundle
 
-The harness exports one artifact per release boundary. The dev-only watch
-surface is never deployed.
+Export one validated artifact for an explicit release boundary, commit it to the spectator app, then deploy the static site. The development-only `/watch` surface is never deployed.
 
-Build the harness, then export one explicit release boundary:
+From `packages/league`:
 
 ```sh
 pnpm run build
 pnpm run export:season \
-  --run <run-id> \
+  --run run_id \
   --through-week 1 \
-  --title "AI Draft League"
+  --title "AI Draft League" \
+  --out ../../apps/site/public/season-bundle.json
 ```
 
-The default output is `artifacts/public/seasons/<run-id>/season-bundle.json`.
-Pass `--out ../../apps/site/public/season-bundle.json` to write the spectator
-site's committed artifact directly; commit it so builds and deployments carry
-the release.
+Without `--out`, the exporter writes `artifacts/public/seasons/{run_id}/season-bundle.json`.
 
-`--through-week` is required. Publication never advances because more private
-results exist locally. A released week must contain every completed series and
-a verified replay for each series, or export fails. Values past the last
-regular-season week release playoff rounds one at a time. Releasing the final
-round also releases season reviews and opens closed team sheets.
+`--through-week` is required. Every planned series in a released week must be complete and have verified replay evidence. Each value past the regular season adds one playoff round; the boundary containing the final also releases season reviews and opens closed sheets.
 
-The exporter validates the projection before writing it. The site statically
-imports the committed artifact. It does not run Showdown or recompute standings
-and outcomes.
+The exporter validates the projection before writing it. Commit `apps/site/public/season-bundle.json` so the build contains the release.
 
-See the [publication boundary](architecture.md#publication-boundary) for the season bundle's public evidence and exclusions.
+From the repository root, deploy the spectator app:
+
+```sh
+pnpm --filter site deploy
+```
+
+The site reads the committed artifact. It does not run Pokémon Showdown or recompute standings. See the [publication boundary](architecture.md#read-and-publish-data) for included and excluded evidence.

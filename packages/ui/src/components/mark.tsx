@@ -1,4 +1,4 @@
-import { modelFamily, modelLabel } from "@/lib/format";
+import { modelFamily, modelLabel, modelProvider } from "../lib/format";
 
 export function Mark({
   spec,
@@ -29,5 +29,15 @@ export function Mark({
       style={{ width: size, height: size, maskImage: `url(/logos/${family}.svg)` }}
       aria-hidden="true"
     />
+  );
+}
+
+export function Model({ spec }: { spec: string }) {
+  const provider = modelProvider(spec);
+  return (
+    <span className="model">
+      {modelLabel(spec)}
+      {provider ? <span>via {provider}</span> : null}
+    </span>
   );
 }

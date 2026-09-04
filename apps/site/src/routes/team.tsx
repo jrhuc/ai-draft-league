@@ -1,8 +1,8 @@
 import { Link, useParams } from "react-router-dom";
 import { MatchRow } from "@/components/match-list";
-import { Mark, Model } from "@/components/mark";
-import { SetCard } from "@/components/set-card";
-import { Sprite } from "@/components/sprite";
+import { Mark, Model } from "ui/components/mark";
+import { SetCard } from "ui/components/set-card";
+import { Sprite } from "ui/components/sprite";
 import { teamStyle } from "@/components/team";
 import { franchise, franchiseName, matchesFor, monName } from "@/lib/load";
 import { weeklyReviewsForFranchise } from "@/lib/weekly-reviews";
@@ -109,7 +109,7 @@ function TeamPageBody({ id }: { id: string }) {
                   {build.sets ? (
                     <div className="grid grid-3">
                       {build.sets.map((set) => (
-                        <SetCard key={set.species} set={set} games={null} />
+                        <SetCard key={set.species} set={set} />
                       ))}
                     </div>
                   ) : (

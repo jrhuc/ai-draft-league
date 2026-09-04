@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
-import { Mark } from "@/components/mark";
-import { tone, toneStyle } from "@/lib/format";
+import { Mark } from "ui/components/mark";
+import { modelLabel, tone, toneStyle } from "ui/lib/format";
 import { franchise, franchiseIndex } from "@/lib/load";
 import type { SeasonBundle } from "@/lib/season";
 import { useSeason } from "@/lib/season-context";
@@ -25,11 +25,11 @@ export function TeamTag({
   const inner = (
     <>
       <Mark spec={team.model} tone />
-      {team.name}
+      <span className="name">{team.name}</span>
     </>
   );
   const className = `team-tag${muted ? " muted" : ""}`;
-  const hover = title ? team.model : undefined;
+  const hover = title ? modelLabel(team.model) : undefined;
   return link ? (
     <Link className={className} style={teamStyle(season, id)} to={`/teams/${id}`} title={hover}>
       {inner}

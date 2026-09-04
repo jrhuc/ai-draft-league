@@ -1,6 +1,6 @@
-import { Mark } from "@/components/mark";
+import { Mark } from "ui/components/mark";
 import { useTournament } from "@/lib/context";
-import { modelLabel, tone, toneStyle } from "@/lib/format";
+import { modelLabel, tone, toneStyle } from "ui/lib/format";
 import { entrant, entrantIndex } from "@/lib/load";
 import type { TournamentBundle } from "@/lib/tournament";
 
@@ -22,10 +22,10 @@ export function EntrantTag({ id, muted = false }: { id: string; muted?: boolean 
     <span
       className={`team-tag${muted ? " muted" : ""}`}
       style={entrantStyle(bundle, id)}
-      title={entry.model}
+      title={modelLabel(entry.model)}
     >
       <Mark spec={entry.model} tone />
-      {modelLabel(entry.model)}
+      <span className="name">{modelLabel(entry.model)}</span>
     </span>
   );
 }

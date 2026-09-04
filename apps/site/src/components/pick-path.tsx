@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { Link } from "react-router-dom";
-import { Sprite } from "@/components/sprite";
-import { Mark } from "@/components/mark";
-import { modelLabel, tone, toneStyle } from "@/lib/format";
+import { Mark } from "ui/components/mark";
+import { Sprite } from "ui/components/sprite";
+import { modelLabel, tone, toneStyle } from "ui/lib/format";
 import type { DraftPick } from "@/lib/season";
 
 export type TeamRef = { id: string; name: string; model: string };

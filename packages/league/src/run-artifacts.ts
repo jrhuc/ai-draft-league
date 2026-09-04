@@ -508,6 +508,7 @@ export function buildSeriesGame(
     winner: winnerOf(game),
     live,
     snapshot,
+    raw,
     log: battleLog.entries,
     decisions,
     reflections,

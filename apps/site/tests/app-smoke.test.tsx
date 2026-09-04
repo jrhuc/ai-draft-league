@@ -46,6 +46,20 @@ test("home renders standings from the fetched bundle", async () => {
   mount("/");
   await until(() => document.querySelector("table") !== null);
   expect(document.body.textContent).toContain("Standings");
+  expect(document.body.textContent).toContain("muse-spark-1.2");
+  expect(document.body.textContent).not.toContain("muse-spark-1.2-contributor");
+  expect(document.querySelector('[title*="contributor"]')).toBeNull();
+});
+
+test("a match page embeds the Showdown replay with the sheets folded beneath it", async () => {
+  const seriesId = Object.keys(season.replays)[0]!;
+  mount(`/matches/${seriesId}`);
+  await until(() => document.querySelector(".ps-frame") !== null);
+  const frame = document.querySelector<HTMLIFrameElement>(".ps-frame");
+  expect(frame?.srcdoc).toContain("battle-log-data");
+  expect(frame?.srcdoc).toMatch(/<script src="[^"]*replay-frame[^"]*">/);
+  expect(document.querySelector("details.sheets")).not.toBeNull();
+  expect(document.body.textContent).toContain("Game by game");
 });
 
 test("unknown team route renders the not-found view", async () => {

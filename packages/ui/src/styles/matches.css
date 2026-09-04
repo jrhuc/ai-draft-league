@@ -9,12 +9,9 @@
   border-bottom: 1px solid var(--line);
 }
 
-.match-hero > .label {
+.match-hero > h1 {
   grid-column: 1 / -1;
-}
-
-.build .grid-2 {
-  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  font-size: clamp(1.4rem, 2.6vw, 2.1rem);
 }
 
 .match-hero .side {
@@ -27,13 +24,8 @@
   justify-items: end;
 }
 
-.match-hero h1 {
-  font-size: clamp(1.4rem, 2.6vw, 2.1rem);
-}
-
-.match-hero .side.lost h1 {
+.match-hero .side.lost h2 {
   color: var(--t3);
-  -webkit-text-fill-color: initial;
 }
 
 .match-hero .big-score {
@@ -78,9 +70,13 @@
   margin-bottom: -1px;
 }
 
+.game-tabs button:hover {
+  color: var(--t1);
+}
+
 .game-tabs button[aria-pressed="true"] {
   color: var(--t1);
-  border-bottom-color: var(--t1);
+  border-bottom-color: var(--ball-red);
 }
 
 .game-tabs button small {
@@ -88,144 +84,74 @@
   margin-left: 0.4rem;
 }
 
+@media (max-width: 40rem) {
+  .game-tabs button {
+    flex: 1;
+    min-width: 0;
+    min-height: 2.75rem;
+    padding-inline: 0.5rem;
+  }
+
+  .game-tabs button small {
+    display: block;
+    margin: 0.1rem 0 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.sheets summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.5rem 0;
+  font-size: 0.85rem;
+  color: var(--t2);
+}
+
+.sheets summary .hint {
+  font-size: 0.72rem;
+  color: var(--t4);
+}
+
+.sheets[open] summary {
+  margin-bottom: 0.75rem;
+}
+
 .replay {
   display: grid;
-  gap: 1rem;
+  gap: 1.25rem;
+  padding-top: 1rem;
 }
 
-.field {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
-}
-
-.field-side {
-  display: grid;
-  gap: 0.6rem;
-  padding: 0.75rem 0.85rem;
-  border-top: 2px solid var(--tone);
-}
-
-.field-side .who {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.field-side .bench {
-  display: flex;
-  gap: 0.2rem;
-  align-items: center;
-}
-
-.field-side .bench .sprite,
-.field-side .bench .sprite-fallback {
-  opacity: 0.55;
-}
-
-.field-side .bench .out {
-  opacity: 0.2;
-  filter: grayscale(1);
-}
-
-.slots {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.6rem;
-}
-
-.slot {
-  display: grid;
-  grid-template-columns: 48px minmax(0, 1fr);
-  gap: 0.15rem 0.5rem;
-  align-items: center;
-  font-family: var(--font-mono), monospace;
-  font-size: 0.68rem;
-  color: var(--t3);
-  min-height: 3rem;
-}
-
-.slot b {
-  display: block;
-  font:
-    600 0.82rem/1.2 var(--font-sans),
-    system-ui,
-    sans-serif;
-  color: var(--t1);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.slot.fainted {
-  opacity: 0.45;
-}
-
-.slot.empty {
-  opacity: 0.35;
-}
-
-.hp {
-  height: 4px;
-  border-radius: 2px;
-  background: var(--line);
-  overflow: hidden;
-  margin-top: 0.25rem;
-}
-
-.hp i {
-  display: block;
-  height: 100%;
-  background: var(--good);
-  transition: width 200ms;
-}
-
-.hp i.mid {
-  background: var(--warn);
-}
-
-.hp i.low {
-  background: var(--bad);
-}
-
-.transport {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.transport button {
-  padding: 0.4rem 0.8rem;
-  border: 1px solid var(--line-2);
+/* The Showdown embed lays battle and log side by side up to ~1180px and keeps
+   its own scroll inside the frame on narrower screens. */
+.ps-frame {
+  width: 100%;
+  height: 30rem;
+  border: 1px solid var(--line);
   border-radius: var(--r);
-  font-family: var(--font-mono), monospace;
-  font-size: 0.75rem;
-  color: var(--t1);
   background: var(--card);
 }
 
-.transport button:hover {
-  background: var(--card-2);
+.player-loaded {
+  display: grid;
+  gap: 0.4rem;
 }
 
-.transport button:disabled {
-  color: var(--t5);
-  cursor: default;
-}
-
-.transport input[type="range"] {
-  flex: 1;
-  min-width: 8rem;
-  accent-color: var(--t2);
-}
-
-.transport .pos {
+.player-note {
   font-family: var(--font-mono), monospace;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   color: var(--t4);
-  min-width: 7rem;
+}
+
+/* Below the embed's side-by-side breakpoint the log hides and the battle
+   scales with width, so track it: 9/16 of the viewport plus the controls. */
+@media (max-width: 60rem) {
+  .ps-frame {
+    height: min(calc(56.25vw + 13rem), 41rem);
+  }
 }
 
 .turns {
@@ -243,7 +169,7 @@
   font-size: 0.66rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--t5);
+  color: var(--t4);
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -294,17 +220,49 @@
 }
 
 .dec summary {
+  font-size: 0.72rem;
   color: var(--good);
 }
 
-.dec details p {
+.dec details.notebook summary {
+  color: var(--link);
+}
+
+.dec blockquote,
+.reflection blockquote {
+  margin: 0.4rem 0 0;
+  padding: 0.35rem 0 0.1rem 0.85rem;
+  border-left: 2px solid var(--line-2);
+  color: var(--t2);
   font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
 }
 
 @media (max-width: 40rem) {
   .dec {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.full-log {
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--card);
+}
+
+.full-log > summary {
+  padding: 0.7rem 1rem;
+  font-size: 0.75rem;
+  color: var(--t3);
+}
+
+.full-log .log-body {
+  display: grid;
+  gap: 0.9rem;
+  padding: 0.25rem 1rem 1rem;
+  border-top: 1px solid var(--line);
 }
 
 .log {
@@ -319,8 +277,7 @@
   color: var(--t1);
 }
 
-.log .switch,
-.log .preview {
+.log .switch {
   color: var(--link);
 }
 
@@ -349,18 +306,30 @@
 }
 
 @media (max-width: 48rem) {
-  .reflections,
-  .field,
-  .slots {
+  .reflections {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
 .reflection {
   display: grid;
+  align-content: start;
   gap: 0.6rem;
   padding: 0.9rem 1rem;
   border-top: 2px solid var(--tone);
+}
+
+.reflection .who {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.reflection .who .chip {
+  font-size: 0.6rem;
+  padding: 0 0.4rem;
+  line-height: 1.4;
 }
 
 .reflection p {
@@ -369,25 +338,59 @@
 }
 
 .reflection .next {
+  display: grid;
+  gap: 0.2rem;
   padding-left: 0.8rem;
   border-left: 2px solid var(--line-2);
   color: var(--t3);
 }
 
+.reflection .retrospective {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+}
+
+.reflection .retrospective div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.reflection .retrospective dt {
+  font-family: var(--font-mono), monospace;
+  color: var(--t3);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.reflection .retrospective dd {
+  margin: 0;
+  color: var(--t2);
+  font-size: 0.9rem;
+}
+
+.reflection details.notebook summary {
+  font-size: 0.72rem;
+  color: var(--link);
+}
+
 .game-usage {
   list-style: none;
-  margin: 10px 0 0;
+  margin: 0.6rem 0 0;
   padding: 0;
   display: grid;
-  gap: 8px;
+  gap: 0.5rem;
 }
+
 .game-usage li {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 10px;
+  gap: 0.35rem 0.6rem;
   align-items: baseline;
   font-size: 0.9rem;
 }
+
 .game-usage .label {
   min-width: 9ch;
 }

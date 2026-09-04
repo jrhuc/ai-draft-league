@@ -249,6 +249,8 @@ export const publicSeasonBundleSchema = z.strictObject({
       franchises: z.tuple([franchiseRef, franchiseRef]),
       games: z.array(
         gameSummarySchema.extend({
+          /** The verbatim Showdown protocol log, exactly as the sim emitted it. */
+          raw: z.string(),
           events: z.array(eventSchema),
           decisions: z.array(decisionSchema),
           reflections: z.array(reflectionSchema),

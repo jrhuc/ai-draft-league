@@ -1,9 +1,9 @@
 import { lazy, Suspense } from "react";
-import { Link, Route, Routes } from "react-router-dom";
+import { Route, Routes } from "react-router-dom";
+import { Frame } from "ui/components/frame";
+import { formatLabel } from "ui/lib/format";
 import { NavLink } from "@/components/nav-link";
-import { formatLabel } from "@/lib/format";
 import { useSeason } from "@/lib/season-context";
-import { useReveal } from "@/lib/use-reveal";
 import { DraftPage } from "@/routes/draft";
 import { HomePage } from "@/routes/home";
 import { MatchPage } from "@/routes/match";
@@ -41,86 +41,82 @@ function releaseLabel(bundle: ReturnType<typeof useSeason>): string {
 
 export function App() {
   const season = useSeason();
-  useReveal();
+  const commit = season.provenance.showdownCommit;
   return (
-    <>
-      <a className="skip" href="#main">
-        Skip to content
-      </a>
-      <header className="top">
-        <div className="top-inner">
-          <Link className="wordmark" to="/" viewTransition>
-            <span className="wordmark-dot" aria-hidden="true" />
-            AI Draft League
-          </Link>
-          <nav aria-label="Sections">
-            {NAV.map(([href, label]) => (
-              <NavLink key={href} href={href}>
-                {label}
-              </NavLink>
-            ))}
-            {DevNav ? (
-              <Suspense fallback={null}>
-                <DevNav />
-              </Suspense>
-            ) : null}
-          </nav>
-          <span className="release mono">
-            <span className="dot" aria-hidden="true" />
-            {releaseLabel(season)}
-          </span>
-        </div>
-      </header>
-      <main id="main" className="page">
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/draft" element={<DraftPage />} />
-          <Route path="/teams" element={<TeamsPage />} />
-          <Route path="/teams/:id" element={<TeamPage />} />
-          <Route path="/matches/:seriesId" element={<MatchPage />} />
-          <Route path="/transactions" element={<TransactionsPage />} />
-          <Route path="/playoffs" element={<PlayoffsPage />} />
-          {LivePage ? (
-            <Route
-              path="/live"
-              element={
-                <Suspense fallback={null}>
-                  <LivePage />
-                </Suspense>
-              }
-            />
+    <Frame
+      wordmark={
+        <>
+          AI <em>Draft</em> League
+        </>
+      }
+      nav={
+        <nav aria-label="Sections">
+          {NAV.map(([href, label]) => (
+            <NavLink key={href} href={href}>
+              {label}
+            </NavLink>
+          ))}
+          {DevNav ? (
+            <Suspense fallback={null}>
+              <DevNav />
+            </Suspense>
           ) : null}
-          {ArchivePage ? (
-            <Route
-              path="/archive"
-              element={
-                <Suspense fallback={null}>
-                  <ArchivePage />
-                </Suspense>
-              }
-            />
-          ) : null}
-          <Route path="*" element={<NotFoundPage />} />
-        </Routes>
-      </main>
-      <footer className="foot">
-        <div className="foot-inner mono">
+        </nav>
+      }
+      release={releaseLabel(season)}
+      repo="https://github.com/jrhuc/ai-draft-league"
+      footer={
+        <>
           <span>
             {season.season.title} · {formatLabel(season.season.format)}
           </span>
           <span>
             Games played on a pinned Pokémon Showdown fork
-            {season.provenance.showdownCommit
-              ? ` (${season.provenance.showdownCommit.slice(0, 10)})`
-              : ""}
-            ; full logs in <a href="https://github.com/jrhuc/vgc-model-league">vgc-model-league</a>.
+            {commit ? (
+              <>
+                {" "}
+                (
+                <a href={`https://github.com/smogon/pokemon-showdown/commit/${commit}`}>
+                  {commit.slice(0, 10)}
+                </a>
+                )
+              </>
+            ) : null}
+            .
           </span>
-          <span>
-            Sprites © Pokémon Showdown. Pokémon names are trademarks of Nintendo, Creatures Inc.,
-            and GAME FREAK inc.
-          </span>
-        </div>
-      </footer>
-    </>
+        </>
+      }
+    >
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/draft" element={<DraftPage />} />
+        <Route path="/teams" element={<TeamsPage />} />
+        <Route path="/teams/:id" element={<TeamPage />} />
+        <Route path="/matches/:seriesId" element={<MatchPage />} />
+        <Route path="/transactions" element={<TransactionsPage />} />
+        <Route path="/playoffs" element={<PlayoffsPage />} />
+        {LivePage ? (
+          <Route
+            path="/live"
+            element={
+              <Suspense fallback={null}>
+                <LivePage />
+              </Suspense>
+            }
+          />
+        ) : null}
+        {ArchivePage ? (
+          <Route
+            path="/archive"
+            element={
+              <Suspense fallback={null}>
+                <ArchivePage />
+              </Suspense>
+            }
+          />
+        ) : null}
+        <Route path="*" element={<NotFoundPage />} />
+      </Routes>
+    </Frame>
   );
 }

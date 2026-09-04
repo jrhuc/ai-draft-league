@@ -1,4 +1,5 @@
 import { TeamTag } from "@/components/team";
+import { modelLabel } from "ui/lib/format";
 import { franchise } from "@/lib/load";
 import { useSeason } from "@/lib/season-context";
 
@@ -28,7 +29,7 @@ export function Standings({ compact = false }: { compact?: boolean }) {
               </td>
               {compact ? null : (
                 <td style={{ color: "var(--t4)" }}>
-                  {franchise(season, row.franchiseId).model.replace(/^[^:]*:/, "")}
+                  {modelLabel(franchise(season, row.franchiseId).model)}
                 </td>
               )}
               <td className="r num">{row.seriesWins}</td>

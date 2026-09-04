@@ -1,10 +1,10 @@
 import { Link } from "react-router-dom";
 import { MatchRow } from "@/components/match-list";
-import { Mark, Model } from "@/components/mark";
-import { Sprite } from "@/components/sprite";
 import { Standings } from "@/components/standings";
 import { TeamTag, teamStyle } from "@/components/team";
-import { formatLabel } from "@/lib/format";
+import { Mark, Model } from "ui/components/mark";
+import { Sprite } from "ui/components/sprite";
+import { formatLabel } from "ui/lib/format";
 import { allMatches, franchise } from "@/lib/load";
 import { useSeason, useTitle } from "@/lib/season-context";
 

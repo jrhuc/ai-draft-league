@@ -1,10 +1,11 @@
+import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { entrantStyle, ordinal } from "@/components/entrant";
-import { Mark } from "@/components/mark";
-import { ReplayViewer } from "@/components/replay";
-import { SetCard } from "@/components/set-card";
 import { useTitle, useTournament } from "@/lib/context";
-import { modelLabel, modelProvider, tone } from "@/lib/format";
+import { Mark } from "ui/components/mark";
+import { ReplayViewer, type Team } from "ui/components/replay";
+import { SetCard } from "ui/components/set-card";
+import { modelLabel, modelProvider, tone } from "ui/lib/format";
 import { entrant, entrantIndex, matchBySeries, monName } from "@/lib/load";
 import type { Match } from "@/lib/tournament";
 import { NotFoundPage } from "@/routes/not-found";
@@ -26,6 +27,7 @@ export function MatchPage() {
 
 function MatchPageBody({ seriesId }: { seriesId: string }) {
   const bundle = useTournament();
+  const [sheetsOpen, setSheetsOpen] = useState(false);
   const row = matchBySeries(bundle, seriesId);
   const replay = bundle.replays[seriesId];
   if (!row || !replay) throw new Error(`series ${seriesId} is not released`);
@@ -34,12 +36,24 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
   useTitle(
     `${modelLabel(entrant(bundle, a).model)} vs ${modelLabel(entrant(bundle, b).model)} · ${label}`,
   );
-  const team = (id: string) => ({
+  const team = (id: string): Team => ({
     id,
     name: modelLabel(entrant(bundle, id).model),
     tone: tone(entrantIndex(bundle, id)),
     model: entrant(bundle, id).model,
   });
+  const teams: [Team, Team] = [team(a), team(b)];
+  const teamFor = (id: string | null): Team | null =>
+    teams.find((entry) => entry.id === id) ?? null;
+  const games = replay.games.map((game) => ({
+    ...game,
+    winner: teamFor(game.winnerId),
+    decisions: game.decisions.map((decision) => ({ ...decision, team: team(decision.entrantId) })),
+    reflections: game.reflections.map((reflection) => ({
+      ...reflection,
+      team: team(reflection.entrantId),
+    })),
+  }));
   function Side({ id, right = false }: { id: string; right?: boolean }) {
     const entry = entrant(bundle, id);
     const lost = match.winnerId !== id;
@@ -83,34 +97,50 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
             follows each turn. AUTO marks a forced choice.
           </p>
         </div>
-        <ReplayViewer replay={replay} teams={[team(a), team(b)]} />
-      </section>
-
-      <section className="section">
-        <div className="section-head">
-          <h2>Team sheets</h2>
-          <p>
-            The 6 Pokémon each player registered; each model brings 4 per game.
-            {bundle.event?.reconstructedSpreads
-              ? " Stat spreads use public sets for the same Pokémon, not the players’ originals."
-              : ""}
-          </p>
-        </div>
-        <div className="two-col">
-          {([0, 1] as const).map((side) => {
-            const entry = entrant(bundle, match.entrants[side]);
-            return (
-              <div key={entry.id} className="build" style={entrantStyle(bundle, entry.id)}>
-                <div className="grid grid-2">
-                  {entry.team.sets.map((set) => {
-                    const games = broughtGames(match, side, set.id);
-                    return <SetCard key={set.id} set={set} games={games} />;
-                  })}
-                </div>
+        <ReplayViewer
+          games={games}
+          teams={teams}
+          sheets={
+            <details
+              className="sheets"
+              open={sheetsOpen}
+              onToggle={(event) => setSheetsOpen(event.currentTarget.open)}
+            >
+              <summary>
+                Team sheets
+                <span className="hint">
+                  The 6 registered per player, 4 brought per game.
+                  {bundle.event?.reconstructedSpreads ? " Spreads use public sets." : ""}
+                </span>
+              </summary>
+              <div className="two-col">
+                {([0, 1] as const).map((side) => {
+                  const entry = entrant(bundle, match.entrants[side]);
+                  return (
+                    <div key={entry.id} className="build" style={entrantStyle(bundle, entry.id)}>
+                      {entry.team.paste ? (
+                        <a
+                          href={entry.team.paste}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="chip"
+                        >
+                          Show original sheet →
+                        </a>
+                      ) : null}
+                      <div className="grid grid-2">
+                        {entry.team.sets.map((set) => {
+                          const games = broughtGames(match, side, set.id);
+                          return <SetCard key={set.id} set={set} games={games} />;
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
-        </div>
+            </details>
+          }
+        />
       </section>
 
       <section className="section">

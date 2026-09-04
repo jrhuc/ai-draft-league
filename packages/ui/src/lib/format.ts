@@ -23,7 +23,10 @@ export function modelFamily(spec: string): string | null {
 }
 
 export function modelLabel(spec: string): string {
-  return spec.replace(/^[^:]*:/, "").replace(/^[^/]*\//, "");
+  return spec
+    .replace(/^[^:]*:/, "")
+    .replace(/^[^/]*\//, "")
+    .replace(/-contributor$/, "");
 }
 
 export function modelProvider(spec: string): string {
@@ -32,21 +35,19 @@ export function modelProvider(spec: string): string {
   return provider.startsWith("opencode") ? "opencode" : provider;
 }
 
-export const FRANCHISE_TONES = [
-  "#F0B35B",
-  "#9ECBFF",
-  "#7ED4A6",
-  "#F29E8E",
-  "#C9A7F5",
-  "#7FD6D0",
-  "#F5D76E",
-  "#B5C4FF",
+export const TONES = [
+  "#C7420F",
+  "#2A75BB",
+  "#187F4B",
+  "#C22F53",
+  "#7A4BC9",
+  "#14837E",
+  "#8A6700",
+  "#5B64D6",
 ];
 
 export function tone(index: number): string {
-  return FRANCHISE_TONES[
-    ((index % FRANCHISE_TONES.length) + FRANCHISE_TONES.length) % FRANCHISE_TONES.length
-  ]!;
+  return TONES[((index % TONES.length) + TONES.length) % TONES.length]!;
 }
 export function toneStyle(color: string): CSSProperties & { "--tone": string } {
   return { "--tone": color };
@@ -59,7 +60,15 @@ export function seconds(ms: number | null): string {
 
 export function tokens(count: number | null): string {
   if (count === null) return "";
-  return count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count);
+  if (count >= 1_000_000) {
+    const millions = count / 1_000_000;
+    return `${millions >= 10 ? millions.toFixed(0) : millions.toFixed(1)}M`;
+  }
+  if (count >= 1000) {
+    const thousands = count / 1000;
+    return `${thousands >= 100 ? thousands.toFixed(0) : thousands.toFixed(1)}k`;
+  }
+  return String(count);
 }
 
 export function titleCase(value: string): string {
@@ -81,19 +90,6 @@ export function displaySpecies(species: string): string {
 
 export function spriteKey(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
-const STATUS_LABELS = new Map([
-  ["brn", "burned"],
-  ["par", "paralyzed"],
-  ["slp", "asleep"],
-  ["frz", "frozen"],
-  ["psn", "poisoned"],
-  ["tox", "poisoned"],
-]);
-
-export function statusLabel(code: string | null | undefined): string {
-  return code ? (STATUS_LABELS.get(code) ?? code) : "";
 }
 
 export function formatLabel(id: string): string {

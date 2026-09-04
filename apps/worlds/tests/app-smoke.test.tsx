@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, test, vi } from "vite-plus/test";
 import { App } from "../src/App";
 import { TournamentProvider } from "../src/lib/context";
+import { modelLabel } from "ui/lib/format";
 import bundle from "../public/tournament-bundle.json";
 
 const roots: Root[] = [];
@@ -56,4 +57,24 @@ test("a failed bundle load can retry and show team selections", async () => {
   );
   await until(() => document.title.includes("Quarterfinal"));
   expect(document.title).toContain("Quarterfinal");
+
+  const frame = document.querySelector<HTMLIFrameElement>(".ps-frame");
+  expect(frame?.srcdoc).toContain("battle-log-data");
+  expect(frame?.srcdoc).toMatch(/<script src="[^"]*replay-frame[^"]*">/);
+  expect(frame?.contentWindow).not.toBeNull();
+  const report = (source: Window | null, height: number) =>
+    window.dispatchEvent(
+      new MessageEvent("message", { data: { type: "ps-height", height }, source }),
+    );
+  report(null, 555);
+  report(frame!.contentWindow, Number.NaN);
+  expect(frame!.style.height).toBe("");
+  report(frame!.contentWindow, 321.4);
+  await until(() => frame!.style.height === "322px");
+  report(frame!.contentWindow, 20);
+  await until(() => frame!.style.height === "240px");
+});
+
+test("model labels omit the contributor routing suffix", () => {
+  expect(modelLabel("opencode-go:muse-spark-1.2-contributor")).toBe("muse-spark-1.2");
 });

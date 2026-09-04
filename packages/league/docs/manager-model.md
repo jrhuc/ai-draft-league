@@ -1,34 +1,28 @@
-# How franchise managers work
+# Understand franchise manager state
 
-A franchise keeps one manager identity and one private memory through the season. Drafting, weekly review, transactions, matchup building, battle piloting, reconciliation, and season review are separate provider calls made for that manager.
+A franchise keeps one manager identity and one private memory throughout the season. Stages that ask a model use separate provider calls for that manager.
 
 <figure class="doc-diagram">
-  <img src="assets/manager-cycle.svg" alt="Manager cycle: persistent roster and memory feed the draft call; each week a matchup builder call registers six sets, battle pilot calls choose legal actions, Pokémon Showdown resolves games into series results, and a weekly review call revises memory. After weeks 1, 2, and 3 transaction calls may change rosters and trigger a reconciliation call before the next build. A season review call runs when the franchise's season ends." loading="lazy">
-  <figcaption>Blue boxes are provider calls. White boxes are state saved by the harness. Calls communicate only through the state that the harness supplies.</figcaption>
+  <img src="assets/manager-cycle.svg" alt="Manager cycle: persistent roster and memory feed the draft call; a matchup builder call registers six sets, battle pilot calls choose legal actions, Pokémon Showdown resolves games into series results, and weekly review calls revise memory at configured barriers. Transaction calls may change rosters and trigger reconciliation before the next build. A season review call runs when the franchise's season ends." loading="lazy">
+  <figcaption>Blue boxes are provider calls. White boxes are saved state. Calls communicate only through state supplied by the harness.</figcaption>
 </figure>
 
-## The weekly matchup loop
+## Build and play a matchup
 
-The **matchup builder** receives the current roster, the opponent's roster,
-format rules, the manager's memory, and any authorized earlier results against
-this opponent. It returns exactly one legal registered team of six plus a plan.
+The matchup builder receives the current roster, opponent roster, format, private memory, and schedule-authorized earlier results. It returns one legal team of 6 and a plan.
 
-The **battle pilot** receives the registered team, visible battle state, plan, notebook, and legal action candidates. It returns battle choices and may update only the series notebook. Nothing else it writes survives the series.
+The battle pilot receives that team, visible battle state, the plan, its notebook, and legal actions. It returns battle choices and may update the series notebook. The notebook cannot change season memory or the roster, but final notes may enter later playoff context.
 
-Pokémon Showdown resolves every game. Completed series results feed the next **weekly review**, which updates the franchise memory used by later stages.
+Pokémon Showdown resolves each game. Completed results feed the next scheduled weekly review, which can update franchise memory.
 
-## Windows and reconciliation
+## Change a roster
 
-After weeks 1, 2, and 3, the weekly review is followed by a **transaction window**. Managers can make trade offers and free-agent swaps or leave the roster unchanged. A changed roster triggers a **reconciliation** review before the next build, so memory and roster state stay aligned. [Transactions](trade-window.md) specifies the rule and saved evidence.
+A transaction window follows the weekly review after configured weeks. Managers can offer trades, make free-agent swaps, or keep the roster. A changed roster triggers reconciliation before the next build. See [Transactions](trade-window.md).
 
-## Season close
+## Close a season
 
-When a franchise's season ends, a **season review** receives its final results, roster, and complete memory. It records one retrospective and takes no further action.
+When a franchise finishes, its season review receives final results, roster, and memory. The retrospective records evidence but changes no season state.
 
-## What the manager is not
+## Keep orchestration outside the manager
 
-`runDraftLeague` remains the software orchestrator: it sequences stages,
-passes state, persists completion, and carries user cancellation. There is no
-manager registry, no delegate scheduler, no autonomous manager process, and no
-agent that schedules other agents. The manager is a role presented to model
-calls, not a software subsystem.
+`runDraftLeague` sequences stages, supplies state, persists completion, and carries cancellation. A manager is a role presented to model calls, not an autonomous process or agent scheduler.

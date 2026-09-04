@@ -1,53 +1,38 @@
-# Season review
+# Record a season retrospective
 
-Each franchise manager writes one retrospective when its season ends. The review records that manager's account of the season without changing any completed result.
+Each franchise manager writes one retrospective automatically when its season ends. The review records that manager's account without changing any result.
 
-## Review timing
+## Schedule the review
 
-The harness starts reviews as soon as each franchise finishes:
-
-- Teams outside the playoff cut review after the round-robin standings are final
+- Teams outside the playoff cut review after round-robin standings become final
 - Semifinal losers review after their semifinal
 - The runner-up and champion review after the final
 
-The harness does not wait until every game has finished. Eliminated round-robin seats can review while the semifinals run, and semifinal losers can review during the final. Seats in the same review batch respond concurrently.
+Eligible managers can review while later playoff games run. The run waits for all outstanding reviews before returning.
 
-The run waits for all outstanding reviews before returning. If a review fails, the run reports that failure after any concurrent games finish.
+## Supply season evidence
 
-## Available evidence
+The review receives the manager's outcome, roster source, builds, transactions, match records, final roster, and final memory. It uses the same identity and dex tools as earlier management stages.
 
-The review can use the manager's season outcome, draft or roster preset, builds, transaction windows, match records, final roster, and final memory. It uses the same manager identity and dex-tool access as the draft and transaction prompts, with a separate prompt policy. Spectator-facing franchise names stay out of the prompt.
+The prompt separates roster construction, team registration, and battle piloting as possible explanations. It asks what worked without diagnosing play or recommending specific changes.
 
-The prompt contains:
+A review cannot change the season or reach an active seat. See [Evidence interpretation](measurement.md#interpret-reviews).
 
-- How the franchise's season ended
-- Final standings
-- Its draft in pick order, including the original reasoning when a live draft occurred
-- Its offers, responses, and free-agent decisions from every transaction window
-- Each other seat's public transaction decisions
-- Its final roster
-- Each of its series in order
-- Its final memory, with every page in full
+## Require the reply shape
 
-The instruction asks the manager to separate drafting or roster construction, registration of six Pokémon, and battle piloting as possible causes of a series loss. It also asks what worked. The harness does not analyze the play or steer the manager toward specific picks.
-
-A season review cannot change the season or reach another active seat. [Interpret league evidence](measurement.md#how-to-interpret-reviews) explains how to compare its statements with earlier plans and recorded actions. Access and release follow the [publication boundary](architecture.md#publication-boundary).
-
-## Reply shape
-
-The manager returns one JSON object:
+All 4 fields require non-empty strings of at most 2,000 characters:
 
 ```json
 {
-  "summary": "",
-  "did_well": "",
-  "did_poorly": "",
-  "would_change": ""
+  "summary": "season_summary",
+  "did_well": "successful_choices",
+  "did_poorly": "unsuccessful_choices",
+  "would_change": "future_changes"
 }
 ```
 
-## Persistence and resume
+## Persist and resume
 
-The run directory stores one row per manager in `season.jsonl`. Per-seat prompt and response-attempt traces live under `season/`.
+`season.jsonl` stores one row per manager. Per-seat prompts and response attempts live under `season/`.
 
-On resume, the league replays an existing row instead of requesting another retrospective from a manager whose season has ended.
+Resume replays a completed row instead of requesting another retrospective.

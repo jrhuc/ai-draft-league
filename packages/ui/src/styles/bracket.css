@@ -3,10 +3,11 @@
 .bracket {
   --match-h: 7.4rem;
   --row: calc(var(--match-h) + 1rem);
+  --col-gap: 2rem;
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(16rem, 1fr);
-  gap: 2rem;
+  gap: var(--col-gap);
   overflow-x: auto;
   padding-bottom: 0.5rem;
 }
@@ -46,7 +47,7 @@
 .bracket-round:not(:first-child) .bracket-slot + .bracket-slot::after {
   content: "";
   position: absolute;
-  width: calc(1rem + 1px);
+  width: calc(var(--col-gap) / 2 + 1px);
   border: 0 solid var(--line-2);
   pointer-events: none;
 }
@@ -59,7 +60,7 @@
 
 .bracket-round:not(:first-child) .bracket-slot + .bracket-slot::after {
   top: calc(var(--connector-span) / -2 - 1px);
-  right: calc(100% + 1rem + 1px);
+  right: calc(100% + var(--col-gap) / 2 + 1px);
   height: calc(var(--connector-span) + 1px);
   border-width: 1px 1px 1px 0;
 }
@@ -87,6 +88,18 @@
   border-bottom: 1px solid var(--line);
 }
 
+/* The connector spans assume every card is exactly --match-h tall with the
+   divider at one shared offset, so a label must never wrap. */
+.bracket-slot .team-tag {
+  min-width: 0;
+}
+
+.bracket-slot .team-tag .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .bracket-slot .num {
   color: var(--t1);
 }
@@ -107,10 +120,6 @@
   color: var(--t4);
 }
 
-.bracket-match .go .arrow {
-  display: inline-block;
-}
-
 .bracket-match a:hover .go {
   color: var(--t1);
 }
@@ -120,4 +129,15 @@
   gap: 0.5rem;
   padding: 2rem 0;
   color: var(--t3);
+}
+
+@media (max-width: 40rem) {
+  .bracket {
+    --col-gap: 1rem;
+    scroll-snap-type: x proximity;
+  }
+
+  .bracket-round {
+    scroll-snap-align: start;
+  }
 }

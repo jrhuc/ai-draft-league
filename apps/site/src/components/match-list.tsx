@@ -32,7 +32,15 @@ export function MatchRow({
         {match.score && turns ? <small>{totalTurns} turns</small> : null}
       </span>
       <Side id={b} match={match} right />
-      <span className="go">{match.status === "complete" ? "Watch →" : "Upcoming"}</span>
+      <span className="go">
+        {match.status === "complete" ? (
+          <>
+            Watch <span className="arrow">→</span>
+          </>
+        ) : (
+          "Upcoming"
+        )}
+      </span>
     </>
   );
   return href ? (
