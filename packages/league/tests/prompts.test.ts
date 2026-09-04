@@ -1,3 +1,5 @@
+import { applyMemoryUpdate, emptyBattleMemory } from "../src/battle-memory.js";
+import { notebook } from "./engine-test-helpers.js";
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import {
@@ -55,7 +57,7 @@ test("decision prompt leads with merged state and keeps mechanics compact", () =
     state: "Turn: 1\n- Swampert; types Water/Ground; moves Earthquake [Ground/Physical/100/spread]",
     matchups: ["- Swampert Earthquake: Farigiraf neutral (1x)"],
     transcript: ["Turn 1 begins."],
-    notebook: "notes",
+    memory: applyMemoryUpdate(emptyBattleMemory("format@rev"), notebook("notes")).memory,
     slotNames: ["Swampert"],
     menus: [[{ label: "Protect", part: "move 1", kind: "move" }]],
   });
@@ -64,7 +66,8 @@ test("decision prompt leads with merged state and keeps mechanics compact", () =
       prompt.indexOf("Active matchup reference"),
   );
   assert.ok(prompt.indexOf("Active matchup reference") < prompt.indexOf("Choose for Swampert"));
-  assert.match(prompt, /only when durable plans changed.*notebook.*complete replacement/);
+  assert.match(prompt, /Series memory \(5\/3000\): notes/);
+  assert.match(prompt, /only when durable plans changed, "notebook":\{"team_playbook"/);
   assert.doesNotMatch(prompt, /at most \d+ characters/);
   assert.equal(prompt.match(/"choices"/g)?.length, 1);
 });
@@ -77,6 +80,7 @@ test("team preview renders one shared ordered menu", () => {
   ];
   const prompt = renderDecision({
     state: "Turn: 0",
+    memory: emptyBattleMemory("format@rev"),
     slotNames: ["pick 1", "pick 2", "pick 3", "pick 4"],
     menus: [menu, menu, menu, menu],
   });

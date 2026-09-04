@@ -2,8 +2,6 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
   applyMemoryUpdate,
-  createBattleMemory,
-  DECISION_NOTE_LIMIT,
   type BattleMemory,
   type MemoryUpdate,
   MemoryUpdateError,
@@ -93,7 +91,6 @@ export const replayDecisionSchema = z.object({
   submission_source: z.enum(["model", "automatic", "model-default"]),
   outcome: z.enum(["accepted", "rejected"]),
   memory_state: z.string().optional().catch(undefined),
-  notebook: z.string().optional().catch(undefined),
   rationale: z.string().optional().catch(undefined),
 });
 const reflectionSchema = z.object({
@@ -129,7 +126,6 @@ export const UNTIMED_DECISION_PARSE_ATTEMPTS = 4;
 export const DECISION_PREFILL = '{"choices": [';
 export const DEX_LOOKUP_CACHE_LIMIT = 256;
 export const UNTIMED_EMPTY_RESPONSE_RETRIES = 2;
-export { DECISION_NOTE_LIMIT };
 const DECISION_RATIONALE_LIMIT = 2000;
 export const REFLECTION_MAX_TOKENS = 32_768;
 export const TRANSCRIPT_CHARACTER_LIMIT = 24000;
@@ -296,12 +292,8 @@ export function decisionRequestDigest(input: {
 export function extractChoices(
   response: string,
   menus: SlotMenu[],
-  currentMemory: BattleMemory | string = "",
+  currentMemory: BattleMemory,
 ): ParsedDecision {
-  const memory =
-    typeof currentMemory === "string"
-      ? createBattleMemory(currentMemory, "unbound-reference")
-      : currentMemory;
   const objects = jsonObjects(response, true).filter(
     (value) => "choices" in value || "choice" in value,
   );
@@ -309,7 +301,7 @@ export function extractChoices(
   let failure: unknown;
   for (const object of objects.reverse()) {
     try {
-      return parseDecision(object, menus, memory);
+      return parseDecision(object, menus, currentMemory);
     } catch (caught) {
       failure ??= caught;
     }
@@ -374,7 +366,7 @@ export function extractReflection(response: string, currentMemory: BattleMemory)
   const parsed = reflectionSchema.safeParse(object);
   if (!parsed.success)
     throw new Error("review must contain summary, adjustment, and notebook fields");
-  const memoryUpdate = applyMemoryUpdate(currentMemory, parsed.data.notebook as JsonValue);
+  const memoryUpdate = applyMemoryUpdate(currentMemory, parsed.data.notebook);
   if (!memoryUpdate.accepted) throw new MemoryUpdateError(memoryUpdate);
   return {
     summary: clip(parsed.data.summary, DECISION_RATIONALE_LIMIT),
@@ -442,8 +434,8 @@ function jsonObjects(input: string, preferOuterDecision = false): JsonObject[] {
             parent.start < match.start &&
             parent.end >= match.end &&
             ("choices" in parent.value || "choice" in parent.value) &&
-            (typeof parent.value.rationale === "string" ||
-              typeof parent.value.notebook === "string" ||
+            (isText(parent.value.rationale) ||
+              isText(parent.value.notebook) ||
               isRecord(parent.value.notebook)),
         ),
     )

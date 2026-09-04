@@ -92,6 +92,7 @@ import type {
 } from "./types.js";
 import { text } from "./value.js";
 
+/** Thrown when a decision was superseded or yielded to the battle timer; the stale act() must not commit. */
 class DecisionAbandonedError extends Error {
   constructor() {
     super("decision abandoned");
@@ -246,6 +247,9 @@ export class LLMEngine extends BaseEngine {
     this.pending = undefined;
   }
 
+  /** Recorded decisions from an interrupted game, replayed against the re-simulated battle so a
+   * resumed run fast-forwards to where it stopped at zero provider cost. Rows must be this
+   * engine's in-flight-game decision rows in file order. */
   primeReplay(rows: JsonObject[]): void {
     this.replayQueue = [...rows];
   }
@@ -284,12 +288,13 @@ export class LLMEngine extends BaseEngine {
       row.turn !== this.state.turn ||
       row.phase !== phase
     ) {
+      /** The live battle diverged from the recording, so the recording is no longer the truth;
+       * the rest of the game is decided live. */
       this.replayQueue = [];
       return undefined;
     }
-    const memoryState = row.memory_state ?? row.notebook;
-    if (memoryState !== undefined) {
-      this.memory = createBattleMemory(memoryState, this.memory.authority);
+    if (row.memory_state !== undefined) {
+      this.memory = createBattleMemory(row.memory_state, this.memory.authority);
       this.loggedMemoryState = serializeBattleMemory(this.memory);
     }
     this.transcript.rememberTurnDetail(`Decision: ${row.action}`);
@@ -517,6 +522,8 @@ export class LLMEngine extends BaseEngine {
     while (!parsed && parseFailures < parseAttempts) {
       if (generation !== this.generation) throw new DecisionAbandonedError();
       if (parseFailures && (rawResponse || truncatedBudget || earlyLengthStop)) {
+        /** Replaying a cut-off ramble verbatim spends the retry's input budget on reasoning that cannot
+         * contain the missing ending. Summarise it instead and ask for the answer first. */
         messages.push({
           role: "assistant",
           content:
@@ -619,12 +626,16 @@ export class LLMEngine extends BaseEngine {
           }
           continue;
         }
+        /** Reported output reaching this call's requested cap is budget exhaustion even when a provider
+         * omits finishReason. A length stop below that cap is still truncation, but not budget exhaustion. */
         const outputTokens = Math.trunc(completion.usage.output_tokens ?? 0);
         if (outputTokens >= maxTokens) truncatedBudget = maxTokens;
         else if (completion.finishReason === "length")
           earlyLengthStop = { outputTokens, requestedMaxTokens: maxTokens };
         if (!completion.text && !completion.toolCalls.length && truncatedBudget) break;
         rawResponse = completion.text;
+        /** Some reasoning models via gateways finish with every token in the reasoning channel and an
+         * empty text field; the decision they wrote is salvaged rather than bought again on a retry. */
         if (!rawResponse && !completion.toolCalls.length && completion.reasoning) {
           try {
             extractChoices(completion.reasoning, menus, this.memory);
@@ -909,14 +920,6 @@ export class LLMEngine extends BaseEngine {
 
   protected override menuHints(request: BattleRequest): MenuHints | undefined {
     return battleMenuHints(this.state, this.pid, request);
-  }
-
-  static extractChoices(response: string, menus: SlotMenu[], currentNotebook = ""): ParsedDecision {
-    return extractChoices(
-      response,
-      menus,
-      createBattleMemory(currentNotebook, "unbound-reference"),
-    );
   }
 
   private async reflect(context: GameEnd, result: string): Promise<void> {

@@ -3,16 +3,21 @@ import { test } from "vite-plus/test";
 import { TEAM_PLAYBOOK_CHAR_LIMIT } from "../src/battle-memory.js";
 import { LLMEngine } from "../src/llm-engine.js";
 import type { JsonObject } from "../src/types.js";
-import { acceptedAct, decision, notebook, request, ScriptedProvider } from "./engine-test-helpers.js";
+import { asRecord, asRecords, text } from "../src/value.js";
+import {
+  acceptedAct,
+  decision,
+  notebook,
+  request,
+  ScriptedProvider,
+} from "./engine-test-helpers.js";
 
 test("authoritative lookup results persist into later decision prompts", async () => {
   const provider = new ScriptedProvider([
     {
       text: "",
       usage: { input_tokens: 10, output_tokens: 2 },
-      toolCalls: [
-        { id: "ability", name: "lookup_ability", arguments: { name: "Prankster" } },
-      ],
+      toolCalls: [{ id: "ability", name: "lookup_ability", arguments: { name: "Prankster" } }],
     },
     decision([0], "Use the authoritative ability text."),
     decision([0], "Apply the retained interaction."),
@@ -25,11 +30,9 @@ test("authoritative lookup results persist into later decision prompts", async (
 
   const prompt = String(provider.calls[2]!.messages[0]!.content);
   assert.match(prompt, /lookup_ability\(\{"name":"Prankster"\}\)/);
-  assert.match(prompt, /Dark types are immune/i);
-  const state = JSON.parse(engine.coachingState()) as {
-    verified_references: JsonObject[];
-  };
-  assert.equal(state.verified_references.length, 1);
+  assert.match(prompt, /Dark-type Pokemon are immune/i);
+  const state = asRecord(JSON.parse(engine.coachingState()));
+  assert.equal(asRecords(state.verified_references).length, 1);
 });
 
 test("over-budget decision memory is rejected without changing the action or stored state", async () => {
@@ -51,9 +54,9 @@ test("over-budget decision memory is rejected without changing the action or sto
   assert.equal(engine.coachingNote(), "Keep the existing plan.");
   assert.equal(logs[0]!.fallback, false);
   assert.equal(logs[0]!.parse_failures, 0);
-  const memoryUpdate = logs[0]!.memory_update as JsonObject;
+  const memoryUpdate = asRecord(logs[0]!.memory_update);
   assert.equal(memoryUpdate.accepted, false);
-  assert.match(String(memoryUpdate.error), /team_playbook is 3501\/3500 characters/);
+  assert.match(text(memoryUpdate.error), /team_playbook is 3501\/3500 characters/);
 });
 
 test("advancing tournament memory carries only transferable team knowledge", async () => {
@@ -81,11 +84,7 @@ test("advancing tournament memory carries only transferable team knowledge", asy
   });
 
   assert.equal(engine.coachingNote(), "The fast mode is a reliable closer.");
-  const state = JSON.parse(engine.coachingState()) as {
-    team_playbook: string;
-    series_memory: string;
-    next_game_plan: string;
-  };
+  const state = asRecord(JSON.parse(engine.coachingState()));
   assert.equal(state.team_playbook, "The fast mode is a reliable closer.");
   assert.equal(state.series_memory, "");
   assert.equal(state.next_game_plan, "");
@@ -123,7 +122,7 @@ test("oversized reflection memory receives one bounded repair attempt", async ()
   assert.equal(provider.calls.length, 2);
   assert.equal(logs[0]!.fallback, false);
   assert.equal(logs[0]!.memory_repair_attempts, 1);
-  assert.match(String((logs[0]!.rejected_memory_update as JsonObject).error), /3501\/3500/);
+  assert.match(text(asRecord(logs[0]!.rejected_memory_update).error), /3501\/3500/);
   assert.match(engine.coachingNote(), /Keep the priority attacker healthy/);
   assert.match(
     String(provider.calls[1]!.messages.at(-1)?.content),

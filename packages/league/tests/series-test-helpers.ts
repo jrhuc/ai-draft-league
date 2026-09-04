@@ -11,18 +11,21 @@ export function fakeEngines(): Bo3Context["engines"] {
   const engine = () => {
     const fake: Pick<
       Bo3Context["engines"]["p1"],
-      "beginGame" | "endGame" | "decisionStats" | "coachingNote"
+      "beginGame" | "endGame" | "decisionStats" | "coachingNote" | "coachingState"
     > = {
       beginGame() {},
       endGame() {},
       coachingNote() {
         return "";
       },
+      coachingState() {
+        return "";
+      },
       decisionStats() {
         return { fallbacks: 0 };
       },
     };
-    // SAFETY: the folded-series path calls only these three engine methods.
+    // SAFETY: the folded-series path calls only these engine methods.
     return fake as Bo3Context["engines"]["p1"];
   };
   return { p1: engine(), p2: engine() };

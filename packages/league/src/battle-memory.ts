@@ -1,12 +1,12 @@
 import { z } from "zod";
 import type { JsonObject, JsonValue } from "./types.js";
-import { isRecord } from "./value.js";
+import { isRecord, isText } from "./value.js";
 
 export const TEAM_PLAYBOOK_CHAR_LIMIT = 3500;
 export const SERIES_MEMORY_CHAR_LIMIT = 3000;
 export const NEXT_GAME_PLAN_CHAR_LIMIT = 1500;
 export const DECISION_NOTE_LIMIT = 8000;
-export const VERIFIED_REFERENCE_CHAR_LIMIT = 2000;
+export const VERIFIED_REFERENCE_CHAR_LIMIT = 4000;
 export const VERIFIED_REFERENCE_ENTRY_LIMIT = 24;
 
 const referenceToolSchema = z.enum([
@@ -15,14 +15,14 @@ const referenceToolSchema = z.enum([
   "lookup_item",
   "lookup_ability",
 ]);
-const memoryNotebookSchema = z.strictObject({
+const notebookSchema = z.strictObject({
   team_playbook: z.string(),
   series_memory: z.string(),
   next_game_plan: z.string(),
 });
 const verifiedReferenceSchema = z.strictObject({
   tool: referenceToolSchema,
-  arguments: z.record(z.string(), z.json()),
+  arguments: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
   result: z.string().min(1),
 });
 const storedMemorySchema = z.strictObject({
@@ -43,6 +43,7 @@ export interface VerifiedReference {
 }
 
 export interface BattleMemory {
+  /** Format and Showdown revision the verified references were looked up against. */
   authority: string;
   teamPlaybook: string;
   seriesMemory: string;
@@ -76,31 +77,32 @@ export function emptyBattleMemory(authority: string): BattleMemory {
   };
 }
 
-export function createBattleMemory(input: string | undefined, authority: string): BattleMemory {
-  const value = input?.trim() ?? "";
+/**
+ * A seed is either this module's own stored state (recognised by its leading
+ * brace) or a plain team playbook written by an earlier stage such as
+ * teambuilding. Verified references only survive under the same authority.
+ */
+export function createBattleMemory(seed: string | undefined, authority: string): BattleMemory {
+  const value = seed?.trim() ?? "";
   if (!value) return emptyBattleMemory(authority);
-  let decoded: unknown;
-  try {
-    decoded = JSON.parse(value);
-  } catch {
-    return legacyBattleMemory(value, authority);
+  if (!value.startsWith("{")) {
+    const update = applyMemoryUpdate(emptyBattleMemory(authority), {
+      team_playbook: value,
+      series_memory: "",
+      next_game_plan: "",
+    });
+    if (!update.accepted) throw new MemoryUpdateError(update);
+    return update.memory;
   }
-  if (typeof decoded !== "object" || decoded === null || Array.isArray(decoded))
-    return legacyBattleMemory(value, authority);
-  const parsed = storedMemorySchema.safeParse(decoded);
-  if (!parsed.success) throw new Error("invalid battle memory state");
+  const stored = storedMemorySchema.parse(JSON.parse(value));
   const memory: BattleMemory = {
     authority,
-    teamPlaybook: parsed.data.team_playbook.trim(),
-    seriesMemory: parsed.data.series_memory.trim(),
-    nextGamePlan: parsed.data.next_game_plan.trim(),
+    teamPlaybook: stored.team_playbook.trim(),
+    seriesMemory: stored.series_memory.trim(),
+    nextGamePlan: stored.next_game_plan.trim(),
     verifiedReferences:
-      parsed.data.authority === authority
-        ? parsed.data.verified_references.map((entry) => ({
-            tool: entry.tool,
-            arguments: entry.arguments as JsonObject,
-            result: entry.result.trim(),
-          }))
+      stored.authority === authority
+        ? stored.verified_references.map((entry) => ({ ...entry, result: entry.result.trim() }))
         : [],
   };
   assertMemoryLimits(memory);
@@ -119,20 +121,21 @@ export function serializeBattleMemory(memory: BattleMemory): string {
   });
 }
 
-export function applyMemoryUpdate(current: BattleMemory, value: JsonValue | undefined): MemoryUpdate {
-  const supplied = typeof value === "string" || isRecord(value);
+/** The readable notebook behind a stored state, for prompts that quote a finished series. */
+export function storedNotebookText(seed: string): string {
+  const value = seed.trim();
+  if (!value.startsWith("{")) return value;
+  const stored = storedMemorySchema.parse(JSON.parse(value));
+  return renderNotebook(createBattleMemory(value, stored.authority));
+}
+
+export function applyMemoryUpdate(
+  current: BattleMemory,
+  value: JsonValue | undefined,
+): MemoryUpdate {
+  const supplied = isRecord(value) || isText(value);
   if (!supplied) return unchangedMemoryUpdate(current, false);
-  const parsed =
-    typeof value === "string"
-      ? {
-          success: true as const,
-          data: {
-            team_playbook: "",
-            series_memory: value,
-            next_game_plan: "",
-          },
-        }
-      : memoryNotebookSchema.safeParse(value);
+  const parsed = notebookSchema.safeParse(value);
   if (!parsed.success) {
     return {
       ...unchangedMemoryUpdate(current, true),
@@ -168,13 +171,12 @@ export function applyMemoryUpdate(current: BattleMemory, value: JsonValue | unde
       error: `notebook exceeds its budget: ${violations.join("; ")}`,
     };
   }
-  const memory = { ...current, ...fields };
   return {
     supplied: true,
     accepted: true,
     proposedCharacters,
     storedCharacters: proposedCharacters,
-    memory,
+    memory: { ...current, ...fields },
   };
 }
 
@@ -213,13 +215,11 @@ export function renderVerifiedReferenceMemory(memory: BattleMemory): string {
 }
 
 export function renderNotebook(memory: BattleMemory): string {
-  const sections = [
-    memory.teamPlaybook ? ["Team playbook", memory.teamPlaybook] : undefined,
-    memory.seriesMemory ? ["Series memory", memory.seriesMemory] : undefined,
-    memory.nextGamePlan ? ["Next-game plan", memory.nextGamePlan] : undefined,
-  ].filter((section): section is string[] => section !== undefined);
-  if (!sections.length) return "";
-  if (sections.length === 1) return sections[0]![1]!;
+  const sections: Array<[string, string]> = [];
+  if (memory.teamPlaybook) sections.push(["Team playbook", memory.teamPlaybook]);
+  if (memory.seriesMemory) sections.push(["Series memory", memory.seriesMemory]);
+  if (memory.nextGamePlan) sections.push(["Next-game plan", memory.nextGamePlan]);
+  if (sections.length === 1) return sections[0]![1];
   return sections.map(([name, contents]) => `${name}:\n${contents}`).join("\n\n");
 }
 
@@ -235,15 +235,11 @@ export function rememberVerifiedReference(
 ): BattleMemory {
   const parsedTool = referenceToolSchema.safeParse(tool);
   const trimmed = result.trim();
-  if (
-    !parsedTool.success ||
-    !trimmed ||
-    /^(?:Not executed|Tool error|Unknown )/i.test(trimmed)
-  )
+  if (!parsedTool.success || !trimmed || /^(?:Not executed|Unknown tool|No \w+ data)/.test(trimmed))
     return memory;
   const entry: VerifiedReference = {
     tool: parsedTool.data,
-    arguments: JSON.parse(stableJson(args)) as JsonObject,
+    arguments: stableArguments(args),
     result: trimmed,
   };
   if (renderVerifiedReference(entry).length > VERIFIED_REFERENCE_CHAR_LIMIT) return memory;
@@ -258,26 +254,6 @@ export function rememberVerifiedReference(
   )
     verifiedReferences.shift();
   return { ...memory, verifiedReferences };
-}
-
-function legacyBattleMemory(value: string, authority: string): BattleMemory {
-  if (value.length > DECISION_NOTE_LIMIT)
-    throw new Error(`legacy battle memory exceeds ${DECISION_NOTE_LIMIT} characters`);
-  const memory = emptyBattleMemory(authority);
-  if (value.length <= TEAM_PLAYBOOK_CHAR_LIMIT) memory.teamPlaybook = value;
-  else {
-    memory.teamPlaybook = value.slice(0, TEAM_PLAYBOOK_CHAR_LIMIT);
-    memory.seriesMemory = value.slice(
-      TEAM_PLAYBOOK_CHAR_LIMIT,
-      TEAM_PLAYBOOK_CHAR_LIMIT + SERIES_MEMORY_CHAR_LIMIT,
-    );
-    memory.nextGamePlan = value.slice(
-      TEAM_PLAYBOOK_CHAR_LIMIT + SERIES_MEMORY_CHAR_LIMIT,
-      DECISION_NOTE_LIMIT,
-    );
-  }
-  assertMemoryLimits(memory);
-  return memory;
 }
 
 function unchangedMemoryUpdate(memory: BattleMemory, supplied: boolean): MemoryUpdate {
@@ -308,24 +284,21 @@ function strategicMemoryCharacters(memory: BattleMemory): number {
 }
 
 function verifiedReferenceCharacters(entries: VerifiedReference[]): number {
-  return entries.reduce((total, entry, index) => total + renderVerifiedReference(entry).length + index, 0);
+  return entries.map(renderVerifiedReference).join("\n").length;
 }
 
 function renderVerifiedReference(entry: VerifiedReference): string {
-  return `${entry.tool}(${stableJson(entry.arguments)}): ${entry.result}`;
+  return `${entry.tool}(${JSON.stringify(entry.arguments)}): ${entry.result}`;
 }
 
 function verifiedReferenceKey(entry: VerifiedReference): string {
-  return `${entry.tool}:${stableJson(entry.arguments)}`;
+  return `${entry.tool}:${JSON.stringify(entry.arguments)}`;
 }
 
-function stableJson(value: JsonValue): string {
-  return JSON.stringify(value, (_key, nested) => {
-    if (!isRecord(nested)) return nested;
-    return Object.fromEntries(
-      Object.entries(nested)
-        .filter(([, entry]) => entry !== undefined)
-        .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
-    );
-  });
+function stableArguments(args: JsonObject): JsonObject {
+  return Object.fromEntries(
+    Object.entries(args)
+      .filter(([, value]) => value !== undefined)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
+  );
 }

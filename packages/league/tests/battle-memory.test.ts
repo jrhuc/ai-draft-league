@@ -9,6 +9,7 @@ import {
   rememberVerifiedReference,
   renderVerifiedReferenceMemory,
   serializeBattleMemory,
+  storedNotebookText,
   TEAM_PLAYBOOK_CHAR_LIMIT,
   VERIFIED_REFERENCE_CHAR_LIMIT,
   VERIFIED_REFERENCE_ENTRY_LIMIT,
@@ -103,8 +104,7 @@ test("verified reference memory is deduplicated, bounded, and revision-scoped", 
 
   assert.ok(memory.verifiedReferences.length <= VERIFIED_REFERENCE_ENTRY_LIMIT);
   assert.ok(
-    Number(memoryTelemetry(memory).verified_reference_characters) <=
-      VERIFIED_REFERENCE_CHAR_LIMIT,
+    Number(memoryTelemetry(memory).verified_reference_characters) <= VERIFIED_REFERENCE_CHAR_LIMIT,
   );
   assert.equal(
     memory.verifiedReferences.filter((entry) => entry.tool === "lookup_ability").length,
@@ -114,4 +114,26 @@ test("verified reference memory is deduplicated, bounded, and revision-scoped", 
 
   const restored = createBattleMemory(serializeBattleMemory(memory), "format@revision-b");
   assert.equal(restored.verifiedReferences.length, 0);
+});
+
+test("seeds are a plain team playbook or this module's own stored state", () => {
+  const seeded = createBattleMemory("  Preserve the fast mode.  ", "format@revision");
+  assert.equal(seeded.teamPlaybook, "Preserve the fast mode.");
+  assert.equal(seeded.seriesMemory, "");
+  assert.deepEqual(createBattleMemory(serializeBattleMemory(seeded), "format@revision"), seeded);
+  assert.throws(() =>
+    createBattleMemory("x".repeat(TEAM_PLAYBOOK_CHAR_LIMIT + 1), "format@revision"),
+  );
+  assert.throws(() => createBattleMemory('{"version":2}', "format@revision"));
+  assert.equal(storedNotebookText(serializeBattleMemory(seeded)), "Preserve the fast mode.");
+  assert.equal(storedNotebookText("plain note"), "plain note");
+});
+
+test("a bare-string notebook counts as supplied but is rejected", () => {
+  const current = emptyBattleMemory("format@revision");
+  const update = applyMemoryUpdate(current, "just a string");
+  assert.equal(update.supplied, true);
+  assert.equal(update.accepted, false);
+  assert.strictEqual(update.memory, current);
+  assert.match(update.error ?? "", /team_playbook/);
 });

@@ -11,6 +11,7 @@ import {
   oneMoveStats,
   request,
   ScriptedProvider,
+  notebook,
 } from "./engine-test-helpers.js";
 
 test("closed-sheet engines describe damage tools and rules without open sheets", async () => {
@@ -36,7 +37,7 @@ test("readable decisions, technical traces, and post-game reflections stay separ
     JSON.stringify({
       summary: "Won by preserving the endgame attacker.",
       adjustment: "Keep tracking opposing speed order.",
-      notebook: "Mon1 is the preferred endgame; verify opposing speed order.",
+      notebook: notebook("Verify opposing speed order.", "Mon1 is the preferred endgame."),
     }),
   ]);
   const decisions: JsonObject[] = [];
@@ -104,7 +105,7 @@ test("readable decisions, technical traces, and post-game reflections stay separ
   assert.match(String(provider.calls[2]!.messages.at(-1)?.content), /Move Protect:/);
   assert.equal(
     engine.coachingNote(),
-    "Mon1 is the preferred endgame; verify opposing speed order.",
+    "Team playbook:\nMon1 is the preferred endgame.\n\nSeries memory:\nVerify opposing speed order.",
   );
   assert.deepEqual(engine.decisionStats(), {
     ...oneMoveStats,
@@ -142,7 +143,7 @@ test("an eliminated tournament entrant files a retrospective instead of next-rou
   );
   assert.doesNotMatch(
     String(provider.calls[0]!.messages[0]!.content),
-    /updated notebook|Current private notebook/,
+    /updated notebook|Current private strategic memory/,
   );
 });
 
@@ -191,7 +192,7 @@ test("game transcripts reset while notebook and score persist, with a marked cha
   const nextGamePrompt = String(provider.calls[1]!.messages[0]!.content);
   assert.doesNotMatch(nextGamePrompt, /Ancient Memory|\[Game 1 begins/);
   assert.match(nextGamePrompt, /\[Game 2 begins; series score you 1, opponent 0\]/);
-  assert.match(nextGamePrompt, /Private notebook: durable series note/);
+  assert.match(nextGamePrompt, /Series memory \(19\/3000\): durable series note/);
   assert.match(nextGamePrompt, /Series series-1; game 2; score you 1, opponent 0/);
 
   engine.observe([`|move|p2a: NewMon|${"x".repeat(26_000)}LATEST|p1a: Mon1`]);
@@ -204,6 +205,18 @@ test("game transcripts reset while notebook and score persist, with a marked cha
   assert.ok(timeline.length <= 24_100, `timeline stayed near the cap (${timeline.length})`);
   assert.match(timeline, /^\[Earlier turns are omitted from this timeline\.\]/);
   assert.match(timeline, /LATEST into Mon1\.$/);
+});
+
+test("clipped game transcripts retain salient early facts", async () => {
+  const provider = new ScriptedProvider([decision([0], "retain reveal")]);
+  const engine = new LLMEngine("p1", "scripted", { provider, decisionLog: [] });
+  engine.beginGame({ gameId: "game-1", gameNumber: 1, seriesId: "series-1" });
+  engine.observe(["|-ability|p2a: Foe|Prankster"]);
+  engine.observe([`|move|p2a: Foe|${"x".repeat(26_000)}LATEST|p1a: Mon1`]);
+  await acceptedAct(engine, request(), { povLines: [] });
+  const prompt = String(provider.calls[0]!.messages[0]!.content);
+  assert.match(prompt, /\[Earlier revealed facts retained:\][\s\S]*Foe revealed Prankster\./);
+  assert.match(prompt, /LATEST into Mon1\.$/m);
 });
 
 test("turn timeline uses one percentage-only line per turn", async () => {
@@ -298,7 +311,7 @@ test("an advancing tournament entrant writes notes for the next round", async ()
     JSON.stringify({
       summary: "Won by preserving the fast mode.",
       adjustment: "Keep the mode available without assuming the same damage ranges.",
-      notebook: "The fast mode is a reliable option when speed control is contested.",
+      notebook: notebook("", "The fast mode is a reliable option when speed control is contested."),
     }),
   ]);
   const engine = new LLMEngine("p1", "scripted", {

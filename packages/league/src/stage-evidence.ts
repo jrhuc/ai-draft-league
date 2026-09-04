@@ -17,7 +17,8 @@ interface StageEvidenceOptions {
   rationaleLimit: number;
   notebookLimit: number;
 }
-
+/** Optional evidence is distinguished by field presence: an absent notebook retains prior context,
+ * while a supplied empty string deliberately clears it. */
 export function normalizeStageEvidence(
   rationale: JsonValue | undefined,
   notebook: JsonValue | undefined,

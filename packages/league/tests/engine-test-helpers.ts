@@ -31,11 +31,7 @@ export function request(activeCount = 1): BattleRequest {
   };
 }
 
-export const notebook = (
-  seriesMemory = "",
-  teamPlaybook = "",
-  nextGamePlan = "",
-) => ({
+export const notebook = (seriesMemory = "", teamPlaybook = "", nextGamePlan = "") => ({
   team_playbook: teamPlaybook,
   series_memory: seriesMemory,
   next_game_plan: nextGamePlan,

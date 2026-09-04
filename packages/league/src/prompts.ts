@@ -1,6 +1,5 @@
 import {
   type BattleMemory,
-  createBattleMemory,
   DECISION_NOTE_LIMIT,
   NEXT_GAME_PLAN_CHAR_LIMIT,
   renderStrategicMemory,
@@ -154,14 +153,12 @@ export interface DecisionPrompt {
   slotNames: string[];
   menus: SlotMenu[];
   transcript?: string[];
-  memory?: BattleMemory;
-  notebook?: string;
+  memory: BattleMemory;
   seriesContext?: string;
   matchups?: string[];
 }
 
 export function renderDecision(input: DecisionPrompt): string {
-  const memory = input.memory ?? createBattleMemory(input.notebook, "unbound-reference");
   const lines: string[] = [];
   if (input.seriesContext) lines.push("Match context:", input.seriesContext, "");
   lines.push("Authoritative battle state and roster reference:", input.state, "");
@@ -171,10 +168,10 @@ export function renderDecision(input: DecisionPrompt): string {
       ...input.matchups,
       "",
     );
-  lines.push("Private strategic memory:", renderStrategicMemory(memory), "");
+  lines.push("Private strategic memory:", renderStrategicMemory(input.memory), "");
   lines.push(
     "Verified reference memory from prior authoritative lookups:",
-    renderVerifiedReferenceMemory(memory),
+    renderVerifiedReferenceMemory(input.memory),
     "",
   );
   if (input.transcript?.length)

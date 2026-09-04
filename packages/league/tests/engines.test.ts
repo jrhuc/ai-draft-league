@@ -25,6 +25,7 @@ import {
   oneMoveStats,
   request,
   ScriptedProvider,
+  notebook,
 } from "./engine-test-helpers.js";
 
 test("a decision written only in the reasoning channel is salvaged without a retry", async () => {
@@ -290,14 +291,14 @@ test("battle evidence flags follow model field presence rather than harness summ
     },
     {
       name: "notebook only",
-      responses: [JSON.stringify({ choices: [1], notebook: "  Revised plan.  " })],
+      responses: [JSON.stringify({ choices: [1], notebook: notebook("  Revised plan.  ") })],
       expectedEvidence: { rationale: false, notebook_update: true },
       expectedNotebook: "Revised plan.",
       expectedRationale: "No rationale supplied.",
     },
     {
       name: "explicit empty strings",
-      responses: [JSON.stringify({ choices: [1], rationale: "   ", notebook: "   " })],
+      responses: [JSON.stringify({ choices: [1], rationale: "   ", notebook: notebook("   ") })],
       expectedEvidence: { rationale: true, notebook_update: true },
       expectedNotebook: "",
       expectedRationale: "No rationale supplied.",
@@ -438,7 +439,7 @@ test("Gemini-like nested candidate objects preserve the complete top-level decis
     JSON.stringify({
       choices: [1],
       rationale: "use the top-level choice",
-      notebook: "n".repeat(1800),
+      notebook: notebook("n".repeat(1800)),
       threats: [
         "direct threat",
         { rationale: "not a threat" },

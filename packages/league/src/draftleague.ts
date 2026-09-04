@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import { storedNotebookText } from "./battle-memory.js";
 
 import type { DraftBoardMon } from "./draft.js";
 import { loadBoard } from "./draft.js";
@@ -527,8 +528,8 @@ export async function runDraftLeague(
     completed.set(plan.index, row);
     storedOutcomes.set(plan.index, { score: fields.score, winnerSide });
     applyOutcome(plan, {
-      p1: { build: home.view, notebook: coachNotes.p1 },
-      p2: { build: away.view, notebook: coachNotes.p2 },
+      p1: { build: home.view, notebook: storedNotebookText(coachNotes.p1) },
+      p2: { build: away.view, notebook: storedNotebookText(coachNotes.p2) },
     });
     options.onEvent?.({ type: "series-end", index: plan.index, record: row });
     return row;
