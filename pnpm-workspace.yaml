@@ -8,6 +8,9 @@ allowBuilds:
   workerd: true
 
 minimumReleaseAgeExclude:
+  # AI SDK: provider support for new model APIs is wanted the day it lands.
+  - ai
+  - "@ai-sdk/*"
   # Fast-moving beta tooling: pinned exactly, exempted from the global
   # seven-day minimum release age the way dmmulroy/overseer does it.
   - "@voidzero-dev/vite-plus-core@0.3.0"
