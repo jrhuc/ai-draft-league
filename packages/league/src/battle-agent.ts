@@ -99,6 +99,9 @@ export abstract class BaseEngine implements BattleAgent {
   coachingNote(): string {
     return "";
   }
+  coachingState(): string {
+    return this.coachingNote();
+  }
 
   async submit(
     request: BattleRequest,

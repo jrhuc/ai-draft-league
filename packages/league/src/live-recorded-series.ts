@@ -15,17 +15,6 @@ import { appendJsonlObject } from "./jsonl.js";
 import { LLMEngine } from "./llm-engine.js";
 import { reasoningForModel } from "./providers.js";
 import { ShowdownReference } from "./reference.js";
-import { SimBattle } from "./sim.js";
-import type { Team } from "./teams.js";
-import { DEFAULT_TIMER_SCALE } from "./timer.js";
-import type { BattleOutcome, JsonObject, Pid, TimerScale } from "./types.js";
-import {
-  closedSheetsFormat,
-  foldSeriesGames,
-  makeEngine,
-  SINGLE_ELIMINATION_GAME_LIMIT,
-} from "./series-core.js";
-import type { EngineSetup } from "./series-core.js";
 import {
   adoptSeriesDir,
   appendAttemptRecord,
@@ -45,6 +34,17 @@ import type {
   RecordedSeriesContext,
   RecordedSeriesFields,
 } from "./recorded-series.js";
+import { SimBattle } from "./sim.js";
+import {
+  closedSheetsFormat,
+  foldSeriesGames,
+  makeEngine,
+  SINGLE_ELIMINATION_GAME_LIMIT,
+} from "./series-core.js";
+import type { EngineSetup } from "./series-core.js";
+import type { Team } from "./teams.js";
+import { DEFAULT_TIMER_SCALE } from "./timer.js";
+import type { BattleOutcome, JsonObject, Pid, TimerScale } from "./types.js";
 
 export interface Bo3Context {
   engines: Record<Pid, RandomEngine | LLMEngine>;
@@ -195,7 +195,7 @@ export async function playBo3(context: Bo3Context): Promise<Bo3Result> {
       winnerSide,
       outcome,
       modelChoiceFallbacks,
-      coachNotes: { p1: engines.p1.coachingNote(), p2: engines.p2.coachingNote() },
+      coachNotes: { p1: engines.p1.coachingState(), p2: engines.p2.coachingState() },
       log: relativeSeriesFile(logPath),
       logBytes: canonicalLog,
     });
@@ -421,7 +421,6 @@ export async function playRecordedSeries(context: RecordedSeriesContext): Promis
         signal: context.signal,
         apiKey: context.apiKeys?.[context.players[pid]],
         initialNotebook: adopted?.notebooks[pid] ?? context.initialNotebooks?.[pid],
-        carryInNotebook: context.initialNotebooks?.[pid],
         draftRoster: context.draftRosters?.[pid],
         briefing: context.briefings?.[pid],
         closedSheets: context.closedSheets,
@@ -491,7 +490,7 @@ export async function playRecordedSeries(context: RecordedSeriesContext): Promis
       fields.reasoning_by_player = { p1: reasoning.p1 ?? null, p2: reasoning.p2 ?? null };
     }
     const result: RecordedSeries = {
-      coachNotes: { p1: engines.p1.coachingNote(), p2: engines.p2.coachingNote() },
+      coachNotes: { p1: engines.p1.coachingState(), p2: engines.p2.coachingState() },
       winnerSide,
       fields,
     };

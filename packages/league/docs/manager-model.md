@@ -11,7 +11,7 @@ A franchise keeps one manager identity and one private memory throughout the sea
 
 The matchup builder receives the current roster, opponent roster, format, private memory, and schedule-authorized earlier results. It returns one legal team of 6 and a plan.
 
-The battle pilot receives that team, visible battle state, the plan, its notebook, and legal actions. It returns battle choices and may update the series notebook. The notebook cannot change season memory or the roster, but final notes may enter later playoff context.
+The battle pilot receives that team, visible battle state, the plan, its private memory, and legal actions. It returns battle choices and may replace the three strategic memory fields: a team playbook that survives the series, series memory about the current opponent, and a next-game plan. Both opponent fields clear when a tournament entrant advances. The harness separately keeps the results of the pilot's own species, move, item, and ability lookups as verified reference memory. Over-budget replacements are rejected rather than clipped. Battle memory cannot change season memory or the roster, but the final notebook may enter later playoff context.
 
 Pokémon Showdown resolves each game. Completed results feed the next scheduled weekly review, which can update franchise memory.
 

@@ -1,12 +1,22 @@
 import type { AgentContextEvent, AgentContextQuery } from "./agent-context.js";
 import type { ChoiceSubstitution, DecisionLog, GameEnd, GameStart } from "./battle-agent.js";
 import { BaseEngine } from "./battle-agent.js";
+import {
+  createBattleMemory,
+  type BattleMemory,
+  memoryTelemetry,
+  memoryUpdateTelemetry,
+  nextOpponentMemory,
+  rememberVerifiedReference,
+  renderNotebook,
+  serializeBattleMemory,
+} from "./battle-memory.js";
 import type { MenuHints, SlotMenu } from "./choices.js";
 import { buildMenus } from "./choices.js";
 import { LLMEngineContext } from "./llm-engine-context.js";
 import { battleMenuHints } from "./llm-engine-menu.js";
-import { LLMEngineStats } from "./llm-engine-stats.js";
 import { reflectionPrompt, requestReflection } from "./llm-engine-reflection.js";
+import { LLMEngineStats } from "./llm-engine-stats.js";
 import {
   ACTION_ORDER_TOOL,
   ASSUMED_TOKENS_PER_SECOND,
@@ -16,7 +26,6 @@ import {
   DECISION_MAX_ORDER_TOOL_CALLS,
   DECISION_MAX_STANDARD_TOOL_CALLS,
   DECISION_MAX_TOOL_ROUNDS,
-  DECISION_NOTE_LIMIT,
   DECISION_PARSE_ATTEMPTS,
   DECISION_PREFILL,
   decisionPhase,
@@ -27,6 +36,7 @@ import {
   extractChoices,
   FORCE_COMMIT_MS,
   FORCE_COMMIT_TURN_FRACTION,
+  noDecisionEvidence,
   type ParsedDecision,
   type PendingDecision,
   reasoningField,
@@ -66,7 +76,6 @@ import {
   uniqueToolCalls,
 } from "./providers.js";
 import { ShowdownReference } from "./reference.js";
-import { noStageEvidence } from "./stage-evidence.js";
 import { BattleState } from "./state.js";
 import type {
   ActionSubmission,
@@ -81,7 +90,7 @@ import type {
   SubmissionSource,
   ToolDefinition,
 } from "./types.js";
-import { clip, text } from "./value.js";
+import { text } from "./value.js";
 
 /** Thrown when a decision was superseded or yielded to the battle timer; the stale act() must not commit. */
 class DecisionAbandonedError extends Error {
@@ -104,7 +113,6 @@ interface LLMEngineOptions {
   reasoning?: ReasoningLevel;
   signal?: AbortSignal;
   initialNotebook?: string;
-  carryInNotebook?: string;
   draftRoster?: string;
   briefing?: string;
   closedSheets?: boolean;
@@ -120,14 +128,13 @@ export class LLMEngine extends BaseEngine {
   private readonly transcript: BattleTranscript;
   private readonly stats = new LLMEngineStats();
   private readonly dexLookupCache = new Map<string, string>();
-  private notebook: string;
-  private readonly carryInNotebook: string;
+  private memory: BattleMemory;
   private gameId: string;
   private seriesId?: string;
   private gameNumber = 1;
   private seriesScore = { p1: 0, p2: 0 };
   private observedTokensPerSecond: number | undefined;
-  private loggedNotebook = "";
+  private loggedMemoryState = "";
   private pending: PendingDecision | undefined;
   private replayQueue: JsonObject[] = [];
   private generation = 0;
@@ -157,6 +164,10 @@ export class LLMEngine extends BaseEngine {
     this.reference =
       options.reference ??
       new ShowdownReference(options.format ?? "gen9championsvgc2026regmbbo3", options.psDir);
+    this.memory = createBattleMemory(
+      options.initialNotebook,
+      `${this.reference.format}@${this.reference.revision}`,
+    );
     this.state = new BattleState(pid);
     this.context = new LLMEngineContext(
       pid,
@@ -169,8 +180,6 @@ export class LLMEngine extends BaseEngine {
       }),
       (row) => this.writeLog(this.options.contextLog, row),
     );
-    this.notebook = clip(options.initialNotebook?.trim() ?? "", DECISION_NOTE_LIMIT);
-    this.carryInNotebook = clip(options.carryInNotebook?.trim() ?? "", DECISION_NOTE_LIMIT);
     this.gameId = spec;
   }
 
@@ -198,7 +207,11 @@ export class LLMEngine extends BaseEngine {
   }
 
   override coachingNote(): string {
-    return this.notebook;
+    return renderNotebook(this.memory);
+  }
+
+  override coachingState(): string {
+    return serializeBattleMemory(this.memory);
   }
 
   override async endGame(context: GameEnd): Promise<void> {
@@ -280,9 +293,9 @@ export class LLMEngine extends BaseEngine {
       this.replayQueue = [];
       return undefined;
     }
-    if (row.notebook !== undefined) {
-      this.notebook = row.notebook;
-      this.loggedNotebook = row.notebook;
+    if (row.memory_state !== undefined) {
+      this.memory = createBattleMemory(row.memory_state, this.memory.authority);
+      this.loggedMemoryState = serializeBattleMemory(this.memory);
     }
     this.transcript.rememberTurnDetail(`Decision: ${row.action}`);
     this.context.append("decision", {
@@ -293,7 +306,8 @@ export class LLMEngine extends BaseEngine {
       phase,
       action: row.action,
       rationale: row.rationale ?? "",
-      notebook: this.notebook,
+      notebook: renderNotebook(this.memory),
+      memory: memoryTelemetry(this.memory),
       menus: this.context.menus(menus),
       replayed: true,
     });
@@ -329,6 +343,7 @@ export class LLMEngine extends BaseEngine {
     if (cached !== undefined) {
       this.dexLookupCache.delete(key);
       this.dexLookupCache.set(key, cached);
+      this.memory = rememberVerifiedReference(this.memory, name, args, cached);
       return cached;
     }
     const result = this.reference.lookup(name, args);
@@ -337,6 +352,7 @@ export class LLMEngine extends BaseEngine {
       const oldest = this.dexLookupCache.keys().next().value;
       if (oldest !== undefined) this.dexLookupCache.delete(oldest);
     }
+    this.memory = rememberVerifiedReference(this.memory, name, args, result);
     return result;
   }
 
@@ -403,7 +419,7 @@ export class LLMEngine extends BaseEngine {
       slotNames: menus.map((_, slot) => this.state.slotName(slot, request)),
       menus,
       transcript: this.transcript.lines,
-      notebook: this.notebook,
+      memory: this.memory,
       seriesContext: `Series ${this.seriesId ?? "?"}; game ${this.gameNumber}; score ${this.scoreText()}`,
       matchups,
     });
@@ -493,7 +509,7 @@ export class LLMEngine extends BaseEngine {
         const reason = repeated
           ? `${this.spec} failed to submit ${failed.count} consecutive decisions. ${failure.summary}`
           : `${failure.summary} The run cannot continue.`;
-        throw new Error(reason, { cause: cause });
+        throw new Error(reason, { cause });
       }
       return new Promise<number[]>((_resolve, reject) => {
         const abort = () => reject(new DecisionAbandonedError());
@@ -622,7 +638,7 @@ export class LLMEngine extends BaseEngine {
          * empty text field; the decision they wrote is salvaged rather than bought again on a retry. */
         if (!rawResponse && !completion.toolCalls.length && completion.reasoning) {
           try {
-            extractChoices(completion.reasoning, menus, this.notebook);
+            extractChoices(completion.reasoning, menus, this.memory);
             rawResponse = completion.reasoning;
           } catch {}
         }
@@ -647,7 +663,7 @@ export class LLMEngine extends BaseEngine {
         break;
       }
       try {
-        parsed = extractChoices(rawResponse, menus, this.notebook);
+        parsed = extractChoices(rawResponse, menus, this.memory);
         BaseEngine.parts(menus, parsed.choices);
       } catch (caught) {
         parsed = undefined;
@@ -672,7 +688,7 @@ export class LLMEngine extends BaseEngine {
       ({
         choices: BaseEngine.defaults(menus)[0],
         evidence: {
-          ...noStageEvidence(this.notebook),
+          ...noDecisionEvidence(this.memory),
           rationale: `No valid decision (${error}); defaulted to the first legal option for each slot.`,
         },
       } satisfies ParsedDecision);
@@ -756,8 +772,8 @@ export class LLMEngine extends BaseEngine {
     this.pending = undefined;
     if (!pending || pending.generation !== this.generation) return;
     const evidence = automatic
-      ? noStageEvidence(this.notebook)
-      : (pending.evidence ?? noStageEvidence(this.notebook));
+      ? noDecisionEvidence(this.memory)
+      : (pending.evidence ?? noDecisionEvidence(this.memory));
     const rationale = automatic
       ? "Automatic: only one legal joint action."
       : evidence.rationale || "No rationale supplied.";
@@ -766,7 +782,7 @@ export class LLMEngine extends BaseEngine {
       notebook_update: evidence.supplied.notebookUpdate,
     };
     if (!automatic) {
-      this.notebook = evidence.notebook;
+      this.memory = evidence.memory;
       this.stats.decision({
         fallback: pending.fallback ?? false,
         parseFailures: pending.parseFailures ?? 0,
@@ -802,6 +818,9 @@ export class LLMEngine extends BaseEngine {
     const substituted = substitution
       ? { requested_choices: substitution.requested, substitution_reason: substitution.reason }
       : {};
+    const memoryUpdate = memoryUpdateTelemetry(evidence.memoryUpdate);
+    const memory = memoryTelemetry(this.memory);
+    const notebook = renderNotebook(this.memory);
     this.context.append("decision", {
       game_id: this.gameId,
       series_id: this.seriesId ?? null,
@@ -810,7 +829,9 @@ export class LLMEngine extends BaseEngine {
       phase,
       action,
       rationale,
-      notebook: this.notebook,
+      notebook,
+      memory,
+      memory_update: memoryUpdate,
       menus: this.context.menus(menus),
       evidence_supplied: evidenceSupplied,
       automatic,
@@ -829,7 +850,8 @@ export class LLMEngine extends BaseEngine {
       action,
       rationale,
       evidence_supplied: evidenceSupplied,
-      ...this.notebookUpdate(),
+      memory_update: memoryUpdate,
+      ...this.memoryStateUpdate(),
       automatic,
       fallback: pending.fallback ?? false,
       error: pending.error ?? null,
@@ -871,6 +893,7 @@ export class LLMEngine extends BaseEngine {
         ? Math.round(this.observedTokensPerSecond)
         : null,
       tool_calls: pending.toolCalls ?? [],
+      memory_update: memoryUpdate,
       fallback: pending.fallback ?? false,
       error: pending.error ?? null,
       upstream_providers: pending.upstreamProviders?.length ? pending.upstreamProviders : undefined,
@@ -884,18 +907,19 @@ export class LLMEngine extends BaseEngine {
     return this.stats.snapshot();
   }
 
-  private notebookUpdate(): JsonObject {
-    if (this.notebook === this.loggedNotebook) return {};
-    this.loggedNotebook = this.notebook;
-    return { notebook: this.notebook };
+  private memoryStateUpdate(): JsonObject {
+    const state = serializeBattleMemory(this.memory);
+    if (state === this.loggedMemoryState) return {};
+    this.loggedMemoryState = state;
+    return {
+      notebook: renderNotebook(this.memory),
+      memory_state: state,
+      memory: memoryTelemetry(this.memory),
+    };
   }
 
   protected override menuHints(request: BattleRequest): MenuHints | undefined {
     return battleMenuHints(this.state, this.pid, request);
-  }
-
-  static extractChoices(response: string, menus: SlotMenu[], currentNotebook = ""): ParsedDecision {
-    return extractChoices(response, menus, currentNotebook);
   }
 
   private async reflect(context: GameEnd, result: string): Promise<void> {
@@ -923,7 +947,7 @@ export class LLMEngine extends BaseEngine {
       gameLog: Array.isArray(context.outcome.pov_lines)
         ? context.outcome.pov_lines.filter((line): line is string => typeof line === "string")
         : [],
-      notebook: this.notebook,
+      memory: this.memory,
       tournamentStatus: context.tournamentStatus,
       retrospective,
     });
@@ -952,11 +976,13 @@ export class LLMEngine extends BaseEngine {
       review,
       toolRounds,
       toolCalls,
+      memoryRepairAttempts,
+      rejectedMemoryUpdate,
     } = await requestReflection({
       prompt,
-      currentNotebook: this.notebook,
-      fallbackNotebook:
-        context.tournamentStatus === "advancing" ? this.carryInNotebook : this.notebook,
+      currentMemory: () => this.memory,
+      fallbackMemory: () =>
+        context.tournamentStatus === "advancing" ? nextOpponentMemory(this.memory) : this.memory,
       result,
       spec: this.spec,
       tools: this.reflectionTools,
@@ -974,7 +1000,13 @@ export class LLMEngine extends BaseEngine {
       lookupTool: (name, args) => this.lookupReferenceTool(name, args),
     });
     this.stats.reflection(fallback, usage);
-    this.notebook = review.notebook;
+    const opponentScopeReset = context.tournamentStatus === "advancing";
+    this.memory = opponentScopeReset ? nextOpponentMemory(review.memory) : review.memory;
+    const memoryState = serializeBattleMemory(this.memory);
+    const memory = memoryTelemetry(this.memory);
+    const memoryUpdate = memoryUpdateTelemetry(review.memoryUpdate);
+    const notebook = renderNotebook(this.memory);
+    this.loggedMemoryState = memoryState;
     this.transcript.remember(
       review.retrospective
         ? `Tournament retrospective: ${review.summary}`
@@ -996,7 +1028,11 @@ export class LLMEngine extends BaseEngine {
       summary: review.summary,
       adjustment: review.adjustment,
       ...retrospectiveFields,
-      notebook: this.notebook,
+      notebook,
+      memory,
+      memory_update: memoryUpdate,
+      memory_repair_attempts: memoryRepairAttempts,
+      opponent_scope_reset: opponentScopeReset,
       fallback,
     });
     const reflectionLog = {
@@ -1010,7 +1046,13 @@ export class LLMEngine extends BaseEngine {
       summary: review.summary,
       adjustment: review.adjustment,
       ...retrospectiveFields,
-      notebook: this.notebook,
+      notebook,
+      memory_state: memoryState,
+      memory,
+      memory_update: memoryUpdate,
+      memory_repair_attempts: memoryRepairAttempts,
+      rejected_memory_update: rejectedMemoryUpdate,
+      opponent_scope_reset: opponentScopeReset,
       total_tokens: totalTokens(usage),
       ...reasoningField(usage),
       fallback,
@@ -1030,6 +1072,10 @@ export class LLMEngine extends BaseEngine {
       usage,
       tool_rounds: toolRounds,
       tool_calls: toolCalls,
+      memory_update: memoryUpdate,
+      memory_repair_attempts: memoryRepairAttempts,
+      rejected_memory_update: rejectedMemoryUpdate,
+      opponent_scope_reset: opponentScopeReset,
       fallback,
       error: error ?? null,
       error_summary: failureSummary || undefined,

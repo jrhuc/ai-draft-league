@@ -11,6 +11,7 @@ import {
   oneMoveStats,
   request,
   ScriptedProvider,
+  notebook,
 } from "./engine-test-helpers.js";
 
 function megaRequest(): BattleRequest {
@@ -141,7 +142,7 @@ test("an event briefing reaches the provider on decisions and reflections", asyn
   const briefing = "This bracket replays the top 8 of Some Real Open.";
   const briefed = new ScriptedProvider([
     decision([0], "briefed", ""),
-    JSON.stringify({ summary: "s", adjustment: "a", notebook: "n" }),
+    JSON.stringify({ summary: "s", adjustment: "a", notebook: notebook("n") }),
   ]);
   const engine = new LLMEngine("p1", "scripted", { provider: briefed, decisionLog: [], briefing });
   await acceptedAct(engine, request(), { povLines: ["|turn|1"] });
