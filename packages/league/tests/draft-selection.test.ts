@@ -46,7 +46,7 @@ test("a transient provider failure retries instead of ending the draft", async (
   const outcome = await runDraft(
     ["fake:model", "random"],
     { ...BOARD, picks: 4 },
-    { logDir, rng: seededRng(1), makeDraftProvider: () => flaky },
+    { logDir, providerRetryBaseMs: 0, rng: seededRng(1), makeDraftProvider: () => flaky },
   );
   assert.equal(outcome.rosters[0]![0]!.id, "garchomp");
   assert.equal(outcome.picks[0]!.fallback, false);
@@ -65,6 +65,7 @@ test("drafters name their franchise only after every pick is complete", async (t
     { ...BOARD, picks: 4 },
     {
       logDir,
+      providerRetryBaseMs: 0,
       rng: seededRng(1),
       rosterPolicy: "- A test transaction window opens after week 2.",
       reasoningByModel: { "fake:model": "high" },
@@ -131,6 +132,7 @@ test("drafters name their franchise only after every pick is complete", async (t
     { ...BOARD, picks: 4 },
     {
       logDir,
+      providerRetryBaseMs: 0,
       rng: seededRng(1),
       makeDraftProvider: () => ({
         complete(): Promise<Completion> {
@@ -238,6 +240,7 @@ test("drafters can look up the dex before committing a pick", async (t) => {
     { ...BOARD, picks: 4 },
     {
       logDir,
+      providerRetryBaseMs: 0,
       rng: seededRng(7),
       makeDraftProvider: () => ({
         complete(_system, messages, options): Promise<Completion> {
@@ -347,6 +350,7 @@ test("a pick cut off by its token budget is told so, not blamed for formatting",
     { ...BOARD, picks: 4 },
     {
       logDir,
+      providerRetryBaseMs: 0,
       rng: seededRng(8),
       makeDraftProvider: () => ({
         complete(_system, messages, options): Promise<Completion> {
@@ -431,6 +435,7 @@ test("a drafter that never answers falls back to a random legal pick", async (t)
     { ...BOARD, picks: 4 },
     {
       logDir,
+      providerRetryBaseMs: 0,
       rng: seededRng(3),
       makeDraftProvider: () => scriptedProvider(["no json here"]),
     },
@@ -460,6 +465,7 @@ test("a credential failure stops the draft instead of making random picks", asyn
       { ...BOARD, picks: 4 },
       {
         logDir,
+        providerRetryBaseMs: 0,
         rng: seededRng(2),
         makeDraftProvider: () => ({
           complete: () => Promise.reject(new ApiError(401, "invalid api key")),
@@ -478,6 +484,7 @@ test("a pick written only in the reasoning channel is salvaged without another a
     { ...BOARD, picks: 4 },
     {
       logDir,
+      providerRetryBaseMs: 0,
       rng: seededRng(4),
       makeDraftProvider: () => ({
         complete(): Promise<Completion> {
@@ -557,6 +564,7 @@ test("a resumed draft replays its transcript and continues from the next pick", 
     { ...BOARD, picks: 3 },
     {
       logDir,
+      providerRetryBaseMs: 0,
       rng: seededRng(9),
       makeDraftProvider: () => ({
         complete(_system, messages): Promise<Completion> {
@@ -618,6 +626,7 @@ test("an explicit empty draft notebook survives transcript replay", async (t) =>
     { ...BOARD, picks: 2 },
     {
       logDir,
+      providerRetryBaseMs: 0,
       rng: seededRng(12),
       makeDraftProvider: (spec) => ({
         complete(): Promise<Completion> {
@@ -640,6 +649,7 @@ test("an explicit empty draft notebook survives transcript replay", async (t) =>
     { ...BOARD, picks: 2 },
     {
       logDir,
+      providerRetryBaseMs: 0,
       rng: seededRng(12),
       makeDraftProvider: () => ({
         complete(): Promise<Completion> {

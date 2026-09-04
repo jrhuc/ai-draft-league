@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { test } from "vite-plus/test";
-import { setTimeout as delay } from "node:timers/promises";
+import { test, vi } from "vite-plus/test";
 import type { BattleStream } from "pokemon-showdown";
 import { RandomEngine } from "../src/battle-agent.js";
 import { buildMenus, type SlotMenu } from "../src/choices.js";
@@ -211,8 +210,9 @@ test("closed sheets strip the open-team-sheet rules while the stock format keeps
   assert.deepEqual(closed.errors, { p1: 0, p2: 0 });
 });
 
-test("Showdown timer defaults a slow decision", { timeout: 25_000 }, async () => {
+test("Showdown timer defaults a slow decision", async () => {
   const pool = loadPool();
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   class SlowEngine extends RandomEngine {
     private slow = true;
     override async act(
@@ -221,7 +221,7 @@ test("Showdown timer defaults a slow decision", { timeout: 25_000 }, async () =>
     ): Promise<string> {
       if (this.slow) {
         this.slow = false;
-        await delay(11_000);
+        await new Promise((resolve) => setTimeout(resolve, 11_000));
       }
       return super.act(request, context);
     }
@@ -237,17 +237,25 @@ test("Showdown timer defaults a slow decision", { timeout: 25_000 }, async () =>
     1,
   );
   const decisions: JsonObject[] = [];
-  const outcome = await battle.run({
-    p1: new SlowEngine("p1", 1, decisions),
-    p2: new RandomEngine("p2", 2),
-  });
-  assert.ok(outcome.timerAutodefaults.p1 >= 1);
-  assert.ok(outcome.pov.p1.includes("|timer|autodefault"));
-  assert.ok(
-    decisions.some(
-      (row) => row.submission_source === "timer-default" && row.outcome === "accepted",
-    ),
-  );
+  try {
+    let settled = false;
+    const run = battle
+      .run({ p1: new SlowEngine("p1", 1, decisions), p2: new RandomEngine("p2", 2) })
+      .finally(() => {
+        settled = true;
+      });
+    while (!settled) await vi.advanceTimersByTimeAsync(1_000);
+    const outcome = await run;
+    assert.ok(outcome.timerAutodefaults.p1 >= 1);
+    assert.ok(outcome.pov.p1.includes("|timer|autodefault"));
+    assert.ok(
+      decisions.some(
+        (row) => row.submission_source === "timer-default" && row.outcome === "accepted",
+      ),
+    );
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test("timer scale multiplies Showdown timer settings and reseeds the banks", () => {

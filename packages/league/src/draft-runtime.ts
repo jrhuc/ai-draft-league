@@ -41,9 +41,14 @@ import type { DraftPickView } from "./views.js";
 
 const PROVIDER_RETRY_BASE_MS = 5_000;
 
-function providerRetryDelay(attempt: number, signal?: AbortSignal): Promise<void> {
+type RetryDelayOptions = Pick<RunDraftOptions, "providerRetryBaseMs" | "signal">;
+
+function providerRetryDelay(
+  attempt: number,
+  { providerRetryBaseMs = PROVIDER_RETRY_BASE_MS, signal }: RetryDelayOptions,
+): Promise<void> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(done, PROVIDER_RETRY_BASE_MS * attempt);
+    const timer = setTimeout(done, providerRetryBaseMs * attempt);
     function done(): void {
       signal?.removeEventListener("abort", onAbort);
       resolve();
@@ -84,6 +89,7 @@ export interface RunDraftOptions extends ModelReasoningConfig {
   logDir: string;
   rng: Rng;
   signal?: AbortSignal;
+  providerRetryBaseMs?: number;
   rosterPolicy?: string;
   onPick?: (view: DraftPickView, state: DraftState) => void;
   onName?: (entrant: number, teamName: string, state: DraftState) => void;
@@ -244,7 +250,7 @@ async function nameFranchises(
             const failure = classifyProviderFailure(cause, model);
             error = failure.summary;
             if (attempt < FRANCHISE_NAME_PROMPT_POLICY.attempts)
-              await providerRetryDelay(attempt, options.signal);
+              await providerRetryDelay(attempt, options);
           }
           const logEntry: FranchiseNameSeatLog = { attempt, user, response };
           if (attempt === 1) logEntry.system = system;
@@ -402,7 +408,7 @@ export async function runDraft(
             lastError = error;
             if (dropped) {
               if (attempt < DRAFT_PROMPT_POLICY.attempts)
-                await providerRetryDelay(attempt, options.signal);
+                await providerRetryDelay(attempt, options);
             } else {
               messages.push({
                 role: "assistant",
@@ -433,7 +439,7 @@ export async function runDraft(
           lastError = error;
           if (attempt === DRAFT_PROMPT_POLICY.attempts) {
             terminalError = new Error(`${failure.summary} The draft cannot continue.`, { cause });
-          } else await providerRetryDelay(attempt, options.signal);
+          } else await providerRetryDelay(attempt, options);
         }
         const logEntry: DraftSeatLog = {
           pick: pickNumber + 1,
