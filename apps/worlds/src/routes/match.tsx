@@ -93,8 +93,8 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
         <div className="section-head">
           <h2>Replay</h2>
           <p>
-            Replay via <a href="https://pokemonshowdown.com/">Pokémon Showdown</a>. Model reasoning
-            follows each turn. AUTO marks a forced choice.
+            Replay via <a href="https://pokemonshowdown.com/">Pokémon Showdown</a>. Each turn shows
+            the reason the model stated. AUTO marks a forced choice.
           </p>
         </div>
         <ReplayViewer

@@ -1,4 +1,4 @@
-import { PROTECT_MOVES } from "./state.js";
+import { PROTECT_MOVES } from "./perspective-state.js";
 import type { BattleMoveRequest, BattlePokemonRequest, BattleRequest } from "./types.js";
 
 import { afterColon } from "./value.js";

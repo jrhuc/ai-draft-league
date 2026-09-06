@@ -12,7 +12,6 @@ import { text } from "../src/value.js";
 const POLICY = {
   maxTokens: 4096,
   toolRounds: 2,
-  maxCallsPerRound: 2,
 };
 
 function reply(partial: Partial<Completion>): Completion {
@@ -281,4 +280,29 @@ test("extra tools are offered beside the dex tools and dispatched to their own r
   assert.equal(completion.text, '{"sets": []}');
   assert.deepEqual(lookups, [{ name: "read_memory_page", result: "page lessons" }]);
   assert.ok(calls[0]!.options?.tools?.some((tool) => tool.name === "read_memory_page"));
+});
+
+test("reasoning from every tool round survives into the final completion", async () => {
+  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const calls: { messages: ProviderMessage[]; options?: CompleteOptions }[] = [];
+  const provider = scriptedProvider(
+    [
+      reply({
+        reasoning: "First I should check the species.",
+        toolCalls: [{ id: "c1", name: "lookup_species", arguments: { name: "Basculegion-Male" } }],
+      }),
+      reply({ text: '{"sets": []}', reasoning: "Now I can answer." }),
+    ],
+    calls,
+  );
+  const completion = await completeWithDexTools({
+    provider,
+    system: "sys",
+    messages: [{ role: "user", content: "build" }],
+    spec: "openrouter:thinkingmachines/inkling",
+    reference,
+    policy: POLICY,
+  });
+  assert.equal(completion.text, '{"sets": []}');
+  assert.equal(completion.reasoning, "First I should check the species.\n\nNow I can answer.");
 });

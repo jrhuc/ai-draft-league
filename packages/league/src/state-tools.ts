@@ -4,7 +4,7 @@ import type {
   SpeedProfile,
   SpeedProfileInput,
 } from "./reference.js";
-import { type BattleStateView, type MonState, SCREEN_MOVES, stateKey } from "./state-model.js";
+import { type PerspectiveStateView, type MonState, SCREEN_MOVES, stateKey } from "./state-model.js";
 import type { JsonObject, Pid } from "./types.js";
 import { afterColon, text } from "./value.js";
 
@@ -32,7 +32,7 @@ interface PriorityInfo {
   unresolved?: string;
 }
 
-export function activeEntries(state: BattleStateView): MonEntry[] {
+export function activeEntries(state: PerspectiveStateView): MonEntry[] {
   const entries: MonEntry[] = [];
   for (const pid of ["p1", "p2"] as const) {
     const side = state.sides[pid];
@@ -48,13 +48,17 @@ export function activeEntries(state: BattleStateView): MonEntry[] {
   return entries;
 }
 
-export function activeEntry(state: BattleStateView, pid: Pid, slot: number): MonState | undefined {
+export function activeEntry(
+  state: PerspectiveStateView,
+  pid: Pid,
+  slot: number,
+): MonState | undefined {
   const key = state.sides[pid].active[slot === 1 ? "a" : slot === 2 ? "b" : ""];
   const mon = key ? state.sides[pid].mons.get(key) : undefined;
   return mon && !mon.fainted ? mon : undefined;
 }
 
-function findMon(state: BattleStateView, query: string): FoundMon | undefined {
+function findMon(state: PerspectiveStateView, query: string): FoundMon | undefined {
   const activeMatch = findActive(state, query);
   if (activeMatch) return { ...activeMatch, benched: false };
   const normalized = stateKey(query);
@@ -75,7 +79,7 @@ function findMon(state: BattleStateView, query: string): FoundMon | undefined {
   return undefined;
 }
 
-function findActive(state: BattleStateView, query: string): MonEntry | undefined {
+function findActive(state: PerspectiveStateView, query: string): MonEntry | undefined {
   const normalized = stateKey(query);
   const slot = /^(ally|foe)([12])$/.exec(normalized);
   if (slot) {
@@ -105,7 +109,7 @@ function findActive(state: BattleStateView, query: string): MonEntry | undefined
 }
 
 export function speedProfile(
-  state: BattleStateView,
+  state: PerspectiveStateView,
   pid: Pid,
   mon: MonState,
   reference: ShowdownReference,
@@ -155,7 +159,7 @@ function speedOrder(
 }
 
 export function compareActionOrder(
-  state: BattleStateView,
+  state: PerspectiveStateView,
   args: JsonObject,
   reference: ShowdownReference,
 ): string {
@@ -298,7 +302,7 @@ export function compareActionOrder(
 }
 
 export function estimateDamage(
-  state: BattleStateView,
+  state: PerspectiveStateView,
   args: JsonObject,
   reference: ShowdownReference,
 ): string {

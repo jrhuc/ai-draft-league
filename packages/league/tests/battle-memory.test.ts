@@ -137,3 +137,38 @@ test("a bare-string notebook counts as supplied but is rejected", () => {
   assert.strictEqual(update.memory, current);
   assert.match(update.error ?? "", /team_playbook/);
 });
+
+test("partial notebook updates preserve omitted fields and clear only explicitly empty fields", () => {
+  const current = applyMemoryUpdate(emptyBattleMemory("format@revision"), {
+    team_playbook: "Team knowledge",
+    series_memory: "Opponent evidence",
+    next_game_plan: "Previous plan",
+  }).memory;
+  const update = applyMemoryUpdate(current, { next_game_plan: "  Revised plan  " });
+  assert.equal(update.accepted, true);
+  assert.deepEqual(update.memory, { ...current, nextGamePlan: "Revised plan" });
+  assert.deepEqual(applyMemoryUpdate(update.memory, {}).memory, update.memory);
+  assert.deepEqual(applyMemoryUpdate(update.memory, { series_memory: "" }).memory, {
+    ...update.memory,
+    seriesMemory: "",
+  });
+  assert.deepEqual(
+    createBattleMemory(serializeBattleMemory(update.memory), "format@revision"),
+    update.memory,
+  );
+  const oversized = applyMemoryUpdate(current, {
+    team_playbook: "x".repeat(TEAM_PLAYBOOK_CHAR_LIMIT + 1),
+  });
+  assert.equal(oversized.accepted, false);
+  assert.strictEqual(oversized.memory, current);
+});
+
+test("invalid notebook values are rejected without discarding the current memory", () => {
+  const current = createBattleMemory("Existing plan", "format@revision");
+  for (const value of [null, false, 42, [], { team_playbook: null }, { typo: "new note" }]) {
+    const update = applyMemoryUpdate(current, value);
+    assert.equal(update.supplied, true);
+    assert.equal(update.accepted, false);
+    assert.strictEqual(update.memory, current);
+  }
+});

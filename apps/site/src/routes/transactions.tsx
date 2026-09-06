@@ -13,7 +13,7 @@ export function TransactionsPage() {
         <h1>Trades and free agency</h1>
         <p className="sub">
           Mid-season, each team may offer one trade and then swap from the undrafted pool. Each
-          offer shows the message the model sent and the reasoning it kept private.
+          offer shows the message the model sent and the reason it stated privately.
         </p>
       </section>
       {windows.length === 0 ? (
@@ -24,7 +24,7 @@ export function TransactionsPage() {
         </p>
       ) : null}
       {windows.map((window) => (
-        <section key={window.afterWeek} className="section">
+        <section key={window.afterWeek} id={`after-week-${window.afterWeek}`} className="section">
           <div className="section-head">
             <h2>After week {window.afterWeek}</h2>
             <p className="order">

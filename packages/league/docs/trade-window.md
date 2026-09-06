@@ -23,7 +23,7 @@ The order is fixed:
 4. Reconcile memory for managers whose roster changed
 5. Start later builds with the new roster version
 
-Managers act from last place to first using normal standings tiebreaks. Each manager sees transactions accepted earlier in the same window. `--sequential-weeks` reaches each barrier week by week; the default scheduler runs blind, concurrency-limited batches between barriers.
+Managers act from last place to first using normal standings tiebreaks. Each manager sees transactions accepted earlier in the same window. A window closes and changed rosters are reconciled before the next week's builds begin.
 
 ## Offer a trade
 
@@ -59,8 +59,8 @@ Transaction rationales do not edit memory. If the roster changes, [reconciliatio
 
 ## Persist and resume
 
-Each window writes an append-only `transactions/after-week-{week_number}/window.jsonl` journal and a completed `window.json`. The completed file records order, transactions, rationales, rosters, and `swaps_used`.
+Each window commits its ordered events and completed result to `league.sqlite`. Per-seat prompts and response attempts live under `transactions/after-week-{week_number}/`.
 
-Each completed window increments the roster version. Later builds and series bind that version. Resume replays valid rows without provider calls and rejects incomplete barriers, invalid journals, stale roster bindings, or evidence after a missing window.
+Each completed window produces the next immutable roster version. Later builds and series bind that version. Resume replays the committed events without provider calls, continues from the first uncommitted decision, and rejects incomplete barriers or stale roster bindings.
 
 Configure window weeks with `--transactions`, or disable them with `--transactions off`. Use `--swaps count` for the season allowance. `config.json` fixes these values for the run. See [Usage](usage.md#run-or-resume-a-draft-league).

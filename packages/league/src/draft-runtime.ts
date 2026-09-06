@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { createBoardSearch } from "./board-search.js";
+import { DecisionSession } from "./decision-session.js";
 import { completeWithDexTools, type DexToolRequest } from "./dex-lookups.js";
 import {
   applyDraftPick,
@@ -23,8 +24,8 @@ import {
   parsePick,
   snakeOrder,
 } from "./draft-protocol.js";
-import { appendJsonlObject, readJsonlObjects } from "./jsonl.js";
 import { defaultPsDir } from "./paths.js";
+import { commitRunArtifact, readRunArtifacts } from "./run-artifact-store.js";
 import type { ModelReasoningConfig, ReasoningLevel } from "./providers.js";
 import {
   classifyProviderFailure,
@@ -35,7 +36,7 @@ import {
 import type { Rng } from "./random.js";
 import { ShowdownReference } from "./reference.js";
 import type { StageEvidence } from "./stage-evidence.js";
-import type { JsonObject, Provider, ProviderMessage } from "./types.js";
+import type { JsonObject, JsonValue, Provider, ProviderMessage } from "./types.js";
 import { clip, fileSlug } from "./value.js";
 import type { DraftPickView } from "./views.js";
 
@@ -68,6 +69,7 @@ interface DraftSeatLog {
   system?: string;
   user: string;
   response: string;
+  reasoning?: string;
   usage?: Record<string, number>;
   finish_reason?: string;
   tool_lookups?: { name: string; arguments: JsonObject; result: string }[];
@@ -79,11 +81,13 @@ interface FranchiseNameSeatLog {
   system?: string;
   user: string;
   response: string;
+  reasoning?: string;
   usage?: Record<string, number>;
   error?: string;
 }
 
 export interface RunDraftOptions extends ModelReasoningConfig {
+  runDir?: string;
   psDir?: string;
   apiKeys?: Readonly<Record<string, string>>;
   logDir: string;
@@ -114,18 +118,20 @@ interface ReplayTranscriptResult {
 }
 
 function replayTranscript(
-  file: string,
+  rows: readonly JsonValue[],
+  label: string,
   state: DraftState,
   context: ReplayTranscriptContext,
 ): ReplayTranscriptResult {
-  const rows = readJsonlObjects(file).map((row) => draftTranscriptRowSchema.parse(row));
+  const parsedRows = rows.map((row) => draftTranscriptRowSchema.parse(row));
   let replayedState = state;
-  for (const [index, row] of rows.entries()) {
+  for (const [index, row] of parsedRows.entries()) {
     const drafter = context.order[index];
-    if (drafter === undefined) throw new Error(`${file} holds more picks than the draft has slots`);
+    if (drafter === undefined)
+      throw new Error(`${label} holds more picks than the draft has slots`);
     if (row.model !== context.models[drafter]) {
       throw new Error(
-        `${file} pick ${index + 1} belongs to ${row.model}, expected ${context.models[drafter]}`,
+        `${label} pick ${index + 1} belongs to ${row.model}, expected ${context.models[drafter]}`,
       );
     }
     try {
@@ -136,12 +142,12 @@ function replayTranscript(
       });
     } catch (cause) {
       const reason = cause instanceof Error ? cause.message : String(cause);
-      throw new Error(`${file} pick ${index + 1} is invalid: ${reason}`, { cause });
+      throw new Error(`${label} pick ${index + 1} is invalid: ${reason}`, { cause });
     }
     const mon = replayedState.rosters[drafter]!.at(-1)!;
     if (row.budget_left !== undefined && row.budget_left !== replayedState.budgets[drafter]) {
       throw new Error(
-        `${file} pick ${index + 1} leaves ${replayedState.budgets[drafter]} points, but the transcript recorded ${row.budget_left}`,
+        `${label} pick ${index + 1} leaves ${replayedState.budgets[drafter]} points, but the transcript recorded ${row.budget_left}`,
       );
     }
     if (row.team_name && !replayedState.teamNames[drafter])
@@ -157,33 +163,30 @@ function replayTranscript(
     context.picks.push(view);
     context.onPick?.(view, replayedState);
   }
-  return { count: rows.length, state: replayedState };
+  return { count: parsedRows.length, state: replayedState };
 }
 
-function replayFranchiseNames(file: string, models: readonly string[], state: DraftState): void {
-  let raw: string;
-  try {
-    raw = fs.readFileSync(file, "utf8");
-  } catch {
-    return;
-  }
-  for (const line of raw.split("\n")) {
-    if (!line.trim()) continue;
-    const row = franchiseNameTranscriptRowSchema.parse(JSON.parse(line));
+function replayFranchiseNames(
+  rows: readonly JsonValue[],
+  models: readonly string[],
+  state: DraftState,
+): void {
+  for (const value of rows) {
+    const row = franchiseNameTranscriptRowSchema.parse(value);
     const entrant = row.entrant;
     if (entrant < 0 || entrant >= models.length) {
-      throw new Error(`${file} holds an invalid franchise-name entrant`);
+      throw new Error("stored franchise name has an invalid entrant");
     }
     if (row.model !== models[entrant]) {
       throw new Error(
-        `${file} names ${row.model} for entrant ${entrant}, expected ${models[entrant]}`,
+        `stored franchise name names ${row.model} for entrant ${entrant}, expected ${models[entrant]}`,
       );
     }
     const parsed = parseFranchiseName(JSON.stringify({ team_name: row.team_name }));
     if (isRejection(parsed))
-      throw new Error(`${file} holds an invalid franchise name for entrant ${entrant}`);
+      throw new Error(`stored franchise name is invalid for entrant ${entrant}`);
     if (state.teamNames[entrant] && state.teamNames[entrant] !== parsed.teamName) {
-      throw new Error(`${file} conflicts with the draft transcript for entrant ${entrant}`);
+      throw new Error(`stored franchise name conflicts with the draft for entrant ${entrant}`);
     }
     state.teamNames[entrant] = parsed.teamName;
   }
@@ -195,8 +198,12 @@ async function nameFranchises(
   state: DraftState,
   options: RunDraftOptions,
 ): Promise<void> {
-  const transcript = path.join(options.logDir, "franchise-names.jsonl");
-  replayFranchiseNames(transcript, models, state);
+  const runDir = options.runDir ?? options.logDir;
+  replayFranchiseNames(
+    readRunArtifacts(runDir, "draft-franchise-name").map((row) => row.value),
+    models,
+    state,
+  );
   await Promise.all(
     models.map(async (model, entrant) => {
       if (state.teamNames[entrant]) {
@@ -213,6 +220,12 @@ async function nameFranchises(
         const messages: ProviderMessage[] = [
           { role: "user", content: franchiseNameUserPrompt(state.rosters[entrant]!) },
         ];
+        const session = new DecisionSession({
+          messages,
+          tools: [],
+          lookup: () => "No tools are available for franchise naming.",
+          signal: options.signal,
+        });
         const seatLog = path.join(options.logDir, `namer-${entrant}-${fileSlug(model)}.jsonl`);
         for (
           let attempt = 1;
@@ -223,14 +236,24 @@ async function nameFranchises(
           const user = messages[messages.length - 1]!.content ?? "";
           let response = "";
           let usage: Record<string, number> | undefined;
+          let reasoningTrace: string | undefined;
           let error: string | undefined;
           try {
-            const completion = await provider.complete(system, messages, {
-              maxTokens: FRANCHISE_NAME_PROMPT_POLICY.maxTokens,
-              signal: options.signal,
+            const completion = await session.completeToolLoop({
+              maxToolRounds: 1,
+              finalNotice: "Reply now with only the franchise name JSON object.",
+              complete: (currentMessages, _final, remainingOutputTokens) =>
+                provider.complete(system, currentMessages, {
+                  maxTokens: Math.min(
+                    FRANCHISE_NAME_PROMPT_POLICY.maxTokens,
+                    remainingOutputTokens,
+                  ),
+                  signal: options.signal,
+                }),
             });
             response = completion.text;
             usage = completion.usage;
+            reasoningTrace = completion.reasoning;
             const parsed = parseFranchiseName(response);
             if (isRejection(parsed)) {
               error = parsed;
@@ -255,6 +278,7 @@ async function nameFranchises(
           const logEntry: FranchiseNameSeatLog = { attempt, user, response };
           if (attempt === 1) logEntry.system = system;
           if (usage) logEntry.usage = usage;
+          if (reasoningTrace) logEntry.reasoning = reasoningTrace;
           if (error) logEntry.error = error;
           fs.appendFileSync(seatLog, `${JSON.stringify(logEntry)}\n`, "utf8");
         }
@@ -264,13 +288,14 @@ async function nameFranchises(
         fallback = true;
       }
       state.teamNames[entrant] = teamName;
-      appendJsonlObject(transcript, {
+      const row = {
         entrant,
         model,
         team_name: teamName,
         fallback,
         timestamp: new Date().toISOString(),
-      });
+      };
+      commitRunArtifact(runDir, "draft-franchise-name", String(entrant).padStart(6, "0"), row);
       options.onName?.(entrant, teamName, state);
     }),
   );
@@ -317,18 +342,23 @@ export async function runDraft(
   const seatLogs = models.map((model, index) =>
     path.join(options.logDir, `drafter-${index}-${fileSlug(model)}.jsonl`),
   );
-  const transcript = path.join(options.logDir, "draft.jsonl");
+  const runDir = options.runDir ?? options.logDir;
   const picks: DraftPickView[] = [];
   const notebooks = models.map(() => "");
 
   const order = snakeOrder(models.length, board.picks);
-  const replayed = replayTranscript(transcript, state, {
-    models,
-    order,
-    picks,
-    notebooks,
-    onPick: options.onPick,
-  });
+  const replayed = replayTranscript(
+    readRunArtifacts(runDir, "draft-pick").map((row) => row.value),
+    "stored draft",
+    state,
+    {
+      models,
+      order,
+      picks,
+      notebooks,
+      onPick: options.onPick,
+    },
+  );
   state = replayed.state;
   for (const [pickNumber, drafter] of order.entries()) {
     if (pickNumber < replayed.count) continue;
@@ -362,6 +392,7 @@ export async function runDraft(
         const promptForAttempt = messages[messages.length - 1]!.content ?? "";
         let response = "";
         let usage: Record<string, number> | undefined;
+        let reasoningTrace: string | undefined;
         let finishReason: string | undefined;
         let error: string | undefined;
         let terminalError: Error | undefined;
@@ -381,6 +412,7 @@ export async function runDraft(
           const completion = await completeWithDexTools(request);
           response = completion.text;
           usage = completion.usage;
+          reasoningTrace = completion.reasoning;
           finishReason = completion.finishReason;
           const dropped = (usage.output_tokens ?? 0) === 0 && (usage.input_tokens ?? 0) === 0;
           const truncated = completion.outputLimitReached;
@@ -449,6 +481,7 @@ export async function runDraft(
         };
         if (attempt === 1) logEntry.system = system;
         if (usage) logEntry.usage = usage;
+        if (reasoningTrace) logEntry.reasoning = reasoningTrace;
         if (finishReason) logEntry.finish_reason = finishReason;
         if (lookups.length) logEntry.tool_lookups = lookups;
         if (error) logEntry.error = error;
@@ -509,7 +542,7 @@ export async function runDraft(
     };
     if (evidence.supplied.notebookUpdate || evidence.notebook)
       transcriptRow.notebook = evidence.notebook;
-    appendJsonlObject(transcript, transcriptRow);
+    commitRunArtifact(runDir, "draft-pick", String(pickNumber + 1).padStart(6, "0"), transcriptRow);
     options.onPick?.(view, state);
   }
 

@@ -1,16 +1,6 @@
-import { createHash } from "node:crypto";
-
-import { defaultPsDir } from "./paths.js";
 import { type MechanicsToolAvailability, mechanicsToolNotice } from "./prompt-capabilities.js";
 import { FORMAT_AUTHORITY_NOTICE, renderPromptTemplate } from "./prompts.js";
-import { loadShowdown } from "./showdown.js";
-import {
-  strictTeamBuildTask,
-  type TeamBuildObjective,
-  type TeamBuildRefereeOptions,
-  type TeamBuildSheetPolicy,
-  type TeamBuildTask,
-} from "./teambuild-protocol.js";
+import { type TeamBuildSheetPolicy, type TeamBuildTask } from "./teambuild-protocol.js";
 import { type DexLike, legalItems, legalMoves } from "./teambuild-validation.js";
 
 const MATCHUP_AVAILABLE_MECHANICS_TOOLS = [
@@ -74,7 +64,6 @@ export const TEAMBUILD_PROMPT_POLICY = {
   maxTokens: 65_536,
   attempts: 5,
   toolRounds: 16,
-  maxCallsPerRound: 8,
 } as const;
 
 const GENERAL_TEAMBUILD_PROMPT_POLICY = {
@@ -230,51 +219,4 @@ export function teamBuildUserPrompt(task: TeamBuildTask, dex: DexLike): string {
     );
   }
   return lines.join("\n");
-}
-
-export function connectedTeamBuildPromptRevision(
-  objective: TeamBuildObjective,
-  sheetPolicy: TeamBuildSheetPolicy,
-  mechanicsTools: MechanicsToolAvailability = "available",
-): string {
-  const policy =
-    objective.kind === "matchup"
-      ? [TEAMBUILD_PROMPT_POLICY, TEAMBUILD_RENDERER_PROTOCOL, sheetPolicy, "strict"]
-      : [
-          TEAMBUILD_PROMPT_POLICY,
-          GENERAL_TEAMBUILD_PROMPT_POLICY,
-          TEAMBUILD_RENDERER_PROTOCOL,
-          sheetPolicy,
-          "strict",
-        ];
-  const revision = createHash("sha256").update(JSON.stringify(policy)).digest("hex").slice(0, 12);
-  return createHash("sha256")
-    .update(JSON.stringify([revision, "system-blank-line-user-v1", mechanicsTools]))
-    .digest("hex")
-    .slice(0, 12);
-}
-
-export function renderStrictTeamBuildPrompt(
-  task: TeamBuildTask,
-  options: Pick<TeamBuildRefereeOptions, "psDir"> & {
-    mechanicsTools?: MechanicsToolAvailability;
-  } = {},
-): string {
-  const canonical = strictTeamBuildTask(task);
-  const psDir = options.psDir ?? defaultPsDir();
-  const { Dex } = loadShowdown(psDir);
-  const format = Dex.formats.get(canonical.format);
-  const dex = Dex.mod(format.mod || "base");
-  const rules = Dex.formats.getRuleTable(format);
-  return [
-    teamBuildSystemPrompt(
-      canonical,
-      dex,
-      rules.evLimit ?? 508,
-      32,
-      options.mechanicsTools ?? "available",
-    ),
-    "",
-    teamBuildUserPrompt(canonical, dex),
-  ].join("\n");
 }

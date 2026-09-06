@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 
 import { writeAtomicJson } from "./atomic-json.js";
@@ -9,16 +8,16 @@ import { defaultPsDir, RESULTS_PATH } from "./paths.js";
 import type { ModelReasoningConfig } from "./providers.js";
 import { validateModelExecution } from "./providers.js";
 import { resolveSeed, seededRng, seriesEntropy, shuffle } from "./random.js";
-import type { ParsedSeriesRecord, SeriesRecord } from "./records.js";
-import { appendRow, loadSeriesRecords } from "./records.js";
+import type { SeriesRecord } from "./records.js";
+import { recordRow } from "./records.js";
 import type { RotationEvent } from "./rotation.js";
 import type { ExperimentOptions, RecordedSeriesContext } from "./series.js";
-import { playRecordedSeries, readCompletedSeriesEvidence } from "./series.js";
+import { MatchRunner } from "./series.js";
 import { showdownCommit } from "./showdown.js";
 import type { PoolEvent, Team } from "./teams.js";
 import { loadPool, validatePool, validateTeam } from "./teams.js";
 import { DEFAULT_TIMER_SCALE } from "./timer.js";
-import type { ContributorAttribution, JsonObject, Pid, TimerScale } from "./types.js";
+import type { ContributorAttribution, Pid, TimerScale } from "./types.js";
 
 export type TournamentEvent =
   | RotationEvent
@@ -378,107 +377,8 @@ export async function runTournament(
     seed,
   });
 
-  const validateStoredMatch = (
-    match: BracketMatch,
-    row: ParsedSeriesRecord,
-  ): Omit<PlayMatchResult, "row"> => {
-    const index = match.seriesIndex!;
-    const sides = { p1: entrants[match.slots[0]!]!, p2: entrants[match.slots[1]!]! };
-    const evidenceContext: RecordedSeriesContext = {
-      players: { p1: sides.p1.model, p2: sides.p2.model },
-      teams: { p1: sides.p1.team, p2: sides.p2.team },
-      seriesIndex: index,
-      gameSeeds: seriesSeeds[index]!.gameSeeds,
-      engineSeeds: seriesSeeds[index]!.engineSeeds,
-      format,
-      psDir,
-      runDir,
-      requireWinner: true,
-      timerScale,
-      tournamentRound: match.round === rounds.length - 1 ? "final" : "round",
-      briefings: { p1: briefingFor(match), p2: briefingFor(match) },
-      initialNotebooks: initialNotebooksFor(match),
-      reasoningByModel: options.reasoningByModel,
-      reasoning: options.reasoning,
-    };
-    const canonical = readCompletedSeriesEvidence(evidenceContext);
-    if (!canonical.winnerSide) {
-      throw new Error(`run ${runId} tournament series ${index} has no canonical winner`);
-    }
-    const storedFields: JsonObject = {
-      series_id: row.series_id,
-      attempt_id: row.attempt_id,
-      format: row.format,
-      players: row.players,
-      teams: row.teams,
-      winner: row.winner,
-      winner_side: row.winner_side,
-      score: row.score,
-      turns: row.turns,
-      games: row.games,
-      engine_seeds: row.engine_seeds,
-      timer_scale: row.timer_scale,
-      reasoning: row.reasoning,
-      sampling: "provider-default",
-    };
-    if (row.closed_sheets !== undefined) storedFields.closed_sheets = row.closed_sheets;
-    if (row.reasoning_by_player !== undefined)
-      storedFields.reasoning_by_player = row.reasoning_by_player;
-    const winner = match.slots[canonical.winnerSide === "p1" ? 0 : 1]!;
-    if (
-      row.schema_version !== 1 ||
-      row.mode !== "tournament" ||
-      row.series_index !== index ||
-      row.round !== match.round + 1 ||
-      row.entrant_count !== entrants.length ||
-      !isDeepStrictEqual(row.seeds, { p1: match.slots[0], p2: match.slots[1] }) ||
-      row.provenance !== provenance ||
-      row.pool !== (poolId ?? undefined) ||
-      row.advanced !== entrants[winner]!.model ||
-      row.run_seed !== seed ||
-      row.ps_commit !== showdownCommit(psDir) ||
-      !isDeepStrictEqual(storedFields, canonical.fields)
-    ) {
-      throw new Error(
-        `run ${runId} tournament series ${index} does not match its canonical completed series evidence`,
-      );
-    }
-    return {
-      winnerSide: canonical.winnerSide,
-      winnerNote: canonical.coachNotes[canonical.winnerSide],
-    };
-  };
-
   const results: SeriesRecord[] = [];
   const started = new Set<number>();
-  if (stored) {
-    const recorded = new Map<number, ParsedSeriesRecord>();
-    for (const row of loadSeriesRecords(recordsPath)) {
-      if (row.run_id !== runId || row.mode !== "tournament") continue;
-      const index = row.series_index;
-      if (recorded.has(index))
-        throw new Error(`run ${runId} repeats tournament series ${index}; it cannot resume`);
-      recorded.set(index, row);
-    }
-    let settled = true;
-    while (settled) {
-      settled = false;
-      for (const match of rounds.flat()) {
-        if (match.seriesIndex === null || started.has(match.seriesIndex)) continue;
-        if (match.slots[0] === null || match.slots[1] === null) continue;
-        const row = recorded.get(match.seriesIndex);
-        if (!row) continue;
-        const { winnerSide, winnerNote } = validateStoredMatch(match, row);
-        const winner = match.slots[winnerSide === "p1" ? 0 : 1]!;
-        notebooks[winner] = winnerNote;
-        rounds = applyBracketOutcome(rounds, match, winnerSide);
-        started.add(match.seriesIndex);
-        results.push(row);
-        options.onEvent?.({ type: "series-end", index: match.seriesIndex, record: row });
-        settled = true;
-      }
-    }
-  }
   options.onEvent?.({ type: "bracket", bracket: bracketView() });
 
   const active = new Set<Promise<void>>();
@@ -514,7 +414,7 @@ export async function runTournament(
       const winner = match.slots[winnerSide === "p1" ? 0 : 1]!;
       notebooks[winner] = winnerNote;
       rounds = applyBracketOutcome(rounds, match, winnerSide);
-      appendRow(recordsPath, row);
+      recordRow(recordsPath, row);
       results.push(row);
       options.onEvent?.({ type: "series-end", index: match.seriesIndex!, record: row });
       options.onEvent?.({ type: "bracket", bracket: bracketView() });
@@ -591,7 +491,7 @@ async function playMatch(
     apiKeys: context.apiKeys,
     signal: context.signal,
   };
-  const { winnerSide, fields, coachNotes } = await playRecordedSeries(seriesContext);
+  const { winnerSide, fields, coachNotes } = await new MatchRunner(seriesContext).run();
 
   if (!winnerSide) throw new Error(`single-elimination series ${index + 1} ended without a winner`);
   const winner = match.slots[winnerSide === "p1" ? 0 : 1]!;

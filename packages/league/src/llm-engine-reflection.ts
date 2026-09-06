@@ -7,19 +7,16 @@ import {
   renderVerifiedReferenceMemory,
 } from "./battle-memory.js";
 import type { GameEnd } from "./battle-agent.js";
+import { DecisionSession } from "./decision-session.js";
 import {
   extractReflection,
   extractTournamentRetrospective,
   type Reflection,
 } from "./llm-engine-support.js";
-import {
-  assistantToolMessage,
-  classifyProviderFailure,
-  toolResultMessage,
-  uniqueToolCalls,
-} from "./providers.js";
+import { classifyProviderFailure } from "./providers.js";
 import type { Completion, JsonObject, Pid, ProviderMessage, ToolDefinition } from "./types.js";
 import { count } from "./value.js";
+import type { ToolQueryResult } from "./tool-batch.js";
 
 export function reflectionPrompt(input: {
   seriesId: string | undefined;
@@ -93,6 +90,7 @@ export async function requestReflection(input: {
   complete: (messages: ProviderMessage[], finalRound: boolean) => Promise<Completion>;
   lookupTool: (name: string, args: JsonObject) => string;
   retrospective: boolean;
+  signal?: AbortSignal | undefined;
 }) {
   const messages: ProviderMessage[] = [{ role: "user", content: input.prompt }];
   const usage: Record<string, number> = {};
@@ -104,41 +102,28 @@ export async function requestReflection(input: {
   let toolRounds = 0;
   let memoryRepairAttempts = 0;
   let rejectedMemoryUpdate: JsonObject | undefined;
-  const toolCalls: Array<{ name: string; arguments: JsonObject; result: string }> = [];
-  const offered = new Set(input.tools.map((tool) => tool.name));
+  const toolCalls: ToolQueryResult[] = [];
+  const reasoningParts: string[] = [];
+  const session = new DecisionSession({
+    messages,
+    tools: input.tools,
+    lookup: input.lookupTool,
+    signal: input.signal,
+  });
   try {
     for (let attempt = 0; attempt < 2 && !parsed; attempt += 1) {
-      let completion: Completion | undefined;
-      for (let round = 0; round <= 2; round += 1) {
-        const finalRound = round === 2;
-        completion = await input.complete(messages, finalRound);
-        for (const [key, value] of Object.entries(completion.usage)) {
-          usage[key] = (usage[key] ?? 0) + (key === "cost" ? value : Math.trunc(value));
-        }
-        if (!finalRound && completion.toolCalls.length) {
-          toolRounds += 1;
-          messages.push(assistantToolMessage(completion));
-          const calls = uniqueToolCalls(completion.toolCalls);
-          for (const [index, call] of calls.entries()) {
-            let result: string;
-            try {
-              result =
-                index >= 8
-                  ? "Not executed: this review round is limited to 8 tool calls."
-                  : offered.has(call.name)
-                    ? input.lookupTool(call.name, call.arguments)
-                    : `Not executed: tool ${JSON.stringify(call.name)} is not available during review.`;
-            } catch (caught) {
-              result = `Tool error: ${caught instanceof Error ? caught.message : String(caught)}`;
-            }
-            toolCalls.push({ name: call.name, arguments: call.arguments, result });
-            messages.push(toolResultMessage(call.id, result));
-          }
-          continue;
-        }
-        break;
+      const completion = await session.completeToolLoop({
+        maxToolRounds: 2,
+        finalNotice:
+          "Tool budget for this review is exhausted; reply now with exactly the required JSON object.",
+        complete: (currentMessages, finalRound) => input.complete(currentMessages, finalRound),
+      });
+      toolRounds = completion.toolRounds;
+      toolCalls.splice(0, toolCalls.length, ...completion.toolQueries);
+      if (completion.reasoning) reasoningParts.push(completion.reasoning);
+      for (const [key, value] of Object.entries(completion.usage)) {
+        usage[key] = (usage[key] ?? 0) + (key === "cost" ? value : Math.trunc(value));
       }
-      if (!completion) throw new Error("reflection completion unavailable");
       rawResponse = completion.text;
       if (!rawResponse.trim() && completion.reasoning) {
         try {
@@ -175,6 +160,7 @@ export async function requestReflection(input: {
       }
     }
   } catch (caught) {
+    input.signal?.throwIfAborted();
     error = caught instanceof Error ? caught.message : String(caught);
     const failure = classifyProviderFailure(caught, input.spec);
     failureSummary = failure.summary;
@@ -201,6 +187,7 @@ export async function requestReflection(input: {
   return {
     usage,
     rawResponse,
+    reasoning: reasoningParts.join("\n\n").trim() || null,
     error,
     failureSummary,
     failureKind,

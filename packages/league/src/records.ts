@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import { z } from "zod";
 import { appendJsonlObject, readJsonlObjects } from "./jsonl.js";
@@ -155,7 +154,6 @@ const rowCache = new Map<string, { mtimeMs: number; size: number; rows: ParsedSe
 interface RecordsMutation {
   load: () => ParsedSeriesRecord[];
   append: (row: JsonObject) => void;
-  replace: (rows: readonly ParsedSeriesRecord[]) => void;
 }
 
 /** Holds the one records journal lease across a complete append, import, or removal transaction. */
@@ -173,23 +171,6 @@ function mutateRecords<T>(file: string, task: (mutation: RecordsMutation) => T):
       appendJsonlObject(file, parseSeriesRecord(row, `record appended to ${file}`));
       rowCache.delete(file);
     },
-    replace: (rows) => {
-      const staged = `${file}.${randomUUID()}.tmp`;
-      try {
-        fs.writeFileSync(
-          staged,
-          rows.length ? `${rows.map((row) => JSON.stringify(row)).join("\n")}\n` : "",
-          {
-            encoding: "utf8",
-            flag: "wx",
-          },
-        );
-        fs.renameSync(staged, file);
-        rowCache.delete(file);
-      } finally {
-        fs.rmSync(staged, { force: true });
-      }
-    },
   };
   try {
     return task(mutation);
@@ -198,8 +179,15 @@ function mutateRecords<T>(file: string, task: (mutation: RecordsMutation) => T):
   }
 }
 
-export function appendRow(file: string, row: JsonObject): void {
-  mutateRecords(file, ({ append }) => append(row));
+/** Projects one series result; a series already on the ledger keeps its first projection. */
+export function recordRow(file: string, row: JsonObject): void {
+  mutateRecords(file, ({ load, append }) => {
+    const parsed = parseSeriesRecord(row, `record appended to ${file}`);
+    const recorded = load().some(
+      (existing) => existing.run_id === parsed.run_id && existing.series_id === parsed.series_id,
+    );
+    if (!recorded) append(parsed);
+  });
 }
 
 /** Cached by mtime and size; callers must treat the returned rows as immutable. */

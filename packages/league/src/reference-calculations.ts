@@ -126,6 +126,7 @@ interface ScratchDamage {
   moveType: string;
   basePower: number;
   hits: [number, number];
+  knockedOut: boolean;
 }
 
 interface ScratchDamageConfig {
@@ -487,7 +488,7 @@ export function estimateDamage(
     };
   }
 
-  const run = (offValue: number, defValue: number, rollPercent: 85 | 100) =>
+  const run = (offValue: number, defValue: number, defenderMaxHp: number, rollPercent: 85 | 100) =>
     scratchDamage(context, {
       attacker,
       defender,
@@ -501,7 +502,7 @@ export function estimateDamage(
       defenderBoosts: boosts.defender,
       attackerStatus: statuses.attacker,
       defenderStatus: statuses.defender,
-      defenderMaxHp: exactHp,
+      defenderMaxHp,
       screens,
       weather: weatherId,
       terrain: terrainId,
@@ -518,8 +519,8 @@ export function estimateDamage(
   let low: ScratchDamage;
   let high: ScratchDamage;
   try {
-    low = run(offLow, defHigh, 85);
-    high = run(offHigh, defLow, 100);
+    low = run(offLow, defHigh, hpHigh, 85);
+    high = run(offHigh, defLow, hpLow, 100);
   } catch (error) {
     return `Damage engine error: ${error instanceof Error ? error.message : String(error)}`;
   }
@@ -540,23 +541,24 @@ export function estimateDamage(
   if (low.outcome === "none" || high.outcome === "none")
     return `${move.name} has no standard damage output to estimate.`;
 
-  const minTotal = low.damage * low.hits[0];
-  const maxTotal = high.damage * high.hits[1];
+  const minTotal = low.damage;
+  const maxTotal = high.damage;
   const pct = (damage: number, hp: number) => Math.round((damage / hp) * 1000) / 10;
-  const minimumPercent = pct(minTotal, hpHigh);
-  const maximumPercent = pct(maxTotal, hpLow);
+  const lowPercent = pct(minTotal, hpHigh);
+  const highPercent = pct(maxTotal, hpLow);
+  const minimumPercent = Math.min(lowPercent, highPercent);
+  const maximumPercent = Math.max(lowPercent, highPercent);
   const targetPercent = hpPercent ?? 100;
   const fullHealth = targetPercent === 100;
-  const guaranteed = 100 * minTotal >= targetPercent * hpHigh;
-  const possible = 100 * maxTotal >= targetPercent * hpLow;
+  const koLabel = fullHealth ? "OHKO" : `KO from the shown ${Math.round(targetPercent)}%`;
   const outcome =
     targetPercent <= 0
       ? "Target is already at 0%."
-      : guaranteed
-        ? `Guaranteed ${fullHealth ? "OHKO" : `KO from the shown ${Math.round(targetPercent)}%`} across the full legal range.`
-        : possible
-          ? `Possible ${fullHealth ? "OHKO" : `KO from the shown ${Math.round(targetPercent)}%`}, not guaranteed across the legal range.`
-          : `Cannot ${fullHealth ? "OHKO" : `KO from the shown ${Math.round(targetPercent)}%`} in this estimate.`;
+      : low.knockedOut && high.knockedOut
+        ? `${koLabel} at both evaluated endpoints.`
+        : low.knockedOut || high.knockedOut
+          ? `${koLabel} at one evaluated endpoint only.`
+          : `No ${koLabel} at either evaluated endpoint.`;
   const shownHp = hpPercent === undefined ? "" : ` Target HP shown: ${Math.round(hpPercent)}%.`;
   const attackBasis =
     exactOff !== undefined
@@ -606,7 +608,7 @@ export function estimateDamage(
     hits[1] > 1 ? ` x${hits[0] === hits[1] ? hits[0] : `${hits[0]}-${hits[1]}`} hits` : "";
   const bpText = high.basePower > 0 ? `BP ${high.basePower}` : "fixed damage";
   const notesText = notes.length ? ` Notes: ${notes.join("; ")}.` : "";
-  return `${attacker.name} ${move.name} (${moveType} ${move.category} ${bpText}${hitsText}) into ${defender.name}: ${minimumPercent}-${maximumPercent}% of maximum HP.${shownHp} ${outcome} ${effectivenessDetail(context.dex, moveType, defender.types)}; ${appliedText}; ${attackBasis}, ${defenseBasis}.${notesText}`;
+  return `${attacker.name} ${move.name} (${moveType} ${move.category} ${bpText}${hitsText}) into ${defender.name}: ${minimumPercent}-${maximumPercent}% of maximum HP before survival effects.${shownHp} ${outcome} Hit outcomes assume the selected hits connect; endpoints do not establish exhaustive KO certainty. ${effectivenessDetail(context.dex, moveType, defender.types)}; ${appliedText}; ${attackBasis}, ${defenseBasis}.${notesText}`;
 }
 
 function scratchDamage(
@@ -636,6 +638,7 @@ function scratchDamage(
       ? scratchSet(ally.name, ally.ability ?? "Honey Gather", ally.item ?? "", ["Splash"])
       : filler();
   const battle = new context.showdown.Battle({
+    seed: "1,2,3,4",
     formatid: context.resolvedFormat.id,
     format: context.resolvedFormat,
     p1: {
@@ -713,6 +716,8 @@ function scratchDamage(
         ? [active.multihit[0] ?? 1, active.multihit[active.multihit.length - 1] ?? 1]
         : [active.multihit ?? 1, active.multihit ?? 1]
     ) satisfies [number, number];
+    if (active.smartTarget) throw new Error("multi-target hit allocation is not supported");
+    if (active.multiaccuracy) hits[0] = 1;
     let basePower = active.basePower;
     if (active.basePowerCallback) {
       const computed = active.basePowerCallback.call(battle, att, def, active);
@@ -720,15 +725,34 @@ function scratchDamage(
     }
     const tryHit = battle.runEvent("TryHit", def, att, active);
     if (!tryHit && tryHit !== 0)
-      return { outcome: "immune", damage: 0, moveType: active.type, basePower, hits };
+      return {
+        outcome: "immune",
+        damage: 0,
+        moveType: active.type,
+        basePower,
+        hits,
+        knockedOut: false,
+      };
 
     battle.randomizer = (value: number) => battle.trunc((value * cfg.rollPercent) / 100);
-    const damage = battle.actions.getDamage(att, def, active, true);
-    if (damage === false)
-      return { outcome: "immune", damage: 0, moveType: active.type, basePower, hits };
-    if (damage === undefined || damage === null)
-      return { outcome: "none", damage: 0, moveType: active.type, basePower, hits };
-    return { outcome: "damage", damage, moveType: active.type, basePower, hits };
+    let damage = 0;
+    let outcome: ScratchDamage["outcome"] = "none";
+    const getDamage = battle.actions.getDamage.bind(battle.actions);
+    battle.actions.getDamage = (source, target, move, suppressMessages) => {
+      const value = getDamage(source, target, move, suppressMessages);
+      if (source === att && target === def) {
+        if (value === false) outcome = "immune";
+        else if (value !== undefined && value !== null) {
+          damage += value;
+          outcome = "damage";
+        }
+      }
+      return value;
+    };
+    if (active.multihit) active.multihit = cfg.rollPercent === 85 ? hits[0] : hits[1];
+    active.multiaccuracy = false;
+    battle.actions.hitStepMoveHitLoop([def], att, active);
+    return { outcome, damage, moveType: active.type, basePower, hits, knockedOut: def.hp === 0 };
   } finally {
     battle.destroy();
   }

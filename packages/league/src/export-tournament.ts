@@ -4,7 +4,6 @@ import { z } from "zod";
 
 import { writeAtomicJson } from "./atomic-json.js";
 import { type RegisteredMon, summarizeGameLogs, teamPreviewPicks } from "./game-usage.js";
-import { readJsonlObjects } from "./jsonl.js";
 import { SAFE_SEGMENT } from "./path-safety.js";
 import { defaultPsDir } from "./paths.js";
 import {
@@ -12,6 +11,7 @@ import {
   publicTournamentBundleSchema,
 } from "./public/tournament-protocol.js";
 import { readCompletedSeriesDecisionRows, readCompletedSeriesGameLogs } from "./recorded-series.js";
+import { listStoredSeries } from "./series-store.js";
 import { loadSeriesRecords, type ParsedSeriesRecord } from "./records.js";
 import { buildSeriesGame, type SeriesSlot, spriteIdFor, viewTeamSheet } from "./run-artifacts.js";
 import { runStatusSchema } from "./run-status.js";
@@ -73,30 +73,17 @@ const storedSeedsSchema = z.strictObject({
   p2: z.number().int().nonnegative(),
 });
 
-const SERIES_ATTEMPTS_FILE = "series-attempts.jsonl";
-
 interface SeriesEvidence {
   logs: string[][];
   decisionRows: [JsonObject[], JsonObject[]];
 }
 
-function seriesEvidence(seriesDir: string, seriesId: string, gameCount: number): SeriesEvidence {
-  if (fs.existsSync(path.join(seriesDir, SERIES_ATTEMPTS_FILE))) {
-    return {
-      logs: readCompletedSeriesGameLogs(seriesDir, seriesId),
-      decisionRows: [
-        readCompletedSeriesDecisionRows(seriesDir, seriesId, "p1"),
-        readCompletedSeriesDecisionRows(seriesDir, seriesId, "p2"),
-      ],
-    };
-  }
+function seriesEvidence(runDir: string, seriesId: string): SeriesEvidence {
   return {
-    logs: Array.from({ length: gameCount }, (_, index) =>
-      fs.readFileSync(path.join(seriesDir, `game-${index + 1}.log`), "utf8").split("\n"),
-    ),
+    logs: readCompletedSeriesGameLogs(runDir, seriesId),
     decisionRows: [
-      readJsonlObjects(path.join(seriesDir, "p1-decisions.jsonl")),
-      readJsonlObjects(path.join(seriesDir, "p2-decisions.jsonl")),
+      readCompletedSeriesDecisionRows(runDir, seriesId, "p1"),
+      readCompletedSeriesDecisionRows(runDir, seriesId, "p2"),
     ],
   };
 }
@@ -220,8 +207,7 @@ export function buildTournamentExport(
       storedSeedsSchema.parse(row.seeds).p2,
     ];
     const refs: [string, string] = [entrantRef(sides[0]), entrantRef(sides[1])];
-    const seriesDir = path.join(options.runsDir, options.runId, "series", row.series_id);
-    const evidence = seriesEvidence(seriesDir, row.series_id, row.games.length);
+    const evidence = seriesEvidence(runDir, row.series_id);
     if (evidence.logs.length !== row.games.length) {
       throw new Error(
         `series ${row.series_id} has ${evidence.logs.length} completed logs for ${row.games.length} recorded games`,
@@ -322,20 +308,10 @@ export function buildTournamentExport(
     throw new Error(`run ${options.runId} mixes Showdown commits ${[...commits].join(", ")}`);
   const showdownCommit = [...commits][0];
   const timestamps = settledRows.map((row) => row.timestamp).sort();
-  const seriesStarts = settledRows.flatMap((row) => {
-    try {
-      const metadata = z
-        .looseObject({ started: z.iso.datetime() })
-        .safeParse(
-          JSON.parse(
-            fs.readFileSync(path.join(runDir, "series", row.series_id, "series.json"), "utf8"),
-          ),
-        );
-      return metadata.success ? [metadata.data.started] : [];
-    } catch {
-      return [];
-    }
-  });
+  const settledIds = new Set(settledRows.map((row) => row.series_id));
+  const seriesStarts = listStoredSeries(runDir)
+    .filter((series) => settledIds.has(series.seriesId))
+    .map((series) => series.startedAt);
   let storedStart: string | undefined;
   try {
     const status = runStatusSchema.safeParse(

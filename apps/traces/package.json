@@ -1,0 +1,13 @@
+{
+  "name": "traces",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Decision trace files for the spectator site, served under /traces",
+  "type": "module",
+  "scripts": {
+    "deploy": "cp _headers dist/_headers && wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "4.127.0"
+  }
+}

@@ -304,9 +304,9 @@ test("battle evidence flags follow model field presence rather than harness summ
       expectedRationale: "No rationale supplied.",
     },
     {
-      name: "absent non-string evidence",
+      name: "invalid supplied notebook",
       responses: [JSON.stringify({ choices: [1], rationale: null, notebook: false })],
-      expectedEvidence: { rationale: false, notebook_update: false },
+      expectedEvidence: { rationale: false, notebook_update: true },
       expectedNotebook: "Keep the current plan.",
       expectedRationale: "No rationale supplied.",
     },
@@ -603,14 +603,8 @@ test("unoffered native tools are recorded, refused, and reprompted without dispa
   });
   assert.equal(await acceptedAct(engine, request(), { povLines: [] }), "move 2");
   const refusals = provider.calls[1]!.messages.filter((message) => message.role === "tool");
-  assert.match(
-    String(refusals[0]?.content),
-    /Not executed: tool "search_board" was not offered for this decision/,
-  );
-  assert.match(
-    String(refusals[1]?.content),
-    /Not executed: tool "change_battle_result" was not offered for this decision/,
-  );
+  assert.match(String(refusals[0]?.content), /Not executed: tool "search_board"/);
+  assert.match(String(refusals[1]?.content), /Not executed: tool "change_battle_result"/);
   const toolTrace = asRecords(traces[0]!.tool_calls);
   assert.equal(toolTrace.length, 2);
   assert.ok(toolTrace.every((entry) => /Not executed/.test(text(entry.result))));

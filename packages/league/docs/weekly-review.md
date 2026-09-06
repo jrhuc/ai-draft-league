@@ -12,9 +12,9 @@ A manager can hold 16 pages, with 8,000 characters per page and 48,000 character
 
 ## Schedule reviews
 
-The default blind scheduler reviews after each transaction-window week and after the round robin. `--sequential-weeks` reviews after every round-robin week.
+Every round-robin week ends with a review before the next week's builds begin.
 
-Review runs before a transaction window so the window receives revised memory. `--through-week week_number` completes the requested week, its review, and any scheduled window before pausing. `review_weeks` in `config.json` records the schedule.
+Review runs before a transaction window so the window receives revised memory. `--through-week week_number` completes the requested week, its review, and any scheduled window before pausing.
 
 ### Reconcile a roster change
 
@@ -47,7 +47,7 @@ Every reply field is optional. Omitted memory fields stay unchanged; omitted rea
 
 ## Persist private and public evidence
 
-`reviews/week-{week_number}.jsonl` stores weekly review rows. `reviews/week-{week_number}-transactions.jsonl` stores reconciliation rows. Per-seat transcripts retain response attempts and tool calls.
+Weekly reviews and reconciliations commit to `league.sqlite` as franchise memory checkpoints. Per-seat transcripts under `reviews/week-{week_number}/` and `reviews/week-{week_number}-transactions/` retain response attempts and tool calls.
 
 Completed rows replay without provider calls. Resume rejects mismatched identity, roster versions, or barrier order.
 

@@ -43,5 +43,5 @@ test("presents weekly, reconciliation, and fallback states", () => {
   expect(weekly?.stageLabel).toBe("Weekly review");
   expect(reconciliation?.stageLabel).toBe("Post-transaction reconciliation");
   expect(reconciliation?.fallbackLabel).toBe("Fallback review");
-  expect(reconciliation?.reasoningText).toBe("No reasoning recorded.");
+  expect(reconciliation?.reasoningText).toBe("No stated reason recorded.");
 });

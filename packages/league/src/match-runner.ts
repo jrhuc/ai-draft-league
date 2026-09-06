@@ -11,24 +11,19 @@ import type {
   GameStart,
 } from "./battle-agent.js";
 import { DECISION_STAT_NAMES, RandomEngine } from "./battle-agent.js";
-import { appendJsonlObject } from "./jsonl.js";
-import { LLMEngine } from "./llm-engine.js";
+import { appendJsonlObject, readJsonlObjects } from "./jsonl.js";
 import { reasoningForModel } from "./providers.js";
+import { commitRunArtifact, readRunArtifacts } from "./run-artifact-store.js";
 import { ShowdownReference } from "./reference.js";
 import {
-  adoptSeriesDir,
-  appendAttemptRecord,
-  attemptRecord,
-  completedGameEvidence,
-  contextLedgerHeads,
-  gameCompletionMarkerPath,
-  incompleteAttempts,
-  RECORDED_SERIES_METADATA_SCHEMA_VERSION,
+  agentPolicyIdentity,
+  readCompletedSeriesDecisionRows,
+  readCompletedSeriesEvidence,
   recordedSeriesIdentity,
-  recordedSeriesMetadataSchema,
-  relativeSeriesFile,
-  writeGameCompletionMarker,
+  seriesDirectory,
 } from "./recorded-series.js";
+import type { RecordedSeriesIdentity } from "./recorded-series.js";
+import { LLMEngine } from "./llm-engine.js";
 import type {
   RecordedSeries,
   RecordedSeriesContext,
@@ -36,15 +31,29 @@ import type {
 } from "./recorded-series.js";
 import { SimBattle } from "./sim.js";
 import {
+  chanceEventCounts,
   closedSheetsFormat,
   foldSeriesGames,
   makeEngine,
+  seriesGameResultSchema,
   SINGLE_ELIMINATION_GAME_LIMIT,
 } from "./series-core.js";
 import type { EngineSetup } from "./series-core.js";
 import type { Team } from "./teams.js";
 import { DEFAULT_TIMER_SCALE } from "./timer.js";
 import type { BattleOutcome, JsonObject, Pid, TimerScale } from "./types.js";
+import {
+  abortSeriesAttempt,
+  completeStoredAdaptation,
+  createStoredSeries,
+  findStoredSeries,
+  finishSeriesAttempt,
+  latestSeriesMemory,
+  pendingSeriesAdaptations,
+  readStoredSeries,
+  resolveStoredGame,
+  startSeriesAttempt,
+} from "./series-store.js";
 
 export interface Bo3Context {
   engines: Record<Pid, RandomEngine | LLMEngine>;
@@ -54,6 +63,7 @@ export interface Bo3Context {
   gameSeeds: Array<[number, number, number, number]>;
   seriesId: string;
   seriesDir: string;
+  runDir?: string;
   format: string;
   psDir: string;
   timerScale?: TimerScale;
@@ -84,8 +94,58 @@ export interface Bo3Result {
 
 export async function playBo3(context: Bo3Context): Promise<Bo3Result> {
   const { engines, names, seriesId } = context;
+  const runDir = context.runDir ?? context.seriesDir;
   const submissionNamespace = context.attemptId ?? randomUUID();
-  const games: JsonObject[] = [...(context.completedGames ?? [])];
+  const ownsAttempt = context.attemptId === undefined;
+  let stored = ownsAttempt ? readStoredSeries(runDir, seriesId) : undefined;
+  if (ownsAttempt && !stored) {
+    const identity = {
+      players: context.players,
+      team_ids: { p1: context.teams.p1.id, p2: context.teams.p2.id },
+      packed_teams: { p1: context.teams.p1.packed, p2: context.teams.p2.packed },
+      format: context.format,
+      game_seeds: context.gameSeeds,
+      series_index: null,
+      engine_seeds: { p1: 0, p2: 0 },
+      showdown_commit: "unknown",
+      scaffold: {
+        timer_scale: context.timerScale ?? DEFAULT_TIMER_SCALE,
+        require_winner: context.requireWinner ?? false,
+        closed_sheets: false,
+        reasoning: null,
+        reasoning_by_model: null,
+        initial_notebook_digests: { p1: null, p2: null },
+        draft_roster_digests: { p1: null, p2: null },
+        briefing_digests: { p1: null, p2: null },
+        agent_policy: agentPolicyIdentity(),
+      },
+    } satisfies RecordedSeriesIdentity;
+    createStoredSeries(runDir, seriesId, new Date().toISOString(), identity);
+    stored = readStoredSeries(runDir, seriesId);
+  }
+  if (ownsAttempt) {
+    startSeriesAttempt({
+      runDir,
+      seriesId,
+      attemptId: submissionNamespace,
+      adoptedGames: stored?.games.length ?? 0,
+    });
+    if (stored) {
+      for (const adaptation of pendingSeriesAdaptations(stored)) {
+        const memoryState = await engines[adaptation.pid].completeGameEnd(adaptation.task);
+        completeStoredAdaptation({
+          runDir,
+          seriesId,
+          gameNumber: adaptation.gameNumber,
+          pid: adaptation.pid,
+          memoryState,
+        });
+      }
+    }
+  }
+  const games: JsonObject[] = [
+    ...(context.completedGames ?? stored?.games.map((game) => game.result) ?? []),
+  ];
   let folded = foldSeriesGames(context.gameSeeds, games, {
     requireWinner: context.requireWinner,
     players: context.players,
@@ -103,7 +163,6 @@ export async function playBo3(context: Bo3Context): Promise<Bo3Result> {
     context.signal?.throwIfAborted();
     const gameNumber = index + 1;
     const gameId = `${seriesId}-${gameNumber}`;
-    fs.rmSync(gameCompletionMarkerPath(context.seriesDir, gameNumber), { force: true });
     const start: GameStart = { gameId, gameNumber, seriesId, seriesScore: { ...score } };
     const modelFallbacksAtStart = {
       p1: engines.p1.decisionStats().fallbacks ?? 0,
@@ -153,54 +212,78 @@ export async function playBo3(context: Bo3Context): Promise<Bo3Result> {
       { requireWinner: context.requireWinner, players: context.players },
     );
     const seriesOver = nextFolded.complete;
-    await Promise.all(
-      (["p1", "p2"] as const).map(async (pid) => {
-        const end: GameEnd = {
-          outcome: {
-            winner: outcome.winner,
-            winner_side: winnerSide ?? null,
-            won: winnerSide === pid,
-            turns: outcome.turns,
-            pov_lines: outcome.pov[pid],
-            errors: outcome.errors[pid],
-            model_choice_fallbacks: modelChoiceFallbacks[pid],
-            simulator_substitutions: outcome.simulatorSubstitutions[pid],
-            timer_autodefaults: outcome.timerAutodefaults[pid],
-          },
-          gameNumber,
-          seriesOver,
-          seriesScore: { ...score },
-          tournamentStatus:
-            context.tournamentRound === undefined
-              ? undefined
-              : !seriesOver
-                ? "active"
-                : nextFolded.winnerSide === pid
-                  ? context.tournamentRound === "final"
-                    ? "champion"
-                    : "advancing"
-                  : "eliminated",
-        };
-        await engines[pid].endGame(end);
-      }),
-    );
+    const endFor = (pid: Pid): GameEnd => {
+      return {
+        outcome: {
+          winner: outcome.winner,
+          winner_side: winnerSide ?? null,
+          won: winnerSide === pid,
+          turns: outcome.turns,
+          pov_lines: outcome.pov[pid],
+          errors: outcome.errors[pid],
+          model_choice_fallbacks: modelChoiceFallbacks[pid],
+          simulator_substitutions: outcome.simulatorSubstitutions[pid],
+          timer_autodefaults: outcome.timerAutodefaults[pid],
+        },
+        gameNumber,
+        seriesOver,
+        seriesScore: { ...score },
+        tournamentStatus:
+          context.tournamentRound === undefined
+            ? undefined
+            : !seriesOver
+              ? "active"
+              : nextFolded.winnerSide === pid
+                ? context.tournamentRound === "final"
+                  ? "champion"
+                  : "advancing"
+                : "eliminated",
+      };
+    };
+    const ends = { p1: endFor("p1"), p2: endFor("p2") };
     const canonicalLog = Buffer.from(`${outcome.log.join("\n")}\n`, "utf8");
     fs.writeFileSync(logPath, canonicalLog);
-    const completed = completedGameEvidence({
+    const result = seriesGameResultSchema.parse({
+      number: gameNumber,
+      seed: gameSeed,
+      winner: winnerSide ? context.players[winnerSide] : null,
+      winner_side: winnerSide ?? null,
+      turns: outcome.turns,
+      errors: outcome.errors,
+      model_choice_fallbacks: modelChoiceFallbacks,
+      simulator_substitutions: outcome.simulatorSubstitutions,
+      timer_autodefaults: outcome.timerAutodefaults,
+      chance_events: chanceEventCounts(outcome.log),
+      log: path.relative(runDir, logPath),
+    });
+    const adaptations = {
+      p1: engines.p1.prepareGameEnd(ends.p1),
+      p2: engines.p2.prepareGameEnd(ends.p2),
+    };
+    resolveStoredGame({
+      runDir,
       seriesId,
       attemptId: submissionNamespace,
       gameNumber,
       seed: gameSeed,
-      players: context.players,
-      winnerSide,
-      outcome,
-      modelChoiceFallbacks,
-      coachNotes: { p1: engines.p1.coachingState(), p2: engines.p2.coachingState() },
-      log: relativeSeriesFile(logPath),
+      result,
+      logPath,
       logBytes: canonicalLog,
+      adaptations,
     });
-    writeGameCompletionMarker(context.seriesDir, completed.marker);
-    games.push(completed.result);
+    await Promise.all(
+      (["p1", "p2"] as const).map(async (pid) => {
+        const memoryState = await engines[pid].completeGameEnd(adaptations[pid]);
+        completeStoredAdaptation({
+          runDir,
+          seriesId,
+          gameNumber,
+          pid,
+          memoryState,
+        });
+      }),
+    );
+    games.push(result);
     context.onGameEnd?.(
       gameNumber,
       winnerSide ? context.players[winnerSide] : null,
@@ -213,6 +296,7 @@ export async function playBo3(context: Bo3Context): Promise<Bo3Result> {
     });
   }
 
+  if (ownsAttempt) finishSeriesAttempt(runDir, seriesId, submissionNamespace);
   return { score: folded.score, games, winnerSide: folded.winnerSide };
 }
 
@@ -290,28 +374,10 @@ function combinedDecisionStats(restored: DecisionStats, current: DecisionStats):
   return combined;
 }
 
-function loadAgentContext(seriesDir: string, seriesId: string, pid: Pid): AgentContextEvent[] {
-  const file = path.join(seriesDir, `${pid}-context.jsonl`);
-  if (!fs.existsSync(file)) return [];
-  const raw = fs.readFileSync(file, "utf8");
-  const lines = raw.split("\n");
-  let lastNonempty = lines.length - 1;
-  while (lastNonempty >= 0 && !lines[lastNonempty]) lastNonempty -= 1;
+function loadAgentContext(runDir: string, seriesId: string, pid: Pid): AgentContextEvent[] {
   const events: AgentContextEvent[] = [];
-  let byteOffset = 0;
-  for (const [index, line] of lines.entries()) {
-    const lineOffset = byteOffset;
-    byteOffset += Buffer.byteLength(line, "utf8") + (index < lines.length - 1 ? 1 : 0);
-    if (!line) continue;
-    let value: unknown;
-    try {
-      value = JSON.parse(line);
-    } catch (error) {
-      if (index !== lastNonempty)
-        throw new Error(`invalid ${pid} context row ${index + 1}`, { cause: error });
-      fs.truncateSync(file, lineOffset);
-      break;
-    }
+  const rows = readRunArtifacts(runDir, `series-context:${seriesId}:${pid}`);
+  for (const [index, { value }] of rows.entries()) {
     const parsed = persistedAgentContextSchema.safeParse(value);
     const sequence = events.length + 1;
     if (
@@ -333,58 +399,45 @@ function loadAgentContext(seriesDir: string, seriesId: string, pid: Pid): AgentC
   return events;
 }
 
-export async function playRecordedSeries(context: RecordedSeriesContext): Promise<RecordedSeries> {
+async function runRecordedSeries(context: RecordedSeriesContext): Promise<RecordedSeries> {
   context.signal?.throwIfAborted();
   const timerScale = context.timerScale ?? DEFAULT_TIMER_SCALE;
   const identity = recordedSeriesIdentity(context);
-  const adopted = context.seriesIndex === undefined ? undefined : adoptSeriesDir(context, identity);
+  const adopted =
+    context.seriesIndex === undefined
+      ? undefined
+      : findStoredSeries(context.runDir, context.seriesIndex, identity);
   const seriesId = adopted?.seriesId ?? randomUUID().replaceAll("-", "").slice(0, 12);
-  const seriesDir = adopted?.seriesDir ?? path.join(context.runDir, "series", seriesId);
-  const adoptedCompletedGames = adopted?.games.length ?? 0;
-  fs.mkdirSync(seriesDir, { recursive: true });
-  if (!adopted) {
-    const metadata = recordedSeriesMetadataSchema.parse({
-      schema_version: RECORDED_SERIES_METADATA_SCHEMA_VERSION,
-      series_id: seriesId,
-      started: new Date().toISOString(),
-      identity,
-    });
-    fs.writeFileSync(path.join(seriesDir, "series.json"), `${JSON.stringify(metadata)}\n`, {
-      encoding: "utf8",
-      flag: "wx",
-    });
+  const seriesDir = seriesDirectory(context.runDir, seriesId);
+  const decisionRows = (pid: Pid) => readCompletedSeriesDecisionRows(context.runDir, seriesId, pid);
+  if (adopted?.completedAttemptId) {
+    const canonical = readCompletedSeriesEvidence(context);
+    return {
+      coachNotes: canonical.coachNotes,
+      winnerSide: canonical.winnerSide,
+      fields: {
+        timestamp: adopted.startedAt,
+        run_id: path.basename(context.runDir),
+        ...canonical.fields,
+        decision_stats: {
+          p1: projectedDecisionStats(decisionRows("p1")),
+          p2: projectedDecisionStats(decisionRows("p2")),
+        },
+      },
+    };
   }
+  const started = adopted?.startedAt ?? new Date().toISOString();
+  fs.mkdirSync(seriesDir, { recursive: true });
+  if (!adopted) createStoredSeries(context.runDir, seriesId, started, identity);
   const attemptId = randomUUID();
-  const startHeads = contextLedgerHeads(seriesDir);
-  const priorIncomplete = incompleteAttempts(seriesDir, seriesId);
-  appendAttemptRecord(
-    seriesDir,
-    attemptRecord(
-      "attempt_started",
-      attemptId,
-      seriesId,
-      adoptedCompletedGames,
-      startHeads,
-      startHeads,
-      adopted?.resumeFrom ? { resumed_from: adopted.resumeFrom } : {},
-    ),
-  );
+  startSeriesAttempt({
+    runDir: context.runDir,
+    seriesId,
+    attemptId,
+    adoptedGames: adopted?.games.length ?? 0,
+  });
 
   try {
-    for (const prior of priorIncomplete) {
-      appendAttemptRecord(
-        seriesDir,
-        attemptRecord(
-          "attempt_superseded",
-          prior.attemptId,
-          seriesId,
-          prior.adoptedCompletedGames,
-          prior.contextStartHeads,
-          startHeads,
-          { superseded_by: attemptId },
-        ),
-      );
-    }
     const names = { p1: `p1-${context.players.p1}`, p2: `p2-${context.players.p2}` };
     const reference = Object.values(context.players).some((player) => player !== "random")
       ? new ShowdownReference(context.format, context.psDir)
@@ -404,6 +457,13 @@ export async function playRecordedSeries(context: RecordedSeriesContext): Promis
         context.onDecision?.(pid, recordedRow);
       };
     };
+    const contextSink =
+      (pid: Pid): DecisionLog =>
+      (row) => {
+        const contextId = z.string().min(1).safeParse(row.context_id);
+        if (!contextId.success) throw new Error(`${pid} context event has no identity`);
+        commitRunArtifact(context.runDir, `series-context:${seriesId}:${pid}`, contextId.data, row);
+      };
 
     const engineFor = (pid: Pid) => {
       const setup: EngineSetup = {
@@ -412,15 +472,17 @@ export async function playRecordedSeries(context: RecordedSeriesContext): Promis
         seed: context.engineSeeds[pid],
         decisionLog: decisionSink(pid),
         traceLog: path.join(seriesDir, `${pid}-trace.jsonl`),
-        contextLog: path.join(seriesDir, `${pid}-context.jsonl`),
-        initialContext: adopted ? loadAgentContext(seriesDir, seriesId, pid) : [],
+        contextLog: contextSink(pid),
+        initialContext: adopted ? loadAgentContext(context.runDir, seriesId, pid) : [],
         format: context.format,
         psDir: context.psDir,
         reasoning: reasoning[pid],
         reference,
         signal: context.signal,
         apiKey: context.apiKeys?.[context.players[pid]],
-        initialNotebook: adopted?.notebooks[pid] ?? context.initialNotebooks?.[pid],
+        initialNotebook: adopted
+          ? (latestSeriesMemory(adopted, pid) ?? context.initialNotebooks?.[pid])
+          : context.initialNotebooks?.[pid],
         draftRoster: context.draftRosters?.[pid],
         briefing: context.briefings?.[pid],
         closedSheets: context.closedSheets,
@@ -428,10 +490,17 @@ export async function playRecordedSeries(context: RecordedSeriesContext): Promis
       return makeEngine(setup);
     };
     const engines = { p1: engineFor("p1"), p2: engineFor("p2") };
-    for (const pid of ["p1", "p2"] as const) {
-      const engine = engines[pid];
-      if (adopted?.replay[pid].length && engine instanceof LLMEngine)
-        engine.primeReplay(adopted.replay[pid]);
+    if (adopted) {
+      for (const adaptation of pendingSeriesAdaptations(adopted)) {
+        const memoryState = await engines[adaptation.pid].completeGameEnd(adaptation.task);
+        completeStoredAdaptation({
+          runDir: context.runDir,
+          seriesId,
+          gameNumber: adaptation.gameNumber,
+          pid: adaptation.pid,
+          memoryState,
+        });
+      }
     }
     const battleFormat = context.closedSheets
       ? closedSheetsFormat(context.format, context.psDir)
@@ -444,6 +513,7 @@ export async function playRecordedSeries(context: RecordedSeriesContext): Promis
       gameSeeds: context.gameSeeds,
       seriesId,
       seriesDir,
+      runDir: context.runDir,
       format: battleFormat,
       psDir: context.psDir,
       timerScale,
@@ -454,20 +524,29 @@ export async function playRecordedSeries(context: RecordedSeriesContext): Promis
       onGameUpdate: context.onGameUpdate,
       onGameEnd: context.onGameEnd,
     };
-    if (adopted?.games.length) battleContext.completedGames = adopted.games;
+    if (adopted?.games.length) {
+      battleContext.completedGames = adopted.games.map((game) => game.result);
+    }
+    const adoptedRows = (pid: Pid): JsonObject[] => {
+      if (!adopted) return [];
+      const owners = new Map(adopted.games.map((game) => [game.gameNumber, game.attemptId]));
+      return readJsonlObjects(path.join(seriesDir, `${pid}-decisions.jsonl`)).filter(
+        (row) => owners.get(Number(row.game_number)) === row.attempt_id,
+      );
+    };
     const { score, games, winnerSide } = await playBo3(battleContext);
     const stats = {
       p1: combinedDecisionStats(
-        projectedDecisionStats(adopted?.decisions.p1 ?? []),
+        projectedDecisionStats(adoptedRows("p1")),
         engines.p1.decisionStats(),
       ),
       p2: combinedDecisionStats(
-        projectedDecisionStats(adopted?.decisions.p2 ?? []),
+        projectedDecisionStats(adoptedRows("p2")),
         engines.p2.decisionStats(),
       ),
     };
     const fields: RecordedSeriesFields = {
-      timestamp: new Date().toISOString(),
+      timestamp: started,
       run_id: path.basename(context.runDir),
       series_id: seriesId,
       attempt_id: attemptId,
@@ -494,37 +573,23 @@ export async function playRecordedSeries(context: RecordedSeriesContext): Promis
       winnerSide,
       fields,
     };
-    appendAttemptRecord(
-      seriesDir,
-      attemptRecord(
-        "attempt_completed",
-        attemptId,
-        seriesId,
-        adoptedCompletedGames,
-        startHeads,
-        contextLedgerHeads(seriesDir),
-        { completed_games: games.length },
-      ),
-    );
+    finishSeriesAttempt(context.runDir, seriesId, attemptId);
     return result;
   } catch (error) {
-    appendAttemptRecord(
-      seriesDir,
-      attemptRecord(
-        "attempt_aborted",
-        attemptId,
-        seriesId,
-        adoptedCompletedGames,
-        startHeads,
-        contextLedgerHeads(seriesDir),
-        {
-          error: {
-            name: error instanceof Error ? error.name : "Error",
-            message: error instanceof Error ? error.message : String(error),
-          },
-        },
-      ),
+    abortSeriesAttempt(
+      context.runDir,
+      seriesId,
+      attemptId,
+      error instanceof Error ? error : String(error),
     );
     throw error;
+  }
+}
+
+export class MatchRunner {
+  constructor(private readonly context: RecordedSeriesContext) {}
+
+  run(): Promise<RecordedSeries> {
+    return runRecordedSeries(this.context);
   }
 }

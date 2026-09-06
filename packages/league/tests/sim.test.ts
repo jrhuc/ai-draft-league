@@ -11,7 +11,7 @@ import { runRotation } from "../src/rotation.js";
 import { closedSheetsFormat } from "../src/series.js";
 import type { RoomBattleTimerSettings } from "../src/showdown.js";
 import { finishUpdateRouting, routeUpdateLines, SimBattle } from "../src/sim.js";
-import { BattleState } from "../src/state.js";
+import { PerspectiveState } from "../src/perspective-state.js";
 import { loadPool } from "../src/teams.js";
 import { parseTimerScale, TimerAdapter } from "../src/timer.js";
 import type {
@@ -92,7 +92,7 @@ test("seeded random VGC battle completes untimed by default without protocol err
   assert.ok(outcome.turns > 0);
   assert.deepEqual(outcome.errors, { p1: 0, p2: 0 });
   assert.ok(![...outcome.pov.p1, ...outcome.pov.p2].some((line) => line.startsWith("|split|")));
-  const state = new BattleState("p1");
+  const state = new PerspectiveState("p1");
   state.feed(outcome.pov.p1);
   assert.equal(state.turn, outcome.turns);
   assert.match(state.render({}), /Opponent side/);

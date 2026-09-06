@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -22,6 +21,7 @@ import {
   type WeeklyReviewSeries,
   type WeeklyReviewState,
 } from "../src/weekly-review.js";
+import { storeCompletedSeriesFixture } from "./series-store-fixture.js";
 
 const USAGE = { input_tokens: 10, output_tokens: 5 };
 const BOARD = loadBoard("regmb-202607");
@@ -84,50 +84,13 @@ function writeRun() {
   ].join("\n");
   const gameLogPath = path.join(seriesDir, "game-1.log");
   fs.writeFileSync(gameLogPath, gameLog);
-  const head = { context_id: null, sequence: 0, byte_length: 0, sha256: "0".repeat(64) };
-  const attempt = (attemptId: string) => ({
-    kind: "attempt_started",
-    schema_version: 1,
-    timestamp: "2026-08-20T00:00:00.000Z",
-    attempt_id: attemptId,
-    series_id: "abc123",
-    adopted_completed_games: 0,
-    context_heads: { start: { p1: head, p2: head }, end: { p1: head, p2: head } },
-  });
-  fs.writeFileSync(
-    path.join(seriesDir, "series-attempts.jsonl"),
-    `${JSON.stringify(attempt("abandoned"))}\n${JSON.stringify(attempt("canonical"))}\n`,
-  );
   fs.writeFileSync(
     path.join(seriesDir, "p1-decisions.jsonl"),
     `${JSON.stringify({ kind: "decision", attempt_id: "abandoned", game_number: 1, turn: 1, phase: "move", action: "move 4, move 4", rationale: "Stale branch.", outcome: "accepted", submission_id: "stale" })}\n${JSON.stringify({ kind: "decision", attempt_id: "canonical", game_number: 1, turn: 1, phase: "move", action: "move 1, move 1", rationale: "Pressure early.", outcome: "accepted", submission_id: "committed" })}\n${JSON.stringify({ kind: "game_reflection", attempt_id: "canonical", game_number: 1, result: "won", summary: "Earthquake landed.", adjustment: "Keep it." })}\n`,
   );
-  const zeros = { p1: 0, p2: 0 };
-  const chance = { misses: 0, crits_taken: 0, flinched_turns: 0, full_paralysis: 0 };
-  fs.writeFileSync(
-    path.join(seriesDir, "game-1.complete.json"),
-    `${JSON.stringify({
-      kind: "game_complete",
-      schema_version: 2,
-      series_id: "abc123",
-      game_number: 1,
-      attempt_id: "canonical",
-      seed: [1, 2, 3, 4],
-      log_sha256: createHash("sha256").update(gameLog).digest("hex"),
-      coach_notes: { p1: "", p2: "" },
-      summary: {
-        winner: "test:alpha",
-        winner_side: "p1",
-        turns: 1,
-        errors: zeros,
-        model_choice_fallbacks: zeros,
-        simulator_substitutions: zeros,
-        timer_autodefaults: zeros,
-        chance_events: { p1: chance, p2: chance },
-        log: gameLogPath,
-      },
-    })}\n`,
-  );
+  storeCompletedSeriesFixture(runDir, "abc123", [
+    { number: 1, logPath: gameLogPath, winner: "test:alpha", winnerSide: "p1" },
+  ]);
   fs.writeFileSync(path.join(seriesDir, "game-2.log"), "|switch|p1a: Stale|Ditto, L50|100/100\n");
   const rosters = [BOARD.mons.slice(0, 10), BOARD.mons.slice(10, 20)];
   const state: WeeklyReviewState = {
@@ -248,12 +211,7 @@ test("own-build evidence lists what was left behind on the roster of the time, b
       series.builds[series.entrants[0]]!,
       series.builds[series.entrants[1]]!,
     ] as const;
-    const summaries = seriesGameSummaries(
-      path.join(runDir, "series", series.seriesId),
-      series.seriesId,
-      BOARD.mons,
-      builds,
-    );
+    const summaries = seriesGameSummaries(runDir, series.seriesId, BOARD.mons, builds);
     const description = describeOwnBuild(series, 0, summaries);
     assert.deepEqual(summaries, [
       {
@@ -310,8 +268,7 @@ test("a reconciliation reviews only the changed seats against both rosters", asy
   assert.equal(reviews.length, 1);
   assert.equal(reviews[0]!.stage, "transactions");
   assert.equal(reviews[0]!.roster_version, 1);
-  assert.ok(fs.existsSync(path.join(runDir, "reviews", "week-1-transactions.jsonl")));
-  assert.deepEqual(readWeeklyReviews(runDir, 1), [], "the week review file is untouched");
+  assert.deepEqual(readWeeklyReviews(runDir, 1), [], "the week review stays unwritten");
   assert.equal(state.memories[0]!.notebook, "Rebuilt around the new six.");
 });
 
@@ -498,7 +455,7 @@ test("a rejected reply is re-prompted with the reason and the attempt is logged"
   assert.equal(state.memories[0]!.notebook, "Keep the plan.");
 });
 
-test("a stored review stays attached to its entrant identity", async (t) => {
+test("a stored review for another model is refused on replay", async (t) => {
   const { runDir, state } = writeRun();
   t.onTestFinished(() => fs.rmSync(runDir, { recursive: true, force: true }));
   await runWeeklyReview(state, {
@@ -506,15 +463,12 @@ test("a stored review stays attached to its entrant identity", async (t) => {
     psDir: defaultPsDir(),
     makeReviewProvider: () => scripted([reply('{"notebook":"Next."}')]).provider,
   });
-  const file = path.join(runDir, "reviews", "week-1.jsonl");
-  const rows = readJsonlObjects(file);
-  rows[0]!.model = "wrong:model";
-  fs.writeFileSync(file, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`, "utf8");
+  assert.equal(readWeeklyReviews(runDir, 1)[0]?.model, "test:alpha");
   await assert.rejects(
     runWeeklyReview(
-      { ...state, memories: [emptyMemory("Start with Garchomp."), emptyMemory()] },
+      { ...state, models: ["wrong:model", state.models[1]!] },
       { runDir, psDir: defaultPsDir(), makeReviewProvider: () => scripted([]).provider },
     ),
-    /holds a review .* entrant \d/,
+    /stored week review for week 1/,
   );
 });

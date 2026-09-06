@@ -14,6 +14,7 @@ import { ShowdownReference } from "./reference.js";
 import { loadShowdown, showdownCommit } from "./showdown.js";
 import { noStageEvidence, type StageEvidence } from "./stage-evidence.js";
 import { decodeTeamBuildJournalRow } from "./teambuild-artifacts.js";
+import { commitRunArtifact } from "./run-artifact-store.js";
 import {
   canonicalTeamBuildTask,
   type ParsedTeamBuild,
@@ -60,6 +61,7 @@ interface TeamBuildAttemptTraceHeader {
 interface TeamBuildAttemptTrace extends TeamBuildAttemptTraceHeader {
   user: string;
   response: string;
+  reasoning?: string;
   usage?: Record<string, number>;
   tool_lookups?: { name: string; arguments: JsonObject; result: string }[];
   error?: string;
@@ -129,6 +131,7 @@ async function runLeagueTeamBuild(
     const promptForAttempt = messages[messages.length - 1]!.content ?? "";
     let response = "";
     let usage: Record<string, number> | undefined;
+    let reasoningTrace: string | undefined;
     let error: string | undefined;
     let terminalError: Error | undefined;
     const lookups: { name: string; arguments: JsonObject; result: string }[] = [];
@@ -148,6 +151,7 @@ async function runLeagueTeamBuild(
       const completion = await completeWithDexTools(completionRequest);
       response = completion.text;
       usage = completion.usage;
+      reasoningTrace = completion.reasoning;
       const truncated = completion.finishReason === "length";
       if (!response.trim() && !truncated && completion.reasoning) {
         const salvaged = parseTeamBuildResponse(completion.reasoning, task);
@@ -213,6 +217,7 @@ async function runLeagueTeamBuild(
     if (attempt === 1) traceHeader.system = system;
     const trace: TeamBuildAttemptTrace = { ...traceHeader, user: promptForAttempt, response };
     if (usage) trace.usage = usage;
+    if (reasoningTrace) trace.reasoning = reasoningTrace;
     if (lookups.length) trace.tool_lookups = lookups;
     if (error) trace.error = error;
     fs.appendFileSync(logFile, `${JSON.stringify(trace)}\n`, "utf8");
@@ -372,8 +377,13 @@ export async function runTeambuild(
     rationale: result.artifact.evidence.rationale,
     attempts: result.artifact.attempts,
   };
-  const journalRow = JSON.stringify({ artifact: result.artifact });
-  decodeTeamBuildJournalRow(JSON.parse(journalRow));
-  fs.appendFileSync(path.join(options.logDir, "teambuild.jsonl"), `${journalRow}\n`, "utf8");
+  const journalRow: JsonObject = JSON.parse(JSON.stringify({ artifact: result.artifact }));
+  decodeTeamBuildJournalRow(journalRow);
+  commitRunArtifact(
+    options.runDir ?? options.logDir,
+    "teambuild",
+    `${request.seriesIndex}:${request.entrant}`,
+    journalRow,
+  );
   return { packed: result.packed, artifact: result.artifact, view };
 }

@@ -160,6 +160,7 @@ export interface TeamBuildResult {
 }
 
 export interface TeamBuildOptions extends ModelReasoningConfig {
+  runDir?: string;
   psDir?: string;
   apiKeys?: Readonly<Record<string, string>>;
   logDir: string;

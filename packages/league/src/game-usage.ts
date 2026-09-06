@@ -4,7 +4,7 @@ import type { DraftBoardMon } from "./draft.js";
 import type { JsonObject } from "./types.js";
 import type { TeamBuildView } from "./views.js";
 import { readCompletedSeriesDecisionRows, readCompletedSeriesGameLogs } from "./series.js";
-import { isErrnoCode } from "./value.js";
+import { readStoredSeries } from "./series-store.js";
 
 /** What a completed game proves about each side, with every species named by drafted board id.
  * This is the only place battle-log species names are joined to draft ids; consumers select
@@ -206,31 +206,27 @@ export function teamPreviewPicks(
   return picks;
 }
 
-/** Reads every completed game of one recorded series, or an empty list when none exists yet. */
+/** Every completed game of one stored series, or an empty list while the series is incomplete. */
 export function seriesGameSummaries(
-  seriesDir: string,
+  runDir: string,
   seriesId: string,
   mons: readonly Pick<DraftBoardMon, "id" | "species" | "forme">[],
   builds: RegisteredBuilds,
 ): GameSummary[] {
+  if (!readStoredSeries(runDir, seriesId)?.completedAttemptId) return [];
   const byId = new Map(mons.map((mon) => [mon.id, mon] as const));
   const registeredMons = (build: TeamBuildView | undefined): DraftMon[] =>
     (build?.brought ?? []).flatMap((id) => {
       const mon = byId.get(id);
       return mon ? [mon] : [];
     });
-  try {
-    const logs = readCompletedSeriesGameLogs(seriesDir, seriesId);
-    const picks = teamPreviewPicks(
-      [
-        readCompletedSeriesDecisionRows(seriesDir, seriesId, "p1"),
-        readCompletedSeriesDecisionRows(seriesDir, seriesId, "p2"),
-      ],
-      logs.length,
-    );
-    return summarizeGameLogs(logs, [registeredMons(builds[0]), registeredMons(builds[1])], picks);
-  } catch (cause) {
-    if (isErrnoCode(cause, "ENOENT") && "path" in cause && cause.path === seriesDir) return [];
-    throw cause;
-  }
+  const logs = readCompletedSeriesGameLogs(runDir, seriesId);
+  const picks = teamPreviewPicks(
+    [
+      readCompletedSeriesDecisionRows(runDir, seriesId, "p1"),
+      readCompletedSeriesDecisionRows(runDir, seriesId, "p2"),
+    ],
+    logs.length,
+  );
+  return summarizeGameLogs(logs, [registeredMons(builds[0]), registeredMons(builds[1])], picks);
 }

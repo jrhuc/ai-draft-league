@@ -15,7 +15,6 @@ import {
 import { runDraftLeague } from "../src/draftleague.js";
 import { draftLeagueTopology, roundRobinWeeks } from "../src/draftleague-topology.js";
 import { emptyMemory } from "../src/franchise-memory.js";
-import { readJsonlObjects } from "../src/jsonl.js";
 import { defaultPsDir } from "../src/paths.js";
 import { loadShowdown } from "../src/showdown.js";
 import {
@@ -25,12 +24,13 @@ import {
   parseTradeDecision,
   parseTradeOffer,
   parseTradeResponse,
-  readValidatedTradeWindow,
+  readTradeWindowArtifact,
+  readTransactionEvents,
   runTradeWindow,
   type TradeWindowState,
 } from "../src/trade-window.js";
 import type { Completion, JsonObject, ProviderMessage } from "../src/types.js";
-import { isCount, isText } from "../src/value.js";
+import { asRecord, isCount, isText } from "../src/value.js";
 import { accepted, rejection } from "./asserts.js";
 import {
   assertFormatAuthority,
@@ -483,7 +483,7 @@ test("coach offers resolve before free agency and replay without model calls", a
   const systems: string[] = [];
   const liveState = createState();
   const artifact = await runTradeWindow(liveState, {
-    epochDir: directory,
+    runDir: directory,
     psDir: defaultPsDir(),
     position: { afterWeek: 1, index: 0, count: 1 },
     tradesAllowed: 2,
@@ -522,14 +522,14 @@ test("coach offers resolve before free agency and replay without model calls", a
   assert.equal(artifact.rosters[0]!.roster.at(-1)?.id, cheap[10]!.id);
   assert.equal(artifact.rosters[1]!.roster.at(-1)?.id, cheap[0]!.id);
   assert.deepEqual(
-    readJsonlObjects(path.join(directory, "window.jsonl")).map((row) => row.kind),
+    readTransactionEvents(directory, 1).map((row) => asRecord(row).kind),
     ["offer", "offer", "offer", "free_agency", "free_agency"],
   );
 
   let replayCalls = 0;
   const replayState = createState();
   const replayed = await runTradeWindow(replayState, {
-    epochDir: directory,
+    runDir: directory,
     psDir: defaultPsDir(),
     position: { afterWeek: 1, index: 0, count: 1 },
     tradesAllowed: 2,
@@ -565,7 +565,7 @@ test("offer artifacts distinguish exhausted parsing from deliberate and random d
   accepted(parseTradeOffer(JSON.stringify(offer), state, 1));
   const calls = new Map<string, number>();
   const artifact = await runTradeWindow(state, {
-    epochDir: directory,
+    runDir: directory,
     psDir: defaultPsDir(),
     position: { afterWeek: 1, index: 0, count: 1 },
     tradesAllowed: 1,
@@ -621,19 +621,11 @@ test("trade-offer caps are enforced by direct, fresh-league, and stored-resume i
   const invalid = MAX_TRADE_OFFERS + 1;
   await assert.rejects(
     runTradeWindow(transactionState(), {
-      epochDir: directDir,
+      runDir: directDir,
       psDir: defaultPsDir(),
       position: { afterWeek: 1, index: 0, count: 1 },
       tradesAllowed: invalid,
     }),
-    /between 0 and 3/,
-  );
-  assert.throws(
-    () =>
-      readValidatedTradeWindow(directDir, transactionState(), {
-        afterWeek: 1,
-        tradesAllowed: invalid,
-      }),
     /between 0 and 3/,
   );
   await assert.rejects(
@@ -728,7 +720,7 @@ test("the trade window runs lowest seed first and replays completed seats", asyn
   const prompts = new Map<string, string>();
   const firstState = createState();
   const artifact = await runTradeWindow(firstState, {
-    epochDir: directory,
+    runDir: directory,
     psDir: defaultPsDir(),
     position: { afterWeek: 2, index: 0, count: 1 },
     tradesAllowed: 0,
@@ -754,12 +746,12 @@ test("the trade window runs lowest seed first and replays completed seats", asyn
     initial[2]![0]!.id,
     "an earlier drop becomes available immediately",
   );
-  assert.ok(fs.existsSync(path.join(directory, "window.json")));
-  assert.equal(readJsonlObjects(path.join(directory, "window.jsonl")).length, 3);
+  assert.ok(readTradeWindowArtifact(directory, 2));
+  assert.equal(readTransactionEvents(directory, 2).length, 3);
 
   let replayCalls = 0;
   const replayed = await runTradeWindow(createState(), {
-    epochDir: directory,
+    runDir: directory,
     psDir: defaultPsDir(),
     position: { afterWeek: 2, index: 0, count: 1 },
     tradesAllowed: 0,

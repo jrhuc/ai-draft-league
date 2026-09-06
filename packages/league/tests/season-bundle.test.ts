@@ -245,6 +245,7 @@ function gamesFor(series: LeagueSeriesView[]): Map<string, PublicSeasonGameInput
         decisions: [
           {
             side: 0 as const,
+            submissionId: "sub-1",
             turn: 1,
             phase: "turn",
             selection: ["move 1"],
@@ -256,6 +257,25 @@ function gamesFor(series: LeagueSeriesView[]): Map<string, PublicSeasonGameInput
             latencyMs: 1200,
             totalTokens: 900,
             reasoningTokens: 300,
+          },
+        ],
+        traces: [
+          {
+            franchiseId: `franchise-${entry.sides[0]}`,
+            turn: 1,
+            phase: "turn",
+            selection: ["move 1"],
+            prompt: "PROMPT",
+            toolCalls: [],
+            reasoning: "FULL_TRACE",
+            response: "{}",
+            usage: { output_tokens: 900 },
+            latencyMs: 1200,
+            maxTokens: null,
+            timer: null,
+            fallback: false,
+            error: null,
+            failedAttempts: [],
           },
         ],
         reflections: [

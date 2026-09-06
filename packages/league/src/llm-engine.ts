@@ -1,5 +1,11 @@
 import type { AgentContextEvent, AgentContextQuery } from "./agent-context.js";
-import type { ChoiceSubstitution, DecisionLog, GameEnd, GameStart } from "./battle-agent.js";
+import type {
+  ChoiceSubstitution,
+  DecisionLog,
+  GameAdaptationTask,
+  GameEnd,
+  GameStart,
+} from "./battle-agent.js";
 import { BaseEngine } from "./battle-agent.js";
 import {
   createBattleMemory,
@@ -13,6 +19,7 @@ import {
 } from "./battle-memory.js";
 import type { MenuHints, SlotMenu } from "./choices.js";
 import { buildMenus } from "./choices.js";
+import { DecisionSession, type DecisionSessionResult } from "./decision-session.js";
 import { LLMEngineContext } from "./llm-engine-context.js";
 import { battleMenuHints } from "./llm-engine-menu.js";
 import { reflectionPrompt, requestReflection } from "./llm-engine-reflection.js";
@@ -22,9 +29,6 @@ import {
   ASSUMED_TOKENS_PER_SECOND,
   BANK_HEALTHY_SECONDS,
   BANK_LOW_SECONDS,
-  boundedToolCalls,
-  DECISION_MAX_ORDER_TOOL_CALLS,
-  DECISION_MAX_STANDARD_TOOL_CALLS,
   DECISION_MAX_TOOL_ROUNDS,
   DECISION_PARSE_ATTEMPTS,
   DECISION_PREFILL,
@@ -32,7 +36,6 @@ import {
   decisionRequestDigest,
   decisionTokenBudget,
   decisionTools,
-  DEX_LOOKUP_CACHE_LIMIT,
   extractChoices,
   FORCE_COMMIT_MS,
   FORCE_COMMIT_TURN_FRACTION,
@@ -43,13 +46,10 @@ import {
   reflectionTools,
   REFLECTION_MAX_TOKENS,
   replayDecisionSchema,
-  type ToolTrace,
   totalTokens,
   type DecisionPhase,
   UNTIMED_DECISION_PARSE_ATTEMPTS,
   UNTIMED_EMPTY_RESPONSE_RETRIES,
-  UNTIMED_MAX_ORDER_TOOL_CALLS,
-  UNTIMED_MAX_STANDARD_TOOL_CALLS,
   UNTIMED_MAX_TOOL_ROUNDS,
   updatedPace,
 } from "./llm-engine-support.js";
@@ -67,16 +67,11 @@ import {
   TOURNAMENT_RETROSPECTIVE_SYSTEM,
 } from "./prompts.js";
 import type { ReasoningLevel } from "./providers.js";
-import {
-  assistantToolMessage,
-  classifyProviderFailure,
-  makeProvider,
-  parseSpec,
-  toolResultMessage,
-  uniqueToolCalls,
-} from "./providers.js";
+import { classifyProviderFailure, makeProvider, parseSpec } from "./providers.js";
 import { ShowdownReference } from "./reference.js";
-import { BattleState } from "./state.js";
+import { PerspectiveState } from "./perspective-state.js";
+import { ToolRound, type ToolQueryResult } from "./tool-batch.js";
+import { cachedToolLookup } from "./tool-cache.js";
 import type {
   ActionSubmission,
   AgentContext,
@@ -123,11 +118,13 @@ export { DECISION_MAX_TOKENS_CEILING, REFLECTION_MAX_TOKENS } from "./llm-engine
 export class LLMEngine extends BaseEngine {
   provider: Provider;
   readonly reference: ShowdownReference;
-  private state: BattleState;
+  private state: PerspectiveState;
   private readonly context: LLMEngineContext;
   private readonly transcript: BattleTranscript;
   private readonly stats = new LLMEngineStats();
-  private readonly dexLookupCache = new Map<string, string>();
+  private readonly referenceLookup = cachedToolLookup((name, args) =>
+    this.reference.lookup(name, args),
+  );
   private memory: BattleMemory;
   private gameId: string;
   private seriesId?: string;
@@ -168,7 +165,7 @@ export class LLMEngine extends BaseEngine {
       options.initialNotebook,
       `${this.reference.format}@${this.reference.revision}`,
     );
-    this.state = new BattleState(pid);
+    this.state = new PerspectiveState(pid);
     this.context = new LLMEngineContext(
       pid,
       options.initialContext,
@@ -191,7 +188,7 @@ export class LLMEngine extends BaseEngine {
     this.gameNumber = context.gameNumber;
     this.seriesId = context.seriesId;
     this.seriesScore = { ...(context.seriesScore ?? this.seriesScore) };
-    this.state = new BattleState(this.pid);
+    this.state = new PerspectiveState(this.pid);
     this.pending = undefined;
     this.transcript.reset();
     this.transcript.remember(
@@ -214,7 +211,7 @@ export class LLMEngine extends BaseEngine {
     return serializeBattleMemory(this.memory);
   }
 
-  override async endGame(context: GameEnd): Promise<void> {
+  override prepareGameEnd(context: GameEnd): GameAdaptationTask {
     this.seriesScore = { ...(context.seriesScore ?? this.seriesScore) };
     const winner = text(context.outcome.winner, "tie") || "tie";
     const won = context.outcome.won === true;
@@ -230,7 +227,16 @@ export class LLMEngine extends BaseEngine {
       result,
       series_score: this.seriesScore,
     });
-    await this.reflect(context, result);
+    return this.prepareReflection(context, result);
+  }
+
+  override async completeGameEnd(task: GameAdaptationTask): Promise<string> {
+    await this.reflect(task);
+    return this.coachingState();
+  }
+
+  override async endGame(context: GameEnd): Promise<void> {
+    await this.completeGameEnd(this.prepareGameEnd(context));
   }
 
   override observe(lines: string[]): void {
@@ -328,30 +334,26 @@ export class LLMEngine extends BaseEngine {
   }
 
   lookupDecisionTool(name: string, args: JsonObject): string {
+    if (!this.activeToolRequest)
+      throw new Error("battle tools are available only during an active decision");
+    return new ToolRound(
+      this.decisionTools,
+      (tool, input) => this.lookupDecisionQuery(tool, input),
+      () => {},
+      this.options.signal,
+    ).run(name, args);
+  }
+
+  private lookupDecisionQuery(name: string, args: JsonObject): string {
     const request = this.activeToolRequest;
     if (!request) throw new Error("battle tools are available only during an active decision");
-    if (!this.decisionTools.some((tool) => tool.name === name))
-      throw new Error(`unknown battle tool ${name}`);
     if (name === ACTION_ORDER_TOOL.name) return this.state.compareActionOrder(args, this.reference);
     if (name === "estimate_damage") return this.state.estimateDamage(args, request, this.reference);
     return this.lookupReferenceTool(name, args);
   }
 
   private lookupReferenceTool(name: string, args: JsonObject): string {
-    const key = `${name} ${JSON.stringify(args)}`;
-    const cached = this.dexLookupCache.get(key);
-    if (cached !== undefined) {
-      this.dexLookupCache.delete(key);
-      this.dexLookupCache.set(key, cached);
-      this.memory = rememberVerifiedReference(this.memory, name, args, cached);
-      return cached;
-    }
-    const result = this.reference.lookup(name, args);
-    this.dexLookupCache.set(key, result);
-    if (this.dexLookupCache.size > DEX_LOOKUP_CACHE_LIMIT) {
-      const oldest = this.dexLookupCache.keys().next().value;
-      if (oldest !== undefined) this.dexLookupCache.delete(oldest);
-    }
+    const result = this.referenceLookup(name, args);
     this.memory = rememberVerifiedReference(this.memory, name, args, result);
     return result;
   }
@@ -446,13 +448,18 @@ export class LLMEngine extends BaseEngine {
     let error = "no choices found";
     let parseFailures = 0;
     let toolRounds = 0;
-    const toolCalls: ToolTrace[] = [];
-    const offeredToolNames = new Set(this.decisionTools.map((tool) => tool.name));
-    const seenToolResults = new Map<string, string>();
+    const toolCalls: ToolQueryResult[] = [];
+    const lookup = cachedToolLookup((name, args) => this.lookupDecisionQuery(name, args));
     const failedAttempts: { response: string; error: string }[] = [];
     const reasoningParts: string[] = [];
     const upstreamProviders = new Set<string>();
     const messages: ProviderMessage[] = [{ role: "user", content: prompt }];
+    const session = new DecisionSession({
+      messages,
+      tools: this.decisionTools,
+      lookup,
+      signal: decisionSignal,
+    });
     const failDecision = (cause: unknown): Promise<number[]> => {
       const message = cause instanceof Error ? cause.message : String(cause);
       const failure = classifyProviderFailure(cause, this.spec);
@@ -545,104 +552,71 @@ export class LLMEngine extends BaseEngine {
       earlyLengthStop = undefined;
       const maxToolRounds =
         deadline === undefined ? UNTIMED_MAX_TOOL_ROUNDS : DECISION_MAX_TOOL_ROUNDS;
-      let cutoffAnnounced = false;
-      for (let round = 0; round <= maxToolRounds; round += 1) {
+      let completion: DecisionSessionResult;
+      try {
         if (generation !== this.generation) throw new DecisionAbandonedError();
         if (request.timer && remainingMs() < 2000)
           return failDecision(new Error("turn time exhausted"));
-        const finalRound = round === maxToolRounds || remainingMs() < forceCommitMs;
-        if (finalRound && !cutoffAnnounced) {
-          cutoffAnnounced = true;
-          messages.push({
-            role: "user",
-            content:
-              "Tool budget for this decision is exhausted; further tool calls will not be executed. Submit your choice now in the required JSON format.",
-          });
-        }
-        maxTokens = Math.max(tokenFloor, decisionTokenBudget(remainingMs(), pace()));
-        let completion: Completion;
-        try {
-          const attemptOptions: CompleteOptions = {
-            maxTokens,
-            tools: this.decisionTools,
-            toolChoice: finalRound ? "none" : "auto",
-          };
-          if (finalRound) attemptOptions.prefillResponse = DECISION_PREFILL;
-          if (request.timer) attemptOptions.failFast = true;
-          completion = await this.completeOnce(
-            messages,
-            attemptOptions,
-            this.briefed(
-              battleSystemPrompt({ sheets: this.sheets, timed: Boolean(request.timer) }),
-            ),
-            decisionSignal,
-          );
-        } catch (caught) {
-          if (generation !== this.generation) throw new DecisionAbandonedError();
-          if (request.timer && !this.options.signal?.aborted) return failDecision(caught);
-          throw caught;
-        }
-        for (const [key, value] of Object.entries(completion.usage)) {
-          usage[key] = (usage[key] ?? 0) + (key === "cost" ? value : Math.trunc(value));
-        }
-        if (completion.provider) upstreamProviders.add(completion.provider);
-        if (completion.reasoning) reasoningParts.push(completion.reasoning);
-        if (completion.toolCalls.length && !finalRound) {
-          toolRounds += 1;
-          const standardMax =
-            deadline === undefined
-              ? UNTIMED_MAX_STANDARD_TOOL_CALLS
-              : DECISION_MAX_STANDARD_TOOL_CALLS;
-          const orderMax =
-            deadline === undefined ? UNTIMED_MAX_ORDER_TOOL_CALLS : DECISION_MAX_ORDER_TOOL_CALLS;
-          const { kept: calls, dropped } = boundedToolCalls(
-            uniqueToolCalls(completion.toolCalls),
-            standardMax,
-            orderMax,
-          );
-          messages.push(assistantToolMessage(completion));
-          for (const call of dropped) {
-            const result = `Not executed: this round exceeded its budget of ${standardMax} standard and ${orderMax} order calls. Re-issue the call next round if you still need it.`;
-            toolCalls.push({ name: call.name, arguments: call.arguments, result });
-            messages.push(toolResultMessage(call.id, result));
-          }
-          for (const call of calls) {
-            const seenKey = `${call.name} ${JSON.stringify(call.arguments)}`;
-            const cached = seenToolResults.get(seenKey);
-            const result =
-              cached !== undefined
-                ? `[identical to an earlier call this decision] ${cached}`
-                : !offeredToolNames.has(call.name)
-                  ? `Not executed: tool ${JSON.stringify(call.name)} was not offered for this decision.`
-                  : this.lookupDecisionTool(call.name, call.arguments);
-            if (cached === undefined) seenToolResults.set(seenKey, result);
-            toolCalls.push({ name: call.name, arguments: call.arguments, result });
-            messages.push(toolResultMessage(call.id, result));
-          }
-          if (deadline !== undefined) {
+        completion = await session.completeToolLoop({
+          maxToolRounds,
+          finalNotice:
+            "Tool budget for this decision is exhausted; further tool calls will not be executed. Submit your choice now in the required JSON format.",
+          forceFinal: () => remainingMs() < forceCommitMs,
+          complete: async (currentMessages, finalRound, remainingOutputTokens) => {
+            maxTokens = Math.min(
+              remainingOutputTokens,
+              Math.max(tokenFloor, decisionTokenBudget(remainingMs(), pace())),
+            );
+            if (request.timer && remainingMs() < 2000) throw new Error("turn time exhausted");
+            const attemptOptions: CompleteOptions = {
+              maxTokens,
+              tools: this.decisionTools,
+              toolChoice: finalRound ? "none" : "auto",
+            };
+            if (finalRound) attemptOptions.prefillResponse = DECISION_PREFILL;
+            if (request.timer) attemptOptions.failFast = true;
+            return this.completeOnce(
+              currentMessages,
+              attemptOptions,
+              this.briefed(
+                battleSystemPrompt({ sheets: this.sheets, timed: Boolean(request.timer) }),
+              ),
+              decisionSignal,
+            );
+          },
+          afterToolRound: (currentMessages) => {
+            if (deadline === undefined) return;
             const seconds = Math.max(0, Math.round(remainingMs() / 1000));
-            const last = messages[messages.length - 1];
+            const last = currentMessages.at(-1);
             if (last) last.content = `${last.content}\n[Timer: ${seconds}s left this turn]`;
-          }
-          continue;
-        }
-        /** Reported output reaching this call's requested cap is budget exhaustion even when a provider
-         * omits finishReason. A length stop below that cap is still truncation, but not budget exhaustion. */
-        const outputTokens = Math.trunc(completion.usage.output_tokens ?? 0);
-        if (outputTokens >= maxTokens) truncatedBudget = maxTokens;
-        else if (completion.finishReason === "length")
-          earlyLengthStop = { outputTokens, requestedMaxTokens: maxTokens };
-        if (!completion.text && !completion.toolCalls.length && truncatedBudget) break;
-        rawResponse = completion.text;
-        /** Some reasoning models via gateways finish with every token in the reasoning channel and an
-         * empty text field; the decision they wrote is salvaged rather than bought again on a retry. */
-        if (!rawResponse && !completion.toolCalls.length && completion.reasoning) {
-          try {
-            extractChoices(completion.reasoning, menus, this.memory);
-            rawResponse = completion.reasoning;
-          } catch {}
-        }
-        break;
+          },
+        });
+      } catch (caught) {
+        if (generation !== this.generation) throw new DecisionAbandonedError();
+        if (request.timer && !this.options.signal?.aborted) return failDecision(caught);
+        throw caught;
+      }
+      for (const [key, value] of Object.entries(completion.usage)) {
+        usage[key] = (usage[key] ?? 0) + (key === "cost" ? value : Math.trunc(value));
+      }
+      toolRounds = completion.toolRounds;
+      toolCalls.splice(0, toolCalls.length, ...completion.toolQueries);
+      if (completion.provider) upstreamProviders.add(completion.provider);
+      if (completion.reasoning) reasoningParts.push(completion.reasoning);
+      /** Reported output reaching this call's requested cap is budget exhaustion even when a provider
+       * omits finishReason. A length stop below that cap is still truncation, but not budget exhaustion. */
+      const outputTokens = Math.trunc(completion.usage.output_tokens ?? 0);
+      if (outputTokens >= maxTokens) truncatedBudget = maxTokens;
+      else if (completion.finishReason === "length")
+        earlyLengthStop = { outputTokens, requestedMaxTokens: maxTokens };
+      rawResponse = completion.text;
+      /** Some reasoning models via gateways finish with every token in the reasoning channel and an
+       * empty text field; the decision they wrote is salvaged rather than bought again on a retry. */
+      if (!rawResponse && !completion.toolCalls.length && completion.reasoning) {
+        try {
+          extractChoices(completion.reasoning, menus, this.memory);
+          rawResponse = completion.reasoning;
+        } catch {}
       }
       if (!rawResponse) {
         error = truncatedBudget
@@ -876,6 +850,7 @@ export class LLMEngine extends BaseEngine {
       turn: this.state.turn,
       pid: this.pid,
       phase,
+      submission_id: submission.submissionId,
       prompt: pending.prompt ?? "",
       menus: menus.map((menu) => menu.map((item) => item.label)),
       choices,
@@ -922,7 +897,7 @@ export class LLMEngine extends BaseEngine {
     return battleMenuHints(this.state, this.pid, request);
   }
 
-  private async reflect(context: GameEnd, result: string): Promise<void> {
+  private prepareReflection(context: GameEnd, result: string): GameAdaptationTask {
     const seriesOver = context.seriesOver;
     const mine = this.seriesScore[this.pid];
     const theirs = this.seriesScore[this.pid === "p1" ? "p2" : "p1"];
@@ -966,9 +941,39 @@ export class LLMEngine extends BaseEngine {
                 ? CLOSED_SERIES_REFLECTION_SYSTEM
                 : REFLECTION_SYSTEM,
     );
+    return {
+      kind: "llm-reflection-v1",
+      game_id: this.gameId,
+      series_id: this.seriesId ?? null,
+      game_number: context.gameNumber,
+      result,
+      series_over: seriesOver,
+      retrospective,
+      opponent_scope_reset: context.tournamentStatus === "advancing",
+      prompt,
+      system,
+      memory_state: serializeBattleMemory(this.memory),
+    };
+  }
+
+  private async reflect(task: GameAdaptationTask): Promise<void> {
+    if (task.kind !== "llm-reflection-v1") throw new Error(`unknown adaptation ${task.kind}`);
+    const gameId = text(task.game_id);
+    const seriesId = text(task.series_id);
+    const gameNumber = Number(task.game_number);
+    const result = text(task.result);
+    const seriesOver = task.series_over === true;
+    const retrospective = task.retrospective === true;
+    const opponentScopeReset = task.opponent_scope_reset === true;
+    const prompt = text(task.prompt);
+    const system = text(task.system);
+    if (!gameId || !Number.isInteger(gameNumber) || gameNumber < 1 || !result || !prompt || !system)
+      throw new Error("invalid stored game adaptation task");
+    this.memory = createBattleMemory(task.memory_state, this.memory.authority);
     const {
       usage,
       rawResponse,
+      reasoning,
       error,
       failureSummary,
       failureKind,
@@ -981,11 +986,11 @@ export class LLMEngine extends BaseEngine {
     } = await requestReflection({
       prompt,
       currentMemory: () => this.memory,
-      fallbackMemory: () =>
-        context.tournamentStatus === "advancing" ? nextOpponentMemory(this.memory) : this.memory,
+      fallbackMemory: () => (opponentScopeReset ? nextOpponentMemory(this.memory) : this.memory),
       result,
       spec: this.spec,
       tools: this.reflectionTools,
+      signal: this.options.signal,
       retrospective,
       complete: (messages, finalRound) =>
         this.completeOnce(
@@ -1000,7 +1005,6 @@ export class LLMEngine extends BaseEngine {
       lookupTool: (name, args) => this.lookupReferenceTool(name, args),
     });
     this.stats.reflection(fallback, usage);
-    const opponentScopeReset = context.tournamentStatus === "advancing";
     this.memory = opponentScopeReset ? nextOpponentMemory(review.memory) : review.memory;
     const memoryState = serializeBattleMemory(this.memory);
     const memory = memoryTelemetry(this.memory);
@@ -1020,9 +1024,9 @@ export class LLMEngine extends BaseEngine {
         }
       : {};
     this.context.append("reflection", {
-      game_id: this.gameId,
-      series_id: this.seriesId ?? null,
-      game_number: context.gameNumber,
+      game_id: gameId,
+      series_id: seriesId || null,
+      game_number: gameNumber,
       result,
       series_over: seriesOver,
       summary: review.summary,
@@ -1037,9 +1041,9 @@ export class LLMEngine extends BaseEngine {
     });
     const reflectionLog = {
       kind: "game_reflection",
-      game_id: this.gameId,
-      series_id: this.seriesId ?? null,
-      game_number: context.gameNumber,
+      game_id: gameId,
+      series_id: seriesId || null,
+      game_number: gameNumber,
       pid: this.pid,
       result,
       series_over: seriesOver,
@@ -1062,13 +1066,14 @@ export class LLMEngine extends BaseEngine {
     };
     const reflectionTrace = {
       kind: "reflection_trace",
-      game_id: this.gameId,
-      series_id: this.seriesId ?? null,
-      game_number: context.gameNumber,
+      game_id: gameId,
+      series_id: seriesId || null,
+      game_number: gameNumber,
       pid: this.pid,
       series_over: seriesOver,
       prompt,
       raw_response: rawResponse,
+      reasoning,
       usage,
       tool_rounds: toolRounds,
       tool_calls: toolCalls,

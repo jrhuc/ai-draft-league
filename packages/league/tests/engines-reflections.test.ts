@@ -88,7 +88,7 @@ test("readable decisions, technical traces, and post-game reflections stay separ
   assert.match(provider.calls[1]!.system, /what, if anything, to keep or change/);
   assert.deepEqual(
     provider.calls[1]!.options.tools?.map((tool) => tool.name),
-    ["lookup_species", "lookup_move", "lookup_item", "lookup_ability"],
+    ["lookup_species", "lookup_move", "lookup_item", "lookup_ability", "batch_tools"],
   );
   assert.match(
     String(provider.calls[1]!.messages[0]!.content),

@@ -19,7 +19,7 @@ import {
 import { type GameSummary, seriesGameSummaries } from "./game-usage.js";
 import type { DraftTableRow, TeamBuildView } from "./views.js";
 import { BattleLog } from "./battlelog.js";
-import { appendJsonlObject, readJsonlObjects } from "./jsonl.js";
+import { readFranchiseCheckpoints, storeFranchiseCheckpoint } from "./league-journal.js";
 import { FORMAT_AUTHORITY_NOTICE, MANAGER_CHARGE, renderPromptTemplate } from "./prompts.js";
 import type { ModelReasoningConfig, ReasoningLevel } from "./providers.js";
 import {
@@ -88,7 +88,6 @@ const WEEKLY_REVIEW_PROMPT_POLICY = {
   maxTokens: 32_768,
   attempts: 3,
   toolRounds: 8,
-  maxCallsPerRound: 6,
 } as const;
 
 export interface WeeklyReviewSeries {
@@ -154,22 +153,36 @@ export interface WeeklyReview {
   fallback: boolean;
 }
 
+function storeReviewCheckpoint(runDir: string, review: WeeklyReview): void {
+  storeFranchiseCheckpoint(runDir, {
+    stage: review.stage,
+    week: review.week,
+    entrant: review.entrant,
+    model: review.model,
+    rosterVersion: review.roster_version,
+    memory: review.memory,
+    reasoning: review.reasoning,
+    fallback: review.fallback,
+  });
+}
+
 interface ReviewSeatLog {
   attempt: number;
   system?: string;
   user: string;
   response: string;
+  reasoning?: string;
   usage?: Record<string, number>;
   tool_lookups?: { name: string; arguments: JsonObject; result: string }[];
   error?: string;
 }
 
-export function reviewArtifactPaths(runDir: string, week: number, stage: ReviewStage = "week") {
-  const name = stage === "week" ? `week-${week}` : `week-${week}-transactions`;
-  return {
-    transcript: path.join(runDir, "reviews", `${name}.jsonl`),
-    logDir: path.join(runDir, "reviews", name),
-  };
+function reviewLogDir(runDir: string, week: number, stage: ReviewStage): string {
+  return path.join(
+    runDir,
+    "reviews",
+    stage === "week" ? `week-${week}` : `week-${week}-transactions`,
+  );
 }
 
 export interface ParsedWeeklyReview {
@@ -196,14 +209,6 @@ function parseWeeklyReviewResult(
       reasoning: clip((reasoning ?? "").trim(), WEEKLY_REVIEW_PROMPT_POLICY.rationaleLimit),
     },
   };
-}
-
-export function parseWeeklyReview(
-  response: string,
-  current: FranchiseMemory,
-): ParsedWeeklyReview | string {
-  const result = parseWeeklyReviewResult(response, current);
-  return "error" in result ? result.error : result.value;
 }
 
 function windowNotice(state: WeeklyReviewState): string {
@@ -330,7 +335,7 @@ export function narratePublicSeries(
     `Series ${series.index}, week ${series.week}: ${resultLine(series, models)}.`,
   ];
   for (const [gameIndex, gameLines] of readCompletedSeriesGameLogs(
-    path.join(runDir, "series", series.seriesId),
+    runDir,
     series.seriesId,
   ).entries()) {
     const log = new BattleLog(1_000);
@@ -354,8 +359,7 @@ export function narrateOwnSeries(
   entrant: number,
 ): string {
   const pid = series.entrants[0] === entrant ? "p1" : "p2";
-  const seriesDir = path.join(runDir, "series", series.seriesId);
-  const rows = readCompletedSeriesDecisionRows(seriesDir, series.seriesId, pid);
+  const rows = readCompletedSeriesDecisionRows(runDir, series.seriesId, pid);
   const lines: string[] = [`Series ${series.index}, week ${series.week}, your seat ${pid}.`];
   let game = -1;
   for (const row of rows) {
@@ -474,12 +478,7 @@ function reviewTools(
         return describeOwnBuild(
           series,
           entrant,
-          seriesGameSummaries(
-            path.join(options.runDir, "series", series.seriesId),
-            series.seriesId,
-            state.board.mons,
-            [first, second],
-          ),
+          seriesGameSummaries(options.runDir, series.seriesId, state.board.mons, [first, second]),
         );
       },
     ),
@@ -523,7 +522,7 @@ function reviewTools(
           week < state.week ||
           (week === state.week && stage === "week" && state.stage === "transactions");
         const row = precedes
-          ? readWeeklyReviews(options.runDir, week, stage).find(
+          ? readFranchiseCheckpoints(options.runDir, stage, week).find(
               (candidate) => candidate.entrant === entrant,
             )
           : undefined;
@@ -540,10 +539,15 @@ function reviewTools(
 
 function storedBarriers(runDir: string, state: WeeklyReviewState, entrant: number): string[] {
   const barriers: string[] = [];
+  const checkpoints = readFranchiseCheckpoints(runDir);
   for (let week = 1; week <= state.week; week += 1) {
     for (const stage of ["week", "transactions"] as const) {
       if (week === state.week && (stage === "transactions" || state.stage === "week")) continue;
-      if (readWeeklyReviews(runDir, week, stage).some((row) => row.entrant === entrant)) {
+      if (
+        checkpoints.some(
+          (row) => row.week === week && row.stage === stage && row.entrant === entrant,
+        )
+      ) {
         barriers.push(`week ${week} ${stage}`);
       }
     }
@@ -551,63 +555,37 @@ function storedBarriers(runDir: string, state: WeeklyReviewState, entrant: numbe
   return barriers;
 }
 
-const weeklyReviewRowSchema = z
-  .object({
-    timestamp: z.string().optional(),
-    entrant: z.number().int().nonnegative(),
-    model: z.string(),
-    stage: z.enum(["week", "transactions"]),
-    week: z.number().int(),
-    roster_version: z.number().int(),
-    memory: z.record(z.string(), z.string()),
-    reasoning: z.string(),
-    fallback: z.boolean(),
-  })
-  .passthrough();
-
-function replayReviews(file: string): WeeklyReview[] {
-  const seen = new Set<number>();
-  return readJsonlObjects(file).map((row, index) => {
-    const parsed = weeklyReviewRowSchema.safeParse(row);
-    if (!parsed.success) throw new Error(`invalid weekly review row ${index + 1} in ${file}`);
-    const { timestamp: _timestamp, ...review } = parsed.data;
-    if (seen.has(review.entrant)) {
-      throw new Error(`${file} holds a second review for entrant ${String(review.entrant)}`);
-    }
-    seen.add(review.entrant);
-    return review;
-  });
-}
-
 export function readWeeklyReviews(
   runDir: string,
   week: number,
   stage: ReviewStage = "week",
 ): WeeklyReview[] {
-  const { transcript } = reviewArtifactPaths(runDir, week, stage);
-  const reviews = replayReviews(transcript);
-  const misplaced = reviews.find((review) => review.week !== week || review.stage !== stage);
-  if (misplaced)
-    throw new Error(`${transcript} holds a review for week ${misplaced.week} ${misplaced.stage}`);
-  return reviews;
+  return readFranchiseCheckpoints(runDir, stage, week).map((checkpoint) => ({
+    entrant: checkpoint.entrant,
+    model: checkpoint.model,
+    stage,
+    week: checkpoint.week,
+    roster_version: checkpoint.rosterVersion,
+    memory: checkpoint.memory,
+    reasoning: checkpoint.reasoning,
+    fallback: checkpoint.fallback,
+  }));
 }
 
 export async function runWeeklyReview(
   state: WeeklyReviewState,
   options: RunWeeklyReviewOptions,
 ): Promise<WeeklyReview[]> {
-  const { transcript, logDir } = reviewArtifactPaths(options.runDir, state.week, state.stage);
-  const reviews = replayReviews(transcript);
+  const logDir = reviewLogDir(options.runDir, state.week, state.stage);
+  const reviews = readWeeklyReviews(options.runDir, state.week, state.stage);
   for (const review of reviews) {
     if (
-      review.stage !== state.stage ||
-      review.week !== state.week ||
       review.roster_version !== state.rosterVersion ||
       review.entrant >= state.models.length ||
       review.model !== state.models[review.entrant]
     ) {
       throw new Error(
-        `${transcript} holds a review for week ${review.week}, roster version ${review.roster_version}, entrant ${review.entrant}`,
+        `stored ${state.stage} review for week ${review.week} has roster version ${review.roster_version} for entrant ${review.entrant}`,
       );
     }
     state.memories[review.entrant] = cloneMemory(review.memory);
@@ -652,6 +630,7 @@ export async function runWeeklyReview(
           const promptForAttempt = messages[messages.length - 1]!.content ?? "";
           let response = "";
           let usage: Record<string, number> | undefined;
+          let reasoningTrace: string | undefined;
           let error: string | undefined;
           let terminalError: Error | undefined;
           const lookups: { name: string; arguments: JsonObject; result: string }[] = [];
@@ -670,6 +649,7 @@ export async function runWeeklyReview(
             });
             response = completion.text;
             usage = completion.usage;
+            reasoningTrace = completion.reasoning;
             const truncated = completion.outputLimitReached || completion.finishReason === "length";
             const candidate = truncated
               ? { error: "the reply was cut off before completing the JSON object" }
@@ -708,6 +688,7 @@ export async function runWeeklyReview(
             user: promptForAttempt,
             response,
             usage,
+            reasoning: reasoningTrace,
             tool_lookups: lookups.length ? lookups : undefined,
             error: error || undefined,
           } satisfies ReviewSeatLog;
@@ -727,7 +708,7 @@ export async function runWeeklyReview(
         reasoning: parsedReview.reasoning,
         fallback,
       };
-      appendJsonlObject(transcript, { ...review, timestamp: new Date().toISOString() });
+      storeReviewCheckpoint(options.runDir, review);
       state.memories[entrant] = cloneMemory(review.memory);
       options.onReview?.(review);
       return review;

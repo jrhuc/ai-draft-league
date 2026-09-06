@@ -27,8 +27,8 @@ test("system prompt names the tools and reserves timer policy for timed play", (
   assert.match(SYSTEM, /compare_action_order/);
   assert.doesNotMatch(SYSTEM, /battle timer/);
   assert.match(TIMED_SYSTEM, /battle timer/);
-  assert.match(TIMED_SYSTEM, /two reference calculations plus one action-order comparison/);
-  assert.ok(TIMED_SYSTEM.startsWith(SYSTEM.split("\n").slice(0, -1).join("\n")));
+  assert.match(SYSTEM, /batch_tools/);
+  assert.match(TIMED_SYSTEM, /batch_tools/);
   for (const prompt of [
     SYSTEM,
     TIMED_SYSTEM,

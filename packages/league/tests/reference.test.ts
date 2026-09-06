@@ -332,7 +332,7 @@ test("damage tools reject items removed from the Champions format", () => {
   );
 });
 
-test("damage estimates accept percentages only, reject zero exact stats, and label KO certainty", () => {
+test("damage estimates accept percentages only, reject zero exact stats, and label evaluated KO outcomes", () => {
   const reference = new ShowdownReference("gen9championsvgc2026regmb");
   const possible = reference.lookup("estimate_damage", {
     attacker: "Tauros-Paldea-Aqua",
@@ -343,7 +343,7 @@ test("damage estimates accept percentages only, reject zero exact stats, and lab
     defender_hp_percent: 70,
   });
   assert.match(possible, /Raging Bull \(Water Physical BP 90\)/);
-  assert.match(possible, /Possible KO from the shown 70%, not guaranteed/);
+  assert.match(possible, /KO from the shown 70% at one evaluated endpoint only/);
   assert.match(possible, /legal attack range/);
   assert.doesNotMatch(possible, /damage \d+-\d+|max HP \d+|current HP \d+/);
 
@@ -354,7 +354,8 @@ test("damage estimates accept percentages only, reject zero exact stats, and lab
     attacker_nature: "Adamant",
     defender_hp_percent: 10,
   });
-  assert.match(guaranteed, /Guaranteed KO from the shown 10%/);
+  assert.match(guaranteed, /KO from the shown 10% at both evaluated endpoints/);
+  assert.doesNotMatch(guaranteed, /Guaranteed/);
 
   const impossible = reference.lookup("estimate_damage", {
     attacker: "Pikachu",
@@ -362,7 +363,7 @@ test("damage estimates accept percentages only, reject zero exact stats, and lab
     move: "Quick Attack",
     attacker_nature: "Timid",
   });
-  assert.match(impossible, /Cannot OHKO/);
+  assert.match(impossible, /No OHKO at either evaluated endpoint/);
 
   const damageProperties = DEX_TOOLS.find((tool) => tool.name === "estimate_damage")!.parameters
     .properties;

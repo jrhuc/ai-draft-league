@@ -11,7 +11,7 @@ import type { ReasoningLevel } from "./providers.js";
 import { parseSpec, validateReasoning } from "./providers.js";
 import { resolveSeed, seededRng } from "./random.js";
 import type { SeriesRecord } from "./records.js";
-import { appendRow } from "./records.js";
+import { recordRow } from "./records.js";
 import { ShowdownReference } from "./reference.js";
 import { SeatBridge } from "./seat.js";
 import { makeEngine, playBo3 } from "./series.js";
@@ -268,7 +268,7 @@ export async function runExhibition(
       ),
       ps_commit: showdownCommit(psDir),
     };
-    appendRow(options.recordsPath ?? RESULTS_PATH, row);
+    recordRow(options.recordsPath ?? RESULTS_PATH, row);
     bridge.status = { ...bridge.status, state: "done", winner: row.winner ?? null };
     return row;
   } finally {

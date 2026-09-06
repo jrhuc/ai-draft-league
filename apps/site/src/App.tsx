@@ -4,6 +4,7 @@ import { Frame } from "ui/components/frame";
 import { formatLabel } from "ui/lib/format";
 import { NavLink } from "@/components/nav-link";
 import { useSeason } from "@/lib/season-context";
+import { DecisionTracePage } from "@/routes/decision-trace";
 import { DraftPage } from "@/routes/draft";
 import { HomePage } from "@/routes/home";
 import { MatchPage } from "@/routes/match";
@@ -93,6 +94,10 @@ export function App() {
         <Route path="/teams" element={<TeamsPage />} />
         <Route path="/teams/:id" element={<TeamPage />} />
         <Route path="/matches/:seriesId" element={<MatchPage />} />
+        <Route
+          path="/matches/:seriesId/games/:game/decisions/:decision"
+          element={<DecisionTracePage />}
+        />
         <Route path="/transactions" element={<TransactionsPage />} />
         <Route path="/playoffs" element={<PlayoffsPage />} />
         {LivePage ? (

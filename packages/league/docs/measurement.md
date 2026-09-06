@@ -45,4 +45,4 @@ Review text alone cannot prove a notebook handoff or behavioral change. Recorded
 
 ## Respect visibility
 
-A manager sees only the prompts, tools, public game state, and private memory supplied to its calls. Other seats' memory, raw responses, traces, and unreleased reasoning remain private. The [publication boundary](architecture.md#read-and-publish-data) defines what spectators can receive.
+A manager sees only the prompts, tools, public game state, and private memory supplied to its calls. Other seats' memory and raw traces are not supplied as model inputs. Spectators can read the published decision traces, including their prompts and reasoning, under the [publication boundary](architecture.md#read-and-publish-data).

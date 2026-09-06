@@ -35,6 +35,28 @@ test("authoritative lookup results persist into later decision prompts", async (
   assert.equal(asRecords(state.verified_references).length, 1);
 });
 
+test("a decision can change one notebook field without repeating its team playbook", async () => {
+  const provider = new ScriptedProvider([
+    JSON.stringify({ choices: [0], notebook: { series_memory: "Observed opponent evidence." } }),
+    JSON.stringify({ choices: [0], notebook: { next_game_plan: "Model-authored next plan." } }),
+  ]);
+  const engine = new LLMEngine("p1", "scripted", {
+    provider,
+    initialNotebook: "Original model-authored team plan.",
+    decisionLog: [],
+  });
+  await acceptedAct(engine, request(), { povLines: ["|turn|1"] });
+  await acceptedAct(engine, request(), { povLines: ["|turn|2"] });
+  const prompt = text(provider.calls[1]!.messages[0]!.content);
+  assert.match(prompt, /Original model-authored team plan/);
+  assert.match(prompt, /Observed opponent evidence/);
+  const state = asRecord(JSON.parse(engine.coachingState()));
+  assert.equal(state.team_playbook, "Original model-authored team plan.");
+  assert.equal(state.series_memory, "Observed opponent evidence.");
+  assert.equal(state.next_game_plan, "Model-authored next plan.");
+  assert.equal(provider.calls.length, 2);
+});
+
 test("over-budget decision memory is rejected without changing the action or stored state", async () => {
   const logs: JsonObject[] = [];
   const provider = new ScriptedProvider([

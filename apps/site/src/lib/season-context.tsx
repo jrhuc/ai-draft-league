@@ -1,7 +1,8 @@
 import { publicSeasonBundleSchema } from "league/protocol";
 import { createBundle } from "ui/lib/bundle";
 import { liveRunId, stopWatching } from "./live";
-import type { SeasonBundle } from "./season";
+import type { Season, SeasonBundle } from "./season";
+import { loadTraceManifest } from "./traces";
 
 async function fetchParsed(url: string): Promise<SeasonBundle> {
   const response = await fetch(url);
@@ -10,18 +11,26 @@ async function fetchParsed(url: string): Promise<SeasonBundle> {
   return publicSeasonBundleSchema.parse(value);
 }
 
-async function fetchBundle(): Promise<SeasonBundle> {
+async function fetchBundle(): Promise<Season> {
   if (import.meta.env.DEV) {
     const live = liveRunId();
     if (live) {
       try {
-        return await fetchParsed(`/api/watch/runs/${live}/bundle`);
+        const [bundle, traces] = await Promise.all([
+          fetchParsed(`/api/watch/runs/${live}/bundle`),
+          loadTraceManifest(),
+        ]);
+        return { ...bundle, traces };
       } catch {
         stopWatching();
       }
     }
   }
-  return fetchParsed("/season-bundle.json");
+  const [bundle, traces] = await Promise.all([
+    fetchParsed("/season-bundle.json"),
+    loadTraceManifest(),
+  ]);
+  return { ...bundle, traces };
 }
 
 const bundle = createBundle(

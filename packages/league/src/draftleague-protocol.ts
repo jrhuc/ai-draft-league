@@ -15,7 +15,6 @@ export interface DraftLeagueOptions extends ExperimentOptions {
   onEvent?: (event: DraftLeagueEvent) => void;
   throughWeek?: number;
   resume?: boolean;
-  sequentialWeeks?: boolean;
   transactions?: TransactionSchedule | null;
   swapsAllowed?: number;
   draftOnly?: boolean;

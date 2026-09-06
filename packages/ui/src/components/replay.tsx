@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { z } from "zod";
 import frameScript from "../frame/replay-frame.js?url&no-inline";
 import { seconds, toneStyle, tokens } from "../lib/format";
@@ -20,7 +21,14 @@ export type ReplayDecision = {
   automatic: boolean;
   latencyMs: number | null;
   reasoningTokens: number | null;
+  reasoningChars?: number | null;
 };
+
+export type TraceHref = (
+  decision: ReplayDecision,
+  position: number,
+  gameNumber: number,
+) => string | null;
 
 export type ReplayReflection = {
   team: Team;
@@ -110,7 +118,8 @@ function ShowdownPlayer({ game, teams }: { game: ReplayGameView; teams: [Team, T
         style={height ? { height } : undefined}
       />
       <p className="player-note">
-        If the animation is unavailable, the turn reasoning and full text log remain below.
+        If the animation is unavailable, each turn's stated reason and the full text log remain
+        below.
       </p>
     </div>
   );
@@ -125,7 +134,9 @@ function narrate(text: string, teams: [Team, Team]): string {
     );
 }
 
-function describeSelection(decision: ReplayDecision): string {
+export function describeSelection(
+  decision: Pick<ReplayDecision, "selection" | "action" | "phase">,
+): string {
   const picks = decision.selection;
   if (!picks.length) return decision.action || decision.phase;
   if (picks.every((pick) => pick.startsWith("Pick ")))
@@ -133,11 +144,22 @@ function describeSelection(decision: ReplayDecision): string {
   return picks.join(" · ").replaceAll(" -> ", " → ");
 }
 
-function DecisionRow({ decision, position }: { decision: ReplayDecision; position: number }) {
+function DecisionRow({
+  decision,
+  position,
+  gameNumber,
+  traceHref,
+}: {
+  decision: ReplayDecision;
+  position: number;
+  gameNumber: number;
+  traceHref?: TraceHref;
+}) {
   const { team } = decision;
   const choice = describeSelection(decision);
   const context = decision.turn === 0 ? "team preview" : `turn ${decision.turn}`;
-  const rationaleLabel = `${team.name} rationale for ${choice}, ${context}, decision ${position + 1}`;
+  const rationaleLabel = `${team.name} stated reason for ${choice}, ${context}, decision ${position + 1}`;
+  const trace = traceHref?.(decision, position, gameNumber) ?? null;
   return (
     <div className="dec" style={toneStyle(team.tone)}>
       <span className="who">{team.name}</span>
@@ -153,10 +175,22 @@ function DecisionRow({ decision, position }: { decision: ReplayDecision; positio
         {decision.reasoningTokens !== null
           ? ` · ${tokens(decision.reasoningTokens)} reasoning`
           : ""}
+        {trace ? (
+          <>
+            {" · "}
+            <Link
+              className="trace"
+              to={trace}
+              aria-label={`${team.name} full trace, ${context}, decision ${position + 1}`}
+            >
+              Full trace
+            </Link>
+          </>
+        ) : null}
       </span>
       {decision.rationale ? (
         <details>
-          <summary aria-label={rationaleLabel}>Reasoning</summary>
+          <summary aria-label={rationaleLabel}>Stated reason</summary>
           <blockquote>{decision.rationale}</blockquote>
         </details>
       ) : null}
@@ -230,11 +264,17 @@ function Game({
   teams,
   lastGame,
   sheets,
+  traceHref,
+  selectedTurn,
+  seat,
 }: {
   game: ReplayGameView;
   teams: [Team, Team];
   lastGame: boolean;
   sheets?: ReactNode;
+  traceHref?: TraceHref;
+  selectedTurn: number | null;
+  seat: string;
 }) {
   const turns = useMemo(() => {
     const rows: Array<{ turn: number; decisions: Array<[ReplayDecision, number]> }> = [];
@@ -257,6 +297,10 @@ function Game({
     return rows;
   }, [game.events]);
 
+  useEffect(() => {
+    document.getElementById(`turn-${selectedTurn}`)?.scrollIntoView?.({ block: "nearest" });
+  }, [selectedTurn]);
+
   return (
     <div className="replay">
       <ShowdownPlayer game={game} teams={teams} />
@@ -264,15 +308,23 @@ function Game({
 
       <div className="turns">
         {turns.map(({ turn, decisions }) => (
-          <section key={turn} className="turn">
+          <section
+            key={turn}
+            id={`turn-${turn}`}
+            className={`turn${turn === selectedTurn ? " turn-selected" : ""}`}
+          >
             <div className="turn-head">{turn === 0 ? "Team preview" : `Turn ${turn}`}</div>
-            {decisions.map(([decision, position]) => (
-              <DecisionRow
-                key={`${turn}-${decision.team.id}-${position}`}
-                decision={decision}
-                position={position}
-              />
-            ))}
+            {decisions
+              .filter(([decision]) => !seat || decision.team.id === seat)
+              .map(([decision, position]) => (
+                <DecisionRow
+                  key={`${turn}-${decision.team.id}-${position}`}
+                  decision={decision}
+                  position={position}
+                  gameNumber={game.number}
+                  traceHref={traceHref}
+                />
+              ))}
           </section>
         ))}
       </div>
@@ -310,23 +362,37 @@ export function ReplayViewer({
   games,
   teams,
   sheets,
+  traceHref,
 }: {
   games: ReplayGameView[];
   teams: [Team, Team];
   sheets?: ReactNode;
+  traceHref?: TraceHref;
 }) {
-  const [index, setIndex] = useState(0);
-  const game = games[index] ?? games[0];
+  const [search, setSearch] = useSearchParams();
+  const game = games.find((entry) => entry.number === Number(search.get("game"))) ?? games[0];
   if (!game) return null;
+  const selectedTurn =
+    search.has("turn") &&
+    game.decisions.some((decision) => decision.turn === Number(search.get("turn")))
+      ? Number(search.get("turn"))
+      : null;
+  const seat = teams.some((team) => team.id === search.get("seat")) ? search.get("seat")! : "";
+  function select(key: string, value: string) {
+    const next = new URLSearchParams(search);
+    next.set(key, value);
+    if (key === "game") next.delete("turn");
+    setSearch(next);
+  }
   return (
     <div>
       <div className="game-tabs" role="group" aria-label="Games">
-        {games.map((entry, i) => (
+        {games.map((entry) => (
           <button
             key={entry.number}
             type="button"
-            aria-pressed={i === index}
-            onClick={() => setIndex(i)}
+            aria-pressed={entry.number === game.number}
+            onClick={() => select("game", String(entry.number))}
           >
             Game {entry.number}{" "}
             <small>
@@ -336,12 +402,42 @@ export function ReplayViewer({
           </button>
         ))}
       </div>
+      <div className="replay-position">
+        <label>
+          Decision turn{" "}
+          <select
+            value={selectedTurn ?? 0}
+            onChange={(event) => select("turn", event.target.value)}
+          >
+            {[...new Set([0, ...game.decisions.map((decision) => decision.turn)])].map((turn) => (
+              <option key={turn} value={turn}>
+                {turn === 0 ? "Team preview" : `Turn ${turn}`}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Team{" "}
+          <select value={seat} onChange={(event) => select("seat", event.target.value)}>
+            <option value="">Both teams</option>
+            {teams.map((team) => (
+              <option key={team.id} value={team.id}>
+                {team.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span className="hint">Filters the decision list; animation controls are separate.</span>
+      </div>
       <Game
         key={game.number}
         game={game}
         teams={teams}
-        lastGame={index === games.length - 1}
+        lastGame={game.number === games.at(-1)?.number}
         sheets={sheets}
+        traceHref={traceHref}
+        selectedTurn={selectedTurn}
+        seat={seat}
       />
     </div>
   );

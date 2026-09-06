@@ -33,6 +33,6 @@ All 4 fields require non-empty strings of at most 2,000 characters:
 
 ## Persist and resume
 
-`season.jsonl` stores one row per manager. Per-seat prompts and response attempts live under `season/`.
+Each manager's review commits to `league.sqlite`. Per-seat prompts and response attempts live under `season/`.
 
 Resume replays a completed row instead of requesting another retrospective.

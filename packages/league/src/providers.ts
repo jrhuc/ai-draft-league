@@ -17,6 +17,8 @@ import {
 import { z } from "zod";
 
 import { providerOption, type ProviderOption } from "./provider-registry.js";
+import { convertMessages } from "./provider-messages.js";
+export { assistantToolMessage, toolResultMessage, uniqueToolCalls } from "./provider-messages.js";
 import { redactSecrets } from "./sanitize.js";
 import type {
   CompleteOptions,
@@ -140,43 +142,6 @@ export function opencodeApi(provider: "opencode-go" | "opencode-zen", model: str
   if (/^(?:claude-|qwen)/.test(id)) return "messages";
   if (provider === "opencode-go" && id.startsWith("minimax-")) return "messages";
   return "chat";
-}
-
-function parseToolArguments(value: JsonValue): JsonObject {
-  if (isRecord(value)) return value;
-  if (!isText(value) || !value.trim()) return {};
-  try {
-    const parsed = JSON.parse(value);
-    return isRecord(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-/** Providers reject a round that answers one call id twice, and some models do repeat an id across
- * the tool calls in a single response. Collapsing to the first occurrence is the only reply that
- * stays valid: an invented id for the duplicate is rejected just as hard as the duplicate itself. */
-export function uniqueToolCalls(calls: ToolCall[]): ToolCall[] {
-  const byId = new Map<string, ToolCall>();
-  calls.forEach((call, index) => {
-    const id = call.id || `call_${index}`;
-    if (!byId.has(id)) byId.set(id, { ...call, id });
-  });
-  return [...byId.values()];
-}
-
-export function assistantToolMessage(completion: Completion): ProviderMessage {
-  const message: ProviderMessage = {
-    role: "assistant",
-    content: completion.text || null,
-    toolCalls: uniqueToolCalls(completion.toolCalls),
-  };
-  if (completion.responseMessages?.length) message.raw = completion.responseMessages;
-  return message;
-}
-
-export function toolResultMessage(callId: string, content: string): ProviderMessage {
-  return { role: "tool", toolCallId: callId, content };
 }
 
 export class ApiError extends Error {
@@ -496,52 +461,6 @@ export function nitroSpec(spec: string): string {
   if (!spec.startsWith("openrouter:")) return spec;
   if (/:(?:nitro|floor|free)$/.test(spec)) return spec;
   return `${spec}:nitro`;
-}
-
-function convertMessages(messages: ProviderMessage[]): ModelMessage[] {
-  const converted: ModelMessage[] = [];
-  const callNames = new Map<string, string>();
-  for (const message of messages) {
-    if (message.role === "tool") {
-      converted.push({
-        role: "tool",
-        content: [
-          {
-            type: "tool-result",
-            toolCallId: message.toolCallId ?? "",
-            toolName: callNames.get(message.toolCallId ?? "") ?? message.name ?? "",
-            output: { type: "text", value: message.content ?? "" },
-          },
-        ],
-      });
-    } else if (message.role === "assistant" && message.toolCalls?.length) {
-      for (const call of message.toolCalls) callNames.set(call.id, call.name);
-      if (message.raw?.length) {
-        converted.push(...message.raw);
-        continue;
-      }
-      const content: Extract<ModelMessage, { role: "assistant" }>["content"] = [];
-      if (message.content) content.push({ type: "text", text: message.content });
-      for (const call of message.toolCalls) {
-        const providerOptions = call.providerMetadata;
-        const part: Extract<
-          Extract<ModelMessage, { role: "assistant" }>["content"][number],
-          { type: "tool-call" }
-        > = {
-          type: "tool-call",
-          toolCallId: call.id,
-          toolName: call.name,
-          input: call.arguments,
-        };
-        if (providerOptions) part.providerOptions = providerOptions;
-        content.push(part);
-      }
-      converted.push({ role: "assistant", content });
-    } else {
-      converted.push({ role: message.role, content: message.content ?? "" });
-    }
-  }
-  return converted;
 }
 
 const TOOL_SETS = new WeakMap<ToolDefinition[], ToolSet>();
@@ -871,12 +790,17 @@ class SdkProvider implements Provider {
       if (cacheReadTokens > 0) completionUsage.cached_input_tokens = cacheReadTokens;
       if (reportedGateway?.cost !== undefined) completionUsage.cost = reportedGateway.cost;
       const toolCalls: ToolCall[] = streamToolCalls.map((call) => {
+        const input = z.json().catch(null).parse(call.input);
         const convertedCall: ToolCall = {
           id: call.toolCallId,
           name: call.toolName,
-          arguments: parseToolArguments(z.json().catch(null).parse(call.input)),
+          arguments: isRecord(input) ? input : {},
         };
         if (call.providerMetadata) convertedCall.providerMetadata = call.providerMetadata;
+        if (call.invalid)
+          convertedCall.inputError = this.redactedError(call.error, secrets).message;
+        else if (!isRecord(input))
+          convertedCall.inputError = "tool arguments must be a JSON object";
         return convertedCall;
       });
       const completion: Completion = {

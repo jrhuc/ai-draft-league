@@ -4,11 +4,13 @@ import { useReveal } from "../lib/use-reveal";
 import { PokeBall } from "./pokeball";
 
 function RouteEffects() {
-  const { pathname } = useLocation();
+  const { pathname, hash } = useLocation();
   useEffect(() => {
-    window.scrollTo(0, 0);
+    const target = hash ? document.getElementById(hash.slice(1)) : null;
+    if (target) target.scrollIntoView?.({ block: "start" });
+    else window.scrollTo(0, 0);
     document.querySelector<HTMLElement>("#main")?.focus({ preventScroll: true });
-  }, [pathname]);
+  }, [pathname, hash]);
   return null;
 }
 

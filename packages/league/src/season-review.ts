@@ -6,7 +6,7 @@ import { z } from "zod";
 import { completeWithDexTools } from "./dex-lookups.js";
 import type { DraftBoard, DraftBoardMon } from "./draft.js";
 import type { DraftPickView, DraftTableRow } from "./views.js";
-import { appendJsonlObject, readJsonlObjects } from "./jsonl.js";
+import { commitRunArtifact, readRunArtifacts } from "./run-artifact-store.js";
 import { FORMAT_AUTHORITY_NOTICE, MANAGER_CHARGE, renderPromptTemplate } from "./prompts.js";
 import type { ModelReasoningConfig, ReasoningLevel } from "./providers.js";
 import {
@@ -54,7 +54,6 @@ const SEASON_REVIEW_PROMPT_POLICY = {
   maxTokens: 32_768,
   attempts: 3,
   toolRounds: 6,
-  maxCallsPerRound: 6,
 } as const;
 
 export interface SeasonReview {
@@ -107,6 +106,7 @@ interface SeasonSeatLog {
   system?: string;
   user: string;
   response: string;
+  reasoning?: string;
   usage?: Record<string, number>;
   tool_lookups?: { name: string; arguments: JsonObject; result: string }[];
   error?: string;
@@ -262,10 +262,10 @@ const seasonReviewRowSchema = z
   })
   .passthrough();
 
-function replayReviews(file: string): SeasonReview[] {
-  return readJsonlObjects(file).map((row, index) => {
-    const parsed = seasonReviewRowSchema.safeParse(row);
-    if (!parsed.success) throw new Error(`invalid season review row ${index + 1} in ${file}`);
+function replayReviews(runDir: string): SeasonReview[] {
+  return readRunArtifacts(runDir, "season-review").map(({ key, value }) => {
+    const parsed = seasonReviewRowSchema.safeParse(value);
+    if (!parsed.success) throw new Error(`invalid season review artifact ${key}`);
     const { timestamp: _timestamp, ...review } = parsed.data;
     return review;
   });
@@ -276,9 +276,8 @@ export async function runSeasonReview(
   state: SeasonReviewState,
   options: RunSeasonReviewOptions,
 ): Promise<SeasonReview[]> {
-  const transcript = path.join(options.runDir, "season.jsonl");
   const logDir = path.join(options.runDir, "season");
-  const reviews = replayReviews(transcript);
+  const reviews = replayReviews(options.runDir);
   const pending = finished.filter(
     (entry) => !reviews.some((review) => review.entrant === entry.entrant),
   );
@@ -319,6 +318,7 @@ export async function runSeasonReview(
           const promptForAttempt = messages[messages.length - 1]!.content ?? "";
           let response = "";
           let usage: Record<string, number> | undefined;
+          let reasoningTrace: string | undefined;
           let error: string | undefined;
           let terminalError: Error | undefined;
           const lookups: { name: string; arguments: JsonObject; result: string }[] = [];
@@ -335,6 +335,7 @@ export async function runSeasonReview(
             });
             response = completion.text;
             usage = completion.usage;
+            reasoningTrace = completion.reasoning;
             const candidate = parseSeasonReviewResult(response || completion.reasoning || "");
             if ("error" in candidate) {
               error =
@@ -376,6 +377,7 @@ export async function runSeasonReview(
             user: promptForAttempt,
             response,
             usage,
+            reasoning: reasoningTrace,
             tool_lookups: lookups.length ? lookups : undefined,
             error: error || undefined,
           } satisfies SeasonSeatLog;
@@ -391,7 +393,8 @@ export async function runSeasonReview(
         fallback = Boolean(provider);
       }
       const review: SeasonReview = { entrant, model, outcome, ...parsed, fallback };
-      appendJsonlObject(transcript, { ...review, timestamp: new Date().toISOString() });
+      const row = { ...review, timestamp: new Date().toISOString() };
+      commitRunArtifact(options.runDir, "season-review", String(entrant).padStart(6, "0"), row);
       options.onReview?.(review);
       return review;
     },

@@ -8,6 +8,13 @@ import { TeamTag, teamStyle } from "@/components/team";
 import { franchise, franchiseIndex, matchBySeries, monName } from "@/lib/load";
 import type { Match } from "@/lib/season";
 import { useSeason, useTitle } from "@/lib/season-context";
+import {
+  decisionTracePath,
+  deployedTraces,
+  gameHasTraces,
+  gameTracesUrl,
+  traceArchiveUrl,
+} from "@/lib/traces";
 import { NotFoundPage } from "@/routes/not-found";
 
 function broughtGames(match: Match, side: 0 | 1, draftId: string): number[] {
@@ -32,6 +39,8 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
   const replay = season.replays[seriesId];
   if (!row || !replay) throw new Error(`series ${seriesId} is not released`);
   const { match, label } = row;
+  const traces = deployedTraces(season);
+  const tracedGames = replay.games.filter((game) => gameHasTraces(season, seriesId, game.number));
   const [a, b] = match.franchises;
   useTitle(`${franchise(season, a).name} vs ${franchise(season, b).name} · ${label}`);
   const team = (id: string): Team => ({
@@ -88,13 +97,22 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
         <div className="section-head">
           <h2>Replay</h2>
           <p>
-            Replay via <a href="https://pokemonshowdown.com/">Pokémon Showdown</a>. Model reasoning
-            follows each turn. AUTO marks a forced choice.
+            Replay via <a href="https://pokemonshowdown.com/">Pokémon Showdown</a>. Each turn shows
+            the reason the model stated
+            {tracedGames.length
+              ? "; its full trace holds the complete reasoning, prompt, and tool calls"
+              : ""}
+            . AUTO marks a forced choice.
           </p>
         </div>
         <ReplayViewer
           games={games}
           teams={teams}
+          traceHref={(decision, position, gameNumber) =>
+            decision.reasoningChars === null || !gameHasTraces(season, seriesId, gameNumber)
+              ? null
+              : decisionTracePath(seriesId, gameNumber, position)
+          }
           sheets={
             <details
               className="sheets"
@@ -126,7 +144,7 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
                       <details>
                         <summary>Why this team</summary>
                         <p className="rationale">
-                          {build.rationale || "No build reasoning recorded."}
+                          {build.rationale || "No stated reason recorded."}
                         </p>
                       </details>
                       {build.sets ? (
@@ -159,6 +177,27 @@ function MatchPageBody({ seriesId }: { seriesId: string }) {
             </details>
           }
         />
+        {traces && tracedGames.length ? (
+          <p className="hint downloads">
+            Download traces:{" "}
+            {tracedGames.map((game, index) => (
+              <span key={game.number}>
+                {index > 0 ? " · " : ""}
+                <a
+                  href={gameTracesUrl(
+                    seriesId,
+                    game.number,
+                    traces.digests[seriesId]?.[game.number],
+                  )}
+                >
+                  Game {game.number}
+                </a>
+              </span>
+            ))}
+            {" · "}
+            <a href={traceArchiveUrl(traces)}>whole season (.jsonl.gz)</a>
+          </p>
+        ) : null}
       </section>
 
       {match.games.some((game) => game.brought[0].length || game.brought[1].length) ? (

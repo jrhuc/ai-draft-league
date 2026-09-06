@@ -23,13 +23,7 @@ export {
   readCompletedSeriesDecisionRows,
   readCompletedSeriesEvidence,
   readCompletedSeriesGameLogs,
-  recordedSeriesMetadataSchema,
-  RECORDED_SERIES_METADATA_SCHEMA_VERSION,
-  resolveAttemptLineage,
-  selectCompletedDecisionRows,
-  SERIES_ATTEMPT_SCHEMA_VERSION,
-  SERIES_GAME_COMPLETION_SCHEMA_VERSION,
-  storedSeriesMetadataSchema,
+  seriesDirectory,
 } from "./recorded-series.js";
-export type { Bo3Context, Bo3Result } from "./live-recorded-series.js";
-export { playBo3, playRecordedSeries } from "./live-recorded-series.js";
+export type { Bo3Context, Bo3Result } from "./match-runner.js";
+export { MatchRunner, playBo3 } from "./match-runner.js";

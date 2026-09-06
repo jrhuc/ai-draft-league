@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { JsonObject, JsonValue } from "./types.js";
-import { isRecord, isText } from "./value.js";
+import { toolQueryKey } from "./tool-cache.js";
 
 export const TEAM_PLAYBOOK_CHAR_LIMIT = 3500;
 export const SERIES_MEMORY_CHAR_LIMIT = 3000;
@@ -16,9 +16,9 @@ const referenceToolSchema = z.enum([
   "lookup_ability",
 ]);
 const notebookSchema = z.strictObject({
-  team_playbook: z.string(),
-  series_memory: z.string(),
-  next_game_plan: z.string(),
+  team_playbook: z.string().optional(),
+  series_memory: z.string().optional(),
+  next_game_plan: z.string().optional(),
 });
 const verifiedReferenceSchema = z.strictObject({
   tool: referenceToolSchema,
@@ -133,20 +133,20 @@ export function applyMemoryUpdate(
   current: BattleMemory,
   value: JsonValue | undefined,
 ): MemoryUpdate {
-  const supplied = isRecord(value) || isText(value);
+  const supplied = value !== undefined;
   if (!supplied) return unchangedMemoryUpdate(current, false);
   const parsed = notebookSchema.safeParse(value);
   if (!parsed.success) {
     return {
       ...unchangedMemoryUpdate(current, true),
       error:
-        'notebook must be {"team_playbook":"...","series_memory":"...","next_game_plan":"..."}',
+        'notebook must be an object with optional string fields "team_playbook", "series_memory", and "next_game_plan"; omitted fields are unchanged',
     };
   }
   const fields = {
-    teamPlaybook: parsed.data.team_playbook.trim(),
-    seriesMemory: parsed.data.series_memory.trim(),
-    nextGamePlan: parsed.data.next_game_plan.trim(),
+    teamPlaybook: parsed.data.team_playbook?.trim() ?? current.teamPlaybook,
+    seriesMemory: parsed.data.series_memory?.trim() ?? current.seriesMemory,
+    nextGamePlan: parsed.data.next_game_plan?.trim() ?? current.nextGamePlan,
   };
   const proposedCharacters =
     fields.teamPlaybook.length + fields.seriesMemory.length + fields.nextGamePlan.length;
@@ -292,7 +292,7 @@ function renderVerifiedReference(entry: VerifiedReference): string {
 }
 
 function verifiedReferenceKey(entry: VerifiedReference): string {
-  return `${entry.tool}:${JSON.stringify(entry.arguments)}`;
+  return toolQueryKey(entry.tool, entry.arguments);
 }
 
 function stableArguments(args: JsonObject): JsonObject {

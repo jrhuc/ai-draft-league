@@ -17,9 +17,14 @@ export function createBundle<T>(
     if (!pending) {
       const attempt = load();
       pending = attempt;
-      void attempt.catch(() => {
-        if (pending === attempt) pending = null;
-      });
+      void attempt.then(
+        () => {
+          if (pending === attempt) pending = null;
+        },
+        () => {
+          if (pending === attempt) pending = null;
+        },
+      );
     }
     return pending;
   };

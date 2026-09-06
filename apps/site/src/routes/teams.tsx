@@ -21,7 +21,7 @@ export function TeamsPage() {
           per model
         </h1>
         <p className="sub">
-          Each team page has the roster, the reasoning behind each pick, every series, and the
+          Each team page has the roster, the stated reason behind each pick, every series, and the
           model’s final season review.
         </p>
       </section>
