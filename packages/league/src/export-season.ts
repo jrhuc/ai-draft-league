@@ -1,9 +1,12 @@
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
+import { gzipSync } from "node:zlib";
 import { z } from "zod";
 
 import { buildLeague, buildLeagueGame } from "./archive.js";
-import { writeAtomicJson } from "./atomic-json.js";
+import { writeAtomicBytes, writeAtomicJson } from "./atomic-json.js";
+import { readGameDecisionTraces } from "./decision-traces.js";
 import { describeBoardMon, loadBoard } from "./draft.js";
 import { buildDraftLeagueSchedule, type DraftLeagueSeriesPlan } from "./draftleague-protocol.js";
 import { SAFE_SEGMENT } from "./path-safety.js";
@@ -12,12 +15,19 @@ import {
   buildPublicSeasonBundle,
   type PublicSeasonGameInput,
 } from "./public/season-bundle.js";
-import type { PublicSeasonBundle } from "./public/season-protocol.js";
+import {
+  type PublicGameTraces,
+  publicGameTracesSchema,
+  type PublicSeasonBundle,
+  type PublicTracesManifest,
+  publicTracesManifestSchema,
+} from "./public/season-protocol.js";
 import { loadSeriesRecords } from "./records.js";
 import { showdownCommit as currentShowdownCommit } from "./showdown.js";
 
 export interface ExportSeasonOptions {
   out: string;
+  tracesDir: string;
   recordsPath: string;
   runsDir: string;
   runId: string;
@@ -25,6 +35,12 @@ export interface ExportSeasonOptions {
   /** "all" releases every played series — live watching only, never publication. */
   releasedThroughWeek: number | "all";
   generatedAt?: string;
+}
+
+export interface SeasonExport {
+  bundle: PublicSeasonBundle;
+  traces: ReadonlyMap<string, readonly PublicGameTraces[]>;
+  manifest: PublicTracesManifest;
 }
 
 interface StoredLeagueConfig {
@@ -82,7 +98,9 @@ function lastCompleteRound(
   return released;
 }
 
-export function buildSeasonExport(options: Omit<ExportSeasonOptions, "out">): PublicSeasonBundle {
+export function buildSeasonExport(
+  options: Omit<ExportSeasonOptions, "out" | "tracesDir">,
+): SeasonExport {
   if (!SAFE_SEGMENT.test(options.runId))
     throw new Error(`invalid run id ${JSON.stringify(options.runId)}`);
   const rows = loadSeriesRecords(options.recordsPath);
@@ -99,9 +117,16 @@ export function buildSeasonExport(options: Omit<ExportSeasonOptions, "out">): Pu
       ? lastCompleteRound(league.series, schedule.plans, totalWeeks, schedule.playoffRounds)
       : options.releasedThroughWeek;
   const games = new Map<string, PublicSeasonGameInput[]>();
+  const traces = new Map<string, PublicGameTraces[]>();
   for (const series of league.series) {
     const releasedRound = series.stage === "roundrobin" ? series.round : totalWeeks + series.round;
     if (releasedRound > releasedThroughWeek) continue;
+    const seriesDir = path.join(options.runsDir, options.runId, "series", series.seriesId);
+    const franchises: [string, string] = [
+      `franchise-${series.sides[0]}`,
+      `franchise-${series.sides[1]}`,
+    ];
+    const seriesTraces: PublicGameTraces[] = [];
     games.set(
       series.seriesId,
       series.games.map((_, gameIndex) => {
@@ -116,9 +141,18 @@ export function buildSeasonExport(options: Omit<ExportSeasonOptions, "out">): Pu
           throw new Error(
             `released series ${series.seriesId} game ${gameIndex + 1} has no verified replay`,
           );
-        return game;
+        const gameTraces = publicGameTracesSchema.parse({
+          runId: options.runId,
+          seriesId: series.seriesId,
+          game: gameIndex + 1,
+          franchises,
+          decisions: readGameDecisionTraces(seriesDir, gameIndex + 1, franchises, game.decisions),
+        });
+        seriesTraces.push(gameTraces);
+        return { ...game, traces: gameTraces.decisions };
       }),
     );
+    traces.set(series.seriesId, seriesTraces);
   }
   const bundleOptions: BuildPublicSeasonBundleOptions = {
     league,
@@ -131,12 +165,47 @@ export function buildSeasonExport(options: Omit<ExportSeasonOptions, "out">): Pu
     showdownCommit: config.showdownCommit,
     generatedAt: options.generatedAt,
   };
-  return buildPublicSeasonBundle(bundleOptions);
+  const bundle = buildPublicSeasonBundle(bundleOptions);
+  const manifest = publicTracesManifestSchema.parse({
+    runId: options.runId,
+    generatedAt: bundle.generatedAt,
+    archive: `${options.runId}.jsonl.gz`,
+    digests: Object.fromEntries(
+      [...traces].map(([seriesId, games]) => [
+        seriesId,
+        Object.fromEntries(
+          games.map((game) => [
+            game.game,
+            createHash("sha256").update(JSON.stringify(game)).digest("hex"),
+          ]),
+        ),
+      ]),
+    ),
+  });
+  return { bundle, traces, manifest };
 }
 
-export function exportSeasonBundle(options: ExportSeasonOptions): PublicSeasonBundle {
-  const bundle = buildSeasonExport(options);
+export function exportSeasonBundle(options: ExportSeasonOptions): SeasonExport {
+  const exported = buildSeasonExport(options);
+  const tracesDir = options.tracesDir;
+  const archiveLines: string[] = [];
+  for (const [seriesId, games] of exported.traces) {
+    fs.mkdirSync(path.join(tracesDir, seriesId), { recursive: true });
+    for (const game of games) {
+      writeAtomicJson(path.join(tracesDir, seriesId, `game-${game.game}.json`), game);
+      for (const [index, decision] of game.decisions.entries()) {
+        if (decision)
+          archiveLines.push(JSON.stringify({ seriesId, game: game.game, index, ...decision }));
+      }
+    }
+  }
+  fs.mkdirSync(tracesDir, { recursive: true });
+  writeAtomicBytes(
+    path.join(tracesDir, exported.manifest.archive),
+    gzipSync(archiveLines.map((line) => `${line}\n`).join(""), { level: 9 }),
+  );
+  writeAtomicJson(path.join(tracesDir, "manifest.json"), exported.manifest);
   fs.mkdirSync(path.dirname(options.out), { recursive: true });
-  writeAtomicJson(options.out, bundle);
-  return bundle;
+  writeAtomicJson(options.out, exported.bundle);
+  return exported;
 }

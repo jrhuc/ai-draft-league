@@ -7,11 +7,13 @@ import { test } from "vite-plus/test";
 import { buildTournamentExport } from "../src/export-tournament.js";
 import { publicTournamentBundleSchema } from "../src/public/tournament-protocol.js";
 import { seriesRecordFixture } from "./fixtures/records.js";
+import { storeCompletedSeriesFixture } from "./series-store-fixture.js";
 
 function writeTeamPreviewRows(seriesDir: string, gameCount: number): void {
   for (const pid of ["p1", "p2"] as const) {
     const rows = Array.from({ length: gameCount }, (_, index) => ({
       kind: "decision",
+      attempt_id: "canonical",
       game_number: index + 1,
       turn: 0,
       phase: "team_preview",
@@ -97,6 +99,7 @@ test("a completed pool bracket exports its entrants, bracket, and replay evidenc
     path.join(seriesDir, "p1-decisions.jsonl"),
     `${JSON.stringify({
       kind: "decision",
+      attempt_id: "canonical",
       game_number: 1,
       turn: 1,
       phase: "turn",
@@ -111,6 +114,7 @@ test("a completed pool bracket exports its entrants, bracket, and replay evidenc
       reasoning_tokens: 400,
     })}\n${JSON.stringify({
       kind: "game_reflection",
+      attempt_id: "canonical",
       game_number: 1,
       result: "won",
       series_over: false,
@@ -123,6 +127,18 @@ test("a completed pool bracket exports its entrants, bracket, and replay evidenc
     })}\n`,
   );
   writeTeamPreviewRows(seriesDir, 2);
+  storeCompletedSeriesFixture(
+    runDir,
+    seriesId,
+    [1, 2].map((game) => ({
+      number: game,
+      logPath: path.join(seriesDir, `game-${game}.log`),
+      winner: models[1]!,
+      winnerSide: "p2",
+      turns: 5,
+    })),
+    { startedAt: "2026-08-26T12:00:00.000Z" },
+  );
 
   try {
     const bundle = buildTournamentExport({
@@ -228,6 +244,17 @@ test("a half-played bracket keeps later rounds open and reports no champion", ()
     );
   }
   writeTeamPreviewRows(seriesDir, 2);
+  storeCompletedSeriesFixture(
+    runDir,
+    seriesId,
+    [1, 2].map((game) => ({
+      number: game,
+      logPath: path.join(seriesDir, `game-${game}.log`),
+      winner: models[0]!,
+      winnerSide: "p1",
+      turns: 5,
+    })),
+  );
 
   try {
     const bundle = buildTournamentExport({ recordsPath, runsDir, runId, title: "Test Cup" });

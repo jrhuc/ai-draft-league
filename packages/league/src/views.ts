@@ -353,6 +353,7 @@ export interface LeagueDistributionView {
 
 export interface LeagueGameDecisionView {
   side: 0 | 1;
+  submissionId: string | null;
   turn: number;
   phase: string;
   selection: string[];

@@ -9,6 +9,7 @@ import {
   VERIFIED_REFERENCE_CHAR_LIMIT,
 } from "./battle-memory.js";
 import type { SlotMenu } from "./choices.js";
+import { MAX_TOOL_QUERIES_PER_ROUND } from "./tool-batch.js";
 
 export const MANAGER_CHARGE =
   "The franchise is yours for the whole season: you draft its roster, review it after every week, trade and sign in the transaction windows, and each matchup’s six is built and piloted on your behalf from the roster and memory you leave behind. The goal is not to run the franchise correctly but to win the league: you are judged on results against the other coaches, nothing else.";
@@ -46,19 +47,19 @@ const SHEET_RULES = {
 } satisfies Record<SheetPolicy, string>;
 
 const TOOL_RULES = {
-  open: "lookup_matchup reports only the type chart. For actual KO ranges, use estimate_damage: it binds known abilities, items, stats, stages, status, HP, screens, weather, terrain, and both active allies with their abilities from the current battle and open team sheets. Use compare_action_order for Speed order. Trust a tool only for the factors its result says it applied.",
+  open: "lookup_matchup reports only the type chart. estimate_damage reports conditional hit outcomes at evaluated endpoints, not exhaustive KO certainty: it binds known abilities, items, stats, stages, status, HP, screens, weather, terrain, and both active allies with their abilities from the current battle and open team sheets. Use compare_action_order for Speed order. Trust a tool only for the factors its result says it applied.",
   closed:
-    "lookup_matchup reports only the type chart. For actual KO ranges, use estimate_damage: it binds the abilities, items, stats, stages, status, HP, screens, weather, terrain, and both active allies with their abilities that the battle has revealed so far, and treats anything unrevealed as neutral across legal ranges. Use compare_action_order for Speed order. Trust a tool only for the factors its result says it applied.",
+    "lookup_matchup reports only the type chart. estimate_damage reports conditional hit outcomes at evaluated endpoints, not exhaustive KO certainty: it binds the abilities, items, stats, stages, status, HP, screens, weather, terrain, and both active allies with their abilities that the battle has revealed so far, and treats anything unrevealed as neutral across legal ranges. Use compare_action_order for Speed order. Trust a tool only for the factors its result says it applied.",
 } satisfies Record<SheetPolicy, string>;
 
-const NOTEBOOK_RULE = `Your private notebook is a full replacement with team_playbook (maximum ${TEAM_PLAYBOOK_CHAR_LIMIT} characters), series_memory (maximum ${SERIES_MEMORY_CHAR_LIMIT}), and next_game_plan (maximum ${NEXT_GAME_PLAN_CHAR_LIMIT}); the combined strategic limit is ${DECISION_NOTE_LIMIT}. The harness separately retains up to ${VERIFIED_REFERENCE_CHAR_LIMIT} characters of mechanics returned by actual species, move, item, and ability lookups. You cannot write that verified reference memory directly.`;
+const NOTEBOOK_RULE = `Your private notebook has team_playbook (maximum ${TEAM_PLAYBOOK_CHAR_LIMIT} characters), series_memory (maximum ${SERIES_MEMORY_CHAR_LIMIT}), and next_game_plan (maximum ${NEXT_GAME_PLAN_CHAR_LIMIT}); the combined strategic limit is ${DECISION_NOTE_LIMIT}. Include only changed fields: each supplied string replaces that field, omitted fields stay unchanged, and an empty string clears a field. The harness separately retains up to ${VERIFIED_REFERENCE_CHAR_LIMIT} characters of mechanics returned by actual species, move, item, and ability lookups. You cannot write that verified reference memory directly.`;
 const NOTEBOOK_OBJECT =
   '{"team_playbook":"transferable facts about piloting your team","series_memory":"facts and tendencies specific to this opponent","next_game_plan":"immediate plan and contingencies for the next game"}';
 
 const RETURN_JSON = "Return only the JSON object requested in the current decision prompt.";
 
 const TIMER_RULE =
-  "The battle timer runs while you think and use tools, and your reply is token-capped to what your generation speed fits into the remaining clock — a reply cut off at the cap submits nothing, so match depth to the clock and hurry when the turn timer or bank is short. Batch at most two reference calculations plus one action-order comparison per tool round.";
+  "The battle timer runs while you think and use tools, and your reply is token-capped to what your generation speed fits into the remaining clock — a reply cut off at the cap submits nothing, so match depth to the clock and hurry when the turn timer or bank is short.";
 
 export function battleSystemPrompt(options: { sheets: SheetPolicy; timed: boolean }): string {
   return [
@@ -66,6 +67,7 @@ export function battleSystemPrompt(options: { sheets: SheetPolicy; timed: boolea
     SHEET_RULES[options.sheets],
     TOOL_RULES[options.sheets],
     NOTEBOOK_RULE,
+    `Independent tool queries can share one response or one batch_tools call, up to ${MAX_TOOL_QUERIES_PER_ROUND} queries total per round.`,
     ...(options.timed ? [TIMER_RULE] : []),
     RETURN_JSON,
   ].join("\n");
@@ -161,6 +163,12 @@ export interface DecisionPrompt {
 export function renderDecision(input: DecisionPrompt): string {
   const lines: string[] = [];
   if (input.seriesContext) lines.push("Match context:", input.seriesContext, "");
+  lines.push("Private strategic memory:", renderStrategicMemory(input.memory), "");
+  lines.push(
+    "Verified reference memory from prior authoritative lookups:",
+    renderVerifiedReferenceMemory(input.memory),
+    "",
+  );
   lines.push("Authoritative battle state and roster reference:", input.state, "");
   if (input.matchups?.length)
     lines.push(
@@ -168,12 +176,6 @@ export function renderDecision(input: DecisionPrompt): string {
       ...input.matchups,
       "",
     );
-  lines.push("Private strategic memory:", renderStrategicMemory(input.memory), "");
-  lines.push(
-    "Verified reference memory from prior authoritative lookups:",
-    renderVerifiedReferenceMemory(input.memory),
-    "",
-  );
   if (input.transcript?.length)
     lines.push("Compact private battle timeline (your POV):", ...input.transcript, "");
 
@@ -203,6 +205,7 @@ export function renderDecision(input: DecisionPrompt): string {
     "",
     `Return one JSON object with {"choices":[${input.menus.map((_, index) => `N${index + 1}`).join(",")}]}.`,
     `You may add "rationale":"final reason" and, only when durable plans changed, "notebook":${NOTEBOOK_OBJECT}.`,
+    "In notebook, omit unchanged fields; an empty string clears a field.",
     `Each choice is the zero-based index for its displayed slot${sharedTeamMenu ? " or ordered team position" : ""}. Include no prose outside JSON.`,
   );
   return lines.join("\n");

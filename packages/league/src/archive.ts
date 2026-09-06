@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 
@@ -26,9 +25,15 @@ import type {
   LeagueWeeklyReviewView,
   QuartileView,
 } from "./views.js";
+import {
+  latestRosterVersion,
+  readFranchiseCheckpoints,
+  readFranchiseRosterVersion,
+} from "./league-journal.js";
 import { draftLeagueConfigSchema } from "./league-store.js";
 import { SAFE_SEGMENT } from "./path-safety.js";
 import { modelKey, type ParsedSeriesRecord } from "./records.js";
+import { readRunArtifacts } from "./run-artifact-store.js";
 import {
   buildSeriesGame,
   count,
@@ -38,22 +43,19 @@ import {
   quantile,
   readDecisionLog,
   readRunJson,
-  readRunLines,
   type SeriesSlot,
   scanUnfinishedSeries,
   spriteIdFor,
 } from "./run-artifacts.js";
 import { runStatusSchema, type StoredRunStatus } from "./run-status.js";
-import { storedSeriesMetadataSchema } from "./series.js";
+import { listStoredSeries } from "./series-store.js";
 import {
-  readCurrentRosterArtifact,
-  readTransactionEpochs,
-  storedRosterSchema,
-  type TradeWindowRoster,
+  readTradeWindowArtifact,
+  readTradeWindowArtifacts,
+  readTransactionEvents,
 } from "./trade-window.js";
-import { isErrnoCode, isRecord, ordinal, text } from "./value.js";
+import { isRecord, ordinal, text } from "./value.js";
 
-const runModeSchema = z.looseObject({ mode: z.enum(["draft", "tournament"]) });
 const leagueConfigSchema = draftLeagueConfigSchema.partial();
 const archivedPickSchema = draftTranscriptRowSchema.partial().required({ pick: true });
 type ArchivedPick = z.infer<typeof archivedPickSchema>;
@@ -69,25 +71,6 @@ function readLeagueConfig(
 function readRunStatus(runsDir: string, runId: string): StoredRunStatus | null {
   const parsed = runStatusSchema.safeParse(readRunJson(runsDir, runId, "status.json"));
   return parsed.success ? parsed.data : null;
-}
-
-export function findLiveCliRun(
-  runsDir: string,
-): { runId: string; mode: "draft" | "tournament" } | null {
-  let entries: string[];
-  try {
-    entries = fs.readdirSync(runsDir);
-  } catch {
-    return null;
-  }
-  const live: Array<{ runId: string; mode: "draft" | "tournament" }> = [];
-  for (const runId of entries) {
-    if (!SAFE_SEGMENT.test(runId)) continue;
-    const config = runModeSchema.safeParse(readRunJson(runsDir, runId, "config.json"));
-    if (config.success && isRunLive(runsDir, runId)) live.push({ runId, mode: config.data.mode });
-  }
-  live.sort((a, b) => a.runId.localeCompare(b.runId));
-  return live[live.length - 1] ?? null;
 }
 
 function draftRuns(allRows: ParsedSeriesRecord[]): Map<string, ParsedSeriesRecord[]> {
@@ -153,17 +136,37 @@ function leagueIdentity(
 ): LeagueIdentity {
   const config = readLeagueConfig(runsDir, runId);
   const entrants = config?.entrants ?? null;
-  const teamNames = config?.team_names ?? null;
-  if (
-    config &&
-    entrants &&
-    teamNames &&
-    entrants.length === teamNames.length &&
-    entrants.length >= 2
-  ) {
+  const runDir = path.join(runsDir, runId);
+  const namesByEntrant = new Map(
+    readFranchiseRosterVersion(runDir, latestRosterVersion(runDir)).map((roster) => [
+      roster.entrant,
+      roster.teamName,
+    ]),
+  );
+  const storedNameSchema = z.object({
+    entrant: z.number().int().nonnegative(),
+    team_name: z.string(),
+  });
+  for (const { value } of readRunArtifacts(runDir, "draft-franchise-name")) {
+    const parsed = storedNameSchema.safeParse(value);
+    if (parsed.success) namesByEntrant.set(parsed.data.entrant, parsed.data.team_name);
+  }
+  for (const row of rows) {
+    if (!row.entrants) continue;
+    for (const pid of PIDS) {
+      const entrant = row.entrants[pid === "p1" ? 0 : 1];
+      const name = String(row.teams?.[pid] ?? "").replace(/\s+wk\d+$/u, "");
+      if (entrant !== undefined && name) namesByEntrant.set(entrant, name);
+    }
+  }
+  if (config && entrants && entrants.length >= 2) {
     return {
       models: entrants,
-      teamNames,
+      teamNames: entrants.map(
+        (model, entrant) =>
+          namesByEntrant.get(entrant) ??
+          (model === "random" ? `Random Coach ${entrant + 1}` : `Coach ${entrant + 1}`),
+      ),
       weeks: config.weeks ?? null,
       board: config.board ?? null,
       format: config.format ?? null,
@@ -270,11 +273,16 @@ function leagueProgress(rows: ParsedSeriesRecord[], identity: LeagueIdentity): L
 }
 
 function preSeasonPhase(runsDir: string, runId: string): "drafting" | "building" | "roundrobin" {
-  try {
-    if (fs.readdirSync(path.join(runsDir, runId, "series")).length > 0) return "roundrobin";
-  } catch {}
-  const builds = readRunLines(runsDir, runId, "teambuild", "teambuild.jsonl");
-  return builds.length > 0 ? "building" : "drafting";
+  const runDir = path.join(runsDir, runId);
+  if (listStoredSeries(runDir).length > 0) return "roundrobin";
+  return readArchivedTeambuilds(runDir).length > 0 ? "building" : "drafting";
+}
+
+function windowInProgress(runDir: string, afterWeek: number): boolean {
+  return (
+    !readTradeWindowArtifact(runDir, afterWeek) &&
+    readTransactionEvents(runDir, afterWeek).length > 0
+  );
 }
 function leaguePhase(
   runsDir: string,
@@ -283,7 +291,8 @@ function leaguePhase(
   progress: LeagueProgress,
   liveSeries: LeagueLiveSeriesView[],
 ): "drafting" | "building" | "roundrobin" | "window" | "playoffs" | "complete" {
-  if (readTransactionEpochs(path.join(runsDir, runId)).some((epoch) => epoch.inProgress))
+  const runDir = path.join(runsDir, runId);
+  if (transactionWeeks(runsDir, runId).some((week) => windowInProgress(runDir, week)))
     return "window";
   if (liveSeries.some((series) => series.stage === "playoff")) return "playoffs";
   if (rows.length > 0) return progress.phase;
@@ -322,36 +331,26 @@ function transactionWeeks(runsDir: string, runId: string): number[] {
 }
 
 function weeklyReviewViews(runsDir: string, runId: string): LeagueWeeklyReviewView[] {
-  const root = path.join(runsDir, runId, "reviews");
-  let files: string[] = [];
-  try {
-    files = fs.readdirSync(root);
-  } catch (cause) {
-    if (!isErrnoCode(cause, "ENOENT")) throw cause;
-  }
-  const views: LeagueWeeklyReviewView[] = [];
-  for (const file of files.sort()) {
-    const match = /^week-(\d+)(-transactions)?\.jsonl$/.exec(file);
-    if (!match) continue;
-    for (const row of readRunLines(runsDir, runId, "reviews", file)) {
-      views.push({
-        week: Number(match[1]),
-        stage: match[2] ? "transactions" : "week",
-        entrant: count(row.entrant),
-        rosterVersion: count(row.roster_version),
-        reasoning: text(row.reasoning),
-        memoryPages: isRecord(row.memory) ? Object.keys(row.memory).length : 0,
-        memoryCharacters: isRecord(row.memory)
-          ? Object.values(row.memory).reduce((total: number, page) => {
-              const parsed = z.string().safeParse(page);
-              return total + (parsed.success ? parsed.data.length : 0);
-            }, 0)
-          : 0,
-        fallback: row.fallback === true,
-      });
-    }
-  }
-  return views
+  return readFranchiseCheckpoints(path.join(runsDir, runId))
+    .flatMap((checkpoint): LeagueWeeklyReviewView[] =>
+      checkpoint.stage === "draft"
+        ? []
+        : [
+            {
+              week: checkpoint.week,
+              stage: checkpoint.stage,
+              entrant: checkpoint.entrant,
+              rosterVersion: checkpoint.rosterVersion,
+              reasoning: checkpoint.reasoning,
+              memoryPages: Object.keys(checkpoint.memory).length,
+              memoryCharacters: Object.values(checkpoint.memory).reduce(
+                (total, page) => total + page.length,
+                0,
+              ),
+              fallback: checkpoint.fallback,
+            },
+          ],
+    )
     .filter(
       (review) =>
         review.reasoning.trim().length > 0 || review.memoryCharacters > 0 || review.fallback,
@@ -360,27 +359,29 @@ function weeklyReviewViews(runsDir: string, runId: string): LeagueWeeklyReviewVi
 }
 
 function seasonReviewViews(runsDir: string, runId: string): LeagueSeasonReviewView[] {
-  return readRunLines(runsDir, runId, "season.jsonl").map((row) => ({
-    entrant: count(row.entrant),
-    outcome: text(row.outcome),
-    summary: text(row.summary),
-    didWell: text(row.did_well),
-    didPoorly: text(row.did_poorly),
-    wouldChange: text(row.would_change),
-    fallback: row.fallback === true,
-  }));
+  return readRunArtifacts(path.join(runsDir, runId), "season-review").map(({ value }) => {
+    const row = isRecord(value) ? value : {};
+    return {
+      entrant: count(row.entrant),
+      outcome: text(row.outcome),
+      summary: text(row.summary),
+      didWell: text(row.did_well),
+      didPoorly: text(row.did_poorly),
+      wouldChange: text(row.would_change),
+      fallback: row.fallback === true,
+    };
+  });
 }
 
 function transactionViews(runsDir: string, runId: string): LeagueTradeWindowView[] {
-  const epochs = readTransactionEpochs(path.join(runsDir, runId));
+  const runDir = path.join(runsDir, runId);
   const swapsAllowed = leagueSwapsAllowed(runsDir, runId);
   return transactionWeeks(runsDir, runId).map((afterWeek) => {
-    const epoch = epochs.find((candidate) => candidate.afterWeek === afterWeek);
-    const artifact = epoch?.artifact;
+    const artifact = readTradeWindowArtifact(runDir, afterWeek);
     if (!artifact) {
       return {
         afterWeek,
-        state: epoch?.inProgress ? "in-progress" : "scheduled",
+        state: windowInProgress(runDir, afterWeek) ? "in-progress" : "scheduled",
         order: [],
         offers: [],
         decisions: [],
@@ -438,19 +439,10 @@ function readRosters(
   identity: LeagueIdentity,
   current = true,
 ): RosterEntry[] {
-  let source: TradeWindowRoster[];
-  if (current) {
-    source = readCurrentRosterArtifact(path.join(runsDir, runId)) ?? [];
-  } else {
-    const stored = z
-      .array(storedRosterSchema)
-      .safeParse(readRunJson(runsDir, runId, "rosters.json"));
-    source = stored.success
-      ? stored.data.map((roster, entrant) => ({ ...roster, entrant: roster.entrant ?? entrant }))
-      : [];
-  }
-  const picks = readRunLines(runsDir, runId, "draft", "draft.jsonl").map((pick) =>
-    archivedPickSchema.parse(pick),
+  const runDir = path.join(runsDir, runId);
+  const source = readFranchiseRosterVersion(runDir, current ? latestRosterVersion(runDir) : 0);
+  const picks = readRunArtifacts(runDir, "draft-pick").map(({ value }) =>
+    archivedPickSchema.parse(value),
   );
   const pickByEntrantAndMon = new Map<string, ArchivedPick>();
   for (const pick of picks) {
@@ -459,8 +451,8 @@ function readRosters(
   }
   const windowAdds = new Map<number, Set<string>>();
   if (current) {
-    for (const { artifact } of readTransactionEpochs(path.join(runsDir, runId))) {
-      for (const decision of artifact?.decisions ?? []) {
+    for (const artifact of readTradeWindowArtifacts(runDir)) {
+      for (const decision of artifact.decisions) {
         const adds = windowAdds.get(decision.entrant) ?? new Set<string>();
         for (const swap of decision.swaps) adds.add(swap.add);
         windowAdds.set(decision.entrant, adds);
@@ -470,7 +462,7 @@ function readRosters(
   const entries: RosterEntry[] = [];
 
   for (const [entrant, model] of identity.models.entries()) {
-    const record = source.find((candidate) => candidate.entrant === entrant) ?? source[entrant];
+    const record = source.find((candidate) => candidate.entrant === entrant);
     let roster = (record?.roster ?? []).map((mon): LeagueRosterSlotView => {
       const viaWindow = windowAdds.get(entrant)?.has(mon.id) === true;
       const pick = viaWindow ? undefined : pickByEntrantAndMon.get(`${entrant}:${mon.id}`);
@@ -485,8 +477,8 @@ function readRosters(
         acquired: viaWindow ? "window" : "draft",
       };
     });
-    let spent = record?.spent ?? 0;
-    let budgetLeft = record?.budget_left ?? 0;
+    let spent = record ? record.roster.reduce((total, mon) => total + mon.cost, 0) : 0;
+    let budgetLeft = record?.budget ?? 0;
     if (roster.length === 0) {
       const own = picks
         .filter((pick) => draftPickEntrant(pick, identity.models.length) === entrant)
@@ -507,7 +499,7 @@ function readRosters(
     }
     entries.push({
       model,
-      teamName: identity.teamNames[entrant] ?? record?.team_name ?? "",
+      teamName: identity.teamNames[entrant] ?? record?.teamName ?? "",
       spent,
       budgetLeft,
       roster,
@@ -595,7 +587,7 @@ export function buildLeague(
   const liveSeries = live ? liveSeriesViews(runsDir, runId, rows, identity) : [];
   const rosters = readRosters(runsDir, runId, identity);
   const draftRosters = readRosters(runsDir, runId, identity, false);
-  const teambuilds = readArchivedTeambuilds(runsDir, runId);
+  const teambuilds = readArchivedTeambuilds(path.join(runsDir, runId));
   const progress = leagueProgress(rows, identity);
 
   const roundRobinRecords: LeagueRecordView[] = identity.models.map(() => ({
@@ -682,7 +674,7 @@ export function buildLeague(
     const secondBuild = buildFor.get(`${count(row.series_index)}:${b}`);
     const summaries =
       boardMons.length && SAFE_SEGMENT.test(seriesId)
-        ? seriesGameSummaries(path.join(runsDir, runId, "series", seriesId), seriesId, boardMons, [
+        ? seriesGameSummaries(path.join(runsDir, runId), seriesId, boardMons, [
             firstBuild,
             secondBuild,
           ])
@@ -923,28 +915,12 @@ function liveSeriesByIndex(
   stage: "roundrobin" | "playoff";
   round: number;
 } | null {
-  let entries: string[];
-  try {
-    entries = fs.readdirSync(path.join(runsDir, runId, "series"));
-  } catch {
-    return null;
-  }
-  for (const seriesId of entries) {
-    if (!SAFE_SEGMENT.test(seriesId)) continue;
-    const parsedMeta = storedSeriesMetadataSchema.safeParse(
-      readRunJson(runsDir, runId, "series", seriesId, "series.json"),
-    );
-    if (
-      !parsedMeta.success ||
-      parsedMeta.data.seriesIndex !== seriesIndex ||
-      !parsedMeta.data.players
-    )
-      continue;
-    const players = parsedMeta.data.players;
-    const a = entrantForSpec(identity, players.p1);
-    const b = entrantForSpec(identity, players.p2);
+  for (const series of listStoredSeries(path.join(runsDir, runId))) {
+    if (!SAFE_SEGMENT.test(series.seriesId) || series.seriesIndex !== seriesIndex) continue;
+    const a = entrantForSpec(identity, series.players.p1);
+    const b = entrantForSpec(identity, series.players.p2);
     const slot = leagueSeriesSlot(seriesIndex, identity.models.length);
-    if (a >= 0 && b >= 0 && slot) return { seriesId, sides: [a, b], ...slot };
+    if (a >= 0 && b >= 0 && slot) return { seriesId: series.seriesId, sides: [a, b], ...slot };
   }
   return null;
 }

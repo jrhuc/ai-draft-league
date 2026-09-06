@@ -9,14 +9,8 @@ import {
 import type { SlotMenu } from "./choices.js";
 import type { SheetPolicy } from "./prompts.js";
 import { DEX_TOOLS } from "./reference.js";
-import type {
-  BattleRequest,
-  JsonObject,
-  JsonValue,
-  Pid,
-  ToolCall,
-  ToolDefinition,
-} from "./types.js";
+import { withToolBatch, type ToolQueryResult } from "./tool-batch.js";
+import type { BattleRequest, JsonObject, JsonValue, Pid, ToolDefinition } from "./types.js";
 import { clip, isRecord, isText } from "./value.js";
 
 interface EvidenceSupplied {
@@ -49,12 +43,6 @@ export interface Reflection {
   };
 }
 
-export interface ToolTrace extends JsonObject {
-  name: string;
-  arguments: JsonObject;
-  result: string;
-}
-
 export interface PendingDecision {
   prompt?: string;
   rawResponse?: string;
@@ -66,7 +54,7 @@ export interface PendingDecision {
   fallback?: boolean;
   error?: string;
   latencyMs?: number;
-  toolCalls?: ToolTrace[];
+  toolCalls?: ToolQueryResult[];
   failedAttempts?: { response: string; error: string }[];
   parseFailures?: number;
   toolRounds?: number;
@@ -116,15 +104,10 @@ const PACE_SAFETY = 0.8;
 const PACE_SAMPLE_MIN_TOKENS = 256;
 const PACE_SAMPLE_MIN_MS = 2000;
 export const DECISION_MAX_TOOL_ROUNDS = 2;
-export const DECISION_MAX_STANDARD_TOOL_CALLS = 2;
-export const DECISION_MAX_ORDER_TOOL_CALLS = 1;
 export const UNTIMED_MAX_TOOL_ROUNDS = 30;
-export const UNTIMED_MAX_STANDARD_TOOL_CALLS = 12;
-export const UNTIMED_MAX_ORDER_TOOL_CALLS = 4;
 export const DECISION_PARSE_ATTEMPTS = 2;
 export const UNTIMED_DECISION_PARSE_ATTEMPTS = 4;
 export const DECISION_PREFILL = '{"choices": [';
-export const DEX_LOOKUP_CACHE_LIMIT = 256;
 export const UNTIMED_EMPTY_RESPONSE_RETRIES = 2;
 const DECISION_RATIONALE_LIMIT = 2000;
 export const REFLECTION_MAX_TOKENS = 32_768;
@@ -163,13 +146,13 @@ export const ACTION_ORDER_TOOL: ToolDefinition = {
 };
 
 const DAMAGE_TOOL_DESCRIPTIONS = {
-  open: "Estimate damage using the current battle request and open team sheets. Supply only the two visible Pokémon and move; the harness applies known abilities, items, exact own stats, opposing nature ranges, boosts, status, HP, screens, weather, terrain, both active allies with their abilities, and the fainted count that scales Last Respects. Helping Hand and critical-hit flags are optional hypothetical modifiers.",
+  open: "Estimate conditional hit outcomes using the current battle request and open team sheets. Hits are assumed to connect; evaluated endpoints do not establish exhaustive KO certainty or resolve action-level effects such as protection or redirection. Supply only the two visible Pokémon and move; the harness applies known abilities, items, exact own stats, opposing nature ranges, boosts, status, HP, screens, weather, terrain, both active allies with their abilities, and the fainted count that scales Last Respects. Helping Hand and critical-hit flags are optional hypothetical modifiers.",
   closed:
-    "Estimate damage using the current battle request and what the battle has revealed. Supply only the two visible Pokémon and move; the harness applies revealed abilities and items, exact own stats, legal opposing stat ranges, boosts, status, HP, screens, weather, terrain, both active allies with their abilities, and the fainted count that scales Last Respects. Helping Hand and critical-hit flags are optional hypothetical modifiers.",
+    "Estimate conditional hit outcomes using the current battle request and what the battle has revealed. Hits are assumed to connect; evaluated endpoints do not establish exhaustive KO certainty or resolve action-level effects such as protection or redirection. Supply only the two visible Pokémon and move; the harness applies revealed abilities and items, exact own stats, legal opposing stat ranges, boosts, status, HP, screens, weather, terrain, both active allies with their abilities, and the fainted count that scales Last Respects. Helping Hand and critical-hit flags are optional hypothetical modifiers.",
 } satisfies Record<SheetPolicy, string>;
 
 export function decisionTools(sheets: SheetPolicy): ToolDefinition[] {
-  return [
+  return withToolBatch([
     ...DEX_TOOLS.map((tool) => {
       if (tool.name !== "estimate_damage") return tool;
       const parameters = decisionToolParametersSchema.parse(tool.parameters);
@@ -188,12 +171,12 @@ export function decisionTools(sheets: SheetPolicy): ToolDefinition[] {
       };
     }),
     ACTION_ORDER_TOOL,
-  ];
+  ]);
 }
 
 export function reflectionTools(): ToolDefinition[] {
   const allowed = new Set(["lookup_species", "lookup_move", "lookup_item", "lookup_ability"]);
-  return DEX_TOOLS.filter((tool) => allowed.has(tool.name));
+  return withToolBatch(DEX_TOOLS.filter((tool) => allowed.has(tool.name)));
 }
 
 export function totalTokens(usage: Record<string, number> | undefined): number {
@@ -219,18 +202,6 @@ export function updatedPace(
   if (outputTokens < PACE_SAMPLE_MIN_TOKENS || elapsedMs < PACE_SAMPLE_MIN_MS) return previous;
   const rate = (1000 * outputTokens) / elapsedMs;
   return previous === undefined ? rate : (previous + rate) / 2;
-}
-
-export function boundedToolCalls(calls: ToolCall[], standardMax: number, orderMax: number) {
-  const order = calls.filter((call) => call.name === ACTION_ORDER_TOOL.name).slice(0, orderMax);
-  const standard = calls
-    .filter((call) => call.name !== ACTION_ORDER_TOOL.name)
-    .slice(0, standardMax);
-  const selectedIds = new Set([...standard, ...order].map((call) => call.id));
-  return {
-    kept: calls.filter((call) => selectedIds.has(call.id)),
-    dropped: calls.filter((call) => !selectedIds.has(call.id)),
-  };
 }
 
 export type DecisionPhase = "team_preview" | "forced_switch" | "turn";

@@ -59,6 +59,11 @@ export interface GameEnd {
   tournamentStatus?: "active" | "advancing" | "eliminated" | "champion";
 }
 
+export interface GameAdaptationTask extends JsonObject {
+  kind: string;
+  memory_state: string;
+}
+
 export type DecisionLog = string | JsonObject[] | ((row: JsonObject) => void);
 
 export interface ChoiceSubstitution {
@@ -90,7 +95,16 @@ export abstract class BaseEngine implements BattleAgent {
     this.submissionState = {};
     this.pendingEvidence.clear();
   }
-  endGame(_context: GameEnd): Promise<void> | void {}
+  prepareGameEnd(_context: GameEnd): GameAdaptationTask {
+    return { kind: "no-reflection", memory_state: this.coachingState() };
+  }
+  completeGameEnd(task: GameAdaptationTask): Promise<string> | string {
+    return task.memory_state;
+  }
+  endGame(context: GameEnd): Promise<void> | void {
+    const completed = this.completeGameEnd(this.prepareGameEnd(context));
+    if (completed instanceof Promise) return completed.then(() => undefined);
+  }
   observe(_lines: string[]): void {}
   abandonDecision(): void {}
   decisionStats(): DecisionStats {

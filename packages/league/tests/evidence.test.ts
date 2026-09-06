@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "vite-plus/test";
+import { storeSeriesFixture } from "./series-store-fixture.js";
 import { buildTournamentGame, buildTournaments } from "../src/evidence.js";
 import { TEAMS_DIR } from "../src/paths.js";
 import type { ParsedSeriesRecord } from "../src/records.js";
@@ -143,11 +144,10 @@ test("live CLI tournament series join the bracket by their current series index"
     `${JSON.stringify({ state: "running", pid: process.pid, start_time: "2026-08-06T21:00:00.000Z" })}\n`,
     "utf8",
   );
-  fs.writeFileSync(
-    path.join(seriesDir, "series.json"),
-    `${JSON.stringify({ schema_version: 3, identity: { series_index: 1 } })}\n`,
-    "utf8",
-  );
+  storeSeriesFixture(runDir, "series-live", {
+    series_index: 1,
+    players: { p1: "provider:beta", p2: "provider:gamma" },
+  });
   fs.writeFileSync(path.join(seriesDir, "p1-decisions.jsonl"), decisionLine(900, 2), "utf8");
   fs.writeFileSync(
     path.join(seriesDir, "game-1.log"),

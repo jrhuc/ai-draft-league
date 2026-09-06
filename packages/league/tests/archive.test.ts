@@ -5,17 +5,34 @@ import path from "node:path";
 import { test } from "vite-plus/test";
 
 import { buildLeague, buildLeagueGame } from "../src/archive.js";
+import { storeFranchiseRosterVersion } from "../src/league-journal.js";
+import { commitRunArtifact } from "../src/run-artifact-store.js";
 import type { ParsedSeriesRecord } from "../src/records.js";
-import type { JsonObject } from "../src/types.js";
+import type { JsonObject, JsonValue } from "../src/types.js";
 import { seriesRecordFixture } from "./fixtures/records.js";
 import { LEGAL_TEAM_IDS, leagueTeamBuildJournalRow } from "./fixtures/team-build.js";
+import { storeSeriesFixture } from "./series-store-fixture.js";
 
 const RUN_ID = "league-run-1";
 
-function writeLeagueFixture(runsDir: string): void {
+function commitPicks(runDir: string, picks: ReadonlyArray<JsonObject & { pick: number }>): void {
+  for (const pick of picks) {
+    commitRunArtifact(runDir, "draft-pick", String(pick.pick).padStart(6, "0"), pick);
+  }
+}
+
+function writeLeagueFixture(
+  runsDir: string,
+  teambuilds: ReadonlyArray<object> = [
+    leagueTeamBuildJournalRow({
+      teamPlan: "Lead fast while preserving both speed-control modes.",
+      notebook: "Keep the flexible speed-control plan private.",
+      attempts: 2,
+    }),
+  ],
+): void {
   const runDir = path.join(runsDir, RUN_ID);
-  fs.mkdirSync(path.join(runDir, "draft"), { recursive: true });
-  fs.mkdirSync(path.join(runDir, "teambuild"), { recursive: true });
+  fs.mkdirSync(runDir, { recursive: true });
   fs.writeFileSync(
     path.join(runDir, "config.json"),
     JSON.stringify({
@@ -27,28 +44,24 @@ function writeLeagueFixture(runsDir: string): void {
       format: "gen9testformat",
     }),
   );
-  fs.writeFileSync(
-    path.join(runDir, "rosters.json"),
-    JSON.stringify([
-      {
-        model: "openai:alpha",
-        team_name: "Alpha Aces",
-        budget_left: 10,
-        spent: 90,
-        roster: [{ id: "pikachu", name: "Pikachu", cost: 90 }],
-      },
-      {
-        model: "compat:beta:nitro",
-        team_name: "Beta Bandits",
-        budget_left: 40,
-        spent: 60,
-        roster: [{ id: "eevee", name: "Eevee", cost: 60 }],
-      },
-    ]),
-  );
-  fs.writeFileSync(
-    path.join(runDir, "draft", "draft.jsonl"),
-    `${JSON.stringify({
+  storeFranchiseRosterVersion(runDir, [
+    {
+      rosterVersion: 0,
+      entrant: 0,
+      teamName: "Alpha Aces",
+      budget: 10,
+      roster: [{ id: "pikachu", name: "Pikachu", cost: 90 }],
+    },
+    {
+      rosterVersion: 0,
+      entrant: 1,
+      teamName: "Beta Bandits",
+      budget: 40,
+      roster: [{ id: "eevee", name: "Eevee", cost: 60 }],
+    },
+  ]);
+  commitPicks(runDir, [
+    {
       pick: 1,
       model: "openai:alpha",
       team_name: "Alpha Aces",
@@ -57,7 +70,8 @@ function writeLeagueFixture(runsDir: string): void {
       cost: 90,
       rationale: "Fast pivot.",
       fallback: false,
-    })}\n${JSON.stringify({
+    },
+    {
       pick: 2,
       model: "compat:beta:nitro",
       team_name: "Beta Bandits",
@@ -66,18 +80,12 @@ function writeLeagueFixture(runsDir: string): void {
       cost: 60,
       rationale: "Flexible evolutions.",
       fallback: true,
-    })}\n`,
-  );
-  fs.writeFileSync(
-    path.join(runDir, "teambuild", "teambuild.jsonl"),
-    `${JSON.stringify(
-      leagueTeamBuildJournalRow({
-        teamPlan: "Lead fast while preserving both speed-control modes.",
-        notebook: "Keep the flexible speed-control plan private.",
-        attempts: 2,
-      }),
-    )}\n`,
-  );
+    },
+  ]);
+  for (const [index, build] of teambuilds.entries()) {
+    const value: JsonValue = JSON.parse(JSON.stringify(build));
+    commitRunArtifact(runDir, "teambuild", `fixture-${index}`, value);
+  }
   for (const [seriesId, tokens] of [
     ["aaa111", 100],
     ["bbb222", 200],
@@ -181,6 +189,15 @@ test("a finished draft-only run loads and stops being draft-only once it plays",
       start_time: "2026-08-04T21:00:00.000Z",
     }),
   );
+  for (const [entrant, teamName] of ["Alpha Aces", "Beta Bandits"].entries()) {
+    commitRunArtifact(runDir, "draft-franchise-name", String(entrant).padStart(6, "0"), {
+      entrant,
+      model: entrant === 0 ? "openai:alpha" : "openai:beta",
+      team_name: teamName,
+      fallback: false,
+      timestamp: "2026-08-04T21:00:00.000Z",
+    });
+  }
   try {
     const league = buildLeague([], runsDir, runId);
     assert.ok(league, "a stored draft-only run loads without series rows");
@@ -207,7 +224,7 @@ test("archive keeps seats distinct when franchises use the same model", () => {
   const runsDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-archive-duplicate-models-"));
   const runId = "20260821T120000.000000Z-feed0003";
   const runDir = path.join(runsDir, runId);
-  fs.mkdirSync(path.join(runDir, "draft"), { recursive: true });
+  fs.mkdirSync(runDir, { recursive: true });
   fs.writeFileSync(
     path.join(runDir, "config.json"),
     JSON.stringify({
@@ -220,37 +237,34 @@ test("archive keeps seats distinct when franchises use the same model", () => {
       draft_only: true,
     }),
   );
-  fs.writeFileSync(
-    path.join(runDir, "rosters.json"),
-    JSON.stringify([
-      {
-        entrant: 0,
-        model: "random",
-        roster: [
-          { id: "pikachu", name: "Pikachu", cost: 10 },
-          { id: "bulbasaur", name: "Bulbasaur", cost: 10 },
-        ],
-      },
-      {
-        entrant: 1,
-        model: "random",
-        roster: [
-          { id: "eevee", name: "Eevee", cost: 10 },
-          { id: "charmander", name: "Charmander", cost: 10 },
-        ],
-      },
-    ]),
-  );
-  const picks = [
+  storeFranchiseRosterVersion(runDir, [
+    {
+      rosterVersion: 0,
+      entrant: 0,
+      teamName: "Random Coach 1",
+      budget: 80,
+      roster: [
+        { id: "pikachu", name: "Pikachu", cost: 10 },
+        { id: "bulbasaur", name: "Bulbasaur", cost: 10 },
+      ],
+    },
+    {
+      rosterVersion: 0,
+      entrant: 1,
+      teamName: "Random Coach 2",
+      budget: 80,
+      roster: [
+        { id: "eevee", name: "Eevee", cost: 10 },
+        { id: "charmander", name: "Charmander", cost: 10 },
+      ],
+    },
+  ]);
+  commitPicks(runDir, [
     { pick: 1, model: "random", mon: "pikachu", name: "Pikachu", cost: 10 },
     { pick: 2, model: "random", mon: "eevee", name: "Eevee", cost: 10 },
     { pick: 3, model: "random", mon: "charmander", name: "Charmander", cost: 10 },
     { pick: 4, model: "random", mon: "bulbasaur", name: "Bulbasaur", cost: 10 },
-  ];
-  fs.writeFileSync(
-    path.join(runDir, "draft", "draft.jsonl"),
-    `${picks.map((pick) => JSON.stringify(pick)).join("\n")}\n`,
-  );
+  ]);
   try {
     const league = buildLeague([], runsDir, runId);
     assert.ok(league);
@@ -278,7 +292,7 @@ test("a live run with no recorded series exposes its draft in progress", () => {
   const runsDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-archive-live-"));
   const liveId = "20260728T210000.000000Z-feed0001";
   const runDir = path.join(runsDir, liveId);
-  fs.mkdirSync(path.join(runDir, "draft"), { recursive: true });
+  fs.mkdirSync(runDir, { recursive: true });
   fs.writeFileSync(
     path.join(runDir, "config.json"),
     JSON.stringify({
@@ -301,10 +315,18 @@ test("a live run with no recorded series exposes its draft in progress", () => {
       pid: process.pid,
     }),
   );
-  fs.writeFileSync(
-    path.join(runDir, "draft", "draft.jsonl"),
-    `${JSON.stringify({ pick: 1, model: "openai:alpha", mon: "pikachu", name: "Pikachu", cost: 12, budget_left: 88, rationale: "Speed.", fallback: false })}\n`,
-  );
+  commitPicks(runDir, [
+    {
+      pick: 1,
+      model: "openai:alpha",
+      mon: "pikachu",
+      name: "Pikachu",
+      cost: 12,
+      budget_left: 88,
+      rationale: "Speed.",
+      fallback: false,
+    },
+  ]);
   try {
     const league = buildLeague([], runsDir, liveId);
     assert.ok(league, "a live run builds a league view before any series lands");
@@ -314,7 +336,7 @@ test("a live run with no recorded series exposes its draft in progress", () => {
     assert.equal(
       alpha?.roster[0]?.id,
       "pikachu",
-      "rosters synthesize from draft picks before rosters.json fills in",
+      "rosters synthesize from draft picks before the draft roster version commits",
     );
     assert.equal(alpha?.spent, 12);
     assert.equal(alpha?.budgetLeft, 88);
@@ -364,13 +386,10 @@ test("live league games expose battlefield sprites before the series is recorded
       pid: process.pid,
     }),
   );
-  fs.writeFileSync(
-    path.join(seriesDir, "series.json"),
-    JSON.stringify({
-      schema_version: 3,
-      identity: { players: { p1: "openai:alpha", p2: "openai:beta" }, series_index: 0 },
-    }),
-  );
+  storeSeriesFixture(runDir, "live001", {
+    players: { p1: "openai:alpha", p2: "openai:beta" },
+    series_index: 0,
+  });
   fs.writeFileSync(path.join(seriesDir, "game-1.log"), "");
   fs.writeFileSync(
     path.join(seriesDir, "p1-decisions.jsonl"),
@@ -447,13 +466,10 @@ test("an in-progress semifinal advances the live archive to playoffs", () => {
       pid: process.pid,
     }),
   );
-  fs.writeFileSync(
-    path.join(seriesDir, "series.json"),
-    JSON.stringify({
-      schema_version: 3,
-      identity: { players: { p1: "openai:model0", p2: "openai:model3" }, series_index: 15 },
-    }),
-  );
+  storeSeriesFixture(runDir, "live-semi", {
+    players: { p1: "openai:model0", p2: "openai:model3" },
+    series_index: 15,
+  });
   fs.writeFileSync(path.join(seriesDir, "game-1.log"), "");
   const roundRobin = leagueRow({
     run_id: runId,
@@ -646,7 +662,6 @@ test("archive round-robin finishes use the canonical game-win tiebreak", () => {
 test("direct entrants keep identical packed teams owned by the recorded sides", () => {
   const runsDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-archive-identical-teams-"));
   try {
-    writeLeagueFixture(runsDir);
     const artifact = leagueTeamBuildJournalRow({
       teamPlan: "The same legal team.",
       notebook: "",
@@ -662,10 +677,7 @@ test("direct entrants keep identical packed teams owned by the recorded sides", 
         },
       },
     });
-    fs.writeFileSync(
-      path.join(runsDir, RUN_ID, "teambuild", "teambuild.jsonl"),
-      `${JSON.stringify(archivedBuild(0, 1))}\n${JSON.stringify(archivedBuild(1, 0))}\n`,
-    );
+    writeLeagueFixture(runsDir, [archivedBuild(0, 1), archivedBuild(1, 0)]);
     const row = leagueRow({
       series_index: 0,
       series_id: "same11",
@@ -686,35 +698,6 @@ test("direct entrants keep identical packed teams owned by the recorded sides", 
   }
 });
 
-test("archive JSONL readers tolerate only a torn final write, not corruption in the middle", () => {
-  const runsDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-archive-jsonl-"));
-  try {
-    writeLeagueFixture(runsDir);
-    const teambuildFile = path.join(runsDir, RUN_ID, "teambuild", "teambuild.jsonl");
-    fs.appendFileSync(teambuildFile, '{"artifact":');
-    assert.ok(
-      buildLeague(LEAGUE_ROWS, runsDir, RUN_ID),
-      "a torn final append is invisible until committed",
-    );
-
-    fs.appendFileSync(
-      teambuildFile,
-      `
-${JSON.stringify(
-  leagueTeamBuildJournalRow({
-    teamPlan: "Lead fast while preserving both speed-control modes.",
-    notebook: "Keep the flexible speed-control plan private.",
-    attempts: 2,
-  }),
-)}
-`,
-    );
-    assert.throws(() => buildLeague(LEAGUE_ROWS, runsDir, RUN_ID), /invalid JSONL line 2/);
-  } finally {
-    fs.rmSync(runsDir, { recursive: true, force: true });
-  }
-});
-
 test("archived leagues overlay post-window rosters without rewriting the draft", () => {
   const runsDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-archive-window-"));
   try {
@@ -728,59 +711,74 @@ test("archived leagues overlay post-window rosters without rewriting the draft",
     assert.deepEqual(buildLeague(LEAGUE_ROWS, runsDir, RUN_ID)?.transactions, [
       { afterWeek: 1, state: "scheduled", order: [], offers: [], decisions: [] },
     ]);
-    const epochDir = path.join(runDir, "transactions", "after-week-1");
-    fs.mkdirSync(epochDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(epochDir, "window.jsonl"),
-      `${JSON.stringify({ kind: "offer", from: 0, to: 1, give: "pikachu", get: "eevee" })}\n`,
-    );
+    commitRunArtifact(runDir, "transaction-event:1", "000001", {
+      kind: "offer",
+      from: 0,
+      to: 1,
+      give: "pikachu",
+      get: "eevee",
+    });
     assert.deepEqual(buildLeague(LEAGUE_ROWS, runsDir, RUN_ID)?.transactions, [
       { afterWeek: 1, state: "in-progress", order: [], offers: [], decisions: [] },
     ]);
-    fs.writeFileSync(
-      path.join(epochDir, "window.json"),
-      JSON.stringify({
-        after_week: 1,
-        order: [0, 1],
-        offers: [],
-        decisions: [
-          {
-            entrant: 0,
-            model: "openai:alpha",
-            swaps: [{ drop: "pikachu", add: "raichu" }],
-            reasoning: "The extra speed matters.",
-            notebook: "Use Raichu.",
-            fallback: false,
-          },
-          {
-            entrant: 1,
-            model: "openai:beta",
-            swaps: [],
-            reasoning: "Keep the roster.",
-            notebook: "No change.",
-            fallback: false,
-          },
-        ],
-        rosters: [
-          {
-            entrant: 0,
-            model: "openai:alpha",
-            team_name: "Alpha Aces",
-            budget_left: 20,
-            spent: 80,
-            roster: [{ id: "raichu", name: "Raichu", cost: 80 }],
-          },
-          {
-            entrant: 1,
-            model: "compat:beta:nitro",
-            team_name: "Beta Bandits",
-            budget_left: 40,
-            spent: 60,
-            roster: [{ id: "eevee", name: "Eevee", cost: 60 }],
-          },
-        ],
-      }),
-    );
+    commitRunArtifact(runDir, "transaction-window", "000001", {
+      after_week: 1,
+      order: [0, 1],
+      swaps_used: [1, 0],
+      offers: [],
+      decisions: [
+        {
+          entrant: 0,
+          model: "openai:alpha",
+          swaps: [{ drop: "pikachu", add: "raichu" }],
+          reasoning: "The extra speed matters.",
+          notebook: "Use Raichu.",
+          fallback: false,
+        },
+        {
+          entrant: 1,
+          model: "openai:beta",
+          swaps: [],
+          reasoning: "Keep the roster.",
+          notebook: "No change.",
+          fallback: false,
+        },
+      ],
+      rosters: [
+        {
+          entrant: 0,
+          model: "openai:alpha",
+          team_name: "Alpha Aces",
+          budget_left: 20,
+          spent: 80,
+          roster: [{ id: "raichu", name: "Raichu", cost: 80 }],
+        },
+        {
+          entrant: 1,
+          model: "compat:beta:nitro",
+          team_name: "Beta Bandits",
+          budget_left: 40,
+          spent: 60,
+          roster: [{ id: "eevee", name: "Eevee", cost: 60 }],
+        },
+      ],
+    });
+    storeFranchiseRosterVersion(runDir, [
+      {
+        rosterVersion: 1,
+        entrant: 0,
+        teamName: "Alpha Aces",
+        budget: 20,
+        roster: [{ id: "raichu", name: "Raichu", cost: 80 }],
+      },
+      {
+        rosterVersion: 1,
+        entrant: 1,
+        teamName: "Beta Bandits",
+        budget: 40,
+        roster: [{ id: "eevee", name: "Eevee", cost: 60 }],
+      },
+    ]);
 
     const league = buildLeague(LEAGUE_ROWS, runsDir, RUN_ID)!;
     assert.equal(league.transactions[0]?.afterWeek, 1);

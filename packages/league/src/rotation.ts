@@ -7,9 +7,9 @@ import { validateModelExecution } from "./providers.js";
 import type { Rng } from "./random.js";
 import { resolveSeed, seededRng, seriesEntropy } from "./random.js";
 import type { SeriesRecord } from "./records.js";
-import { appendRow } from "./records.js";
+import { recordRow } from "./records.js";
 import type { ExperimentOptions, RecordedSeriesContext } from "./series.js";
-import { mapLimit, playRecordedSeries } from "./series.js";
+import { mapLimit, MatchRunner } from "./series.js";
 import { showdownCommit } from "./showdown.js";
 import type { Team } from "./teams.js";
 import { loadPool, validatePool } from "./teams.js";
@@ -120,7 +120,7 @@ export async function runRotation(
       reasoningByModel: options.reasoningByModel,
       apiKeys: options.apiKeys,
     };
-    const { fields } = await playRecordedSeries(seriesContext);
+    const { fields } = await new MatchRunner(seriesContext).run();
     const row: SeriesRecord = {
       schema_version: 1,
       mode: "rotation",
@@ -131,7 +131,7 @@ export async function runRotation(
       ...fields,
     };
     if (options.contributor !== undefined) row.contributor = options.contributor;
-    appendRow(recordsPath, row);
+    recordRow(recordsPath, row);
     options.onEvent?.({ type: "series-end", index: plan.index, record: row });
     return row;
   });

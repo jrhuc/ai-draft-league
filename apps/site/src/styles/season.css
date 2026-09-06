@@ -269,7 +269,7 @@ a.match-row:hover .go {
   max-width: 72ch;
 }
 
-.weekly-reviews {
+.team-timeline {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -277,33 +277,152 @@ a.match-row:hover .go {
   gap: 0.75rem;
 }
 
-.weekly-review {
+.team-timeline > li {
   display: grid;
   gap: 0.75rem;
   padding: 1rem 1.1rem;
 }
 
-.weekly-review header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 0.75rem 1rem;
-}
-
-.weekly-review header > div:first-child {
-  display: grid;
-  gap: 0.25rem;
-}
-
-.weekly-review .review-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-}
-
-.weekly-review .prose {
+.team-timeline .prose {
   color: var(--t2);
   max-width: 78ch;
   white-space: pre-wrap;
+}
+
+.timeline-review,
+.timeline-diff,
+.timeline-transactions {
+  margin-top: 0.7rem;
+}
+
+.timeline-table {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.timeline-table td,
+.timeline-table th {
+  white-space: normal;
+  min-width: 7rem;
+}
+
+[id^="build-"],
+[id^="after-week-"] {
+  scroll-margin-top: 5rem;
+}
+
+.trace-hero h1 .choice {
+  display: block;
+  margin-top: 0.35rem;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.55em;
+  font-weight: 500;
+  color: var(--t2);
+}
+
+.trace-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.trace-actions,
+.trace-filters,
+.trace-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.trace-filters label {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.trace-filters input,
+.trace-filters select {
+  max-width: 100%;
+}
+
+.trace-panel {
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.trace-panel > summary {
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.trace-panel > .trace-text,
+.trace-panel > .hint {
+  margin-top: 0.8rem;
+}
+
+.trace-body h2 {
+  margin: 1.6rem 0 0.5rem;
+  font-size: 0.8rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--t4);
+}
+
+.trace-body .stated {
+  margin: 0;
+  padding: 0.35rem 0 0.1rem 0.85rem;
+  border-left: 2px solid var(--line-2);
+  color: var(--t2);
+  max-width: 80ch;
+  white-space: pre-wrap;
+}
+
+.trace-text {
+  max-width: 80ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+  color: var(--t1);
+}
+
+.trace-code {
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--card);
+  font-family: var(--font-mono), monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.trace-fold {
+  margin: 0.4rem 0;
+}
+
+.trace-fold > summary {
+  cursor: pointer;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.78rem;
+  color: var(--link);
+  overflow-wrap: anywhere;
+}
+
+.trace-fold > .trace-text,
+.trace-fold > .trace-code {
+  margin-top: 0.5rem;
+}
+
+.downloads {
+  margin-top: 1.5rem;
 }

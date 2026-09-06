@@ -16,17 +16,14 @@ import {
   reasoningForModel,
 } from "./providers.js";
 import { ShowdownReference } from "./reference.js";
-import { canonicalJson } from "./serialization.js";
+import { commitRunArtifact, readRunArtifacts } from "./run-artifact-store.js";
 import {
-  epochArtifactPaths,
-  readTradeWindowFile,
-  readValidatedTradeWindow,
-  replayArtifact,
-  replayWindowLog,
-  requireCompletedReplay,
+  adoptWindowArtifact,
+  commitTradeWindowArtifact,
+  readTradeWindowArtifact,
+  replayWindowEvents,
   rosterArtifact,
-  type TradeOfferLogRow,
-  writeTradeWindowArtifact,
+  transactionEventNamespace,
 } from "./trade-window-artifacts.js";
 import {
   applyFreeAgency,
@@ -55,7 +52,6 @@ import {
   type TradeWindowPosition,
   type TradeWindowState,
   validateLeagueRosterState,
-  validateOfferTerms,
   validateTradesAllowed,
 } from "./trade-window-protocol.js";
 import type { JsonObject, Provider, ProviderMessage } from "./types.js";
@@ -67,6 +63,7 @@ interface TradeSeatLog {
   system?: string;
   user: string;
   response: string;
+  reasoning?: string;
   usage?: Record<string, number>;
   tool_lookups?: { name: string; arguments: JsonObject; result: string }[];
   error?: string;
@@ -240,28 +237,6 @@ export function renderTradeOfferPrompt(
   ].join("\n");
 }
 
-export function renderTradeResponsePrompt(
-  state: TradeWindowState,
-  offer: { to: number; give: string; get: string; message: string },
-  from: number,
-  psDir: string,
-  options: TradePromptRenderOptions = {},
-): string {
-  validateLeagueRosterState(state);
-  const error = validateOfferTerms(state, from, offer);
-  if (error) throw new Error(`invalid trade offer: ${error}`);
-  return [
-    responseSystemPrompt(
-      state,
-      offer.to,
-      options.position ?? RENDER_POSITION,
-      options.mechanicsTools ?? "available",
-    ),
-    "",
-    responseUserPrompt(state, offer, from, psDir),
-  ].join("\n");
-}
-
 export function renderFreeAgencyPrompt(
   state: TradeWindowState,
   entrant: number,
@@ -296,7 +271,6 @@ async function completeTradePhase<T extends object>(request: {
     attempts: number;
     maxTokens: number;
     toolRounds: number;
-    maxCallsPerRound: number;
     truncatedTemplate: string;
     rejectionTemplate: string;
   };
@@ -309,6 +283,7 @@ async function completeTradePhase<T extends object>(request: {
     const promptForAttempt = messages[messages.length - 1]!.content ?? "";
     let response = "";
     let usage: Record<string, number> | undefined;
+    let reasoningTrace: string | undefined;
     let error: string | undefined;
     let terminalError: Error | undefined;
     const lookups: { name: string; arguments: JsonObject; result: string }[] = [];
@@ -328,6 +303,7 @@ async function completeTradePhase<T extends object>(request: {
       const completion = await completeWithDexTools(completionRequest);
       response = completion.text;
       usage = completion.usage;
+      reasoningTrace = completion.reasoning;
       const candidate = request.parse(response || completion.reasoning || "");
       if (isRejection(candidate)) {
         error = completion.finishReason === "length" ? request.cutoff : candidate;
@@ -369,6 +345,7 @@ async function completeTradePhase<T extends object>(request: {
             response,
           };
     if (usage) seatEntry.usage = usage;
+    if (reasoningTrace) seatEntry.reasoning = reasoningTrace;
     if (lookups.length) seatEntry.tool_lookups = lookups;
     if (error) seatEntry.error = error;
     fs.appendFileSync(request.seatLog, `${JSON.stringify(seatEntry)}\n`, "utf8");
@@ -377,34 +354,45 @@ async function completeTradePhase<T extends object>(request: {
   return parsed;
 }
 
+export function transactionLogDir(runDir: string, afterWeek: number): string {
+  return path.join(runDir, "transactions", `after-week-${afterWeek}`);
+}
+
+/** Runs one window from its committed events; a window whose artifact is already committed is
+ * returned as stored, and a partially committed window resumes after its last committed event. */
 export async function runTradeWindow(
   state: TradeWindowState,
   options: RunTradeWindowOptions,
 ): Promise<TradeWindowArtifact> {
-  const { tradesAllowed, position: windowPosition } = options;
+  const { tradesAllowed, position: windowPosition, runDir } = options;
+  const afterWeek = windowPosition.afterWeek;
   validateTradesAllowed(tradesAllowed);
-  epochArtifactPaths(options.epochDir);
-  validateLeagueRosterState(state, "initial roster before transaction-log replay");
-  const liveState = rosterStateCopy(state);
-  const order = liveState.standings.map((row) => row.entrant).reverse();
-  const transcript = path.join(options.epochDir, "window.jsonl");
-  const logDir = path.join(options.epochDir, "window");
-  const replay = replayWindowLog(transcript, order, liveState, tradesAllowed);
-  const completedArtifact = readTradeWindowFile(options.epochDir);
+  validateLeagueRosterState(state, "initial roster before transaction replay");
+  const completedArtifact = readTradeWindowArtifact(runDir, afterWeek);
   if (completedArtifact) {
-    const expected = replayArtifact(windowPosition.afterWeek, order, replay, liveState);
-    requireCompletedReplay(
-      path.join(options.epochDir, "window.json"),
-      completedArtifact,
-      expected,
-      replay,
-    );
-    commitRosterState(state, liveState);
+    adoptWindowArtifact(state, completedArtifact);
     return completedArtifact;
   }
+  const liveState = rosterStateCopy(state);
+  const order = liveState.standings.map((row) => row.entrant).reverse();
+  const logDir = transactionLogDir(runDir, afterWeek);
+  const eventNamespace = transactionEventNamespace(afterWeek);
+  const storedEvents = readRunArtifacts(runDir, eventNamespace);
+  const { decisions, offers } = replayWindowEvents(
+    storedEvents.map((row) => row.value),
+    order,
+    liveState,
+    tradesAllowed,
+  );
+  let eventSequence = storedEvents.length;
+  const commitEvent = (row: JsonObject): void => {
+    eventSequence += 1;
+    commitRunArtifact(runDir, eventNamespace, String(eventSequence).padStart(6, "0"), {
+      ...row,
+      timestamp: new Date().toISOString(),
+    });
+  };
   fs.mkdirSync(logDir, { recursive: true });
-  const { decisions, offerRows } = replay;
-  const offers = [...replay.offers];
   const providers = liveState.models.map((model) => {
     if (model === "random") return undefined;
     const make =
@@ -416,20 +404,17 @@ export async function runTradeWindow(
   });
   const reference = new ShowdownReference(liveState.board.format, options.psDir);
   const boardSearch = createBoardSearch(liveState.board, options.psDir);
+  const seatLog = (entrant: number) =>
+    path.join(logDir, `seat-${entrant}-${fileSlug(liveState.models[entrant]!)}.jsonl`);
 
   if (decisions.length === 0) {
     for (const entrant of order) {
       options.signal?.throwIfAborted();
-      const prior = offerRows.filter((row) => row.from === entrant);
-      const stopped = prior.some((row) => row.to === null);
-      let made = prior.filter((row) => row.to !== null).length;
-      if (stopped) continue;
+      const prior = offers.filter((offer) => offer.from === entrant);
+      if (prior.some((offer) => offer.to === null)) continue;
+      let made = prior.length;
       while (made < tradesAllowed) {
         const provider = providers[entrant];
-        const seatLog = path.join(
-          logDir,
-          `seat-${entrant}-${fileSlug(liveState.models[entrant]!)}.jsonl`,
-        );
         let parsed: ParsedTradeOffer | undefined;
         let proposerFallback = false;
         if (provider) {
@@ -443,7 +428,7 @@ export async function runTradeWindow(
             }),
             user: offerUserPrompt(liveState, entrant, options.psDir),
             phase: "offer",
-            seatLog,
+            seatLog: seatLog(entrant),
             reference,
             boardSearch,
             options,
@@ -469,10 +454,7 @@ export async function runTradeWindow(
               system: responseSystemPrompt(liveState, responder, windowPosition),
               user: responseUserPrompt(liveState, parsed.offer, entrant, options.psDir),
               phase: "response",
-              seatLog: path.join(
-                logDir,
-                `seat-${responder}-${fileSlug(liveState.models[responder]!)}.jsonl`,
-              ),
+              seatLog: seatLog(responder),
               reference,
               boardSearch,
               options,
@@ -507,16 +489,7 @@ export async function runTradeWindow(
           offerReasoning: parsed.reasoning,
           responseReasoning: response?.reasoning ?? "",
         };
-        const logRow: TradeOfferLogRow = {
-          kind: "offer",
-          model: liveState.models[entrant]!,
-          ...offer,
-        };
-        fs.appendFileSync(
-          transcript,
-          `${canonicalJson({ ...logRow, timestamp: new Date().toISOString() })}\n`,
-          "utf8",
-        );
+        commitEvent({ kind: "offer", model: liveState.models[entrant]!, ...offer });
         if (offerOutcome) commitRosterState(liveState, offerOutcome);
         offers.push(offer);
         if (!parsed.offer) break;
@@ -532,10 +505,6 @@ export async function runTradeWindow(
     let parsed: ParsedTradeDecision | undefined;
     let fallback = false;
     if (provider) {
-      const seatLog = path.join(
-        logDir,
-        `seat-${entrant}-${fileSlug(liveState.models[entrant]!)}.jsonl`,
-      );
       parsed = await completeTradePhase({
         provider,
         state: liveState,
@@ -543,7 +512,7 @@ export async function runTradeWindow(
         system: systemPrompt(liveState, entrant, windowPosition),
         user: userPrompt(liveState, entrant, options.psDir),
         phase: "free_agency",
-        seatLog,
+        seatLog: seatLog(entrant),
         reference,
         boardSearch,
         options,
@@ -565,30 +534,21 @@ export async function runTradeWindow(
       reasoning: parsed.reasoning,
       fallback,
     };
-    fs.appendFileSync(
-      transcript,
-      `${canonicalJson({ kind: "free_agency", ...decision, timestamp: new Date().toISOString() })}\n`,
-      "utf8",
-    );
+    commitEvent({ kind: "free_agency", ...decision });
     commitRosterState(liveState, nextState);
     decisions.push(decision);
   }
 
   validateLeagueRosterState(liveState, "completed live transaction roster");
   const artifact: TradeWindowArtifact = {
-    after_week: windowPosition.afterWeek,
+    after_week: afterWeek,
     order,
     offers,
     decisions,
     rosters: rosterArtifact(liveState),
     swaps_used: [...liveState.swapsUsed],
   };
-  const artifactFile = writeTradeWindowArtifact(options.epochDir, artifact);
-  const committed = readValidatedTradeWindow(options.epochDir, state, {
-    afterWeek: windowPosition.afterWeek,
-    tradesAllowed,
-  });
-  if (!committed) throw new Error(`${artifactFile} disappeared after its atomic rename`);
+  commitTradeWindowArtifact(runDir, artifact);
   commitRosterState(state, liveState);
-  return committed;
+  return artifact;
 }

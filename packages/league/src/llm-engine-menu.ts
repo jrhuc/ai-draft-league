@@ -1,9 +1,9 @@
 import type { MenuHints, TargetNames } from "./choices.js";
-import { BattleState } from "./state.js";
+import { PerspectiveState } from "./perspective-state.js";
 import type { BattleRequest, Pid } from "./types.js";
 
 export function battleMenuHints(
-  state: BattleState,
+  state: PerspectiveState,
   pid: Pid,
   request: BattleRequest,
 ): MenuHints | undefined {
@@ -28,7 +28,7 @@ export function battleMenuHints(
     for (const [index, mon] of (request.side?.pokemon ?? [])
       .filter((pokemon) => pokemon.active)
       .entries()) {
-      names.ally[index + 1] = BattleState.requestName(mon);
+      names.ally[index + 1] = PerspectiveState.requestName(mon);
     }
   }
   return {

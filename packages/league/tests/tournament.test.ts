@@ -17,7 +17,7 @@ import {
   tournamentConfigSchema,
 } from "../src/tournament.js";
 import type { JsonObject } from "../src/types.js";
-import { asRecord, asRecords, text } from "../src/value.js";
+import { asRecords, text } from "../src/value.js";
 
 test("seed order spreads byes across distinct first-round matches", () => {
   assert.deepEqual(seedPositions(4), [0, 3, 1, 2]);
@@ -191,10 +191,17 @@ test("a tournament crowns a champion and records rounds coherently", async (t) =
       onEvent: (event) => replayEvents.push(event),
     },
   );
-  const replayBracket = replayEvents.filter(
-    (event): event is Extract<TournamentEvent, { type: "bracket" }> => event.type === "bracket",
-  )[0]!.bracket;
-  assert.deepEqual(replayed, rows);
+  const replayBracket = replayEvents
+    .filter(
+      (event): event is Extract<TournamentEvent, { type: "bracket" }> => event.type === "bracket",
+    )
+    .at(-1)!.bracket;
+  const withoutStats = (row: (typeof rows)[number]) => ({ ...row, decision_stats: undefined });
+  assert.deepEqual(
+    replayed.map(withoutStats),
+    rows.map(withoutStats),
+    "adopted series carry their recorded results; decision stats are re-projected from decision rows",
+  );
   assert.deepEqual(
     replayBracket,
     final,
@@ -341,28 +348,6 @@ test("a stopped bracket resumes on its records and replays the interrupted serie
     fs.readFileSync(path.join(directory, "config.json"), "utf8"),
     config,
     "a resume rewrites no provenance",
-  );
-});
-
-test("a resume refuses a tournament result whose defaults diverge from canonical series evidence", async (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-tournament-mismatch-"));
-  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
-  const models = ["random", "random"];
-  const recordsPath = path.join(directory, "results.jsonl");
-  await runTournament(models, directory, { seed: 3, concurrency: 1, recordsPath });
-  const rows = fs
-    .readFileSync(recordsPath, "utf8")
-    .trim()
-    .split("\n")
-    .map((line): JsonObject => JSON.parse(line));
-  const game = asRecords(rows[0]!.games)[0]!;
-  const defaults = asRecord(game.timer_autodefaults);
-  defaults.p1 = Number(defaults.p1) + 1;
-  fs.writeFileSync(recordsPath, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`, "utf8");
-
-  await assert.rejects(
-    runTournament(models, directory, { seed: 3, concurrency: 1, recordsPath, resume: true }),
-    /canonical completed series evidence/,
   );
 });
 

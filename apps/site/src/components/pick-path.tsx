@@ -132,7 +132,7 @@ export function PickPath({ picks, franchises }: { picks: DraftPick[]; franchises
                 <div
                   className={`pick-pop${flip ? " flip" : ""}${up ? " up" : ""}`}
                   role="dialog"
-                  aria-label={`Pick ${pick.overall} reasoning`}
+                  aria-label={`Pick ${pick.overall} stated reason`}
                 >
                   <div className="meta">
                     <Link className="team-tag" to={`/teams/${pick.franchiseId}/`}>
@@ -153,7 +153,7 @@ export function PickPath({ picks, franchises }: { picks: DraftPick[]; franchises
                       </span>
                     ) : null}
                   </div>
-                  <p>{pick.rationale || "No reasoning recorded."}</p>
+                  <p>{pick.rationale || "No stated reason recorded."}</p>
                 </div>
               ) : null}
             </li>

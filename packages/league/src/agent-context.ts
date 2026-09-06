@@ -82,18 +82,22 @@ export class AgentContextStream {
     if (!Number.isFinite(requestedLimit))
       throw new Error(`invalid context limit ${JSON.stringify(requestedLimit)}`);
     const limit = Math.max(1, Math.min(Math.trunc(requestedLimit), 500));
-    const eligible = this.events.filter(
-      (event) =>
-        event.sequence > after &&
-        event.sequence < before &&
-        (!query.kind || event.kind === query.kind),
-    );
-    const events = eligible.slice(0, limit);
+    const events: AgentContextEvent[] = [];
+    let more = false;
+    for (let index = after; index < Math.min(before - 1, this.events.length); index += 1) {
+      const event = this.events[index]!;
+      if (query.kind && event.kind !== query.kind) continue;
+      if (events.length === limit) {
+        more = true;
+        break;
+      }
+      events.push(event);
+    }
     return {
       events: structuredClone(events),
       nextCursor: events.at(-1)?.id ?? null,
       headCursor: this.cursor(),
-      more: eligible.length > limit,
+      more,
     };
   }
 }

@@ -7,9 +7,10 @@ import { legalPicks, parseFranchiseName, parsePick, runDraft } from "../src/draf
 import { readJsonlObjects } from "../src/jsonl.js";
 import { ApiError } from "../src/providers.js";
 import { seededRng } from "../src/random.js";
+import { commitRunArtifact, readRunArtifacts } from "../src/run-artifact-store.js";
 import { runTeambuild } from "../src/teambuild.js";
 import type { Completion, JsonObject, Provider } from "../src/types.js";
-import { asRecords, text } from "../src/value.js";
+import { asRecord, asRecords, text } from "../src/value.js";
 import { accepted, rejection } from "./asserts.js";
 import {
   assertFormatAuthority,
@@ -110,14 +111,12 @@ test("drafters name their franchise only after every pick is complete", async (t
   assert.match(system, /test transaction window opens after week 2/);
   assert.doesNotMatch(system, /franchise name|Trick Room Service|Drought Dodgers/i);
 
-  const transcript = fs
-    .readFileSync(path.join(logDir, "draft.jsonl"), "utf8")
-    .trim()
-    .split("\n")
-    .map((line): JsonObject => JSON.parse(line));
+  const transcript = readRunArtifacts(logDir, "draft-pick").map(({ value }) => asRecord(value));
   assert.equal(transcript[0]!.team_name, undefined);
   assert.equal(transcript[0]!.rationale, "Best ground type available.");
-  const names = readJsonlObjects(path.join(logDir, "franchise-names.jsonl"));
+  const names = readRunArtifacts(logDir, "draft-franchise-name").map(({ value }) =>
+    asRecord(value),
+  );
   assert.equal(names.find((row) => row.entrant === 0)?.team_name, "Route 210 Garchomps");
   const namingLog = readJsonlObjects(path.join(logDir, "namer-0-fake-model.jsonl"));
   const namerSystem = text(namingLog[0]!.system);
@@ -552,11 +551,9 @@ test("a resumed draft replays its transcript and continues from the next pick", 
       timestamp: "2026-01-01T00:00:00.000Z",
     },
   ];
-  fs.writeFileSync(
-    path.join(logDir, "draft.jsonl"),
-    `${stored.map((row) => JSON.stringify(row)).join("\n")}\n{"pick":`,
-    "utf8",
-  );
+  for (const [index, row] of stored.entries()) {
+    commitRunArtifact(logDir, "draft-pick", String(index + 1).padStart(6, "0"), row);
+  }
   let calls = 0;
   const prompts: string[] = [];
   const outcome = await runDraft(
@@ -596,11 +593,11 @@ test("a resumed draft replays its transcript and continues from the next pick", 
     prompts[0]!.includes("Carry this plan across the resume."),
     "the replayed notebook reaches the first live pick",
   );
-  const transcript = fs
-    .readFileSync(path.join(logDir, "draft.jsonl"), "utf8")
-    .split("\n")
-    .filter((line) => line.trim());
-  assert.equal(transcript.length, 6, "replayed picks are not rewritten to the transcript");
+  assert.equal(
+    readRunArtifacts(logDir, "draft-pick").length,
+    6,
+    "replayed picks are not committed twice",
+  );
 });
 
 test("an explicit empty draft notebook survives transcript replay", async (t) => {
@@ -638,7 +635,7 @@ test("an explicit empty draft notebook survives transcript replay", async (t) =>
     },
   );
   assert.equal(first.notebooks[0], "");
-  const transcript = readJsonlObjects(path.join(logDir, "draft.jsonl"));
+  const transcript = readRunArtifacts(logDir, "draft-pick").map(({ value }) => asRecord(value));
   const cleared = transcript.find((row) => row.model === "fake:a" && row.mon === "incineroar")!;
   assert.equal(cleared.notebook, "");
   assert.deepEqual(cleared.evidence_supplied, { rationale: true, notebook_update: true });

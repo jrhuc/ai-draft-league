@@ -1,6 +1,6 @@
 import type { DecisionStats } from "./battle-agent.js";
 import type { SlotMenu } from "./choices.js";
-import type { BattleState } from "./state.js";
+import type { PerspectiveState } from "./perspective-state.js";
 import type { Pid } from "./types.js";
 
 const CONSECUTIVE_DECISION_FAILURE_LIMIT = 3;
@@ -70,7 +70,7 @@ export class LLMEngineStats {
     parts: string[];
     action: string;
     toolLookups: number;
-    state: BattleState;
+    state: PerspectiveState;
     pid: Pid;
     gameId: string;
   }): void {

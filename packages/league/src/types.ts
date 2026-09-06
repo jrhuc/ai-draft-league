@@ -126,6 +126,7 @@ export interface ToolCall {
   id: string;
   name: string;
   arguments: JsonObject;
+  inputError?: string;
   /** Provider metadata that must be replayed with the call. */
   providerMetadata?: NonNullable<ToolCallPart["providerOptions"]>;
 }
@@ -137,7 +138,7 @@ export interface Completion {
   finishReason?: string;
   reasoning?: string;
   provider?: string;
-  /** AI SDK response messages, replayed verbatim so provider metadata survives. */
+  /** AI SDK response messages; replay normalization preserves non-tool content and provider metadata. */
   responseMessages?: ModelMessage[];
 }
 

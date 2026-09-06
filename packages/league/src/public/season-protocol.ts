@@ -76,7 +76,56 @@ const decisionSchema = z.strictObject({
   automatic: z.boolean(),
   latencyMs: z.number().nonnegative().nullable(),
   reasoningTokens: z.number().int().nonnegative().nullable(),
+  reasoningChars: z.number().int().nonnegative().nullable(),
 });
+const toolCallSchema = z.strictObject({
+  name: z.string(),
+  arguments: z.record(z.string(), z.json()),
+  result: z.string(),
+});
+export const publicDecisionTraceSchema = z.strictObject({
+  franchiseId: franchiseRef,
+  turn: z.number().int().nonnegative(),
+  phase: z.string(),
+  selection: z.array(z.string()),
+  prompt: z.string(),
+  toolCalls: z.array(toolCallSchema),
+  /** Empty when the provider released no reasoning text for the decision. */
+  reasoning: z.string(),
+  response: z.string(),
+  usage: z.record(z.string(), z.number()),
+  latencyMs: z.number().nonnegative(),
+  maxTokens: z.number().int().positive().nullable(),
+  timer: z
+    .strictObject({
+      turnSeconds: z.number().nullable(),
+      bankSeconds: z.number().nullable(),
+    })
+    .nullable(),
+  fallback: z.boolean(),
+  error: z.string().nullable(),
+  failedAttempts: z.array(z.strictObject({ response: z.string(), error: z.string() })),
+});
+/** One released game's traces, aligned index-for-index with the bundle's decisions. */
+export const publicGameTracesSchema = z.strictObject({
+  runId: id,
+  seriesId: id,
+  game: z.number().int().positive(),
+  franchises: z.tuple([franchiseRef, franchiseRef]),
+  decisions: z.array(publicDecisionTraceSchema.nullable()),
+});
+export const publicTracesManifestSchema = z.strictObject({
+  runId: id,
+  generatedAt: z.iso.datetime(),
+  archive: z.string(),
+  digests: z.record(
+    id,
+    z.record(z.string().regex(/^[1-9]\d*$/), z.string().regex(/^[a-f0-9]{64}$/)),
+  ),
+});
+export type PublicDecisionTrace = z.infer<typeof publicDecisionTraceSchema>;
+export type PublicGameTraces = z.infer<typeof publicGameTracesSchema>;
+export type PublicTracesManifest = z.infer<typeof publicTracesManifestSchema>;
 const reflectionSchema = z.strictObject({
   franchiseId: franchiseRef,
   result: z.enum(["won", "lost", "tied"]),

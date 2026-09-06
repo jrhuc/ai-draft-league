@@ -116,7 +116,9 @@ const chanceEventCountsSchema = z.strictObject({
   flinched_turns: z.number().int().nonnegative(),
   full_paralysis: z.number().int().nonnegative(),
 });
-const seriesGameSummaryFields = {
+export const seriesGameResultSchema = z.strictObject({
+  number: z.number().int().positive(),
+  seed: gameSeedSchema,
   winner: z.string().min(1).nullable(),
   winner_side: z.enum(["p1", "p2"]).nullable(),
   turns: z.number().int().nonnegative(),
@@ -126,12 +128,6 @@ const seriesGameSummaryFields = {
   timer_autodefaults: sideCountSchema,
   chance_events: z.strictObject({ p1: chanceEventCountsSchema, p2: chanceEventCountsSchema }),
   log: z.string().min(1),
-};
-export const seriesGameSummarySchema = z.strictObject(seriesGameSummaryFields);
-export const seriesGameResultSchema = z.strictObject({
-  number: z.number().int().positive(),
-  seed: gameSeedSchema,
-  ...seriesGameSummaryFields,
 });
 
 export type SeriesGameResult = z.infer<typeof seriesGameResultSchema>;
@@ -159,7 +155,7 @@ export const SINGLE_ELIMINATION_GAME_LIMIT = 9;
 export type GameSeed = [number, number, number, number];
 const seriesResultObjectSchema = seriesGameResultSchema
   .pick({ number: true, seed: true, winner_side: true })
-  .extend({ winner: seriesGameSummaryFields.winner.optional() })
+  .extend({ winner: z.string().min(1).nullable().optional() })
   .loose();
 
 export function seriesSeedSchedule(

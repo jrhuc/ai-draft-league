@@ -79,7 +79,7 @@ export class SideState {
   showteam = false;
 }
 
-export interface BattleStateView {
+export interface PerspectiveStateView {
   readonly pid: Pid;
   weather: TimedEffect | undefined;
   fields: Map<string, TimedEffect>;

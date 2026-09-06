@@ -1,6 +1,12 @@
-import type { PublicMatch, PublicSeasonBundle, PublicWeeklyReview } from "league/protocol";
+import type {
+  PublicMatch,
+  PublicSeasonBundle,
+  PublicTracesManifest,
+  PublicWeeklyReview,
+} from "league/protocol";
 
 export type SeasonBundle = PublicSeasonBundle;
+export type Season = SeasonBundle & { traces: PublicTracesManifest | null };
 export type Match = PublicMatch;
 export type WeeklyReview = PublicWeeklyReview;
 

@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import type { Plugin } from "vite";
@@ -16,6 +18,20 @@ function liveWatch(): Plugin {
     name: "live-watch",
     apply: "serve",
     configureServer(server) {
+      const tracesDist = fileURLToPath(new URL("../traces/dist", import.meta.url));
+      server.middlewares.use("/traces", (req, res, next) => {
+        const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+        const file = path.join(tracesDist, "traces", path.normalize(pathname));
+        if (!file.startsWith(path.join(tracesDist, "traces")) || !fs.existsSync(file)) {
+          next();
+          return;
+        }
+        res.setHeader(
+          "content-type",
+          file.endsWith(".gz") ? "application/gzip" : "application/json",
+        );
+        fs.createReadStream(file).pipe(res);
+      });
       server.middlewares.use("/api/watch", (req, res) => {
         void (async () => {
           const respond = (code: number, body: JsonValue): void => {
@@ -30,27 +46,38 @@ function liveWatch(): Plugin {
             respond(500, { error: "league dist missing — run `vp run league#build` first" });
             return;
           }
-          const url = req.url ?? "/";
+          const url = new URL(req.url ?? "/", "http://localhost").pathname;
           if (url === "/runs") {
             respond(200, league.listExternalRuns(league.RUNS_DIR));
             return;
           }
-          const match = /^\/runs\/([A-Za-z0-9._-]+)\/bundle$/.exec(url);
+          const match =
+            /^\/runs\/([A-Za-z0-9._-]+)\/(bundle|traces\/manifest|traces\/([A-Za-z0-9._-]+)\/game-(\d+))$/.exec(
+              url,
+            );
           if (!match?.[1]) {
             respond(404, { error: "unknown watch endpoint" });
             return;
           }
           try {
-            respond(
-              200,
-              league.buildSeasonExport({
-                recordsPath: league.RESULTS_PATH,
-                runsDir: league.RUNS_DIR,
-                runId: match[1],
-                title: `Live · ${match[1].slice(-8)}`,
-                releasedThroughWeek: "all",
-              }),
-            );
+            const exported = league.buildSeasonExport({
+              recordsPath: league.RESULTS_PATH,
+              runsDir: league.RUNS_DIR,
+              runId: match[1],
+              title: `Live · ${match[1].slice(-8)}`,
+              releasedThroughWeek: "all",
+            });
+            if (match[2] === "bundle") {
+              respond(200, exported.bundle);
+              return;
+            }
+            if (match[2] === "traces/manifest") {
+              respond(200, exported.manifest);
+              return;
+            }
+            const game = exported.traces.get(match[3] ?? "")?.[Number(match[4]) - 1];
+            if (game) respond(200, game);
+            else respond(404, { error: "that game has no released traces" });
           } catch (error) {
             respond(409, { error: error instanceof Error ? error.message : String(error) });
           }

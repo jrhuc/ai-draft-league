@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -142,7 +141,6 @@ export const DRAFT_PROMPT_POLICY = {
   maxTokens: 65_536,
   attempts: 3,
   toolRounds: 8,
-  maxCallsPerRound: 6,
 } as const;
 
 export const FRANCHISE_NAME_PROMPT_POLICY = {
@@ -160,24 +158,6 @@ export const FRANCHISE_NAME_PROMPT_POLICY = {
   attempts: 3,
   nameLimit: 60,
 } as const;
-
-const CONNECTED_DRAFT_PROMPT_POLICY = {
-  framing: "system-blank-line-user-v1",
-  boardProjection: "current-legal-picks-only-v1",
-} as const;
-
-export function connectedDraftPromptRevision(
-  mechanicsTools: MechanicsToolAvailability = "available",
-): string {
-  const draft = createHash("sha256")
-    .update(JSON.stringify({ draft: DRAFT_PROMPT_POLICY, naming: FRANCHISE_NAME_PROMPT_POLICY }))
-    .digest("hex")
-    .slice(0, 12);
-  return createHash("sha256")
-    .update(JSON.stringify([draft, CONNECTED_DRAFT_PROMPT_POLICY, mechanicsTools]))
-    .digest("hex")
-    .slice(0, 12);
-}
 
 function cheapestCostsByBase(mons: readonly DraftBoardMon[]): number[] {
   const costs = new Map<string, number>();
@@ -200,18 +180,6 @@ export function boardInfo(board: DraftBoard): BoardInfo {
     picks: board.picks,
     maxEntrants: affordable ? Math.min(8, Math.floor(cheapest.length / board.picks)) : 0,
   };
-}
-
-export function listBoards(boardsDir = BOARDS_DIR): BoardInfo[] {
-  if (!fs.existsSync(boardsDir)) return [];
-  const infos: BoardInfo[] = [];
-  for (const entry of fs.readdirSync(boardsDir).sort()) {
-    if (!entry.endsWith(".json")) continue;
-    try {
-      infos.push(boardInfo(loadBoard(entry.slice(0, -".json".length), boardsDir)));
-    } catch {}
-  }
-  return infos;
 }
 
 export function loadBoard(
@@ -492,28 +460,6 @@ export function draftUserPrompt(
   );
   lines.push("", DRAFT_PROMPT_POLICY.turnInstruction);
   return lines.join("\n");
-}
-
-export function renderDraftPickPrompt(
-  state: DraftState,
-  drafter: number,
-  models: string[],
-  pickNumber: number,
-  notebook: string,
-  options: {
-    psDir?: string;
-    rosterPolicy: string;
-    mechanicsTools?: MechanicsToolAvailability;
-  },
-): string {
-  const psDir = options.psDir ?? defaultPsDir();
-  const mechanicsTools = options.mechanicsTools ?? "available";
-  const legalBoard: DraftBoard = { ...state.board, mons: legalPicks(state, drafter) };
-  return [
-    draftSystemPrompt(legalBoard, models, drafter, psDir, options.rosterPolicy, mechanicsTools),
-    "",
-    draftUserPrompt(state, drafter, models, pickNumber, notebook),
-  ].join("\n");
 }
 
 interface ParsedPick {

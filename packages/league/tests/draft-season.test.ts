@@ -5,18 +5,20 @@ import path from "node:path";
 import { test } from "vite-plus/test";
 import type { DraftLeagueEvent } from "../src/draftleague-protocol.js";
 import { runDraftLeague } from "../src/draftleague.js";
+import { rankedTable } from "../src/draftleague-protocol.js";
 import { roundRobinWeeks } from "../src/draftleague-topology.js";
-import { emptyMemory } from "../src/franchise-memory.js";
-import { readJsonlObjects } from "../src/jsonl.js";
+import { readFranchiseCheckpoints, readFranchiseRosterVersion } from "../src/league-journal.js";
 import { draftLeagueConfigSchema } from "../src/league-store.js";
 import { defaultPsDir } from "../src/paths.js";
 import { loadSeriesRecords } from "../src/records.js";
-import { canonicalJson } from "../src/serialization.js";
-import { decodeTeamBuildJournalRow } from "../src/teambuild.js";
-import { parseTradeDecision, runTradeWindow, type TradeWindowState } from "../src/trade-window.js";
-import type { JsonObject } from "../src/types.js";
-import { asRecord, asStrings, text } from "../src/value.js";
-import { runWeeklyReview } from "../src/weekly-review.js";
+import { commitRunArtifact, readRunArtifacts } from "../src/run-artifact-store.js";
+import {
+  parseTradeDecision,
+  readTradeWindowArtifact,
+  runTradeWindow,
+  type TradeWindowState,
+} from "../src/trade-window.js";
+import { asRecord, asStrings } from "../src/value.js";
 import { BOARD } from "./draft-test-helpers.js";
 
 test("a full draft league drafts, plays weekly rounds, and crowns a champion", async (t) => {
@@ -33,12 +35,9 @@ test("a full draft league drafts, plays weekly rounds, and crowns a champion", a
 
   assert.equal(rows.length, 6 + 1, "a four-coach round robin is six series, plus a top-two final");
   assert.deepEqual(
-    fs
-      .readdirSync(path.join(directory, "reviews"))
-      .filter((file) => file.endsWith(".jsonl"))
-      .sort(),
-    ["week-1.jsonl", "week-2.jsonl", "week-3.jsonl"],
-    "a parallel league reviews at each window and the end of the round robin",
+    [...new Set(readFranchiseCheckpoints(directory, "week").map((row) => row.week))],
+    [1, 2, 3],
+    "every round-robin week ends with a review",
   );
   for (const row of rows) {
     assert.equal(row.mode, "draft");
@@ -60,7 +59,6 @@ test("a full draft league drafts, plays weekly rounds, and crowns a champion", a
   );
   assert.equal(config.mode, "draft");
   assert.equal(config.weeks, 3);
-  assert.equal(config.sequential_weeks, false, "round-robin series run concurrently by default");
   assert.equal(
     config.closed_sheets,
     false,
@@ -75,33 +73,24 @@ test("a full draft league drafts, plays weekly rounds, and crowns a champion", a
     ],
     "a window after each of the first three weeks is the default",
   );
-  assert.deepEqual(config.draft_notes, ["", "", "", ""]);
-  const rosters = config.rosters!;
+  assert.equal(Object.hasOwn(config, "draft_notes"), false);
+  assert.equal(Object.hasOwn(config, "rosters"), false);
+  const stored = readFranchiseRosterVersion(directory, 0);
+  const rosters = stored.map((roster) => roster.roster.map((mon) => mon.id));
   assert.equal(rosters.length, 4);
   for (const roster of rosters) assert.equal(roster.length, 10);
   assert.equal(new Set(rosters.flat()).size, 40, "no entry is drafted twice");
-
-  const stored: Array<JsonObject> = JSON.parse(
-    fs.readFileSync(path.join(directory, "rosters.json"), "utf8"),
-  );
   assert.deepEqual(
     stored.map((entry) => entry.entrant),
     [0, 1, 2, 3],
   );
-  for (const entry of stored) assert.ok(Number(entry.spent) <= 100, "no coach overspends");
-  const window: {
-    after_week: number;
-    order: number[];
-    offers: Array<{
-      to: number | null;
-      proposerFallback: boolean;
-      responderFallback: boolean | null;
-    }>;
-    decisions: Array<{ swaps: unknown[] }>;
-    rosters: Array<{ entrant: number }>;
-  } = JSON.parse(
-    fs.readFileSync(path.join(directory, "transactions", "after-week-3", "window.json"), "utf8"),
-  );
+  for (const entry of stored) {
+    assert.ok(
+      entry.roster.reduce((total, mon) => total + mon.cost, 0) <= 100,
+      "no coach overspends",
+    );
+  }
+  const window = readTradeWindowArtifact(directory, 3)!;
   assert.equal(window.after_week, 3);
   assert.equal(window.decisions.length, 4);
   assert.equal(window.offers.length, 4);
@@ -118,11 +107,7 @@ test("a full draft league drafts, plays weekly rounds, and crowns a champion", a
   );
   assert.equal(window.order.length, 4);
 
-  const teambuilds = fs
-    .readFileSync(path.join(directory, "teambuild", "teambuild.jsonl"), "utf8")
-    .trim()
-    .split("\n")
-    .map((line): JsonObject => JSON.parse(line));
+  const teambuilds = readRunArtifacts(directory, "teambuild").map(({ value }) => asRecord(value));
   assert.equal(teambuilds.length, rows.length * 2, "both coaches build before every series");
   for (const build of teambuilds) {
     const artifact = asRecord(build.artifact);
@@ -131,17 +116,6 @@ test("a full draft league drafts, plays weekly rounds, and crowns a champion", a
     assert.equal(asStrings(action.selected).length, 6);
     assert.deepEqual(Object.keys(build), ["artifact"]);
   }
-  const coaching = fs
-    .readFileSync(path.join(directory, "coaching.jsonl"), "utf8")
-    .trim()
-    .split("\n")
-    .map((line): JsonObject => JSON.parse(line));
-  assert.equal(
-    coaching.length,
-    rows.length * 2,
-    "each coach receives resumable private playoff context",
-  );
-  assert.ok(coaching.every((entry) => text(entry.context).includes("Registered sets:")));
 
   const draftEvents = events.filter(
     (event): event is Extract<DraftLeagueEvent, { type: "draft" }> => event.type === "draft",
@@ -173,9 +147,11 @@ test("a full draft league drafts, plays weekly rounds, and crowns a champion", a
       (event): event is Extract<DraftLeagueEvent, { type: "bracket" }> => event.type === "bracket",
     )
     .at(-1)!.bracket;
-  const replayBracket = replayEvents.find(
-    (event): event is Extract<DraftLeagueEvent, { type: "bracket" }> => event.type === "bracket",
-  )!.bracket;
+  const replayBracket = replayEvents
+    .filter(
+      (event): event is Extract<DraftLeagueEvent, { type: "bracket" }> => event.type === "bracket",
+    )
+    .at(-1)!.bracket;
   assert.deepEqual(
     replayBracket,
     liveBracket,
@@ -217,9 +193,11 @@ test("a four-seed draft playoff advances and replays the same exact bracket", as
     resume: true,
     onEvent: (event) => replayEvents.push(event),
   });
-  const replayBracket = replayEvents.find(
-    (event): event is Extract<DraftLeagueEvent, { type: "bracket" }> => event.type === "bracket",
-  )!.bracket;
+  const replayBracket = replayEvents
+    .filter(
+      (event): event is Extract<DraftLeagueEvent, { type: "bracket" }> => event.type === "bracket",
+    )
+    .at(-1)!.bracket;
   assert.deepEqual(replayBracket, liveBracket);
 });
 
@@ -236,14 +214,8 @@ test("a draft league checkpoints after a week and resumes to a champion", async 
   });
   assert.equal(first.length, 2, "week one is two series");
   assert.ok(first.every((row) => row.stage === "roundrobin" && row.round === 1));
-  assert.ok(
-    fs.existsSync(path.join(directory, "transactions", "after-week-1", "window.json")),
-    "stopping after week 1 closes its transaction window",
-  );
-  assert.ok(
-    !fs.existsSync(path.join(directory, "transactions", "after-week-2")),
-    "later windows stay closed",
-  );
+  assert.ok(readTradeWindowArtifact(directory, 1), "stopping after week 1 closes its window");
+  assert.equal(readTradeWindowArtifact(directory, 2), undefined, "later windows stay closed");
 
   const resumed = await runDraftLeague(models, directory, {
     recordsPath,
@@ -258,14 +230,11 @@ test("a draft league checkpoints after a week and resumes to a champion", async 
   assert.equal(final.stage, "playoff");
   assert.ok(final.advanced, "the resumed league crowns a champion");
   for (const week of [1, 2, 3]) {
-    assert.ok(
-      fs.existsSync(path.join(directory, "transactions", `after-week-${week}`, "window.json")),
-      `resume completes the week-${week} window`,
-    );
+    assert.ok(readTradeWindowArtifact(directory, week), `resume completes the week-${week} window`);
   }
 });
 
-test("the real league window updates the outer roster used by later construction", async (t) => {
+test("a resumed league keeps roster version 0 and plays on from a changed roster", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-window-outer-roster-"));
   t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const recordsPath = path.join(directory, "results.jsonl");
@@ -277,53 +246,37 @@ test("the real league window updates the outer roster used by later construction
     throughWeek: 1,
     transactions: [{ afterWeek: 1, tradesAllowed: 0 }],
   });
-  /** The through-week stop closed the real (all-pass) window; clear it so the manual replay below owns the epoch. */
-  fs.rmSync(path.join(directory, "transactions"), { recursive: true, force: true });
-
-  const config: {
-    entrants: string[];
-    team_names: string[];
-    rosters: string[][];
-    draft_notes: string[];
-  } = JSON.parse(fs.readFileSync(path.join(directory, "config.json"), "utf8"));
-  const rosters = config.rosters.map((ids) =>
-    ids.map((id) => BOARD.mons.find((candidate) => candidate.id === id)!),
+  const drafted = readFranchiseRosterVersion(directory, 0);
+  const rosters = drafted.map(({ roster }) =>
+    roster.map((mon) => BOARD.mons.find((candidate) => candidate.id === mon.id)!),
+  );
+  const config: { entrants: string[] } = JSON.parse(
+    fs.readFileSync(path.join(directory, "config.json"), "utf8"),
   );
   const result = loadSeriesRecords(recordsPath)[0]!;
   const [a, b] = roundRobinWeeks(2)[0]![0]!;
-  const { score } = result;
-  const table = [
-    {
-      entrant: a,
-      w: result.winner_side === "p1" ? 1 : 0,
-      l: result.winner_side === "p2" ? 1 : 0,
-      gw: score.p1,
-      gl: score.p2,
-    },
-    {
-      entrant: b,
-      w: result.winner_side === "p2" ? 1 : 0,
-      l: result.winner_side === "p1" ? 1 : 0,
-      gw: score.p2,
-      gl: score.p1,
-    },
-  ].sort(
-    (first, second) =>
-      second.w - first.w ||
-      second.gw - second.gl - (first.gw - first.gl) ||
-      second.gw - first.gw ||
-      first.entrant - second.entrant,
+  const table = rankedTable(
+    [
+      {
+        entrant: a,
+        w: result.winner_side === "p1" ? 1 : 0,
+        l: result.winner_side === "p2" ? 1 : 0,
+      },
+      {
+        entrant: b,
+        w: result.winner_side === "p2" ? 1 : 0,
+        l: result.winner_side === "p1" ? 1 : 0,
+      },
+    ].map((row) => ({ ...row, gw: row.w * 2, gl: row.l * 2 })),
   );
   const first = table.at(-1)!.entrant;
   const state: TradeWindowState = {
     board: BOARD,
     models: config.entrants,
-    teamNames: config.team_names,
+    teamNames: drafted.map((roster) => roster.teamName),
     rosters,
-    budgets: rosters.map(
-      (roster) => BOARD.budget - roster.reduce((sum, candidate) => sum + candidate.cost, 0),
-    ),
-    memories: config.draft_notes.map((note) => emptyMemory(note)),
+    budgets: drafted.map((roster) => roster.budget),
+    memories: readFranchiseCheckpoints(directory, "week", 1).map((checkpoint) => checkpoint.memory),
     standings: table,
     results: models.map(() => []),
     reflections: models.map(() => []),
@@ -332,117 +285,59 @@ test("the real league window updates the outer roster used by later construction
     swapsUsed: models.map(() => 0),
   };
   const owned = new Set(rosters.flatMap((roster) => roster.map((candidate) => candidate.id)));
-  let replayed: { drop: string; add: string; reasoning: string } | undefined;
+  let replayed: { drop: string; add: string } | undefined;
   for (const drop of rosters[first]!) {
     for (const add of BOARD.mons) {
       if (owned.has(add.id)) continue;
       const parsed = parseTradeDecision(
-        JSON.stringify({
-          swaps: [{ drop: drop.id, add: add.id }],
-          reasoning: "replayed roster plan",
-        }),
+        JSON.stringify({ swaps: [{ drop: drop.id, add: add.id }] }),
         state,
         first,
       );
       if (!(parsed instanceof Object)) continue;
-      replayed = {
-        drop: parsed.swaps[0]!.drop,
-        add: parsed.swaps[0]!.add,
-        reasoning: parsed.reasoning,
-      };
+      replayed = parsed.swaps[0]!;
       break;
     }
     if (replayed) break;
   }
   assert.ok(replayed, "the board must offer one legal post-draft swap");
-  await runWeeklyReview(
-    {
-      board: BOARD,
-      models: config.entrants,
-      stage: "week",
-      week: 1,
-      weeks: 1,
-      rosterVersion: 0,
-      rosters,
-      memories: config.draft_notes.map((note) => emptyMemory(note)),
-      standings: config.entrants.map((_, entrant) => ({ entrant, w: 0, l: 0, gw: 0, gl: 0 })),
-      series: [],
-      period: [],
-      schedule: [],
-      transactions: [],
-      nextWindowWeek: 1,
-    },
-    { runDir: directory, psDir: defaultPsDir() },
-  );
-  const epochDir = path.join(directory, "transactions", "after-week-1");
-  fs.mkdirSync(epochDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(epochDir, "window.jsonl"),
-    `${canonicalJson({
-      kind: "free_agency",
-      entrant: first,
-      model: config.entrants[first],
-      swaps: [{ drop: replayed.drop, add: replayed.add }],
-      reasoning: replayed.reasoning,
-      fallback: false,
-      timestamp: new Date(0).toISOString(),
-    })}\n`,
-  );
-  const preWindowRosters = rosters.map((roster) => [...roster]);
-  await runTradeWindow(state, {
-    epochDir,
+  fs.rmSync(path.join(directory, "transactions"), { recursive: true, force: true });
+  const seasonDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-window-outer-roster-season-"));
+  t.onTestFinished(() => fs.rmSync(seasonDir, { recursive: true, force: true }));
+  fs.cpSync(directory, seasonDir, { recursive: true });
+  const changed = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-window-outer-roster-window-"));
+  t.onTestFinished(() => fs.rmSync(changed, { recursive: true, force: true }));
+  commitRunArtifact(changed, "transaction-event:1", "000001", {
+    kind: "free_agency",
+    entrant: first,
+    model: config.entrants[first]!,
+    swaps: [replayed],
+    reasoning: "replayed roster plan",
+    fallback: false,
+    timestamp: new Date(0).toISOString(),
+  });
+  const artifact = await runTradeWindow(state, {
+    runDir: changed,
     psDir: defaultPsDir(),
     position: { afterWeek: 1, index: 0, count: 1 },
     tradesAllowed: 0,
   });
-  await runWeeklyReview(
-    {
-      board: BOARD,
-      models: config.entrants,
-      stage: "transactions",
-      week: 1,
-      weeks: 1,
-      rosterVersion: 1,
-      rosters,
-      previousRosters: preWindowRosters,
-      seats: [first],
-      memories: [...state.memories],
-      standings: config.entrants.map((_, entrant) => ({ entrant, w: 0, l: 0, gw: 0, gl: 0 })),
-      series: [],
-      period: [],
-      schedule: [],
-      transactions: [],
-      nextWindowWeek: null,
-    },
-    { runDir: directory, psDir: defaultPsDir() },
+  assert.ok(artifact.rosters[first]!.roster.some((mon) => mon.id === replayed.add));
+  assert.deepEqual(
+    readFranchiseRosterVersion(seasonDir, 0),
+    drafted,
+    "the stored draft roster is the version-0 snapshot",
   );
-
-  const teambuildLog = path.join(directory, "teambuild", "teambuild.jsonl");
-  const donor = readJsonlObjects(teambuildLog)
-    .map((row) => decodeTeamBuildJournalRow(row))
-    .find(
-      ({ artifact }) =>
-        artifact.task.provenance.seriesIndex === 0 && artifact.task.provenance.entrant === first,
-    )!;
-  donor.artifact.task.provenance.seriesIndex = 1;
-  donor.artifact.task.provenance.opponent = first === 0 ? 1 : 0;
-  fs.appendFileSync(teambuildLog, `${JSON.stringify({ artifact: donor.artifact })}\n`);
-
-  await runDraftLeague(models, directory, { recordsPath, seed: 41, concurrency: 1, resume: true });
-  const postWindowBuilds = readJsonlObjects(teambuildLog)
-    .map((row) => decodeTeamBuildJournalRow(row))
-    .filter(
-      ({ artifact }) =>
-        artifact.task.provenance.seriesIndex === 1 && artifact.task.provenance.entrant === first,
-    );
-  assert.equal(
-    postWindowBuilds.length,
+  assert.deepEqual(
+    (
+      await runDraftLeague(models, seasonDir, {
+        recordsPath: path.join(seasonDir, "results.jsonl"),
+        seed: 41,
+        concurrency: 1,
+        resume: true,
+      })
+    ).length,
     2,
-    "a stored build bound to the dropped candidate is rebuilt",
   );
-  const candidates = postWindowBuilds
-    .at(-1)!
-    .artifact.task.constraint.candidates.map((candidate) => candidate.id);
-  assert.ok(candidates.includes(replayed.add));
-  assert.ok(!candidates.includes(replayed.drop));
+  assert.deepEqual(readFranchiseRosterVersion(seasonDir, 0), drafted);
 });

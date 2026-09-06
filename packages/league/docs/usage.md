@@ -52,13 +52,12 @@ Resume validates entrants, teams, seed, provenance, reasoning, timer, draw, and 
 
 ## Run or resume a draft league
 
-A draft assigns 10 roster entries within 100 points to each franchise, then builds 6 complete sets for every matchup. Builds cannot read results from other matches in the same blind batch.
+A draft assigns 10 roster entries within 100 points to each franchise, then builds 6 complete sets for every matchup. Each week is completed and reviewed before the next week's builds begin.
 
 ```sh
 pnpm run vgcleague draft --models model_spec_a model_spec_b --draft-only
 pnpm run vgcleague draft --resume run_directory
 pnpm run vgcleague draft --models model_spec_a model_spec_b --through-week 3
-pnpm run vgcleague draft --models model_spec_a model_spec_b --sequential-weeks
 pnpm run vgcleague draft --models model_spec_a model_spec_b --closed-sheets
 pnpm run vgcleague draft --models model_spec_a model_spec_b --transactions off
 pnpm run vgcleague draft --models model_spec_a model_spec_b --rosters presets/noise-quartet.json
@@ -66,7 +65,6 @@ pnpm run vgcleague draft --models model_spec_a model_spec_b --rosters presets/no
 
 - `--draft-only` records rosters and stops
 - `--through-week week_number` runs that week, its review, and any scheduled transaction window before stopping
-- `--sequential-weeks` plays and reviews one week at a time
 - `--closed-sheets` hides team sheets until their reveal point
 - `--transactions off` disables windows; a comma-separated value such as `2,4` chooses window weeks
 - `--swaps count` changes the season free-agent allowance from its default of 6

@@ -7,6 +7,7 @@ import { Sprite } from "ui/components/sprite";
 import { formatLabel } from "ui/lib/format";
 import { allMatches, franchise } from "@/lib/load";
 import { useSeason, useTitle } from "@/lib/season-context";
+import { deployedTraces, traceArchiveUrl } from "@/lib/traces";
 
 function statusLine(s: ReturnType<typeof useSeason>["season"]): string {
   if (s.status === "complete") return "Season complete";
@@ -30,6 +31,7 @@ export function HomePage() {
   );
   const games = Object.values(season.replays).reduce((n, replay) => n + replay.games.length, 0);
   const transactionWeeks = new Set(season.transactions.map((window) => window.afterWeek));
+  const traces = deployedTraces(season);
   return (
     <>
       <section className="hero">
@@ -38,8 +40,8 @@ export function HomePage() {
         <p className="sub">
           {season.franchises.length} language models each drafted {s.board.picksPerFranchise}{" "}
           Pokémon on a {s.board.budget}-point budget. They built teams, traded, and played a{" "}
-          {s.totalWeeks}-week season. Every pick, build, and turn comes with the model’s own
-          reasoning.
+          {s.totalWeeks}-week season. Every pick, build, and turn comes with the reason the model
+          stated{traces ? ", and every battle turn links to the model’s full reasoning trace" : ""}.
         </p>
         <p className="sub mono">
           An exhibition season under one recorded configuration: the schedule, simulator revision,
@@ -131,8 +133,14 @@ export function HomePage() {
         <div className="section-head">
           <h2>Schedule</h2>
           <p>
-            Best-of-three series. Open a match to read the team sheets and the reasoning behind
-            every turn.
+            Best-of-three series. Open a match to read the team sheets and the stated reason behind
+            every turn.{" "}
+            {traces ? (
+              <>
+                Every released turn’s full trace is also{" "}
+                <a href={traceArchiveUrl(traces)}>downloadable as one archive</a>.
+              </>
+            ) : null}
           </p>
         </div>
         <div className="match-list">

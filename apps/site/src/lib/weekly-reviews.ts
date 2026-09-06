@@ -23,6 +23,6 @@ export function weeklyReviewsForFranchise(
       stageLabel:
         review.stage === "transactions" ? "Post-transaction reconciliation" : "Weekly review",
       fallbackLabel: review.fallback ? "Fallback review" : null,
-      reasoningText: review.reasoning.trim() || "No reasoning recorded.",
+      reasoningText: review.reasoning.trim() || "No stated reason recorded.",
     }));
 }

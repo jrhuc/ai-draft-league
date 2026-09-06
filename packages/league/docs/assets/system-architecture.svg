@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="900" viewBox="0 0 1280 900" role="img" aria-labelledby="title desc">
   <title id="title">League system architecture</title>
-  <desc id="desc">The CLI starts runDraftLeague. The orchestrator runs manager stages, recorded battle series, and run-file persistence. Model stages call the configured provider. Recorded series use the provider for battle choices and Pokémon Showdown for game authority. Run files are joined by buildLeague for local inspection or export to a season bundle consumed by AI Draft League.</desc>
+  <desc id="desc">The CLI starts one LeagueCoordinator. It owns durable franchise state and schedules MatchRunner. DecisionSession bounds model calls, PerspectiveState exposes only authorized observations, Pokémon Showdown owns game outcomes, and SQLite owns mutable season state. Evidence is projected for inspection and release.</desc>
   <defs>
     <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto" markerUnits="strokeWidth">
       <path d="M0 0 9 4.5 0 9Z" fill="#718078"/>
@@ -29,24 +29,24 @@
   <rect class="group" x="50" y="140" width="1180" height="350" rx="16"/>
   <text class="label" x="78" y="170">HARNESS</text>
   <rect class="primary" x="430" y="188" width="420" height="72" rx="10"/>
-  <text class="title" x="640" y="220" text-anchor="middle">runDraftLeague</text>
-  <text class="small" x="640" y="241" text-anchor="middle">owns phase order, resume, and cancellation</text>
+  <text class="title" x="640" y="220" text-anchor="middle">LeagueCoordinator</text>
+  <text class="small" x="640" y="241" text-anchor="middle">owns phase order, franchise state, resume, and cancellation</text>
 
   <rect class="box" x="86" y="330" width="324" height="112" rx="10"/>
   <text class="title" x="248" y="359" text-anchor="middle">Franchise manager stages</text>
   <text class="body" x="248" y="384" text-anchor="middle">draft · weekly review · transactions</text>
   <text class="body" x="248" y="406" text-anchor="middle">team build · season review</text>
-  <text class="small" x="248" y="426" text-anchor="middle">explicit calls, not autonomous agents</text>
+  <text class="small" x="248" y="426" text-anchor="middle">durable memory, roster, dossiers, current series</text>
 
   <rect class="box" x="478" y="330" width="324" height="112" rx="10"/>
-  <text class="title" x="640" y="359" text-anchor="middle">playRecordedSeries</text>
-  <text class="body" x="640" y="384" text-anchor="middle">battle pilot choices and best-of-three state</text>
-  <text class="small" x="640" y="408" text-anchor="middle">records accepted decisions and game evidence</text>
+  <text class="title" x="640" y="359" text-anchor="middle">MatchRunner</text>
+  <text class="body" x="640" y="384" text-anchor="middle">Showdown · PerspectiveState · DecisionSession</text>
+  <text class="small" x="640" y="408" text-anchor="middle">commits games before independent adaptations</text>
 
   <rect class="box" x="870" y="330" width="324" height="112" rx="10"/>
-  <text class="title" x="1032" y="359" text-anchor="middle">Run files</text>
-  <text class="body" x="1032" y="384" text-anchor="middle">config, rosters, reviews, builds, series</text>
-  <text class="small" x="1032" y="408" text-anchor="middle">append-only decisions and completion artifacts</text>
+  <text class="title" x="1032" y="359" text-anchor="middle">league.sqlite</text>
+  <text class="body" x="1032" y="384" text-anchor="middle">sole mutable season-state authority</text>
+  <text class="small" x="1032" y="408" text-anchor="middle">immutable commits and validated barriers</text>
 
   <path class="line" d="M640 100V188"/>
   <path class="line" d="M560 260V292H248V330"/>
@@ -56,7 +56,7 @@
   <text class="label" x="78" y="542">EXTERNAL AUTHORITY AND READ MODEL</text>
   <rect class="external" x="86" y="570" width="324" height="92" rx="10"/>
   <text class="title" x="248" y="604" text-anchor="middle">Model provider</text>
-  <text class="body" x="248" y="630" text-anchor="middle">manager, builder, and battle pilot calls</text>
+  <text class="body" x="248" y="630" text-anchor="middle">bounded by a shared DecisionSession policy</text>
 
   <rect class="external" x="478" y="570" width="324" height="92" rx="10"/>
   <text class="title" x="640" y="604" text-anchor="middle">Pokémon Showdown</text>
@@ -64,7 +64,7 @@
 
   <rect class="primary" x="870" y="570" width="324" height="92" rx="10"/>
   <text class="title" x="1032" y="604" text-anchor="middle">buildLeague</text>
-  <text class="body" x="1032" y="630" text-anchor="middle">joins run files into the operator read model</text>
+  <text class="body" x="1032" y="630" text-anchor="middle">projects database state and raw evidence</text>
 
   <path class="line" d="M248 442V570"/>
   <path class="dash" d="M540 442V520H330V570"/>

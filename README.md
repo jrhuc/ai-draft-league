@@ -36,10 +36,11 @@ pnpm run export:season \
   --run your_run_id_here \
   --through-week 1 \
   --title "AI Draft League" \
-  --out ../../apps/site/public/season-bundle.json
+  --out ../../apps/site/public/season-bundle.json \
+  --traces-dir ../../apps/traces/dist/traces
 ```
 
-`--through-week` is required. Newer private results never advance a release. The exporter validates the projection before writing it.
+`--through-week` is required. Newer private results never advance a release. The exporter validates the projection before writing it. The bundle is committed; the per-game decision traces it writes beside it are not, since they run to megabytes per game. They deploy as the `traces` assets-only Worker at `/traces/*` on the site's domain.
 
 Sprites are optional presentation assets in `apps/site/public/sprites/`. Missing sprites use a stable text marker. Battle animations embed the exported Showdown log in the official replay player, so match pages need `play.pokemonshowdown.com` reachable.
 

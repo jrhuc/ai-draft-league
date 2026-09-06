@@ -16,6 +16,7 @@ import type { BattleLogEntry } from "../battlelog.js";
 import {
   type PublicBattleEvent,
   type PublicBuild,
+  type PublicDecisionTrace,
   type PublicMatch,
   type PublicSeasonBundle,
   publicSeasonBundleSchema,
@@ -24,7 +25,7 @@ import {
 export type PublicSeasonGameInput = Pick<
   LeagueGameResponse,
   "game" | "winner" | "raw" | "log" | "decisions" | "reflections"
->;
+> & { traces: ReadonlyArray<PublicDecisionTrace | null> };
 
 export interface BuildPublicSeasonBundleOptions {
   league: LeagueResponse;
@@ -235,6 +236,10 @@ export function buildPublicSeasonBundle(
         const summary = series.games[game.game - 1];
         if (!summary)
           throw new Error(`released series ${series.seriesId} has no result for game ${game.game}`);
+        if (game.traces.length !== game.decisions.length)
+          throw new Error(
+            `released series ${series.seriesId} game ${game.game} has ${game.traces.length} traces for ${game.decisions.length} decisions`,
+          );
         return {
           number: game.game,
           winnerId: game.winner === null ? null : franchiseId(game.winner),
@@ -244,7 +249,7 @@ export function buildPublicSeasonBundle(
           faints: summary.faints,
           raw: game.raw,
           events: game.log.map(publicEvent),
-          decisions: game.decisions.map((decision) => ({
+          decisions: game.decisions.map((decision, index) => ({
             franchiseId: franchiseId(sides[decision.side]),
             turn: decision.turn,
             phase: decision.phase,
@@ -255,6 +260,7 @@ export function buildPublicSeasonBundle(
             automatic: decision.automatic,
             latencyMs: decision.latencyMs,
             reasoningTokens: decision.reasoningTokens,
+            reasoningChars: game.traces[index]?.reasoning.length ?? null,
           })),
           reflections: game.reflections.map((reflection) => ({
             franchiseId: franchiseId(sides[reflection.side]),

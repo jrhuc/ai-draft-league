@@ -6966,7 +6966,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 58645,
-              "reasoningTokens": 2640
+              "reasoningTokens": 2640,
+              "reasoningChars": 2171
             },
             {
               "franchiseId": "franchise-7",
@@ -6978,7 +6979,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 25225,
-              "reasoningTokens": 363
+              "reasoningTokens": 363,
+              "reasoningChars": 1153
             },
             {
               "franchiseId": "franchise-0",
@@ -6990,7 +6992,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 11568,
-              "reasoningTokens": 326
+              "reasoningTokens": 326,
+              "reasoningChars": 452
             },
             {
               "franchiseId": "franchise-7",
@@ -7002,7 +7005,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 81094,
-              "reasoningTokens": 4717
+              "reasoningTokens": 4717,
+              "reasoningChars": 16873
             },
             {
               "franchiseId": "franchise-0",
@@ -7014,7 +7018,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 17028,
-              "reasoningTokens": 476
+              "reasoningTokens": 476,
+              "reasoningChars": 503
             },
             {
               "franchiseId": "franchise-7",
@@ -7029,7 +7034,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 51574,
-              "reasoningTokens": 2989
+              "reasoningTokens": 2989,
+              "reasoningChars": 10632
             },
             {
               "franchiseId": "franchise-7",
@@ -7041,7 +7047,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 56298,
-              "reasoningTokens": 2974
+              "reasoningTokens": 2974,
+              "reasoningChars": 11039
             },
             {
               "franchiseId": "franchise-0",
@@ -7053,7 +7060,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 10944,
-              "reasoningTokens": 248
+              "reasoningTokens": 248,
+              "reasoningChars": 0
             },
             {
               "franchiseId": "franchise-0",
@@ -7065,7 +7073,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 10274,
-              "reasoningTokens": 329
+              "reasoningTokens": 329,
+              "reasoningChars": 998
             },
             {
               "franchiseId": "franchise-7",
@@ -7077,7 +7086,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 75723,
-              "reasoningTokens": 7150
+              "reasoningTokens": 7150,
+              "reasoningChars": 25018
             },
             {
               "franchiseId": "franchise-0",
@@ -7092,7 +7102,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 33964,
-              "reasoningTokens": 357
+              "reasoningTokens": 357,
+              "reasoningChars": 572
             },
             {
               "franchiseId": "franchise-7",
@@ -7104,7 +7115,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 22008,
-              "reasoningTokens": 1185
+              "reasoningTokens": 1185,
+              "reasoningChars": 4370
             }
           ],
           "reflections": [
@@ -7581,7 +7593,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 9225,
-              "reasoningTokens": 235
+              "reasoningTokens": 235,
+              "reasoningChars": 0
             },
             {
               "franchiseId": "franchise-7",
@@ -7593,7 +7606,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 27082,
-              "reasoningTokens": 433
+              "reasoningTokens": 433,
+              "reasoningChars": 1436
             },
             {
               "franchiseId": "franchise-0",
@@ -7605,7 +7619,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 4629,
-              "reasoningTokens": 134
+              "reasoningTokens": 134,
+              "reasoningChars": 0
             },
             {
               "franchiseId": "franchise-7",
@@ -7617,7 +7632,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 26455,
-              "reasoningTokens": 1563
+              "reasoningTokens": 1563,
+              "reasoningChars": 5875
             },
             {
               "franchiseId": "franchise-0",
@@ -7629,7 +7645,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 24525,
-              "reasoningTokens": 885
+              "reasoningTokens": 885,
+              "reasoningChars": 1083
             },
             {
               "franchiseId": "franchise-7",
@@ -7641,7 +7658,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 111596,
-              "reasoningTokens": 8519
+              "reasoningTokens": 8519,
+              "reasoningChars": 30770
             },
             {
               "franchiseId": "franchise-0",
@@ -7653,7 +7671,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 26301,
-              "reasoningTokens": 977
+              "reasoningTokens": 977,
+              "reasoningChars": 970
             },
             {
               "franchiseId": "franchise-7",
@@ -7668,7 +7687,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 191328,
-              "reasoningTokens": 12258
+              "reasoningTokens": 12258,
+              "reasoningChars": 43539
             },
             {
               "franchiseId": "franchise-7",
@@ -7680,7 +7700,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 112431,
-              "reasoningTokens": 2561
+              "reasoningTokens": 2561,
+              "reasoningChars": 9350
             },
             {
               "franchiseId": "franchise-0",
@@ -7692,7 +7713,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 19605,
-              "reasoningTokens": 669
+              "reasoningTokens": 669,
+              "reasoningChars": 0
             },
             {
               "franchiseId": "franchise-7",
@@ -7704,7 +7726,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 66430,
-              "reasoningTokens": 3160
+              "reasoningTokens": 3160,
+              "reasoningChars": 11476
             },
             {
               "franchiseId": "franchise-7",
@@ -7716,7 +7739,8 @@
               "fallback": false,
               "automatic": true,
               "latencyMs": 0,
-              "reasoningTokens": null
+              "reasoningTokens": null,
+              "reasoningChars": null
             },
             {
               "franchiseId": "franchise-0",
@@ -7728,7 +7752,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 16898,
-              "reasoningTokens": 363
+              "reasoningTokens": 363,
+              "reasoningChars": 495
             },
             {
               "franchiseId": "franchise-7",
@@ -7740,7 +7765,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 341149,
-              "reasoningTokens": 17088
+              "reasoningTokens": 17088,
+              "reasoningChars": 65812
             },
             {
               "franchiseId": "franchise-0",
@@ -7752,7 +7778,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 16422,
-              "reasoningTokens": 486
+              "reasoningTokens": 486,
+              "reasoningChars": 0
             },
             {
               "franchiseId": "franchise-7",
@@ -7764,7 +7791,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 68134,
-              "reasoningTokens": 2917
+              "reasoningTokens": 2917,
+              "reasoningChars": 10785
             }
           ],
           "reflections": [
@@ -8609,7 +8637,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 20315,
-              "reasoningTokens": 965
+              "reasoningTokens": 965,
+              "reasoningChars": 3459
             },
             {
               "franchiseId": "franchise-6",
@@ -8621,7 +8650,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 49419,
-              "reasoningTokens": 246
+              "reasoningTokens": 246,
+              "reasoningChars": 1828
             },
             {
               "franchiseId": "franchise-1",
@@ -8633,7 +8663,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 77165,
-              "reasoningTokens": 3016
+              "reasoningTokens": 3016,
+              "reasoningChars": 10877
             },
             {
               "franchiseId": "franchise-6",
@@ -8645,7 +8676,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 159115,
-              "reasoningTokens": 1816
+              "reasoningTokens": 1816,
+              "reasoningChars": 15554
             },
             {
               "franchiseId": "franchise-1",
@@ -8657,7 +8689,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 189601,
-              "reasoningTokens": 8584
+              "reasoningTokens": 8584,
+              "reasoningChars": 31230
             },
             {
               "franchiseId": "franchise-1",
@@ -8669,7 +8702,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 219651,
-              "reasoningTokens": 8621
+              "reasoningTokens": 8621,
+              "reasoningChars": 30495
             },
             {
               "franchiseId": "franchise-1",
@@ -8681,7 +8715,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 173577,
-              "reasoningTokens": 8119
+              "reasoningTokens": 8119,
+              "reasoningChars": 28997
             },
             {
               "franchiseId": "franchise-6",
@@ -8693,7 +8728,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 96509,
-              "reasoningTokens": 964
+              "reasoningTokens": 964,
+              "reasoningChars": 8992
             },
             {
               "franchiseId": "franchise-1",
@@ -8708,7 +8744,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 251053,
-              "reasoningTokens": 10482
+              "reasoningTokens": 10482,
+              "reasoningChars": 37617
             },
             {
               "franchiseId": "franchise-6",
@@ -8720,7 +8757,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 81333,
-              "reasoningTokens": 900
+              "reasoningTokens": 900,
+              "reasoningChars": 7594
             },
             {
               "franchiseId": "franchise-1",
@@ -8732,7 +8770,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 211162,
-              "reasoningTokens": 8839
+              "reasoningTokens": 8839,
+              "reasoningChars": 30810
             },
             {
               "franchiseId": "franchise-6",
@@ -8744,7 +8783,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 76873,
-              "reasoningTokens": 907
+              "reasoningTokens": 907,
+              "reasoningChars": 7789
             },
             {
               "franchiseId": "franchise-1",
@@ -8756,7 +8796,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 255492,
-              "reasoningTokens": 9961
+              "reasoningTokens": 9961,
+              "reasoningChars": 35451
             },
             {
               "franchiseId": "franchise-6",
@@ -8768,7 +8809,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 100236,
-              "reasoningTokens": 1209
+              "reasoningTokens": 1209,
+              "reasoningChars": 10877
             },
             {
               "franchiseId": "franchise-1",
@@ -8780,7 +8822,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 239190,
-              "reasoningTokens": 10492
+              "reasoningTokens": 10492,
+              "reasoningChars": 37444
             },
             {
               "franchiseId": "franchise-1",
@@ -8792,7 +8835,8 @@
               "fallback": false,
               "automatic": true,
               "latencyMs": 0,
-              "reasoningTokens": null
+              "reasoningTokens": null,
+              "reasoningChars": null
             },
             {
               "franchiseId": "franchise-6",
@@ -8807,7 +8851,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 276393,
-              "reasoningTokens": 3809
+              "reasoningTokens": 3809,
+              "reasoningChars": 33794
             },
             {
               "franchiseId": "franchise-1",
@@ -8822,7 +8867,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 214370,
-              "reasoningTokens": 9201
+              "reasoningTokens": 9201,
+              "reasoningChars": 31883
             },
             {
               "franchiseId": "franchise-6",
@@ -8837,7 +8883,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 63325,
-              "reasoningTokens": 744
+              "reasoningTokens": 744,
+              "reasoningChars": 6727
             },
             {
               "franchiseId": "franchise-1",
@@ -8849,7 +8896,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 241304,
-              "reasoningTokens": 10108
+              "reasoningTokens": 10108,
+              "reasoningChars": 34944
             },
             {
               "franchiseId": "franchise-6",
@@ -8864,7 +8912,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 84044,
-              "reasoningTokens": 906
+              "reasoningTokens": 906,
+              "reasoningChars": 8070
             },
             {
               "franchiseId": "franchise-1",
@@ -8876,7 +8925,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 78316,
-              "reasoningTokens": 4449
+              "reasoningTokens": 4449,
+              "reasoningChars": 15669
             },
             {
               "franchiseId": "franchise-6",
@@ -8888,7 +8938,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 66040,
-              "reasoningTokens": 723
+              "reasoningTokens": 723,
+              "reasoningChars": 6610
             },
             {
               "franchiseId": "franchise-1",
@@ -8900,7 +8951,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 111711,
-              "reasoningTokens": 7811
+              "reasoningTokens": 7811,
+              "reasoningChars": 27933
             },
             {
               "franchiseId": "franchise-1",
@@ -8912,7 +8964,8 @@
               "fallback": false,
               "automatic": true,
               "latencyMs": 0,
-              "reasoningTokens": null
+              "reasoningTokens": null,
+              "reasoningChars": null
             },
             {
               "franchiseId": "franchise-6",
@@ -8927,7 +8980,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 87721,
-              "reasoningTokens": 981
+              "reasoningTokens": 981,
+              "reasoningChars": 7915
             },
             {
               "franchiseId": "franchise-1",
@@ -8942,7 +8996,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 85812,
-              "reasoningTokens": 5814
+              "reasoningTokens": 5814,
+              "reasoningChars": 20671
             },
             {
               "franchiseId": "franchise-6",
@@ -8954,7 +9009,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 119721,
-              "reasoningTokens": 1446
+              "reasoningTokens": 1446,
+              "reasoningChars": 12441
             },
             {
               "franchiseId": "franchise-6",
@@ -8966,7 +9022,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 36863,
-              "reasoningTokens": 242
+              "reasoningTokens": 242,
+              "reasoningChars": 2177
             },
             {
               "franchiseId": "franchise-1",
@@ -8978,7 +9035,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 132944,
-              "reasoningTokens": 10234
+              "reasoningTokens": 10234,
+              "reasoningChars": 36514
             },
             {
               "franchiseId": "franchise-6",
@@ -8993,7 +9051,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 103574,
-              "reasoningTokens": 1199
+              "reasoningTokens": 1199,
+              "reasoningChars": 8326
             },
             {
               "franchiseId": "franchise-1",
@@ -9005,7 +9064,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 84139,
-              "reasoningTokens": 6342
+              "reasoningTokens": 6342,
+              "reasoningChars": 21517
             },
             {
               "franchiseId": "franchise-6",
@@ -9017,7 +9077,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 15475,
-              "reasoningTokens": 121
+              "reasoningTokens": 121,
+              "reasoningChars": 1056
             },
             {
               "franchiseId": "franchise-1",
@@ -9029,7 +9090,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 53217,
-              "reasoningTokens": 4168
+              "reasoningTokens": 4168,
+              "reasoningChars": 15227
             },
             {
               "franchiseId": "franchise-6",
@@ -9041,7 +9103,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 27466,
-              "reasoningTokens": 269
+              "reasoningTokens": 269,
+              "reasoningChars": 2473
             }
           ],
           "reflections": [
@@ -9897,7 +9960,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 18207,
-              "reasoningTokens": 1077
+              "reasoningTokens": 1077,
+              "reasoningChars": 3690
             },
             {
               "franchiseId": "franchise-6",
@@ -9909,7 +9973,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 26137,
-              "reasoningTokens": 174
+              "reasoningTokens": 174,
+              "reasoningChars": 1481
             },
             {
               "franchiseId": "franchise-1",
@@ -9921,7 +9986,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 81490,
-              "reasoningTokens": 6613
+              "reasoningTokens": 6613,
+              "reasoningChars": 22938
             },
             {
               "franchiseId": "franchise-6",
@@ -9936,7 +10002,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 46184,
-              "reasoningTokens": 520
+              "reasoningTokens": 520,
+              "reasoningChars": 4469
             },
             {
               "franchiseId": "franchise-1",
@@ -9951,7 +10018,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 119746,
-              "reasoningTokens": 9774
+              "reasoningTokens": 9774,
+              "reasoningChars": 34137
             },
             {
               "franchiseId": "franchise-1",
@@ -9963,7 +10031,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 60358,
-              "reasoningTokens": 4570
+              "reasoningTokens": 4570,
+              "reasoningChars": 16657
             },
             {
               "franchiseId": "franchise-6",
@@ -9975,7 +10044,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 95593,
-              "reasoningTokens": 1109
+              "reasoningTokens": 1109,
+              "reasoningChars": 8897
             },
             {
               "franchiseId": "franchise-1",
@@ -9987,7 +10057,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 83100,
-              "reasoningTokens": 6598
+              "reasoningTokens": 6598,
+              "reasoningChars": 22750
             },
             {
               "franchiseId": "franchise-6",
@@ -9999,7 +10070,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 62705,
-              "reasoningTokens": 739
+              "reasoningTokens": 739,
+              "reasoningChars": 6263
             },
             {
               "franchiseId": "franchise-1",
@@ -10011,7 +10083,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 105158,
-              "reasoningTokens": 7970
+              "reasoningTokens": 7970,
+              "reasoningChars": 26224
             },
             {
               "franchiseId": "franchise-1",
@@ -10023,7 +10096,8 @@
               "fallback": false,
               "automatic": true,
               "latencyMs": 0,
-              "reasoningTokens": null
+              "reasoningTokens": null,
+              "reasoningChars": null
             },
             {
               "franchiseId": "franchise-6",
@@ -10035,7 +10109,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 142860,
-              "reasoningTokens": 1560
+              "reasoningTokens": 1560,
+              "reasoningChars": 12031
             },
             {
               "franchiseId": "franchise-1",
@@ -10050,7 +10125,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 95692,
-              "reasoningTokens": 7569
+              "reasoningTokens": 7569,
+              "reasoningChars": 27127
             },
             {
               "franchiseId": "franchise-6",
@@ -10062,7 +10138,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 144290,
-              "reasoningTokens": 1638
+              "reasoningTokens": 1638,
+              "reasoningChars": 13626
             },
             {
               "franchiseId": "franchise-1",
@@ -10074,7 +10151,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 79129,
-              "reasoningTokens": 5426
+              "reasoningTokens": 5426,
+              "reasoningChars": 19503
             },
             {
               "franchiseId": "franchise-6",
@@ -10086,7 +10164,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 34182,
-              "reasoningTokens": 253
+              "reasoningTokens": 253,
+              "reasoningChars": 1930
             },
             {
               "franchiseId": "franchise-6",
@@ -10098,7 +10177,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 35211,
-              "reasoningTokens": 320
+              "reasoningTokens": 320,
+              "reasoningChars": 2825
             },
             {
               "franchiseId": "franchise-1",
@@ -10110,7 +10190,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 88886,
-              "reasoningTokens": 7482
+              "reasoningTokens": 7482,
+              "reasoningChars": 26330
             },
             {
               "franchiseId": "franchise-6",
@@ -10122,7 +10203,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 38542,
-              "reasoningTokens": 208
+              "reasoningTokens": 208,
+              "reasoningChars": 1848
             },
             {
               "franchiseId": "franchise-1",
@@ -10134,7 +10216,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 72614,
-              "reasoningTokens": 5339
+              "reasoningTokens": 5339,
+              "reasoningChars": 18271
             },
             {
               "franchiseId": "franchise-6",
@@ -10146,7 +10229,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 78180,
-              "reasoningTokens": 954
+              "reasoningTokens": 954,
+              "reasoningChars": 7566
             },
             {
               "franchiseId": "franchise-6",
@@ -10158,7 +10242,8 @@
               "fallback": false,
               "automatic": true,
               "latencyMs": 0,
-              "reasoningTokens": null
+              "reasoningTokens": null,
+              "reasoningChars": null
             },
             {
               "franchiseId": "franchise-1",
@@ -10170,7 +10255,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 42308,
-              "reasoningTokens": 3235
+              "reasoningTokens": 3235,
+              "reasoningChars": 11089
             },
             {
               "franchiseId": "franchise-6",
@@ -10185,7 +10271,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 140844,
-              "reasoningTokens": 1669
+              "reasoningTokens": 1669,
+              "reasoningChars": 14549
             },
             {
               "franchiseId": "franchise-1",
@@ -10197,7 +10284,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 32460,
-              "reasoningTokens": 2459
+              "reasoningTokens": 2459,
+              "reasoningChars": 8220
             },
             {
               "franchiseId": "franchise-6",
@@ -10209,7 +10297,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 60580,
-              "reasoningTokens": 687
+              "reasoningTokens": 687,
+              "reasoningChars": 5106
             }
           ],
           "reflections": [
@@ -10628,7 +10717,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 409655,
-              "reasoningTokens": 50111
+              "reasoningTokens": 50111,
+              "reasoningChars": 0
             },
             {
               "franchiseId": "franchise-5",
@@ -10645,7 +10735,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 47412,
-              "reasoningTokens": 1714
+              "reasoningTokens": 1714,
+              "reasoningChars": 1464
             },
             {
               "franchiseId": "franchise-2",
@@ -10660,7 +10751,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 67435,
-              "reasoningTokens": 9324
+              "reasoningTokens": 9324,
+              "reasoningChars": 0
             },
             {
               "franchiseId": "franchise-2",
@@ -10672,7 +10764,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 110931,
-              "reasoningTokens": 15906
+              "reasoningTokens": 15906,
+              "reasoningChars": 0
             },
             {
               "franchiseId": "franchise-5",
@@ -10684,7 +10777,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 70806,
-              "reasoningTokens": 434
+              "reasoningTokens": 434,
+              "reasoningChars": 251
             },
             {
               "franchiseId": "franchise-5",
@@ -10696,7 +10790,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 43499,
-              "reasoningTokens": 207
+              "reasoningTokens": 207,
+              "reasoningChars": 301
             },
             {
               "franchiseId": "franchise-2",
@@ -10708,7 +10803,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 133689,
-              "reasoningTokens": 19446
+              "reasoningTokens": 19446,
+              "reasoningChars": 0
             },
             {
               "franchiseId": "franchise-2",
@@ -10720,7 +10816,8 @@
               "fallback": false,
               "automatic": true,
               "latencyMs": 0,
-              "reasoningTokens": null
+              "reasoningTokens": null,
+              "reasoningChars": null
             },
             {
               "franchiseId": "franchise-5",
@@ -10735,7 +10832,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 77168,
-              "reasoningTokens": 265
+              "reasoningTokens": 265,
+              "reasoningChars": 315
             },
             {
               "franchiseId": "franchise-2",
@@ -10747,7 +10845,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 187718,
-              "reasoningTokens": 27671
+              "reasoningTokens": 27671,
+              "reasoningChars": 0
             },
             {
               "franchiseId": "franchise-5",
@@ -10762,7 +10861,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 22581,
-              "reasoningTokens": 295
+              "reasoningTokens": 295,
+              "reasoningChars": 295
             }
           ],
           "reflections": [
@@ -11188,7 +11288,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 322619,
-              "reasoningTokens": 47044
+              "reasoningTokens": 47044,
+              "reasoningChars": 0
             },
             {
               "franchiseId": "franchise-5",
@@ -11205,7 +11306,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 24133,
-              "reasoningTokens": 2558
+              "reasoningTokens": 2558,
+              "reasoningChars": 2990
             },
             {
               "franchiseId": "franchise-2",
@@ -11220,7 +11322,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 76242,
-              "reasoningTokens": 10013
+              "reasoningTokens": 10013,
+              "reasoningChars": 0
             },
             {
               "franchiseId": "franchise-2",
@@ -11232,7 +11335,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 115146,
-              "reasoningTokens": 14240
+              "reasoningTokens": 14240,
+              "reasoningChars": 0
             },
             {
               "franchiseId": "franchise-5",
@@ -11247,7 +11351,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 58610,
-              "reasoningTokens": 134
+              "reasoningTokens": 134,
+              "reasoningChars": 271
             },
             {
               "franchiseId": "franchise-2",
@@ -11259,7 +11364,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 99786,
-              "reasoningTokens": 12118
+              "reasoningTokens": 12118,
+              "reasoningChars": 0
             },
             {
               "franchiseId": "franchise-2",
@@ -11271,7 +11377,8 @@
               "fallback": false,
               "automatic": true,
               "latencyMs": 0,
-              "reasoningTokens": null
+              "reasoningTokens": null,
+              "reasoningChars": null
             },
             {
               "franchiseId": "franchise-5",
@@ -11283,7 +11390,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 43311,
-              "reasoningTokens": 232
+              "reasoningTokens": 232,
+              "reasoningChars": 370
             },
             {
               "franchiseId": "franchise-5",
@@ -11295,7 +11403,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 41797,
-              "reasoningTokens": 1554
+              "reasoningTokens": 1554,
+              "reasoningChars": 1641
             },
             {
               "franchiseId": "franchise-2",
@@ -11310,7 +11419,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 86246,
-              "reasoningTokens": 11607
+              "reasoningTokens": 11607,
+              "reasoningChars": 0
             },
             {
               "franchiseId": "franchise-5",
@@ -11322,7 +11432,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 19136,
-              "reasoningTokens": 539
+              "reasoningTokens": 539,
+              "reasoningChars": 571
             },
             {
               "franchiseId": "franchise-2",
@@ -11334,7 +11445,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 100500,
-              "reasoningTokens": 8320
+              "reasoningTokens": 8320,
+              "reasoningChars": 0
             },
             {
               "franchiseId": "franchise-5",
@@ -11346,7 +11458,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 30612,
-              "reasoningTokens": 229
+              "reasoningTokens": 229,
+              "reasoningChars": 280
             }
           ],
           "reflections": [
@@ -11845,7 +11958,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 53596,
-              "reasoningTokens": 6320
+              "reasoningTokens": 6320,
+              "reasoningChars": 23607
             },
             {
               "franchiseId": "franchise-4",
@@ -11857,7 +11971,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 204972,
-              "reasoningTokens": 3065
+              "reasoningTokens": 3065,
+              "reasoningChars": 12035
             },
             {
               "franchiseId": "franchise-3",
@@ -11872,7 +11987,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 452361,
-              "reasoningTokens": 51697
+              "reasoningTokens": 51697,
+              "reasoningChars": 176882
             },
             {
               "franchiseId": "franchise-4",
@@ -11884,7 +12000,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 2009133,
-              "reasoningTokens": 31761
+              "reasoningTokens": 31761,
+              "reasoningChars": 124381
             },
             {
               "franchiseId": "franchise-4",
@@ -11896,7 +12013,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 597658,
-              "reasoningTokens": 9662
+              "reasoningTokens": 9662,
+              "reasoningChars": 37958
             },
             {
               "franchiseId": "franchise-3",
@@ -11908,7 +12026,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 533093,
-              "reasoningTokens": 53366
+              "reasoningTokens": 53366,
+              "reasoningChars": 182205
             },
             {
               "franchiseId": "franchise-4",
@@ -11920,7 +12039,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 1316595,
-              "reasoningTokens": 20068
+              "reasoningTokens": 20068,
+              "reasoningChars": 78228
             },
             {
               "franchiseId": "franchise-3",
@@ -11935,7 +12055,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 337109,
-              "reasoningTokens": 34095
+              "reasoningTokens": 34095,
+              "reasoningChars": 113381
             },
             {
               "franchiseId": "franchise-3",
@@ -11947,7 +12068,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 430722,
-              "reasoningTokens": 45459
+              "reasoningTokens": 45459,
+              "reasoningChars": 151891
             },
             {
               "franchiseId": "franchise-4",
@@ -11962,7 +12084,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 1858124,
-              "reasoningTokens": 26225
+              "reasoningTokens": 26225,
+              "reasoningChars": 102943
             },
             {
               "franchiseId": "franchise-3",
@@ -11977,7 +12100,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 1629686,
-              "reasoningTokens": 152305
+              "reasoningTokens": 152305,
+              "reasoningChars": 421781
             },
             {
               "franchiseId": "franchise-4",
@@ -11989,7 +12113,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 1928205,
-              "reasoningTokens": 25272
+              "reasoningTokens": 25272,
+              "reasoningChars": 98430
             }
           ],
           "reflections": [
@@ -12440,7 +12565,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 3030,
-              "reasoningTokens": null
+              "reasoningTokens": null,
+              "reasoningChars": 0
             },
             {
               "franchiseId": "franchise-4",
@@ -12452,7 +12578,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 1127589,
-              "reasoningTokens": 19020
+              "reasoningTokens": 19020,
+              "reasoningChars": 74373
             },
             {
               "franchiseId": "franchise-3",
@@ -12467,7 +12594,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 160968,
-              "reasoningTokens": 15072
+              "reasoningTokens": 15072,
+              "reasoningChars": 55721
             },
             {
               "franchiseId": "franchise-3",
@@ -12479,7 +12607,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 5736,
-              "reasoningTokens": null
+              "reasoningTokens": null,
+              "reasoningChars": 0
             },
             {
               "franchiseId": "franchise-4",
@@ -12491,7 +12620,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 502527,
-              "reasoningTokens": 7798
+              "reasoningTokens": 7798,
+              "reasoningChars": 30502
             },
             {
               "franchiseId": "franchise-3",
@@ -12503,7 +12633,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 508360,
-              "reasoningTokens": 53791
+              "reasoningTokens": 53791,
+              "reasoningChars": 185360
             },
             {
               "franchiseId": "franchise-3",
@@ -12515,7 +12646,8 @@
               "fallback": false,
               "automatic": true,
               "latencyMs": 0,
-              "reasoningTokens": null
+              "reasoningTokens": null,
+              "reasoningChars": null
             },
             {
               "franchiseId": "franchise-4",
@@ -12527,7 +12659,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 1673479,
-              "reasoningTokens": 20636
+              "reasoningTokens": 20636,
+              "reasoningChars": 80740
             },
             {
               "franchiseId": "franchise-3",
@@ -12539,7 +12672,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 721019,
-              "reasoningTokens": 48857
+              "reasoningTokens": 48857,
+              "reasoningChars": 171334
             },
             {
               "franchiseId": "franchise-4",
@@ -12551,7 +12685,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 719384,
-              "reasoningTokens": 8560
+              "reasoningTokens": 8560,
+              "reasoningChars": 33469
             },
             {
               "franchiseId": "franchise-3",
@@ -12563,7 +12698,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 250700,
-              "reasoningTokens": 20575
+              "reasoningTokens": 20575,
+              "reasoningChars": 68761
             },
             {
               "franchiseId": "franchise-4",
@@ -12575,7 +12711,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 2319783,
-              "reasoningTokens": 37549
+              "reasoningTokens": 37549,
+              "reasoningChars": 146997
             },
             {
               "franchiseId": "franchise-3",
@@ -12587,7 +12724,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 171513,
-              "reasoningTokens": 13795
+              "reasoningTokens": 13795,
+              "reasoningChars": 46826
             },
             {
               "franchiseId": "franchise-4",
@@ -12599,7 +12737,8 @@
               "fallback": false,
               "automatic": false,
               "latencyMs": 149478,
-              "reasoningTokens": 7738
+              "reasoningTokens": 7738,
+              "reasoningChars": 30422
             }
           ],
           "reflections": [

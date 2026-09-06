@@ -21,9 +21,6 @@ export {
   type TeamBuildTask,
   type TeamBuildTaskProvenance,
 } from "./teambuild-protocol.js";
-export {
-  connectedTeamBuildPromptRevision,
-  renderStrictTeamBuildPrompt,
-} from "./teambuild-prompts.js";
+export {} from "./teambuild-prompts.js";
 export { validateTeamBuildSubmission } from "./teambuild-referee.js";
 export { runTeambuild } from "./teambuild-runtime.js";

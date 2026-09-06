@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 
 import { z } from "zod";
@@ -58,7 +57,6 @@ export const TRADE_WINDOW_PROMPT_POLICY = {
   maxTokens: 65_536,
   attempts: 3,
   toolRounds: 8,
-  maxCallsPerRound: 6,
 } as const;
 
 export const TRADE_OFFER_PROMPT_POLICY = {
@@ -104,7 +102,6 @@ export const TRADE_OFFER_PROMPT_POLICY = {
   maxTokens: 65_536,
   attempts: 3,
   toolRounds: 8,
-  maxCallsPerRound: 6,
 } as const;
 
 export interface TradeWindowConfig {
@@ -163,7 +160,7 @@ export type TradeWindowArtifact = {
   offers: TradeOffer[];
   decisions: TradeWindowDecision[];
   rosters: TradeWindowRoster[];
-  swaps_used?: number[] | undefined;
+  swaps_used: number[];
 };
 
 export interface TradeWindowResult {
@@ -197,7 +194,7 @@ export interface TradeWindowPosition {
 }
 
 export interface RunTradeWindowOptions extends ModelReasoningConfig {
-  epochDir: string;
+  runDir: string;
   psDir: string;
   position: TradeWindowPosition;
   signal?: AbortSignal;
@@ -416,23 +413,6 @@ export function validateLeagueRosterState(
       );
     }
   }
-}
-
-export function connectedTradeWindowPromptRevision(
-  mechanicsTools: MechanicsToolAvailability = "available",
-): string {
-  const tradeWindow = createHash("sha256")
-    .update(JSON.stringify([TRADE_WINDOW_PROMPT_POLICY, TRADE_OFFER_PROMPT_POLICY]))
-    .digest("hex")
-    .slice(0, 12);
-  return createHash("sha256")
-    .update(JSON.stringify([tradeWindow, "system-blank-line-user-v1", mechanicsTools]))
-    .digest("hex")
-    .slice(0, 12);
-}
-
-export function tradeWindowOrder(standings: readonly DraftTableRow[]): number[] {
-  return [...standings].reverse().map((row) => row.entrant);
 }
 
 export function ownerMap(state: TradeWindowState): Map<string, number> {

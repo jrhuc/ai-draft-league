@@ -67,12 +67,11 @@ const draftResumeConfigSchema = draftLeagueConfigSchema
     concurrency: true,
     reasoning: true,
     timer_scale: true,
-    sequential_weeks: true,
     closed_sheets: true,
     draft_only: true,
     transactions: true,
   })
-  .partial({ sequential_weeks: true, draft_only: true, transactions: true });
+  .partial({ draft_only: true, transactions: true });
 const storedTeamSchema = z.looseObject({
   id: z.string(),
   packed: z.string(),
@@ -117,15 +116,15 @@ Commands:
   draft --models <spec> <spec>...     snake-draft rosters from a board, then a weekly round robin and playoffs
       each coach drafts 10 within a 100-point budget, then picks 6 and builds every set before each match
       [--board <name>] [--seed <n>] [--concurrency <n>] [--reasoning <level>] [--timer-scale <n|off>]
-      [--nitro] [--through-week <n>] [--resume <run-dir>] [--sequential-weeks] [--closed-sheets]
+      [--nitro] [--through-week <n>] [--resume <run-dir>] [--closed-sheets]
       [--transactions <weeks|off>] [--swaps <n>] [--draft-only] [--rosters <preset.json>]
       --swaps sets each franchise's season allowance of free-agent swaps (default 6)
       --draft-only stops once rosters are drafted and plays no games; resume the run to play the season
       --rosters seeds the league from a packaged roster preset instead of holding a live draft
       --through-week stops cleanly after that round-robin week, including the transaction window
       that follows it when one is scheduled; --resume continues a stored league
-      round-robin series run concurrently with blind teambuilds; --sequential-weeks restores
-      week-by-week play (implied by --through-week); --closed-sheets hides opposing team sheets
+      each round-robin week is reviewed before the next week's builds begin
+      --closed-sheets hides opposing team sheets
       the free-agent window defaults to week 3 (or the last week in shorter leagues); pass off for locked rosters
       (models, board, and seed come from the run's config; the trade window does too only after season
       settings were fixed—draft-only resumes choose and fix it when season play begins)
@@ -135,8 +134,9 @@ Commands:
       opponent specs: openrouter:<model-id>, prime:<model-id>, gateway:<model-id>, opencode-go:<model-id>, opencode-zen:<model-id>, or random
   outcomes [--pool <name>]            print contextual per-series outcomes without an aggregate ranking
   report [--out <path>] [--pool <name>]  write an HTML report
-  export-season --run <id> --through-week <n> [--title <text>] [--out <file>]
-      atomically write one validated public season bundle;
+  export-season --run <id> --through-week <n> [--title <text>] [--out <file>] [--traces-dir <dir>]
+      atomically write one validated public season bundle plus per-game decision traces
+      (default: a traces/ directory beside the bundle);
       n past the last regular-season week releases playoff rounds
   export-tournament --run <id> [--title <text>] [--out <file>]
       atomically write one validated public tournament bundle for a pool bracket;
@@ -319,7 +319,6 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         board: { type: "string", default: "regmb-202607" },
         "through-week": { type: "string" },
         resume: { type: "string" },
-        "sequential-weeks": { type: "boolean", default: false },
         "closed-sheets": { type: "boolean", default: false },
         transactions: { type: "string" },
         swaps: { type: "string" },
@@ -401,9 +400,6 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       },
       throughWeek,
       resume: Boolean(resumeDir),
-      sequentialWeeks: storedConfig
-        ? storedConfig.sequential_weeks === true
-        : values["sequential-weeks"],
       closedSheets: storedConfig ? storedConfig.closed_sheets === true : values["closed-sheets"],
       transactions,
       swapsAllowed:
@@ -415,7 +411,9 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     printResults(rows);
     const totalSeries = draftLeagueTopology(models.length).totalSeries;
     if (values["draft-only"]) {
-      console.log(`Draft complete; no games played. Rosters: ${path.join(runDir, "rosters.json")}`);
+      console.log(
+        `Draft complete; no games played. Rosters: ${path.join(runDir, "league.sqlite")}`,
+      );
       console.log(`Play the season later with: vgcleague draft --resume ${runDir}`);
     } else if (rows.length < totalSeries) {
       console.log(`League stopped after ${rows.length} of ${totalSeries} series.`);
@@ -482,6 +480,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         run: { type: "string" },
         title: { type: "string", default: "AI Draft League" },
         "through-week": { type: "string" },
+        "traces-dir": { type: "string" },
       },
     });
     if (!values.run) throw new Error("export-season requires --run <id>");
@@ -494,8 +493,10 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     const out = path.resolve(
       values.out ?? path.join("artifacts", "public", "seasons", values.run, "season-bundle.json"),
     );
-    const bundle = exportSeasonBundle({
+    const tracesDir = path.resolve(values["traces-dir"] ?? path.join(path.dirname(out), "traces"));
+    const { bundle, traces } = exportSeasonBundle({
       out,
+      tracesDir,
       recordsPath: RESULTS_PATH,
       runsDir: RUNS_DIR,
       runId: values.run,
@@ -507,7 +508,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         (bundle.season.releasedPlayoffRounds > 0
           ? ` + ${bundle.season.releasedPlayoffRounds} playoff round(s)`
           : "") +
-        ` to ${out}`,
+        ` to ${out}; ${[...traces.values()].reduce((n, games) => n + games.length, 0)} game trace files under ${tracesDir}`,
     );
     return 0;
   }

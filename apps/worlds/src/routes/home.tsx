@@ -93,8 +93,8 @@ export function HomePage() {
           AI Pokémon Worlds <em>2026</em>
         </h1>
         <p className="sub">
-          8 models replay a real VGC Top 8 bracket. Watch every battle with turn-by-turn reasoning
-          and between-game notes.
+          8 models replay a real VGC Top 8 bracket. Watch every battle with the reason each model
+          stated per turn and between-game notes.
         </p>
         {event ? <p className="sub mono">Source bracket: {event.name}.</p> : null}
         <dl className="facts">

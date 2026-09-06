@@ -6,9 +6,10 @@ import { test } from "vite-plus/test";
 import { createBoardSearch } from "../src/board-search.js";
 import { draftBoardTable, draftUserPrompt } from "../src/draft.js";
 import { runDraftLeague } from "../src/draftleague.js";
-import { readJsonlObjects } from "../src/jsonl.js";
+import { readFranchiseCheckpoints, readFranchiseRosterVersion } from "../src/league-journal.js";
 import { defaultPsDir } from "../src/paths.js";
 import { loadRosterPreset, presetRosters } from "../src/roster-preset.js";
+import { readRunArtifacts } from "../src/run-artifact-store.js";
 import {
   parseSeasonReview,
   runSeasonReview,
@@ -16,11 +17,11 @@ import {
 } from "../src/season-review.js";
 import {
   describeTransactionHistory,
+  readTradeWindowArtifact,
   renderFreeAgencyPrompt,
   renderTradeOfferPrompt,
 } from "../src/trade-window.js";
-import type { Completion, JsonObject, ProviderMessage } from "../src/types.js";
-import { count } from "../src/value.js";
+import type { Completion, ProviderMessage } from "../src/types.js";
 import { accepted, rejection } from "./asserts.js";
 import {
   assertFormatAuthority,
@@ -140,7 +141,6 @@ test("season reviews are written once per coach and replayed on resume", async (
     initial.map((review) => review.entrant),
     [1],
   );
-  fs.appendFileSync(path.join(directory, "season.jsonl"), '{"entrant":');
   const reviews = await runSeasonReview(
     [
       { entrant: 1, outcome: "You missed the playoffs." },
@@ -162,7 +162,7 @@ test("season reviews are written once per coach and replayed on resume", async (
   assert.doesNotMatch(prompts.get(models[1]!) ?? "", /\b(?:Champion|Eliminated)\b/);
   assert.match(prompts.get(models[1]!) ?? "", /You made no swaps/);
   assert.match(prompts.get(models[1]!) ?? "", /Sand anchor\./);
-  assert.equal(readJsonlObjects(path.join(directory, "season.jsonl")).length, 2);
+  assert.equal(readRunArtifacts(directory, "season-review").length, 2);
 
   const replayed = await runSeasonReview([{ entrant: 0, outcome: "You won the final." }], state, {
     runDir: directory,
@@ -373,17 +373,16 @@ test("a league stopped after its second window resumes on the right roster versi
     ],
   });
   assert.equal(first.length, 4, "two weeks of a four-coach league are four series");
-  assert.ok(fs.existsSync(path.join(directory, "transactions", "after-week-1", "window.json")));
-  assert.ok(
-    fs.existsSync(path.join(directory, "transactions", "after-week-2", "window.json")),
-    "stopping after week 2 closes its window too",
-  );
-  assert.ok(
-    fs.existsSync(path.join(directory, "reviews", "week-1.jsonl")),
+  assert.ok(readTradeWindowArtifact(directory, 1));
+  assert.ok(readTradeWindowArtifact(directory, 2), "stopping after week 2 closes its window too");
+  assert.equal(
+    readFranchiseCheckpoints(directory, "week", 1).length,
+    4,
     "week 1 was reviewed before its window",
   );
-  assert.ok(
-    fs.existsSync(path.join(directory, "reviews", "week-2.jsonl")),
+  assert.equal(
+    readFranchiseCheckpoints(directory, "week", 2).length,
+    4,
     "pausing after week 2 keeps its review",
   );
   const resumed = await runDraftLeague(models, directory, {
@@ -393,36 +392,24 @@ test("a league stopped after its second window resumes on the right roster versi
     resume: true,
   });
   assert.equal(resumed.length, 7);
-  assert.ok(fs.existsSync(path.join(directory, "transactions", "after-week-2", "window.json")));
   for (const week of [1, 2, 3]) {
-    const reviews = readJsonlObjects(path.join(directory, "reviews", `week-${week}.jsonl`));
+    const reviews = readFranchiseCheckpoints(directory, "week", week);
     assert.equal(reviews.length, 4, `every coach reviews week ${week}`);
-    assert.ok(reviews.every((row) => row.roster_version === Math.min(week - 1, 2)));
+    assert.ok(reviews.every((row) => row.rosterVersion === Math.min(week - 1, 2)));
   }
   for (const week of [1, 2]) {
-    const windowFile = path.join(directory, "transactions", `after-week-${week}`, "window.json");
-    const window: {
-      decisions: Array<{ entrant: number; swaps: unknown[] }>;
-    } = JSON.parse(fs.readFileSync(windowFile, "utf8"));
+    const window = readTradeWindowArtifact(directory, week)!;
     const changed = window.decisions
       .filter((decision) => decision.swaps.length)
       .map((decision) => decision.entrant);
-    const reconciliations = readJsonlObjects(
-      path.join(directory, "reviews", `week-${week}-transactions.jsonl`),
-    );
+    const reconciliations = readFranchiseCheckpoints(directory, "transactions", week);
     assert.deepEqual(
-      reconciliations.map((row) => row.entrant).sort((a, b) => count(a) - count(b)),
+      reconciliations.map((row) => row.entrant).sort((a, b) => a - b),
       [...changed].sort((a, b) => a - b),
       `every coach whose roster changed after week ${week} reconciles its notebook`,
     );
-    assert.ok(
-      reconciliations.every((row) => row.roster_version === week && row.stage === "transactions"),
-    );
+    assert.ok(reconciliations.every((row) => row.rosterVersion === week));
   }
-  const config: JsonObject = JSON.parse(
-    fs.readFileSync(path.join(directory, "config.json"), "utf8"),
-  );
-  assert.equal(config.sequential_weeks, true);
   for (const row of resumed) {
     assert.deepEqual(row.transactions, [
       { after_week: 1, trades_allowed: 0 },
@@ -462,22 +449,23 @@ test("a roster preset seeds the league without a draft and resumes on its roster
   });
   assert.equal(rows.length, 2);
   assert.ok(!fs.existsSync(path.join(directory, "draft")), "no draft log is written");
-  const config: {
-    preset: string;
-    team_names: string[];
-    rosters: string[][];
-    draft_notes: string[];
-  } = JSON.parse(fs.readFileSync(path.join(directory, "config.json"), "utf8"));
+  const config: { preset: string } = JSON.parse(
+    fs.readFileSync(path.join(directory, "config.json"), "utf8"),
+  );
   assert.equal(config.preset, "noise-quartet");
+  const rosters = readFranchiseRosterVersion(directory, 0);
   assert.deepEqual(
-    config.team_names,
+    rosters.map((roster) => roster.teamName),
     preset.teams.map((team) => team.name),
   );
   assert.deepEqual(
-    config.rosters,
+    rosters.map((roster) => roster.roster.map((mon) => mon.id)),
     preset.teams.map((team) => team.roster),
   );
-  assert.deepEqual(config.draft_notes, ["", "", "", ""]);
+  assert.deepEqual(
+    readFranchiseCheckpoints(directory, "draft", 0).map((checkpoint) => checkpoint.memory.notebook),
+    ["", "", "", ""],
+  );
   const resumed = await runDraftLeague(models, directory, {
     recordsPath,
     seed: 5,

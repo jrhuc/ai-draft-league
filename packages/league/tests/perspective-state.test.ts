@@ -5,7 +5,7 @@ import { test } from "vite-plus/test";
 import { summarizeBattleEvents } from "../src/battle-transcript.js";
 import { LEAGUE_ROOT } from "../src/paths.js";
 import { ShowdownReference } from "../src/reference.js";
-import { BattleState } from "../src/state.js";
+import { PerspectiveState } from "../src/perspective-state.js";
 import type { BattleRequest } from "../src/types.js";
 import { asRecord, count } from "../src/value.js";
 
@@ -13,7 +13,7 @@ test("own requests render known sets and stats", () => {
   const request: BattleRequest = JSON.parse(
     fs.readFileSync(path.join(LEAGUE_ROOT, "tests/data/showdown_requests/turn.json"), "utf8"),
   );
-  const rendered = new BattleState("p1").render(request);
+  const rendered = new PerspectiveState("p1").render(request);
   const first = request.side!.pokemon![0]!;
   assert.match(rendered, new RegExp(`item ${first.item}`));
   assert.match(rendered, new RegExp(`ability ${first.ability}`));
@@ -26,7 +26,7 @@ test("own requests render known sets and stats", () => {
 
 test("post-preview prompts show percentage HP and compact bench sets", () => {
   const reference = new ShowdownReference("gen9championsvgc2026regmb");
-  const state = new BattleState("p1");
+  const state = new PerspectiveState("p1");
   const rendered = state.render(
     {
       active: [
@@ -81,7 +81,7 @@ test("post-preview prompts show percentage HP and compact bench sets", () => {
 });
 
 test("open team sheets follow active nicknames", () => {
-  const state = new BattleState("p1");
+  const state = new PerspectiveState("p1");
   state.feed([
     "|showteam|p2|Ground God|ArceusGround|EarthPlate|Multitype|Earthquake,Recover|||||||50|,,,,,Ground",
     "|switch|p2a: Ground God|Arceus-Ground, L50|100/100",
@@ -95,7 +95,7 @@ test("open team sheets follow active nicknames", () => {
 
 test("battle damage binds open-sheet abilities and ignores fabricated caller state", () => {
   const reference = new ShowdownReference("gen9championsvgc2026regmb");
-  const state = new BattleState("p1");
+  const state = new PerspectiveState("p1");
   state.feed([
     "|showteam|p2|Toaster|Rotom-Heat|SitrusBerry|Levitate|overheat,thunderbolt,protect|Timid|||||50",
     "|switch|p2a: Toaster|Rotom-Heat, L50|100/100",
@@ -167,7 +167,7 @@ test("live damage derives spread reduction from Showdown targets and live active
     },
   });
 
-  const foes = new BattleState("p1");
+  const foes = new PerspectiveState("p1");
   foes.feed(["|switch|p2a: Incineroar|Incineroar, L50|100/100"]);
   const oneFoe = foes.estimateDamage(
     { attacker: "Sylveon", defender: "Incineroar", move: "Hyper Voice", is_spread_hit: true },
@@ -190,7 +190,7 @@ test("live damage derives spread reduction from Showdown targets and live active
   );
   assert.doesNotMatch(singleTarget, /spread \(0\.75x\)/);
 
-  const opposingAttacker = new BattleState("p1");
+  const opposingAttacker = new PerspectiveState("p1");
   opposingAttacker.feed([
     "|switch|p2a: Sylveon|Sylveon, L50|100/100",
     "|switch|p2b: Farigiraf|Farigiraf, L50|100/100",
@@ -202,7 +202,7 @@ test("live damage derives spread reduction from Showdown targets and live active
   );
   assert.doesNotMatch(oneFoeFromEitherSide, /spread \(0\.75x\)/);
 
-  const adjacent = new BattleState("p1");
+  const adjacent = new PerspectiveState("p1");
   adjacent.feed(["|switch|p2a: Incineroar|Incineroar, L50|100/100"]);
   const foeOnly = adjacent.estimateDamage(
     { attacker: "Garchomp", defender: "Incineroar", move: "Earthquake", is_spread_hit: true },
@@ -225,7 +225,7 @@ test("copied abilities are explained and reset from the open sheet on switch", (
     ]),
     ["Gardevoir's Trace copied Mega Launcher from Blastoise."],
   );
-  const state = new BattleState("p1");
+  const state = new PerspectiveState("p1");
   state.feed([
     "|showteam|p2|Gardevoir||Gardevoirite|Trace|hypervoice,protect|Timid|||||50]Incineroar||SitrusBerry|Intimidate|fakeout,protect|Careful|||||50",
     "|switch|p2a: Gardevoir|Gardevoir, L50|100/100",
@@ -239,7 +239,7 @@ test("copied abilities are explained and reset from the open sheet on switch", (
 
 test("suppressed abilities stay suppressed in live damage context", () => {
   const reference = new ShowdownReference("gen9championsvgc2026regmb");
-  const state = new BattleState("p1");
+  const state = new PerspectiveState("p1");
   state.feed([
     "|showteam|p2|Toaster|Rotom-Heat|SitrusBerry|Levitate|overheat,protect|Timid|||||50",
     "|switch|p2a: Toaster|Rotom-Heat, L50|100/100",
@@ -272,7 +272,7 @@ test("suppressed abilities stay suppressed in live damage context", () => {
 });
 
 test("Mega events preserve the detailschange forme", () => {
-  const state = new BattleState("p1");
+  const state = new PerspectiveState("p1");
   state.feed([
     "|showteam|p1|Gengar||Gengarite|CursedBody|shadowball,protect|Timid|||||50",
     "|switch|p1a: Gengar|Gengar, L50|135/135",
@@ -286,7 +286,7 @@ test("Mega events preserve the detailschange forme", () => {
 });
 
 test("opposing Mega formes do not duplicate their open-sheet base forme", () => {
-  const state = new BattleState("p1");
+  const state = new PerspectiveState("p1");
   state.feed([
     "|poke|p2|Gengar, L50|",
     "|showteam|p2|Spooky|Gengar|Gengarite|CursedBody|shadowball,protect|Timid|||||50",
@@ -300,7 +300,7 @@ test("opposing Mega formes do not duplicate their open-sheet base forme", () => 
 });
 
 test("a Mega whose sheet identity differs still merges with its base forme", () => {
-  const state = new BattleState("p1");
+  const state = new PerspectiveState("p1");
   state.feed([
     "|poke|p2|Floette-Eternal, L50|",
     "|showteam|p2|Floette-Eternal|Floette-Eternal|Floettite|FlowerVeil|moonblast,protect|Timid|||||50",
@@ -318,7 +318,7 @@ test("a Mega whose sheet identity differs still merges with its base forme", () 
 });
 
 test("unseen opponents read as not brought once the whole bring is revealed", () => {
-  const state = new BattleState("p1");
+  const state = new PerspectiveState("p1");
   state.feed([
     "|showteam|p2|Altaria||FocusSash|CloudNine|dracometeor,roost|Timid|||||50]Rotom-Wash||SitrusBerry|Levitate|thunderbolt,protect|Timid|||||50]Garchomp||LifeOrb|RoughSkin|earthquake,protect|Jolly|||||50]Dragapult||MuscleBand|ClearBody|dragondarts,protect|Jolly|||||50]Annihilape||Leftovers|Defiant|ragefist,protect|Jolly|||||50]Floette-Eternal||Floettite|FlowerVeil|moonblast,protect|Timid|||||50",
     "|switch|p2a: Altaria|Altaria, L50|100/100",
@@ -358,7 +358,7 @@ test("unseen opponents read as not brought once the whole bring is revealed", ()
 });
 
 test("post-preview decisions hide unbrought Pokémon while reviews retain the full team", () => {
-  const state = new BattleState("p1");
+  const state = new PerspectiveState("p1");
   const previewPokemon = Array.from({ length: 6 }, (_, index) => ({
     ident: `p1: Mon${index + 1}`,
     details: `Species${index + 1}, L50`,
@@ -385,7 +385,7 @@ test("post-preview decisions hide unbrought Pokémon while reviews retain the fu
 });
 
 test("public percentage HP color suffixes are normalized", () => {
-  const state = new BattleState("p1");
+  const state = new PerspectiveState("p1");
   state.feed(["|switch|p2a: Whimsicott|Whimsicott, L50|50/100g"]);
   const mon = [...state.sides.p2.mons.values()][0]!;
   assert.equal(mon.hp, "50/100");
@@ -394,7 +394,7 @@ test("public percentage HP color suffixes are normalized", () => {
 });
 
 test("state ignores unstructured protocol messages", () => {
-  const state = new BattleState("p1");
+  const state = new PerspectiveState("p1");
   state.feed(["|message|RAW_SENTINEL", "|turn|3"]);
   const rendered = state.render({});
   assert.match(rendered, /Turn: 3/);
@@ -402,7 +402,7 @@ test("state ignores unstructured protocol messages", () => {
 });
 
 test("persistent volatile conditions render and clear on switch", () => {
-  const state = new BattleState("p1");
+  const state = new PerspectiveState("p1");
   state.feed([
     "|switch|p1a: Gengar|Gengar, L50|100/100",
     "|-start|p1a: Gengar|move: Taunt",
@@ -414,7 +414,7 @@ test("persistent volatile conditions render and clear on switch", () => {
 });
 
 test("last observed move retains target and turn for live viewers", () => {
-  const state = new BattleState("p1");
+  const state = new PerspectiveState("p1");
   state.feed([
     "|switch|p1a: Miraidon|Miraidon, L50|207/207",
     "|switch|p2a: Calyrex-Ice|Calyrex-Ice, L50|252/252",
@@ -431,7 +431,7 @@ test("last observed move retains target and turn for live viewers", () => {
 });
 
 test("field weather and screens render remaining turns", () => {
-  const state = new BattleState("p1");
+  const state = new PerspectiveState("p1");
   state.feed([
     "|showteam|p1|Grimmsnarl||LightClay|Prankster|FoulPlay,Reflect|Calm||||",
     "|switch|p1a: Grimmsnarl|Grimmsnarl, L50|202/202",
@@ -450,7 +450,7 @@ test("field weather and screens render remaining turns", () => {
 });
 
 test("hazards persist without a timer", () => {
-  const state = new BattleState("p1");
+  const state = new PerspectiveState("p1");
   state.feed([
     "|switch|p1a: Garchomp|Garchomp, L50|183/183",
     "|turn|1",
@@ -467,7 +467,7 @@ test("hazards persist without a timer", () => {
 });
 
 test("Protect success reduction is tracked for the next menu", () => {
-  const state = new BattleState("p1");
+  const state = new PerspectiveState("p1");
   state.feed([
     "|switch|p1a: Archaludon|Archaludon, L50|197/197",
     "|turn|5",
@@ -481,7 +481,7 @@ test("Protect success reduction is tracked for the next menu", () => {
 
 test("effective speed and action order use format ranges and explain redundant Encore", () => {
   const reference = new ShowdownReference("gen9championsvgc2026regmb");
-  const state = new BattleState("p1");
+  const state = new PerspectiveState("p1");
   state.feed([
     "|showteam|p2|Tauros|Tauros-Paldea-Aqua|ChoiceScarf|Intimidate|CloseCombat,AquaJet|Adamant|||||50",
     "|switch|p1a: Gengar|Gengar-Mega, L50|165/165",
@@ -536,7 +536,7 @@ test("effective speed and action order use format ranges and explain redundant E
 
 test("action order proves one-point and Tailwind speed guarantees", () => {
   const reference = new ShowdownReference("gen9championsvgc2026regmb");
-  const state = new BattleState("p1");
+  const state = new PerspectiveState("p1");
   state.feed([
     "|showteam|p2|Garchomp||LifeOrb|RoughSkin|Earthquake|Jolly|||||50",
     "|switch|p1a: Gengar|Gengar-Mega, L50|165/165",
@@ -569,7 +569,7 @@ test("action order proves one-point and Tailwind speed guarantees", () => {
     /Gengar-Mega is guaranteed to act first/,
   );
 
-  const tailwind = new BattleState("p1");
+  const tailwind = new PerspectiveState("p1");
   tailwind.feed([
     "|showteam|p2|Venusaur|Venusaur-Mega|Venusaurite|ThickFat|GigaDrain|Modest|||||50",
     "|switch|p1a: Tinkaton|Tinkaton, L50|171/171",
@@ -606,7 +606,7 @@ test("action order proves one-point and Tailwind speed guarantees", () => {
 
 test("action order applies Gale Wings and Prankster priority modifiers", () => {
   const reference = new ShowdownReference("gen9championsvgc2026regmb");
-  const state = new BattleState("p1");
+  const state = new PerspectiveState("p1");
   state.feed([
     "|showteam|p2|Mamoswine||FocusSash|ThickFat|IceShard,RockSlide|Adamant|||||50",
     "|switch|p1a: Talonflame|Talonflame, L50|155/155",
@@ -639,7 +639,7 @@ test("action order applies Gale Wings and Prankster priority modifiers", () => {
   assert.match(chipped, /Mamoswine is guaranteed to act first \(move priority \+0 vs \+1\)/);
   assert.match(chipped, /Gale Wings inactive \(not at full HP\)/);
 
-  const prankster = new BattleState("p1");
+  const prankster = new PerspectiveState("p1");
   prankster.feed([
     "|showteam|p2|Whimsicott||FocusSash|Prankster|Tailwind,Moonblast|Timid|||||50",
     "|switch|p1a: Dragapult|Dragapult, L50|163/163",
@@ -687,7 +687,7 @@ test("action order applies Gale Wings and Prankster priority modifiers", () => {
 });
 
 test("weather from a replacement switch-in counts from its first full turn", () => {
-  const state = new BattleState("p1");
+  const state = new PerspectiveState("p1");
   state.feed([
     "|switch|p1a: Gengar|Gengar-Mega, L50|165/165",
     "|switch|p2a: Milotic|Milotic, L50|100/100",

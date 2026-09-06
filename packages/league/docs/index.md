@@ -16,7 +16,7 @@ The published season has three parts: roster selection, a round robin with trans
   <li><strong>Close each season</strong><span>Request a retrospective when each franchise finishes.</span></li>
 </ol>
 
-The default schedule opens transaction windows after weeks 1, 2, and 3. Weekly reviews run at those barriers and after the round robin; `--sequential-weeks` reviews every week. A roster change triggers memory reconciliation before the next build. See [Transactions](trade-window.md) and [Weekly review](weekly-review.md).
+The default schedule opens transaction windows after weeks 1, 2, and 3. Every week ends with a private review, and a roster change triggers memory reconciliation before the next build. See [Transactions](trade-window.md) and [Weekly review](weekly-review.md).
 
 ## Current season rules
 
@@ -30,7 +30,7 @@ The published season has 8 franchises, 7 round-robin weeks, and a 4-team playoff
 - **Playoffs**: the top 4 enter semifinals, followed by the final
 - **Season reviews**: one retrospective when each franchise finishes
 
-Builds never receive results from other matches in the same blind batch. Later stages receive only state authorized by the schedule.
+Builds receive the franchise memory committed at the preceding weekly barrier. Later stages receive only state authorized by the schedule.
 
 > Records show what each seat received, submitted, and carried forward. They cannot establish private belief or prove that a rationale caused a later choice. Standings describe one run, not general model quality. See [Evidence interpretation](measurement.md).
 

@@ -1,13 +1,10 @@
-import path from "node:path";
-
 import type { LeagueTeambuildView } from "./views.js";
-import { readRunLines } from "./run-artifacts.js";
+import { readRunArtifacts } from "./run-artifact-store.js";
 import { decodeTeamBuildJournalRow } from "./teambuild.js";
 
-export function readArchivedTeambuilds(runsDir: string, runId: string): LeagueTeambuildView[] {
-  const file = path.join(runsDir, runId, "teambuild", "teambuild.jsonl");
-  return readRunLines(runsDir, runId, "teambuild", "teambuild.jsonl").map((row, index) => {
-    const entry = decodeTeamBuildJournalRow(row, `${file} line ${index + 1}`);
+export function readArchivedTeambuilds(runDir: string): LeagueTeambuildView[] {
+  return readRunArtifacts(runDir, "teambuild").map(({ key, value }) => {
+    const entry = decodeTeamBuildJournalRow(value, `teambuild artifact ${key}`);
     return { ...entry.view, notebook: entry.notebook };
   });
 }

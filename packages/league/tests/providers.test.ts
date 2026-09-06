@@ -14,8 +14,10 @@ import {
   validateModelExecution,
   validateReasoning,
 } from "../src/providers.js";
-import type { JsonObject, JsonValue } from "../src/types.js";
-import { asRecord } from "../src/value.js";
+import type { Completion, JsonObject, JsonValue } from "../src/types.js";
+import { asRecord, asRecords, text } from "../src/value.js";
+import { completeWithDexTools } from "../src/dex-lookups.js";
+import { ShowdownReference } from "../src/reference.js";
 
 function requestUrl(input: RequestInfo | URL): string {
   return input instanceof Request ? input.url : String(input);
@@ -48,6 +50,240 @@ function chatStream(text: string, final: JsonObject = {}): Response {
     { ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], ...final },
   ]);
 }
+
+test("duplicate IDs and malformed calls get one consistent wire reply and no unintended execution", async () => {
+  const requests: JsonObject[] = [];
+  let executions = 0;
+  const fetch: typeof globalThis.fetch = async (_input, init) => {
+    requests.push(requestJson(init));
+    if (requests.length > 1) return chatStream('{"sets":[]}');
+    return sseResponse([
+      {
+        id: "gen",
+        object: "chat.completion.chunk",
+        created: 1,
+        model: "stub",
+        choices: [
+          {
+            index: 0,
+            delta: {
+              role: "assistant",
+              tool_calls: [
+                {
+                  index: 3,
+                  id: "valid",
+                  type: "function",
+                  function: { name: "read_memory_page", arguments: '{"name":"valid"}' },
+                },
+                {
+                  index: 0,
+                  id: "repeat",
+                  type: "function",
+                  function: { name: "read_memory_page", arguments: '{"name":"first"}' },
+                },
+                {
+                  index: 1,
+                  id: "repeat",
+                  type: "function",
+                  function: { name: "read_memory_page", arguments: '{"name":"second"}' },
+                },
+                {
+                  index: 2,
+                  id: "invalid",
+                  type: "function",
+                  function: { name: "read_memory_page", arguments: "{" },
+                },
+              ],
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+      },
+    ]);
+  };
+  const trace: JsonObject[] = [];
+  await completeWithDexTools({
+    provider: makeProvider(parseSpec("prime:tool-model"), { apiKey: "test-key", fetch }),
+    reference: new ShowdownReference("gen9championsvgc2026regmb"),
+    policy: { maxTokens: 4096, toolRounds: 2 },
+    spec: "prime:tool-model",
+    system: "Build",
+    messages: [{ role: "user", content: "Build." }],
+    extraTools: [
+      {
+        definition: {
+          name: "read_memory_page",
+          description: "Read",
+          parameters: { type: "object" },
+        },
+        run: (args) => {
+          executions += 1;
+          return `Page ${text(args.name)}`;
+        },
+      },
+    ],
+    onLookup: (call) => trace.push(call),
+  });
+  assert.equal(executions, 1, JSON.stringify({ trace, requests: requests.length }));
+  assert.equal(requests.length, 2);
+  const messages = asRecords(requests[1]!.messages);
+  const calls = messages.flatMap((message) => asRecords(message.tool_calls));
+  const results = messages.filter((message) => message.role === "tool");
+  assert.deepEqual(
+    calls.map((call) => call.id),
+    ["valid", "repeat", "invalid"],
+  );
+  assert.deepEqual(
+    results.map((result) => result.tool_call_id),
+    ["valid", "repeat", "invalid"],
+  );
+  assert.equal(asRecord(calls[0]!.function).arguments, '{"name":"valid"}');
+  assert.equal(results[0]!.content, "Page valid");
+  for (const result of results.slice(1))
+    assert.match(text(result.content), /Not executed: invalid tool input/);
+  assert.equal(trace.length, 3);
+});
+
+test("replay normalization preserves signed reasoning, call metadata, and its source response", () => {
+  const metadata = {
+    anthropic: { signature: "signed-reasoning" },
+    google: { thoughtSignature: "signed-thought" },
+    openai: { encryptedContent: "encrypted-reasoning" },
+  };
+  const completion: Completion = {
+    text: "",
+    usage: {},
+    toolCalls: [
+      { id: "", name: "lookup_move", arguments: { name: "Protect" } },
+      { id: "call_0", name: "lookup_item", arguments: { name: "Focus Sash" } },
+      { id: "call_0", name: "lookup_ability", arguments: { name: "Prankster" } },
+    ],
+    responseMessages: [
+      {
+        role: "assistant",
+        content: [
+          { type: "reasoning", text: "Preserve this exactly.", providerOptions: metadata },
+          {
+            type: "tool-call",
+            toolCallId: "",
+            toolName: "lookup_move",
+            input: { name: "Protect" },
+            providerOptions: { google: { thoughtSignature: "tool-signature" } },
+          },
+          {
+            type: "tool-call",
+            toolCallId: "call_0",
+            toolName: "lookup_item",
+            input: { name: "Focus Sash" },
+          },
+          {
+            type: "tool-call",
+            toolCallId: "call_0",
+            toolName: "lookup_ability",
+            input: { name: "Prankster" },
+          },
+        ],
+      },
+    ],
+  };
+  const original = structuredClone(completion);
+  const replay = assistantToolMessage(completion);
+  assert.deepEqual(completion, original);
+  const assistant = replay.raw![0]!;
+  assert.ok(assistant.role === "assistant" && Array.isArray(assistant.content));
+  assert.deepEqual(assistant.content[0], {
+    type: "reasoning",
+    text: "Preserve this exactly.",
+    providerOptions: metadata,
+  });
+  const calls = assistant.content.filter((part) => part.type === "tool-call");
+  assert.deepEqual(
+    calls.map((call) => call.toolCallId),
+    replay.toolCalls!.map((call) => call.id),
+  );
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0]!.providerOptions, { google: { thoughtSignature: "tool-signature" } });
+  assert.equal(calls[1]!.toolName, "lookup_item");
+});
+
+test("compatible batches replay each tool result and contiguous reasoning through the SDK wire", async () => {
+  const requests: JsonObject[] = [];
+  const fetch: typeof globalThis.fetch = async (_input, init) => {
+    requests.push(requestJson(init));
+    if (requests.length === 2) return chatStream('{"pick":"garchomp"}');
+    const base = { id: "gen_batch", object: "chat.completion.chunk", created: 1, model: "stub" };
+    return sseResponse([
+      {
+        ...base,
+        choices: [
+          {
+            index: 0,
+            delta: { role: "assistant", reasoning_content: "Read " },
+            finish_reason: null,
+          },
+        ],
+      },
+      {
+        ...base,
+        choices: [
+          {
+            index: 0,
+            delta: { reasoning_content: "both facts.", tool_calls: [] },
+            finish_reason: null,
+          },
+        ],
+      },
+      {
+        ...base,
+        choices: [
+          {
+            index: 0,
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "batch-1",
+                  type: "function",
+                  function: {
+                    name: "batch_tools",
+                    arguments: JSON.stringify({
+                      queries: [
+                        { name: "lookup_move", arguments: { name: "Protect" } },
+                        { name: "lookup_ability", arguments: { name: "Prankster" } },
+                      ],
+                    }),
+                  },
+                },
+              ],
+            },
+            finish_reason: null,
+          },
+        ],
+      },
+      { ...base, choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] },
+    ]);
+  };
+  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const completion = await completeWithDexTools({
+    provider: makeProvider(parseSpec("prime:tool-model"), { apiKey: "test-key", fetch }),
+    reference,
+    policy: { maxTokens: 4096, toolRounds: 2 },
+    spec: "prime:tool-model",
+    system: "Draft",
+    messages: [{ role: "user", content: "Choose." }],
+  });
+  assert.equal(requests.length, 2);
+  assert.equal(completion.text, '{"pick":"garchomp"}');
+  assert.equal(completion.reasoning, "Read both facts.");
+  const messages = requests[1]!.messages;
+  assert.ok(Array.isArray(messages));
+  const result = messages.map(asRecord).find((message) => message.role === "tool")!;
+  assert.equal(result.tool_call_id, "batch-1");
+  assert.deepEqual(JSON.parse(text(result.content)), [
+    { name: "lookup_move", result: reference.lookup("lookup_move", { name: "Protect" }) },
+    { name: "lookup_ability", result: reference.lookup("lookup_ability", { name: "Prankster" }) },
+  ]);
+});
 
 test("provider specs are exactly OpenRouter, Prime Inference, the Vercel AI Gateway, OpenCode, and random", () => {
   assert.deepEqual(parseSpec("openrouter:anthropic/claude-sonnet-4:nitro"), {

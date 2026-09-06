@@ -7,7 +7,7 @@ import { test } from "vite-plus/test";
 import { readJsonlObjects } from "../src/jsonl.js";
 import type { SeriesRecord } from "../src/records.js";
 
-import { appendRow, loadSeriesRecords, modelKey, scopeRows } from "../src/records.js";
+import { recordRow, loadSeriesRecords, modelKey, scopeRows } from "../src/records.js";
 import { writeReport } from "../src/report.js";
 
 function row(p1: string, p2: string, winner: string | null): SeriesRecord {
@@ -115,7 +115,7 @@ test("record append removes a torn tail before committing the new row", (t) => {
   const replacement = row("c", "d", "d");
   fs.writeFileSync(records, `${JSON.stringify(first)}\n{"players":{"p1":"partial"`);
 
-  appendRow(records, replacement);
+  recordRow(records, replacement);
 
   assert.deepEqual(loadSeriesRecords(records), [first, replacement]);
   assert.doesNotMatch(fs.readFileSync(records, "utf8"), /partial/);
@@ -129,7 +129,7 @@ test("record append preserves a valid unterminated object with a separator", (t)
   const second = row("c", "d", "c");
   fs.writeFileSync(records, JSON.stringify(first));
 
-  appendRow(records, second);
+  recordRow(records, second);
 
   assert.deepEqual(loadSeriesRecords(records), [first, second]);
 });
@@ -141,7 +141,7 @@ test("record append rejects committed malformed rows without changing the journa
   const malformed = `${JSON.stringify(row("a", "b", "a"))}\n{"players":\n`;
   fs.writeFileSync(records, malformed);
 
-  assert.throws(() => appendRow(records, row("c", "d", "c")), /invalid JSONL line 2/);
+  assert.throws(() => recordRow(records, row("c", "d", "c")), /invalid JSONL line 2/);
   assert.equal(fs.readFileSync(records, "utf8"), malformed);
 });
 
@@ -152,7 +152,7 @@ test("record append rejects malformed interior rows without changing the journal
   const malformed = `${JSON.stringify(row("a", "b", "a"))}\n{"players":\n${JSON.stringify(row("c", "d", "c"))}`;
   fs.writeFileSync(records, malformed);
 
-  assert.throws(() => appendRow(records, row("e", "f", "e")), /invalid JSONL line 2/);
+  assert.throws(() => recordRow(records, row("e", "f", "e")), /invalid JSONL line 2/);
   assert.equal(fs.readFileSync(records, "utf8"), malformed);
 });
 
@@ -162,7 +162,7 @@ test("record append refuses a semantic-invalid unterminated tail", (t) => {
   const records = path.join(directory, "results.jsonl");
   fs.writeFileSync(records, "42");
 
-  assert.throws(() => appendRow(records, row("a", "b", "a")), /invalid unterminated JSONL tail/);
+  assert.throws(() => recordRow(records, row("a", "b", "a")), /expected a JSON object/);
   assert.equal(fs.readFileSync(records, "utf8"), "42");
 });
 
@@ -213,7 +213,7 @@ test("HTML reports include nested games and filter pools", (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-records-"));
   t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const records = path.join(directory, "results.jsonl");
-  appendRow(records, {
+  recordRow(records, {
     ...row("included-a", "included-b", "included-a"),
     timestamp: "2026-07-14T12:00:00Z",
     series_id: "series-1",
@@ -241,8 +241,8 @@ test("HTML reports include nested games and filter pools", (t) => {
       },
     ],
   });
-  appendRow(records, { ...row("excluded-c", "excluded-d", "excluded-c"), pool: "beta" });
-  appendRow(records, { ...row("scratch-e", "scratch-f", "scratch-e"), pool: "test" });
+  recordRow(records, { ...row("excluded-c", "excluded-d", "excluded-c"), pool: "beta" });
+  recordRow(records, { ...row("scratch-e", "scratch-f", "scratch-e"), pool: "test" });
   const report = path.join(directory, "report.html");
   writeReport(records, report, "alpha");
   const html = fs.readFileSync(report, "utf8");

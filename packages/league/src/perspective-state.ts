@@ -58,7 +58,7 @@ const WEATHER_ROCKS = new Map([
   ["hail", "icyrock"],
 ]);
 
-export class BattleState {
+export class PerspectiveState {
   turn = 0;
   private upkeepDone = false;
   weather: TimedEffect | undefined;
@@ -332,7 +332,7 @@ export class BattleState {
     const mon = key ? this.sides[this.pid].mons.get(key) : undefined;
     if (mon) return mon.species;
     const active = (request.side?.pokemon ?? []).filter((item) => item.active);
-    return active[slot] ? BattleState.requestName(active[slot]) : "Pokémon";
+    return active[slot] ? PerspectiveState.requestName(active[slot]) : "Pokémon";
   }
 
   compactMons(): CompactMon[] {

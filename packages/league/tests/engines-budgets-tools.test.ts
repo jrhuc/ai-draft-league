@@ -277,7 +277,7 @@ test("untimed tool batches allow wide verification across many rounds", async ()
   assert.equal(traces[0]!.tool_rounds, 4);
 });
 
-test("timed tool batches stay capped at two rounds of two calls", async () => {
+test("timed decisions receive every requested lookup before the final choice round", async () => {
   const batch = (ids: number[]) => ({
     text: "",
     usage: { input_tokens: 1 },
@@ -305,14 +305,10 @@ test("timed tool batches stay capped at two rounds of two calls", async () => {
   assert.equal(provider.calls.length, 3);
   assert.equal(provider.calls[2]!.options.toolChoice, "none");
   const toolTrace = asRecords(traces[0]!.tool_calls);
-  assert.equal(
-    toolTrace.length,
-    6,
-    "two executed plus one explicitly-refused call per timed round",
-  );
+  assert.equal(toolTrace.length, 6, "all six requested lookups have individual evidence");
   assert.ok(
-    toolTrace.some((entry) => /Not executed/.test(text(entry.result))),
-    "dropped calls are answered, not silently discarded",
+    toolTrace.every((entry) => !/Not executed/.test(text(entry.result))),
+    "independent lookups do not require another model exchange",
   );
 });
 

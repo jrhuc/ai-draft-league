@@ -394,3 +394,37 @@
 .game-usage .label {
   min-width: 9ch;
 }
+
+.dec .meta a.trace {
+  color: var(--link);
+  text-decoration: none;
+}
+
+.dec .meta a.trace:hover {
+  text-decoration: underline;
+}
+.replay-position {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.8rem;
+  margin: 1rem 0;
+}
+
+.replay-position label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.replay-position select {
+  max-width: 100%;
+}
+
+.turn-selected {
+  outline: 1px solid var(--line-2);
+  outline-offset: 4px;
+  scroll-margin-top: 5rem;
+}

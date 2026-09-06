@@ -19,9 +19,9 @@ import { SAFE_SEGMENT } from "./path-safety.js";
 import { readCompletedSeriesDecisionRows } from "./recorded-series.js";
 import type { SeriesRecord } from "./records.js";
 import { runStatusSchema } from "./run-status.js";
-import { storedSeriesMetadataSchema } from "./series.js";
+import { listStoredSeries } from "./series-store.js";
 import { loadShowdown } from "./showdown.js";
-import { BattleState, type MonState } from "./state.js";
+import { PerspectiveState, type MonState } from "./perspective-state.js";
 import type { JsonValue, Pid } from "./types.js";
 import { afterColon, isErrnoCode } from "./value.js";
 
@@ -36,6 +36,7 @@ const decisionLogArtifactSchema = z.looseObject({
 });
 const decisionArtifactSchema = z.looseObject({
   kind: z.literal("decision"),
+  submission_id: z.string().optional(),
   action: z.string(),
   automatic: z.boolean(),
   fallback: z.boolean(),
@@ -167,7 +168,7 @@ export function viewTeamSheet(packed: string): TeamBuildSetView[] {
   });
 }
 
-function snapshotMon(battle: BattleState, pid: Pid, mon: MonState): MonView {
+function snapshotMon(battle: PerspectiveState, pid: Pid, mon: MonState): MonView {
   const boosts = Object.entries(mon.boosts)
     .filter(([, value]) => value)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -192,7 +193,7 @@ function snapshotMon(battle: BattleState, pid: Pid, mon: MonState): MonView {
 }
 
 function snapshotBattle(
-  battle: BattleState,
+  battle: PerspectiveState,
   players: Record<Pid, string> | undefined,
   log: BattleLogEntryView[],
   decisions: DecisionView[] = [],
@@ -273,14 +274,9 @@ export function scanUnfinishedSeries(
   rows: SeriesRecord[],
 ): UnfinishedSeries[] {
   const seen = new Set(rows.map((row) => row.series_id ?? ""));
-  let entries: string[] = [];
-  try {
-    entries = fs.readdirSync(path.join(runsDir, runId, "series"));
-  } catch {
-    return [];
-  }
   const found: UnfinishedSeries[] = [];
-  for (const seriesId of entries) {
+  for (const series of listStoredSeries(path.join(runsDir, runId))) {
+    const { seriesId } = series;
     if (!SAFE_SEGMENT.test(seriesId) || seen.has(seriesId)) continue;
     let decisions = 0;
     let game = 0;
@@ -294,17 +290,13 @@ export function scanUnfinishedSeries(
         turn = Math.max(turn, count(last.turn));
       }
     }
-    const metadata = storedSeriesMetadataSchema.safeParse(
-      readRunJson(runsDir, runId, "series", seriesId, "series.json"),
-    );
-    const players = metadata.success ? metadata.data.players : null;
     found.push({
       seriesId,
-      seriesIndex: metadata.success ? metadata.data.seriesIndex : null,
+      seriesIndex: series.seriesIndex,
       game: Math.max(1, game),
       turn,
       decisions,
-      players,
+      players: series.players,
     });
   }
   return found.sort((a, b) => a.seriesId.localeCompare(b.seriesId));
@@ -348,14 +340,9 @@ export function buildSeriesGame(
     [0, "p1"],
     [1, "p2"],
   ] as const) {
-    const artifacts =
-      row && seriesFiles.includes("series-attempts.jsonl")
-        ? readCompletedSeriesDecisionRows(
-            path.join(runsDir, runId, "series", seriesId),
-            seriesId,
-            pid,
-          )
-        : readRunLines(runsDir, runId, "series", seriesId, `${pid}-decisions.jsonl`);
+    const artifacts = row
+      ? readCompletedSeriesDecisionRows(path.join(runsDir, runId), seriesId, pid)
+      : readRunLines(runsDir, runId, "series", seriesId, `${pid}-decisions.jsonl`);
     for (const artifact of artifacts) {
       const parsed = decisionArtifactUnion.safeParse(artifact);
       if (!parsed.success) {
@@ -402,6 +389,7 @@ export function buildSeriesGame(
       }
       decisions.push({
         side,
+        submissionId: entry.submission_id ?? null,
         turn: entry.turn,
         phase: entry.phase,
         selection: entry.selection.map(String),
@@ -433,7 +421,7 @@ export function buildSeriesGame(
   const live = !row && isRunLive(runsDir, runId);
   let snapshot: BattleSnapshot | null = null;
   if (live && !/^\|(?:win\||tie\b)/m.test(raw)) {
-    const state = new BattleState("p1");
+    const state = new PerspectiveState("p1");
     state.feed(raw.split("\n"));
     const spendFor = (side: 0 | 1) => ({
       ms: decisions.reduce(

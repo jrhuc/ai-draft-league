@@ -16,7 +16,7 @@ export function DraftPage() {
         <h1>{picks.length} picks in snake draft order</h1>
         <p className="sub">
           Hover a pick to trace its team through the draft. Click it, or linger a moment, to read
-          the model’s reasoning.{" "}
+          the reason the model stated for the pick.{" "}
           {auto > 0
             ? `${auto} pick${auto === 1 ? "" : "s"} fell to the auto-picker after the model’s choice was illegal.`
             : "Every pick was the model’s own."}

@@ -5,8 +5,12 @@ import path from "node:path";
 import { test } from "vite-plus/test";
 import { readJsonlObjects } from "../src/jsonl.js";
 import { seededRng } from "../src/random.js";
+import { readRunArtifacts } from "../src/run-artifact-store.js";
 import { loadShowdown } from "../src/showdown.js";
 import { runTeambuild } from "../src/teambuild.js";
+import { buildBriefing } from "../src/build-briefing.js";
+import { LLMEngine } from "../src/llm-engine.js";
+import { acceptedAct, request, ScriptedProvider } from "./engine-test-helpers.js";
 import type { Completion, JsonObject } from "../src/types.js";
 import { asRecord, text } from "../src/value.js";
 import {
@@ -17,6 +21,35 @@ import {
   TEAMBUILD_ROSTER,
   teambuildRequest,
 } from "./draft-test-helpers.js";
+
+test("build notes reach every pilot decision without occupying or depending on notebook state", async (t) => {
+  const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-build-briefing-"));
+  t.onTestFinished(() => fs.rmSync(logDir, { recursive: true, force: true }));
+  const team: { team_plan: string; sets: Array<{ note: string }> } = JSON.parse(GOOD_TEAM);
+  team.team_plan = "MODEL_TEAM_PLAN";
+  for (const [index, set] of team.sets.entries())
+    set.note = `MODEL_SET_NOTE_${index} ${"x".repeat(600)}`;
+  const { view } = await runTeambuild(teambuildRequest(), {
+    logDir,
+    rng: seededRng(1),
+    makeTeambuildProvider: () => scriptedProvider([JSON.stringify(team)]),
+  });
+  const briefing = buildBriefing(view);
+  assert.doesNotMatch(briefing, /"evs"|"moves"|"item"|"ability"/);
+  const provider = new ScriptedProvider([
+    '{"choices":[0],"notebook":{"team_playbook":"Pilot revision"}}',
+    '{"choices":[0]}',
+  ]);
+  const engine = new LLMEngine("p1", "scripted", { provider, briefing, decisionLog: [] });
+  assert.equal(engine.coachingNote(), "");
+  await acceptedAct(engine, request(), { povLines: ["|turn|1"] });
+  await acceptedAct(engine, request(), { povLines: ["|turn|2"] });
+  for (const call of provider.calls) {
+    assert.ok(call.system.includes(team.team_plan));
+    for (const set of team.sets) assert.ok(call.system.includes(set.note));
+  }
+  assert.equal(engine.coachingNote(), "Pilot revision");
+});
 
 test("malformed set shapes and EV values are compliance rejections before a canonical noted team", async (t) => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-teambuild-compliance-"));
@@ -56,7 +89,7 @@ test("malformed set shapes and EV values are compliance rejections before a cano
   for (const attempt of attempts.slice(1, 4)) {
     assert.match(text(attempt.error), /finite, safe, non-negative integer/);
   }
-  const stored = readJsonlObjects(path.join(logDir, "teambuild.jsonl"))[0]!;
+  const stored = asRecord(readRunArtifacts(logDir, "teambuild")[0]!.value);
   const artifact = asRecord(stored.artifact);
   const action = asRecord(artifact.action);
   assert.equal(action.packed, result.packed);
@@ -202,6 +235,7 @@ test("round-robin teambuilds receive the coach’s season so far and the rebuild
   assert.match(prompt, /Every coach builds a new six for every matchup/);
   let blank = "";
   await runTeambuild(teambuildRequest(), {
+    runDir: path.join(logDir, "second"),
     logDir,
     rng: seededRng(2),
     makeTeambuildProvider: () =>
