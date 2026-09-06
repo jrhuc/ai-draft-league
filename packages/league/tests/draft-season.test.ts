@@ -10,6 +10,7 @@ import { roundRobinWeeks } from "../src/draftleague-topology.js";
 import { readFranchiseCheckpoints, readFranchiseRosterVersion } from "../src/league-journal.js";
 import { draftLeagueConfigSchema } from "../src/league-store.js";
 import { defaultPsDir } from "../src/paths.js";
+import { monitorRun, renderMonitorReport } from "../src/monitor.js";
 import { loadSeriesRecords } from "../src/records.js";
 import { commitRunArtifact, readRunArtifacts } from "../src/run-artifact-store.js";
 import {
@@ -34,6 +35,13 @@ test("a full draft league drafts, plays weekly rounds, and crowns a champion", a
   });
 
   assert.equal(rows.length, 6 + 1, "a four-coach round robin is six series, plus a top-two final");
+  const report = monitorRun(directory);
+  assert.equal(report.completedSeries, rows.length);
+  assert.equal(report.usage.length, 4 * BOARD.picks);
+  assert.ok(report.usage.every((entry) => entry.weeks.length === 3));
+  assert.equal(report.memory.length, readFranchiseCheckpoints(directory).length);
+  assert.ok(report.decisions.every((seat) => seat.decisions > 0));
+  assert.match(renderMonitorReport(report), /## Roster usage\n\n- entrant 0 \| random \| /);
   assert.deepEqual(
     [...new Set(readFranchiseCheckpoints(directory, "week").map((row) => row.week))],
     [1, 2, 3],
@@ -281,6 +289,9 @@ test("a resumed league keeps roster version 0 and plays on from a changed roster
     results: models.map(() => []),
     reflections: models.map(() => []),
     history: [],
+    afterWeek: 0,
+    schedule: [],
+    usage: [],
     swapsAllowed: 6,
     swapsUsed: models.map(() => 0),
   };

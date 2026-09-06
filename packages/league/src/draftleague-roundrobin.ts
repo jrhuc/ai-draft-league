@@ -1,7 +1,9 @@
 import type { DraftLeagueSeriesPlan } from "./draftleague-protocol.js";
 import { playSeries } from "./draftleague-series.js";
 import { cloneMemory } from "./franchise-memory.js";
+import { type GameSummary, seriesGameSummaries } from "./game-usage.js";
 import type { DraftLeagueContext, LeagueCoordinator } from "./league-coordinator.js";
+import { type RosterUsageEntry, rosterUsage } from "./roster-usage.js";
 import { mapLimit } from "./series.js";
 import {
   describeTransactionHistory,
@@ -23,6 +25,41 @@ function seasonSchedule(context: DraftLeagueContext) {
       ? [{ index: plan.index, week: plan.round, entrants: plan.entrants }]
       : [],
   );
+}
+
+function leagueRosterUsage(
+  context: DraftLeagueContext,
+  runtime: LeagueCoordinator,
+  afterWeek: number,
+): RosterUsageEntry[] {
+  const games = new Map<number, GameSummary[]>();
+  const build = (index: number, entrant: number) =>
+    runtime.teambuilds.find((view) => view.seriesIndex === index && view.entrant === entrant);
+  for (const plan of context.plans) {
+    if (plan.stage !== "roundrobin" || plan.round > afterWeek || !plan.entrants) continue;
+    const seriesId = runtime.completed.get(plan.index)?.row.series_id;
+    if (!seriesId) continue;
+    games.set(
+      plan.index,
+      seriesGameSummaries(context.runDir, seriesId, context.board.mons, [
+        build(plan.index, plan.entrants[0]),
+        build(plan.index, plan.entrants[1]),
+      ]),
+    );
+  }
+  const versionForWeek = (week: number) =>
+    context.schedule.filter((window) => window.afterWeek < week).length;
+  return rosterUsage({
+    rosters: runtime.rosters.map((roster) => roster.map((mon) => mon.id)),
+    plans: seasonSchedule(context),
+    builds: runtime.teambuilds,
+    games,
+    throughWeek: afterWeek,
+    owned: (entrant, week, monId) =>
+      (runtime.rosterHistory[versionForWeek(week)] ?? runtime.rosters)[entrant]?.some(
+        (mon) => mon.id === monId,
+      ) ?? false,
+  });
 }
 
 function reviewSeries(
@@ -169,6 +206,9 @@ async function runTransactionWindow(
         [...seriesNotes.entries()].sort(([a], [b]) => a - b).map(([, note]) => note),
       ),
       history: describeTransactionHistory(runtime.windowArtifacts, entrants),
+      afterWeek: window.afterWeek,
+      schedule: seasonSchedule(context),
+      usage: leagueRosterUsage(context, runtime, window.afterWeek),
       swapsAllowed,
       swapsUsed: runtime.swapsUsed(),
     },

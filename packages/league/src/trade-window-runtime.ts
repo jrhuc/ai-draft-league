@@ -16,6 +16,7 @@ import {
   reasoningForModel,
 } from "./providers.js";
 import { ShowdownReference } from "./reference.js";
+import { renderRosterUsage, ROSTER_USAGE_HEADING } from "./roster-usage.js";
 import { commitRunArtifact, readRunArtifacts } from "./run-artifact-store.js";
 import {
   adoptWindowArtifact,
@@ -118,6 +119,18 @@ function seatDossier(state: TradeWindowState, entrant: number, psDir: string): s
         `${result.score[0]}-${result.score[1]}; opposing roster: ${result.opponentRoster}`,
     );
   }
+  lines.push("", TRADE_WINDOW_PROMPT_POLICY.scheduleHeading);
+  const ahead = state.schedule.filter(
+    (plan) => plan.week > state.afterWeek && plan.entrants.includes(entrant),
+  );
+  if (!ahead.length)
+    lines.push("- (the round robin is complete; playoffs seed from the standings)");
+  for (const plan of ahead) {
+    const opponent = plan.entrants[0] === entrant ? plan.entrants[1] : plan.entrants[0];
+    lines.push(
+      `- Week ${plan.week} | ${state.models[opponent]} | ${rosterLine(state.rosters[opponent]!)}`,
+    );
+  }
   lines.push("", ...renderMemory(state.memories[entrant]!), "", MEMORY_TOOL_NOTICE);
   lines.push("", TRADE_WINDOW_PROMPT_POLICY.wordsHeading);
   for (const [index, reflection] of (state.reflections[entrant] ?? []).entries()) {
@@ -127,6 +140,11 @@ function seatDossier(state: TradeWindowState, entrant: number, psDir: string): s
   for (const [index, roster] of state.rosters.entries()) {
     lines.push(`- entrant ${index} | ${state.models[index]}: ${rosterLine(roster)}`);
   }
+  lines.push(
+    "",
+    ROSTER_USAGE_HEADING,
+    ...renderRosterUsage(state.usage, (index) => `entrant ${index} | ${state.models[index]}`),
+  );
   if (state.history.length)
     lines.push("", TRADE_WINDOW_PROMPT_POLICY.historyHeading, ...state.history);
   lines.push(

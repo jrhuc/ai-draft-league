@@ -255,6 +255,9 @@ test("trade-window swaps are atomic and may upgrade a base entry to its Mega", (
     results: [[], []],
     reflections: [[], []],
     history: [],
+    afterWeek: 0,
+    schedule: [],
+    usage: [],
     swapsAllowed: 6,
     swapsUsed: [0, 0],
   };
@@ -314,6 +317,9 @@ test("coach trades validate both rosters and apply an accepted exchange atomical
     results: [[], []],
     reflections: [[], []],
     history: [],
+    afterWeek: 0,
+    schedule: [],
+    usage: [],
     swapsAllowed: 6,
     swapsUsed: [0, 0],
   } satisfies TradeWindowState;
@@ -434,6 +440,9 @@ test("coach offers resolve before free agency and replay without model calls", a
     results: [[], []],
     reflections: [[], []],
     history: [],
+    afterWeek: 0,
+    schedule: [],
+    usage: [],
     swapsAllowed: 6,
     swapsUsed: [0, 0],
   });
@@ -713,6 +722,9 @@ test("the trade window runs lowest seed first and replays completed seats", asyn
     results: [[], [], []],
     reflections: [[], [], []],
     history: [],
+    afterWeek: 0,
+    schedule: [],
+    usage: [],
     swapsAllowed: 6,
     swapsUsed: [0, 0, 0],
   });
