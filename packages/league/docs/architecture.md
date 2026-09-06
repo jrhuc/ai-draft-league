@@ -46,3 +46,10 @@ The bundle includes released rosters, builds, standings, games, decisions, trans
 - Run and series identifiers are validated before filesystem access
 - User cancellation aborts the run; provider adapters own infrastructure retries, timeouts, and error classification
 - The optional Showdown timer owns gameplay deadlines
+
+## Open work
+
+- Whole-release transactional publication: exports replace files atomically, but a release is not yet one transaction
+- Provider-round timing and retry relationships in decision-session evidence; flattened batch query results do not retain batch membership
+- A verified frame bridge between the replay animation and the decision list
+- Notebook diffs on team timelines, which need notebook text snapshots in the public artifact
