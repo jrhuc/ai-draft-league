@@ -68,9 +68,10 @@ async function completeOnce(
   request: DexToolRequest,
   tools: ToolDefinition[],
   final: boolean,
+  maxTokens: number,
 ): Promise<Completion> {
   const completeOptions: CompleteOptions = {
-    maxTokens: request.policy.maxTokens,
+    maxTokens,
     signal: request.signal,
     tools,
     toolChoice: final ? "none" : "auto",
@@ -100,14 +101,18 @@ export async function completeWithDexTools(request: DexToolRequest): Promise<Dex
     signal: request.signal,
     onLookup: request.onLookup,
   });
+  let maxTokens = request.policy.maxTokens;
   const completion = await session.completeToolLoop({
     maxToolRounds: request.policy.toolRounds,
     finalNotice: TOOL_BUDGET_NOTICE,
-    complete: (_messages, final) => completeOnce(request, tools, final),
+    complete: (_messages, final, remainingOutputTokens) => {
+      maxTokens = Math.min(request.policy.maxTokens, remainingOutputTokens);
+      return completeOnce(request, tools, final, maxTokens);
+    },
     salvageToolCall: textToolCall,
   });
   /** Some providers omit finishReason, so reported output reaching the requested cap is authoritative. */
-  const outputLimitReached = (completion.usage.output_tokens ?? 0) >= request.policy.maxTokens;
+  const outputLimitReached = completion.finalOutputTokens >= maxTokens;
   const result: DexToolCompletion = { ...completion, outputLimitReached };
   if (outputLimitReached) result.finishReason = "length";
   return result;

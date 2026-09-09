@@ -19,7 +19,7 @@ Model specifications never accept a base URL.
 
 For OpenRouter, `--nitro` changes the requested model specification. `VGC_OPENROUTER_PIN=provider_name` supplies upstream routing metadata without changing persisted run identity.
 
-Reasoning levels support `minimal`, `low`, `medium`, `high`, or `xhigh` where the provider accepts them. Provider adapters own infrastructure retries and error classification. Draft, review, transaction, and build stages retry only answers that fail their response contract.
+Reasoning levels support `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` where the model and provider accept them. Provider adapters own infrastructure retries and error classification. Draft, review, transaction, and build stages retry only answers that fail their response contract.
 
 ## Choose a run mode
 

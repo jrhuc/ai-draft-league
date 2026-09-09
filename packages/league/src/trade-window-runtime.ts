@@ -10,6 +10,7 @@ import { type MechanicsToolAvailability, mechanicsToolNotice } from "./prompt-ca
 import { renderPromptTemplate } from "./prompts.js";
 import type { ReasoningLevel } from "./providers.js";
 import {
+  assistantMessage,
   classifyProviderFailure,
   makeProvider,
   parseSpec,
@@ -325,10 +326,7 @@ async function completeTradePhase<T extends object>(request: {
       const candidate = request.parse(response || completion.reasoning || "");
       if (isRejection(candidate)) {
         error = completion.finishReason === "length" ? request.cutoff : candidate;
-        messages.push({
-          role: "assistant",
-          content: response || "[the reply contained no visible text]",
-        });
+        messages.push(assistantMessage(completion));
         messages.push({
           role: "user",
           content:

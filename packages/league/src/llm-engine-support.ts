@@ -114,6 +114,26 @@ export const REFLECTION_MAX_TOKENS = 32_768;
 export const TRANSCRIPT_CHARACTER_LIMIT = 24000;
 export const TRANSCRIPT_CLIP_MARKER = "[Earlier turns are omitted from this timeline.]";
 
+export const BATTLE_HISTORY_TOOL: ToolDefinition = {
+  name: "read_battle_history",
+  description:
+    "Read your private Showdown observations, submitted choices and stated reasons, and reviews from a game in this series, including earlier games and turns omitted from the prompt. Submitted choices may have been rejected by Showdown. For another page, repeat the same game_number and from_turn with the returned next_offset.",
+  parameters: {
+    type: "object",
+    properties: {
+      game_number: { type: "integer", minimum: 1 },
+      from_turn: {
+        type: "integer",
+        minimum: 0,
+        description: "First turn to include; defaults to 0.",
+      },
+      offset: { type: "integer", minimum: 0, description: "Character offset; defaults to 0." },
+    },
+    required: ["game_number"],
+    additionalProperties: false,
+  },
+};
+
 export const ACTION_ORDER_TOOL: ToolDefinition = {
   name: "compare_action_order",
   description:
@@ -171,12 +191,16 @@ export function decisionTools(sheets: SheetPolicy): ToolDefinition[] {
       };
     }),
     ACTION_ORDER_TOOL,
+    BATTLE_HISTORY_TOOL,
   ]);
 }
 
 export function reflectionTools(): ToolDefinition[] {
   const allowed = new Set(["lookup_species", "lookup_move", "lookup_item", "lookup_ability"]);
-  return withToolBatch(DEX_TOOLS.filter((tool) => allowed.has(tool.name)));
+  return withToolBatch([
+    ...DEX_TOOLS.filter((tool) => allowed.has(tool.name)),
+    BATTLE_HISTORY_TOOL,
+  ]);
 }
 
 export function totalTokens(usage: Record<string, number> | undefined): number {

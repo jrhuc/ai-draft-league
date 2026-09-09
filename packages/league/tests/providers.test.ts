@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import {
   ApiError,
-  assistantToolMessage,
+  assistantMessage,
   classifyProviderFailure,
   makeProvider,
   nitroSpec,
@@ -187,7 +187,7 @@ test("replay normalization preserves signed reasoning, call metadata, and its so
     ],
   };
   const original = structuredClone(completion);
-  const replay = assistantToolMessage(completion);
+  const replay = assistantMessage(completion);
   assert.deepEqual(completion, original);
   const assistant = replay.raw![0]!;
   assert.ok(assistant.role === "assistant" && Array.isArray(assistant.content));
@@ -586,7 +586,7 @@ test("the common compatible stream preserves tools, structured finish reason, an
     completion.responseMessages?.length,
     "the SDK assistant response is retained for replay",
   );
-  const replay = assistantToolMessage(completion);
+  const replay = assistantMessage(completion);
   assert.deepEqual(replay.toolCalls, completion.toolCalls);
   assert.deepEqual(replay.raw, completion.responseMessages);
   assert.deepEqual(toolResultMessage("call_1", "Protect is a status move"), {
@@ -789,11 +789,11 @@ test("OpenCode models are routed to the one API shape that serves them", async (
     requests.push({ url: requestUrl(input), body: requestJson(init) });
     return new Response('{"error":"stub"}', { status: 500 });
   };
-  for (const model of ["kimi-k3", "muse-spark-1.2-contributor", "minimax-m3"]) {
+  for (const model of ["kimi-k3", "muse-spark-1.2-contributor", "minimax-m3", "gpt-6-astra"]) {
     await assert.rejects(
       makeProvider(parseSpec(`opencode-go:${model}`), {
         apiKey: "opencode-key",
-        reasoning: "high",
+        reasoning: model === "gpt-6-astra" ? "max" : "high",
         retry: { attempts: 1 },
         fetch,
       }).complete("system", [{ role: "user", content: "hello" }]),
@@ -809,7 +809,7 @@ test("OpenCode models are routed to the one API shape that serves them", async (
   );
   assert.deepEqual(
     [...new Set(requests.map((request) => request.body.model))],
-    ["kimi-k3", "muse-spark-1.2-contributor", "minimax-m3"],
+    ["kimi-k3", "muse-spark-1.2-contributor", "minimax-m3", "gpt-6-astra"],
   );
   const kimi = requests.find((request) => request.body.model === "kimi-k3")!;
   const muse = requests.find((request) => request.body.model === "muse-spark-1.2-contributor")!;
@@ -817,4 +817,10 @@ test("OpenCode models are routed to the one API shape that serves them", async (
   assert.equal(kimi.body.reasoning_effort, "high");
   assert.deepEqual(muse.body.reasoning, { effort: "high" });
   assert.ok(minimax.body.thinking !== undefined || minimax.body.output_config !== undefined);
+  const astra = requests.find((request) => request.body.model === "gpt-6-astra")!;
+  assert.equal(asRecord(astra.body.reasoning).effort, "max");
+  assert.equal(astra.body.store, false);
+  assert.ok(
+    Array.isArray(astra.body.include) && astra.body.include.includes("reasoning.encrypted_content"),
+  );
 });

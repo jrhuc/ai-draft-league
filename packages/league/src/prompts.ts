@@ -53,6 +53,8 @@ const TOOL_RULES = {
 } satisfies Record<SheetPolicy, string>;
 
 const NOTEBOOK_RULE = `Your private notebook has team_playbook (maximum ${TEAM_PLAYBOOK_CHAR_LIMIT} characters), series_memory (maximum ${SERIES_MEMORY_CHAR_LIMIT}), and next_game_plan (maximum ${NEXT_GAME_PLAN_CHAR_LIMIT}); the combined strategic limit is ${DECISION_NOTE_LIMIT}. Include only changed fields: each supplied string replaces that field, omitted fields stay unchanged, and an empty string clears a field. The harness separately retains up to ${VERIFIED_REFERENCE_CHAR_LIMIT} characters of mechanics returned by actual species, move, item, and ability lookups. You cannot write that verified reference memory directly.`;
+const HISTORY_RULE =
+  "Each decision starts with the supplied state, timeline, and notebook; previous reasoning is not replayed. read_battle_history retrieves your private observations, submitted choices and stated reasons, and reviews from any game in this series. Your notes and build briefing are context you may revise as play develops.";
 const NOTEBOOK_OBJECT =
   '{"team_playbook":"transferable facts about piloting your team","series_memory":"facts and tendencies specific to this opponent","next_game_plan":"immediate plan and contingencies for the next game"}';
 
@@ -67,6 +69,7 @@ export function battleSystemPrompt(options: { sheets: SheetPolicy; timed: boolea
     SHEET_RULES[options.sheets],
     TOOL_RULES[options.sheets],
     NOTEBOOK_RULE,
+    HISTORY_RULE,
     `Independent tool queries can share one response or one batch_tools call, up to ${MAX_TOOL_QUERIES_PER_ROUND} queries total per round.`,
     ...(options.timed ? [TIMER_RULE] : []),
     RETURN_JSON,
@@ -78,19 +81,15 @@ export const SYSTEM = battleSystemPrompt({ sheets: "open", timed: false });
 export const TIMED_SYSTEM = battleSystemPrompt({ sheets: "open", timed: true });
 
 const REFLECTION_EVIDENCE =
-  "Use only the supplied private battle evidence and authoritative outcome. Do not invent hidden information.";
-const REFLECTION_PREVIEW_PLAN =
-  "Assess the team-preview plan separately from piloting: whether the four brought, and which Mega Stone holder (if any) you evolved, suited this opponent.";
-const REFLECTION_MEMORY_RULE =
-  "Rewrite all three notebook fields. Keep transferable own-team lessons in team_playbook, current-opponent evidence in series_memory, and the immediate next-game plan in next_game_plan. Omit current HP, active positions, turn recaps, and repeated roster facts.";
-const REFLECTION_RESPONSE = `Respond with exactly one JSON object: {"summary":"why the game was won or lost","adjustment":"what to do better next game","notebook":${NOTEBOOK_OBJECT}}.`;
+  "Use the supplied private battle evidence and authoritative outcome. read_battle_history retrieves earlier games and your stated reasons for submitted choices in this series. Do not invent hidden information.";
+const REFLECTION_MEMORY_RULE = `${NOTEBOOK_RULE} Update your notebook where useful: team_playbook carries own-team context, series_memory carries current-opponent context, and next_game_plan carries your immediate plan. An empty notebook object keeps all three fields. Decide what is worth retaining.`;
+const REFLECTION_RESPONSE = `Respond with exactly one JSON object: {"summary":"your assessment of the game","adjustment":"what, if anything, to keep or change next game","notebook":${NOTEBOOK_OBJECT}}.`;
 
 export const REFLECTION_SYSTEM = [
   "You are reviewing one completed game in a best-of-three VGC series.",
   FORMAT_AUTHORITY_NOTICE,
   REFLECTION_EVIDENCE,
-  "Identify the main reason for the result and one concrete adjustment for the next game.",
-  REFLECTION_PREVIEW_PLAN,
+  "Assess the game and what, if anything, to keep or change for the next game.",
   REFLECTION_MEMORY_RULE,
   REFLECTION_RESPONSE,
 ].join("\n");
@@ -115,7 +114,8 @@ export const SERIES_REFLECTION_SYSTEM = [
   FORMAT_AUTHORITY_NOTICE,
   REFLECTION_EVIDENCE,
   SERIES_REFLECTION_RESULT,
-  "Rewrite team_playbook with only transferable lessons about using this fixed team. Return empty series_memory and next_game_plan fields; do not assume an interaction or damage result against this opponent will repeat against a different team.",
+  NOTEBOOK_RULE,
+  "Update team_playbook where useful for using this fixed team. Both opponent-specific fields clear when you advance to a different opponent.",
   SERIES_REFLECTION_RESPONSE,
 ].join("\n");
 
@@ -134,8 +134,8 @@ export const CLOSED_SERIES_REFLECTION_SYSTEM = [
   FORMAT_AUTHORITY_NOTICE,
   REFLECTION_EVIDENCE,
   "Identify the main reason for the game and series result, including whether your between-game adjustments helped or backfired.",
-  REFLECTION_PREVIEW_PLAN,
-  "Rewrite the private notebook for a possible future rematch: put own-team lessons in team_playbook, durable opponent tendencies and reveals in series_memory, and leave next_game_plan empty. Omit current HP, active positions, turn recaps, and repeated roster facts.",
+  REFLECTION_MEMORY_RULE,
+  "The series is complete; leave next_game_plan empty.",
   `Respond with exactly one JSON object: {"summary":"why the game and series were won or lost","adjustment":"what you would change against this opponent in a future series","notebook":${NOTEBOOK_OBJECT}}.`,
 ].join("\n");
 
@@ -144,9 +144,9 @@ export const DRAFT_SERIES_REFLECTION_SYSTEM = [
   FORMAT_AUTHORITY_NOTICE,
   REFLECTION_EVIDENCE,
   "Identify the main reason for the game and series result, including whether your between-game adjustments helped or backfired.",
-  REFLECTION_PREVIEW_PLAN,
-  "Also assess the preparation for this series: how well the six you registered and their sets fit this opponent, what worked, and whether the full roster offered a materially better alternative.",
-  "Rewrite the private notebook for a possible future rematch: put own-team and preparation lessons in team_playbook, durable opponent tendencies and revealed facts in series_memory, and leave next_game_plan empty. Omit current HP, active positions, turn recaps, and repeated roster facts.",
+  "Your review may include the preparation and play of this series. It will be available to your franchise manager.",
+  REFLECTION_MEMORY_RULE,
+  "The series is complete; leave next_game_plan empty.",
   `Respond with exactly one JSON object: {"summary":"why the game and series were won or lost","adjustment":"what you would change against this opponent in a future series","notebook":${NOTEBOOK_OBJECT}}.`,
 ].join("\n");
 

@@ -25,9 +25,13 @@ Runs created before `league.sqlite` are neither resumable nor exportable until m
 
 For each game, `MatchRunner` commits Showdown's result, canonical log digest, and both prepared adaptation tasks before calling either coach. Each adaptation is independently durable. A restart completes only missing adaptations and never replays a resolved game. If the external result projection was interrupted, it is rebuilt from the completed database series. The next game starts only after both adaptations are complete.
 
+An unresolved game restarts from its seed with fresh decisions. Completed provider/tool rounds within an unfinished decision are not checkpointed. The operator context stream keeps earlier attempts, while the player's history tool selects observations after the latest start of each game so a restarted game cannot retrieve its abandoned future.
+
 `PerspectiveState` consumes only the requesting side's Showdown protocol stream. It is the authorized model projection, never outcome authority and never a second simulator.
 
 All model stages use `DecisionSession`. It owns conversation history, cancellation, tool execution, and aggregate execution ceilings. Untimed play has no wall-clock deadline; the optional Showdown clock remains the only gameplay deadline.
+
+Each battle decision starts a fresh provider conversation. The prompt includes current visible state, a bounded timeline, and model-authored memory; `read_battle_history` retrieves the seat's original observations, submitted choices and stated reasons, and reviews across the series. Provider-native reasoning and tool metadata survive tool rounds and answer-repair retries within a decision. Total tool-loop usage is recorded separately from the final generation's output count.
 
 `showdown.lock.json` names the full official commit. Setup verifies the installation before a run starts.
 

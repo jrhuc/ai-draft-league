@@ -88,7 +88,14 @@ test("readable decisions, technical traces, and post-game reflections stay separ
   assert.match(provider.calls[1]!.system, /what, if anything, to keep or change/);
   assert.deepEqual(
     provider.calls[1]!.options.tools?.map((tool) => tool.name),
-    ["lookup_species", "lookup_move", "lookup_item", "lookup_ability", "batch_tools"],
+    [
+      "lookup_species",
+      "lookup_move",
+      "lookup_item",
+      "lookup_ability",
+      "read_battle_history",
+      "batch_tools",
+    ],
   );
   assert.match(
     String(provider.calls[1]!.messages[0]!.content),
@@ -334,7 +341,7 @@ test("an advancing tournament entrant writes notes for the next round", async ()
   assert.equal(decisions[0]!.kind, "game_reflection");
   assert.equal(decisions[0]!.series_over, true);
   assert.equal(decisions[0]!.fallback, false);
-  assert.match(provider.calls[0]!.system, /transferable lessons about using this fixed team/);
+  assert.match(provider.calls[0]!.system, /Both opponent-specific fields clear when you advance/);
   assert.match(
     String(provider.calls[0]!.messages[0]!.content),
     /advance to the next round with the same team/,

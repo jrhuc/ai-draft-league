@@ -1,4 +1,4 @@
-import { assistantToolMessage, toolResultMessage, uniqueToolCalls } from "./providers.js";
+import { assistantMessage, toolResultMessage, uniqueToolCalls } from "./providers.js";
 import { ToolRound, type ToolQueryResult } from "./tool-batch.js";
 import type { Completion, JsonObject, ProviderMessage, ToolDefinition } from "./types.js";
 
@@ -17,6 +17,7 @@ export const LIBERAL_DECISION_BUDGET: DecisionBudget = {
 };
 
 export interface DecisionSessionResult extends Completion {
+  finalOutputTokens: number;
   providerCalls: number;
   toolRounds: number;
   toolQueries: ToolQueryResult[];
@@ -103,6 +104,7 @@ export class DecisionSession {
         const result: DecisionSessionResult = {
           ...completion,
           usage,
+          finalOutputTokens: generated,
           providerCalls: this.providerCalls,
           toolRounds: this.toolRounds,
           toolQueries: [...this.toolQueries],
@@ -111,7 +113,7 @@ export class DecisionSession {
         if (combinedReasoning) result.reasoning = combinedReasoning;
         return result;
       }
-      this.messages.push(assistantToolMessage(completion));
+      this.messages.push(assistantMessage(completion));
       const round = this.toolRound();
       for (const call of uniqueToolCalls(completion.toolCalls)) {
         const result = round.run(call.name, call.arguments, call.inputError);

@@ -83,12 +83,12 @@ const seriesRecordSchema = z.object({
   engine_seeds: z.partialRecord(z.enum(["p1", "p2"]), z.number().int()),
   timer_scale: z.union([z.literal("off"), z.number().positive()]).optional(),
   closed_sheets: z.literal(true).optional(),
-  reasoning: z.enum(["minimal", "low", "medium", "high", "xhigh"]).nullable(),
+  reasoning: z.enum(["minimal", "low", "medium", "high", "xhigh", "max"]).nullable(),
   sampling: z.literal("provider-default").optional(),
   reasoning_by_player: z
     .strictObject({
-      p1: z.enum(["minimal", "low", "medium", "high", "xhigh"]).nullable(),
-      p2: z.enum(["minimal", "low", "medium", "high", "xhigh"]).nullable(),
+      p1: z.enum(["minimal", "low", "medium", "high", "xhigh", "max"]).nullable(),
+      p2: z.enum(["minimal", "low", "medium", "high", "xhigh", "max"]).nullable(),
     })
     .optional(),
   decision_stats: decisionStatsSchema,

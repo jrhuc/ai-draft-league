@@ -5,6 +5,7 @@ import { completeWithDexTools, type DexToolRequest } from "./dex-lookups.js";
 import { MEMORY_TOOL_NOTICE, memoryPageTool, renderMemory } from "./franchise-memory.js";
 import { defaultPsDir } from "./paths.js";
 import {
+  assistantMessage,
   classifyProviderFailure,
   makeProvider,
   parseSpec,
@@ -181,12 +182,11 @@ async function runLeagueTeamBuild(
         }
       }
       if (error) {
-        messages.push({
-          role: "assistant",
-          content: truncated
-            ? "[reply cut off before the team was finished]"
-            : response || "[the reply contained no visible text]",
-        });
+        messages.push(
+          truncated
+            ? { role: "assistant", content: "[reply cut off before the team was finished]" }
+            : assistantMessage(completion),
+        );
         messages.push({
           role: "user",
           content: truncated

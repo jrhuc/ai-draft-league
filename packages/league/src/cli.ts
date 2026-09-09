@@ -183,7 +183,7 @@ function optionalInteger(name: string, value: string | undefined): number | unde
 function reasoningLevel(value: string | undefined): ReasoningLevel | undefined {
   if (value === undefined) return undefined;
   if (!isReasoningLevel(value))
-    throw new Error("--reasoning must be one of: minimal, low, medium, high, xhigh");
+    throw new Error("--reasoning must be one of: minimal, low, medium, high, xhigh, max");
   return value;
 }
 

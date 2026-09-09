@@ -13,6 +13,8 @@ The matchup builder receives the current roster, opponent roster, format, privat
 
 The battle pilot receives that team, visible battle state, the plan, its private memory, and legal actions. It returns battle choices and may replace the three strategic memory fields: a team playbook that survives the series, series memory about the current opponent, and a next-game plan. Both opponent fields clear when a tournament entrant advances. The harness separately keeps the results of the pilot's own species, move, item, and ability lookups as verified reference memory. Over-budget replacements are rejected rather than clipped. Battle memory cannot change season memory or the roster, but the final notebook may enter later playoff context.
 
+Franchise pages are available to the manager and builder; the pilot receives the builder's team plan and set notes. Pilot conversations reset each decision, with the notebook carried forward. `read_battle_history` gives the pilot and post-game reviewer access to earlier private game evidence, including turns omitted from the compact timeline. Reflections can update individual notebook fields or keep them unchanged. Weekly review tools page longer series logs rather than discard their endings.
+
 Pokémon Showdown resolves each game. Completed results feed the next scheduled weekly review, which can update franchise memory.
 
 ## Change a roster

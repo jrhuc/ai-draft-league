@@ -20,7 +20,7 @@ export function uniqueToolCalls(calls: ToolCall[]): ToolCall[] {
   return [...byId.values()];
 }
 
-export function assistantToolMessage(completion: Completion): ProviderMessage {
+export function assistantMessage(completion: Completion): ProviderMessage {
   const message: ProviderMessage = {
     role: "assistant",
     content: completion.text || null,
@@ -73,15 +73,15 @@ export function convertMessages(messages: ProviderMessage[]): ModelMessage[] {
           },
         ],
       });
-    } else if (message.role === "assistant" && message.toolCalls?.length) {
-      for (const call of message.toolCalls) callNames.set(call.id, call.name);
+    } else if (message.role === "assistant") {
+      for (const call of message.toolCalls ?? []) callNames.set(call.id, call.name);
       if (message.raw?.length) {
         converted.push(...message.raw);
         continue;
       }
       const content: Extract<ModelMessage, { role: "assistant" }>["content"] = [];
       if (message.content) content.push({ type: "text", text: message.content });
-      for (const call of message.toolCalls) {
+      for (const call of message.toolCalls ?? []) {
         const part: ToolCallPart = {
           type: "tool-call",
           toolCallId: call.id,

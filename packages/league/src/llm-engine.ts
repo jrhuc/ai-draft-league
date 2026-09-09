@@ -29,6 +29,7 @@ import {
   ASSUMED_TOKENS_PER_SECOND,
   BANK_HEALTHY_SECONDS,
   BANK_LOW_SECONDS,
+  BATTLE_HISTORY_TOOL,
   DECISION_MAX_TOOL_ROUNDS,
   DECISION_PARSE_ATTEMPTS,
   DECISION_PREFILL,
@@ -67,7 +68,7 @@ import {
   TOURNAMENT_RETROSPECTIVE_SYSTEM,
 } from "./prompts.js";
 import type { ReasoningLevel } from "./providers.js";
-import { classifyProviderFailure, makeProvider, parseSpec } from "./providers.js";
+import { assistantMessage, classifyProviderFailure, makeProvider, parseSpec } from "./providers.js";
 import { ShowdownReference } from "./reference.js";
 import { PerspectiveState } from "./perspective-state.js";
 import { ToolRound, type ToolQueryResult } from "./tool-batch.js";
@@ -353,6 +354,7 @@ export class LLMEngine extends BaseEngine {
   }
 
   private lookupReferenceTool(name: string, args: JsonObject): string {
+    if (name === BATTLE_HISTORY_TOOL.name) return this.context.readHistory(args);
     const result = this.referenceLookup(name, args);
     this.memory = rememberVerifiedReference(this.memory, name, args, result);
     return result;
@@ -400,7 +402,11 @@ export class LLMEngine extends BaseEngine {
     const remainingMs = () =>
       deadline === undefined ? Number.POSITIVE_INFINITY : deadline - performance.now();
     const tokenFloor =
-      this.options.reasoning === "high" ? 8192 : this.options.reasoning === "xhigh" ? 16_384 : 0;
+      this.options.reasoning === "high"
+        ? 8192
+        : this.options.reasoning === "xhigh" || this.options.reasoning === "max"
+          ? 16_384
+          : 0;
     const pace = () => this.observedTokensPerSecond ?? ASSUMED_TOKENS_PER_SECOND;
     let maxTokens = Math.max(tokenFloor, decisionTokenBudget(remainingMs(), pace()));
     let truncatedBudget = 0;
@@ -443,6 +449,7 @@ export class LLMEngine extends BaseEngine {
       prompt += `\n\nThe simulator rejected the previous joint action: ${context.error}`;
 
     let rawResponse = "";
+    let previousResponse: ProviderMessage | undefined;
     const usage: Record<string, number> = {};
     let parsed: ParsedDecision | undefined;
     let error = "no choices found";
@@ -531,13 +538,11 @@ export class LLMEngine extends BaseEngine {
       if (parseFailures && (rawResponse || truncatedBudget || earlyLengthStop)) {
         /** Replaying a cut-off ramble verbatim spends the retry's input budget on reasoning that cannot
          * contain the missing ending. Summarise it instead and ask for the answer first. */
-        messages.push({
-          role: "assistant",
-          content:
-            truncatedBudget || earlyLengthStop
-              ? "[response cut off before a choice was submitted]"
-              : rawResponse,
-        });
+        messages.push(
+          truncatedBudget || earlyLengthStop
+            ? { role: "assistant", content: "[response cut off before a choice was submitted]" }
+            : previousResponse!,
+        );
         messages.push({
           role: "user",
           content: truncatedBudget
@@ -605,11 +610,12 @@ export class LLMEngine extends BaseEngine {
       if (completion.reasoning) reasoningParts.push(completion.reasoning);
       /** Reported output reaching this call's requested cap is budget exhaustion even when a provider
        * omits finishReason. A length stop below that cap is still truncation, but not budget exhaustion. */
-      const outputTokens = Math.trunc(completion.usage.output_tokens ?? 0);
+      const outputTokens = completion.finalOutputTokens;
       if (outputTokens >= maxTokens) truncatedBudget = maxTokens;
       else if (completion.finishReason === "length")
         earlyLengthStop = { outputTokens, requestedMaxTokens: maxTokens };
       rawResponse = completion.text;
+      previousResponse = assistantMessage(completion);
       /** Some reasoning models via gateways finish with every token in the reasoning channel and an
        * empty text field; the decision they wrote is salvaged rather than bought again on a retry. */
       if (!rawResponse && !completion.toolCalls.length && completion.reasoning) {
@@ -766,6 +772,10 @@ export class LLMEngine extends BaseEngine {
     }
     const action = request.teamPreview ? `team ${parts.join("")}` : parts.join(", ");
     this.transcript.rememberTurnDetail(`Decision: ${action}`);
+    if (evidence.memoryUpdate.error)
+      this.transcript.rememberTurnDetail(
+        `Notebook update rejected: ${evidence.memoryUpdate.error}`,
+      );
     const phase = decisionPhase(request);
     const requestDigest = this.requestDigest(request, menus, phase);
     const selection = choices.map(

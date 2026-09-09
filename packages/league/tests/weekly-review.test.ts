@@ -393,8 +393,8 @@ test("a coach reads a series through its tools, replaces its notebook, and the r
   const { runDir, state } = writeRun();
   t.onTestFinished(() => fs.rmSync(runDir, { recursive: true, force: true }));
   const script = scripted([
-    toolCall("read_public_series", { series_index: 0 }),
-    toolCall("read_own_series", { series_index: 0 }),
+    { ...toolCall("read_public_series", { series_index: 0 }), usage: { output_tokens: 20_000 } },
+    { ...toolCall("read_own_series", { series_index: 0 }), usage: { output_tokens: 20_000 } },
     reply('{"notebook":"Garchomp leads work; keep it.","reasoning":"Won cleanly."}'),
   ]);
   const reviews = await runWeeklyReview(state, {
@@ -428,6 +428,49 @@ test("a coach reads a series through its tools, replaces its notebook, and the r
     { runDir, psDir: defaultPsDir(), makeReviewProvider: () => scripted([]).provider },
   );
   assert.deepEqual(replayed, reviews, "a completed review replays from its rows");
+});
+
+test("weekly review can retrieve the ending of a long series with an offset", async (t) => {
+  const { runDir, state } = writeRun();
+  t.onTestFinished(() => fs.rmSync(runDir, { recursive: true, force: true }));
+  const rows = Array.from({ length: 35 }, (_, index) =>
+    JSON.stringify({
+      kind: "decision",
+      attempt_id: "canonical",
+      game_number: 1,
+      turn: index + 2,
+      action: "move 1",
+      rationale: "e".repeat(1000),
+    }),
+  );
+  rows.push(
+    JSON.stringify({
+      kind: "game_reflection",
+      attempt_id: "canonical",
+      game_number: 1,
+      result: "won",
+      summary: "The recoverable ending.",
+    }),
+  );
+  fs.appendFileSync(
+    path.join(runDir, "series", "abc123", "p1-decisions.jsonl"),
+    `${rows.join("\n")}\n`,
+  );
+  const script = scripted([
+    toolCall("read_own_series", { series_index: 0 }),
+    toolCall("read_own_series", { series_index: 0, offset: 24_000 }),
+    reply("{}"),
+  ]);
+  await runWeeklyReview(state, {
+    runDir,
+    psDir: defaultPsDir(),
+    makeReviewProvider: () => script.provider,
+  });
+  assert.match(
+    text(script.calls[1]!.messages.at(-1)?.content),
+    /repeat this query with offset 24000/,
+  );
+  assert.match(text(script.calls[2]!.messages.at(-1)?.content), /The recoverable ending/);
 });
 
 test("a rejected reply is re-prompted with the reason and the attempt is logged", async (t) => {

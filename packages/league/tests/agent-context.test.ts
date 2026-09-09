@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 
 import { AgentContextStream } from "../src/agent-context.js";
+import { LLMEngineContext } from "../src/llm-engine-context.js";
 
 test("seat context pages from the last returned event without jumping to the stream head", () => {
   const stream = new AgentContextStream();
@@ -131,4 +132,28 @@ test("context cursors are validated and bounded", () => {
   assert.throws(() => stream.read({ limit: Number.NaN }), /invalid context limit/);
   assert.equal(stream.read({ limit: 0 }).events.length, 1);
   assert.deepEqual(stream.read({ before: "ctx-00000001" }).events, []);
+});
+
+test("player history is fully pageable and discards superseded game observations", () => {
+  const context = new LLMEngineContext(
+    "p1",
+    [],
+    () => ({ gameId: "g1", seriesId: "s1", gameNumber: 1, turn: 1 }),
+    () => {},
+  );
+  context.append("episode", { game_number: 1, event: "game_begin" });
+  context.observe(["future information from interrupted attempt"]);
+  context.append("episode", { game_number: 1, event: "game_begin" });
+  const lines = Array.from(
+    { length: 300 },
+    (_, index) => `|message|event-${index}: ${"e".repeat(100)}`,
+  );
+  context.observe(lines);
+  const first = JSON.parse(context.readHistory({ game_number: 1 }));
+  const next = JSON.parse(context.readHistory({ game_number: 1, offset: first.next_offset }));
+  assert.equal(first.text.length, 24_000);
+  assert.equal(next.next_offset, null);
+  assert.equal(first.text + next.text, lines.join("\n"));
+  assert.equal(JSON.parse(context.readHistory({ game_number: 2 })).text, "");
+  assert.throws(() => context.readHistory({ game_number: 1, offset: -1 }));
 });

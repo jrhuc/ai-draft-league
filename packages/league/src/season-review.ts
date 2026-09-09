@@ -10,6 +10,7 @@ import { commitRunArtifact, readRunArtifacts } from "./run-artifact-store.js";
 import { FORMAT_AUTHORITY_NOTICE, MANAGER_CHARGE, renderPromptTemplate } from "./prompts.js";
 import type { ModelReasoningConfig, ReasoningLevel } from "./providers.js";
 import {
+  assistantMessage,
   classifyProviderFailure,
   makeProvider,
   parseSpec,
@@ -343,10 +344,7 @@ export async function runSeasonReview(
                   ? "the reply was cut off before completing the review"
                   : candidate.error;
               lastError = error;
-              messages.push({
-                role: "assistant",
-                content: response || "[the reply contained no visible text]",
-              });
+              messages.push(assistantMessage(completion));
               messages.push({
                 role: "user",
                 content:

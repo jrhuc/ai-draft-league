@@ -98,6 +98,38 @@ test("fractional provider cost survives usage accumulation across tool rounds", 
   assert.equal(completion.usage.input_tokens, 300);
 });
 
+test("tool-loop totals do not mark a complete final answer as truncated", async () => {
+  const calls: { messages: ProviderMessage[]; options?: CompleteOptions }[] = [];
+  const completion = await completeWithDexTools({
+    provider: scriptedProvider(
+      [
+        reply({
+          toolCalls: [{ id: "a", name: "lookup_species", arguments: { name: "Gengar" } }],
+          usage: { output_tokens: 3000 },
+        }),
+        reply({
+          toolCalls: [{ id: "b", name: "lookup_move", arguments: { name: "Protect" } }],
+          usage: { output_tokens: 3000 },
+        }),
+        reply({
+          text: '{"notebook":"Keep this complete review."}',
+          finishReason: "stop",
+          usage: { output_tokens: 100 },
+        }),
+      ],
+      calls,
+    ),
+    system: "sys",
+    messages: [{ role: "user", content: "review" }],
+    spec: "test:model",
+    reference: new ShowdownReference("gen9championsvgc2026regmc"),
+    policy: POLICY,
+  });
+  assert.equal(completion.usage.output_tokens, 6100);
+  assert.equal(completion.outputLimitReached, false);
+  assert.equal(completion.finishReason, "stop");
+});
+
 test("exhausting the tool budget is announced before the forced-text round", async () => {
   const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const calls: { messages: ProviderMessage[]; options?: CompleteOptions }[] = [];

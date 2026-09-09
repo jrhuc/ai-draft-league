@@ -18,7 +18,7 @@ import { z } from "zod";
 
 import { providerOption, type ProviderOption } from "./provider-registry.js";
 import { convertMessages } from "./provider-messages.js";
-export { assistantToolMessage, toolResultMessage, uniqueToolCalls } from "./provider-messages.js";
+export { assistantMessage, toolResultMessage, uniqueToolCalls } from "./provider-messages.js";
 import { redactSecrets } from "./sanitize.js";
 import type {
   CompleteOptions,
@@ -54,7 +54,7 @@ const gatewayMetadataSchema = z.object({
   provider: z.string().optional().catch(undefined),
   cost: z.number().optional().catch(undefined),
 });
-export type ReasoningLevel = "minimal" | "low" | "medium" | "high" | "xhigh";
+export type ReasoningLevel = "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 export function isReasoningLevel(value: JsonValue | undefined): value is ReasoningLevel {
   return (
@@ -62,7 +62,8 @@ export function isReasoningLevel(value: JsonValue | undefined): value is Reasoni
     value === "low" ||
     value === "medium" ||
     value === "high" ||
-    value === "xhigh"
+    value === "xhigh" ||
+    value === "max"
   );
 }
 
@@ -119,6 +120,12 @@ export function validateReasoning(spec: ProviderSpec, level?: string): void {
   if (!level) return;
   if (!isReasoningLevel(level)) throw new Error(`invalid reasoning level ${JSON.stringify(level)}`);
   if (spec.provider === "random") return;
+  if (
+    level === "max" &&
+    (spec.provider === "opencode-go" || spec.provider === "opencode-zen") &&
+    opencodeApi(spec.provider, spec.model) === "google"
+  )
+    throw new Error(`${spec.provider}:${spec.model} does not support max reasoning`);
   if (
     spec.provider !== "openrouter" &&
     spec.provider !== "opencode-go" &&
@@ -518,17 +525,6 @@ class SdkProvider implements Provider {
     return apiKey;
   }
 
-  agentModel() {
-    const apiKey = this.key();
-    const secrets = this.secrets(apiKey);
-    const redact = (cause: unknown) => this.redactedError(cause, secrets);
-    return {
-      model: this.languageModel(apiKey),
-      reasoning: this.reasoning,
-      redact,
-    };
-  }
-
   private cachedModel: { apiKey: string; model: LanguageModel } | undefined;
 
   private languageModel(apiKey: string): LanguageModel {
@@ -699,6 +695,15 @@ class SdkProvider implements Provider {
         this.api === "responses"
           ? { openai: { store: false, include: ["reasoning.encrypted_content"] } }
           : undefined;
+      const maxReasoning: Parameters<typeof streamText>[0]["providerOptions"] =
+        this.reasoning !== "max"
+          ? undefined
+          : this.api === "responses"
+            ? { openai: { ...statelessResponses?.openai, reasoningEffort: "max" } }
+            : this.api === "messages"
+              ? { anthropic: { effort: "max", thinking: { type: "adaptive" } } }
+              : { [this.spec.provider]: { reasoningEffort: "max" } };
+      const reasoning = this.reasoning === "max" ? undefined : this.reasoning;
       const reasoningOptions = options.reasoningMaxTokens
         ? {
             providerOptions: {
@@ -706,11 +711,13 @@ class SdkProvider implements Provider {
               [this.spec.provider]: { reasoning: { max_tokens: options.reasoningMaxTokens } },
             },
           }
-        : statelessResponses
-          ? { providerOptions: statelessResponses, reasoning: this.reasoning }
-          : this.reasoning
-            ? { reasoning: this.reasoning }
-            : {};
+        : maxReasoning
+          ? { providerOptions: maxReasoning }
+          : statelessResponses
+            ? { providerOptions: statelessResponses, reasoning }
+            : reasoning
+              ? { reasoning }
+              : {};
       /** Anthropic-style APIs reject prefill when extended thinking is on, so reasoning disables it. */
       const prefill =
         options.prefillResponse &&

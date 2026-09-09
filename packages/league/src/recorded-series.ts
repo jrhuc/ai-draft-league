@@ -102,7 +102,7 @@ const pidOptionalDigestSchema = z.strictObject({
   p1: sha256Schema.nullable(),
   p2: sha256Schema.nullable(),
 });
-const reasoningLevelSchema = z.enum(["minimal", "low", "medium", "high", "xhigh"]);
+const reasoningLevelSchema = z.enum(["minimal", "low", "medium", "high", "xhigh", "max"]);
 export const recordedSeriesIdentitySchema = z.strictObject({
   players: pidTextSchema,
   team_ids: pidTextSchema,

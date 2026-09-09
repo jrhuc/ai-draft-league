@@ -23,6 +23,7 @@ import { readFranchiseCheckpoints, storeFranchiseCheckpoint } from "./league-jou
 import { FORMAT_AUTHORITY_NOTICE, MANAGER_CHARGE, renderPromptTemplate } from "./prompts.js";
 import type { ModelReasoningConfig, ReasoningLevel } from "./providers.js";
 import {
+  assistantMessage,
   classifyProviderFailure,
   makeProvider,
   parseSpec,
@@ -37,7 +38,7 @@ import {
 import type { JsonObject, Provider, ProviderMessage } from "./types.js";
 import { clip, count, fileSlug, isText, replyJsonObject, text } from "./value.js";
 
-const MEMORY_NOTICE = `- Your memory is yours to organise: a notebook page that every later prompt of yours shows in full, plus up to ${MEMORY_LIMITS.pages - 1} named pages that later prompts list by name and that you or your later selves fetch with read_memory_page. Each page holds at most ${MEMORY_LIMITS.pageChars} characters, ${MEMORY_LIMITS.totalChars} in all. It is the only state that carries from week to week; nothing else you write here is kept.`;
+const MEMORY_NOTICE = `- Your memory is yours to organise: a notebook page shown to later managers and team builders, plus up to ${MEMORY_LIMITS.pages - 1} named pages they can fetch with read_memory_page. Each page holds at most ${MEMORY_LIMITS.pageChars} characters, ${MEMORY_LIMITS.totalChars} in all. The builder passes its team plan and set notes to the battle pilot. Completed series and earlier memory checkpoints remain available through the league tools; your review reasoning is recorded as evidence, but is not included in later prompts.`;
 
 const LEAGUE_TOOLS_NOTICE =
   "You have the Showdown dex tools and five league tools: read_public_series returns the spectator log of any completed series, read_own_series returns your own turn-by-turn choices with their stated reasons and your end-of-game notes, read_own_build returns the six you registered for a series, your plan, and what you brought and Mega Evolved in each game, read_memory_page returns one of your pages in full, and read_memory_history returns your memory as it stood after an earlier review or reconciliation.";
@@ -54,7 +55,7 @@ const WEEKLY_REVIEW_PROMPT_POLICY = {
     "- Every coach builds a new six from its roster for every matchup. Sets, items, moves and spreads you saw this week were built for that one series and may not return.",
     "- Rosters change only in transaction windows. {{windowNotice}}",
     "",
-    `${LEAGUE_TOOLS_NOTICE} Use them to check anything you intend to write down.`,
+    LEAGUE_TOOLS_NOTICE,
   ],
   reconcileSystemTemplate: [
     "You are {{model}}, manager of a franchise in a Pokémon VGC draft league played in the format {{format}}.",
@@ -319,15 +320,20 @@ export function renderWeeklyReviewPrompt(state: WeeklyReviewState, entrant: numb
   return [systemPrompt(state, entrant), "", userPrompt(state, entrant)].join("\n");
 }
 
-function boundedToolOutput(text: string): string {
+function boundedToolOutput(text: string, offset = 0): string {
   const limit = WEEKLY_REVIEW_PROMPT_POLICY.toolOutputLimit;
-  return text.length > limit ? `${text.slice(0, limit)}\n[truncated at ${limit} characters]` : text;
+  const end = offset + limit;
+  const page = text.slice(offset, end);
+  return text.length > end
+    ? `${page}\n[More available: repeat this query with offset ${end}.]`
+    : page;
 }
 
 export function narratePublicSeries(
   runDir: string,
   series: WeeklyReviewSeries,
   models: readonly string[],
+  offset = 0,
 ): string {
   const [a, b] = series.entrants;
   const names = { P1: models[a]!, P2: models[b]! } satisfies Record<"P1" | "P2", string>;
@@ -338,7 +344,7 @@ export function narratePublicSeries(
     runDir,
     series.seriesId,
   ).entries()) {
-    const log = new BattleLog(1_000);
+    const log = new BattleLog(Number.POSITIVE_INFINITY);
     log.feed(gameLines);
     lines.push("", `Game ${gameIndex + 1}:`);
     for (const entry of log.entries) {
@@ -350,13 +356,14 @@ export function narratePublicSeries(
       );
     }
   }
-  return boundedToolOutput(lines.join("\n"));
+  return boundedToolOutput(lines.join("\n"), offset);
 }
 
 export function narrateOwnSeries(
   runDir: string,
   series: WeeklyReviewSeries,
   entrant: number,
+  offset = 0,
 ): string {
   const pid = series.entrants[0] === entrant ? "p1" : "p2";
   const rows = readCompletedSeriesDecisionRows(runDir, series.seriesId, pid);
@@ -383,13 +390,14 @@ export function narrateOwnSeries(
     }
   }
   if (series.context[entrant]) lines.push("", `Series note: ${series.context[entrant]}`);
-  return boundedToolOutput(lines.join("\n"));
+  return boundedToolOutput(lines.join("\n"), offset);
 }
 
 export function describeOwnBuild(
   series: WeeklyReviewSeries,
   entrant: number,
   usage: readonly GameSummary[] = [],
+  offset = 0,
 ): string {
   const build = series.builds[entrant];
   if (!build) return `No stored build for series ${series.index}.`;
@@ -420,7 +428,7 @@ export function describeOwnBuild(
     const mega = megaId ? (displayName.get(megaId) ?? megaId) : "none";
     lines.push(`Game ${index + 1}: brought ${brought}; Mega Evolved ${mega}`);
   }
-  return boundedToolOutput(lines.join("\n"));
+  return boundedToolOutput(lines.join("\n"), offset);
 }
 
 function reviewTools(
@@ -429,46 +437,59 @@ function reviewTools(
   options: RunWeeklyReviewOptions,
 ): ExtraTool[] {
   const completed = new Map(state.series.map((series) => [series.index, series] as const));
-  const seriesIndex = z.object({ series_index: z.number().int().nonnegative() });
+  const seriesIndex = z.object({
+    series_index: z.number().int().nonnegative(),
+    offset: z.number().int().nonnegative().default(0),
+  });
   const seriesParameters: JsonObject = {
     type: "object",
-    properties: { series_index: { type: "integer", minimum: 0 } },
+    properties: {
+      series_index: { type: "integer", minimum: 0 },
+      offset: {
+        type: "integer",
+        minimum: 0,
+        description: "Character offset for a continuation page; defaults to 0.",
+      },
+    },
     required: ["series_index"],
     additionalProperties: false,
   };
   const seriesTool = (
     name: string,
     description: string,
-    run: (seriesIndex: number) => string,
+    run: (seriesIndex: number, offset: number) => string,
   ): ExtraTool => ({
     definition: { name, description, parameters: seriesParameters },
-    run: (args) => run(seriesIndex.parse(args).series_index),
+    run: (args) => {
+      const query = seriesIndex.parse(args);
+      return run(query.series_index, query.offset);
+    },
   });
   return [
     seriesTool(
       "read_public_series",
       "The spectator log of one completed series this season: registrations, leads, every turn, and the result.",
-      (index) => {
+      (index, offset) => {
         const series = completed.get(index);
         return series
-          ? narratePublicSeries(options.runDir, series, state.models)
+          ? narratePublicSeries(options.runDir, series, state.models, offset)
           : `Series ${index} has not been completed yet or does not exist.`;
       },
     ),
     seriesTool(
       "read_own_series",
       "Your own choices in one of your completed series, with the reasons you gave at the time and your end-of-game notes.",
-      (index) => {
+      (index, offset) => {
         const series = completed.get(index);
         return series?.entrants.includes(entrant)
-          ? narrateOwnSeries(options.runDir, series, entrant)
+          ? narrateOwnSeries(options.runDir, series, entrant, offset)
           : `Series ${index} is not one of your completed series.`;
       },
     ),
     seriesTool(
       "read_own_build",
       "The six you registered for one of your completed series and the plan you wrote for it.",
-      (index) => {
+      (index, offset) => {
         const series = completed.get(index);
         if (!series?.entrants.includes(entrant)) {
           return `Series ${index} is not one of your completed series.`;
@@ -479,6 +500,7 @@ function reviewTools(
           series,
           entrant,
           seriesGameSummaries(options.runDir, series.seriesId, state.board.mons, [first, second]),
+          offset,
         );
       },
     ),
@@ -656,10 +678,7 @@ export async function runWeeklyReview(
               : parseWeeklyReviewResult(response, current);
             if ("error" in candidate) {
               error = candidate.error;
-              messages.push({
-                role: "assistant",
-                content: response || "[the reply contained no visible text]",
-              });
+              messages.push(assistantMessage(completion));
               messages.push({
                 role: "user",
                 content: truncated

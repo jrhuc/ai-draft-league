@@ -28,6 +28,7 @@ import { defaultPsDir } from "./paths.js";
 import { commitRunArtifact, readRunArtifacts } from "./run-artifact-store.js";
 import type { ModelReasoningConfig, ReasoningLevel } from "./providers.js";
 import {
+  assistantMessage,
   classifyProviderFailure,
   makeProvider,
   parseSpec,
@@ -257,10 +258,7 @@ async function nameFranchises(
             const parsed = parseFranchiseName(response);
             if (isRejection(parsed)) {
               error = parsed;
-              messages.push({
-                role: "assistant",
-                content: response || "[the reply contained no visible text]",
-              });
+              messages.push(assistantMessage(completion));
               messages.push({
                 role: "user",
                 content: FRANCHISE_NAME_PROMPT_POLICY.rejectionTemplate.replace(
@@ -442,13 +440,11 @@ export async function runDraft(
               if (attempt < DRAFT_PROMPT_POLICY.attempts)
                 await providerRetryDelay(attempt, options);
             } else {
-              messages.push({
-                role: "assistant",
-                content:
-                  truncated || stoppedEarly
-                    ? "[reply cut off before a pick]"
-                    : response || "[the reply contained no visible text]",
-              });
+              messages.push(
+                truncated || stoppedEarly
+                  ? { role: "assistant", content: "[reply cut off before a pick]" }
+                  : assistantMessage(completion),
+              );
               messages.push({
                 role: "user",
                 content: truncated

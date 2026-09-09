@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import { TEAM_PLAYBOOK_CHAR_LIMIT } from "../src/battle-memory.js";
 import { LLMEngine } from "../src/llm-engine.js";
+import { convertMessages } from "../src/provider-messages.js";
 import type { JsonObject } from "../src/types.js";
 import { asRecord, asRecords, text } from "../src/value.js";
 import {
@@ -150,4 +151,73 @@ test("oversized reflection memory receives one bounded repair attempt", async ()
     String(provider.calls[1]!.messages.at(-1)?.content),
     /Compress the three notebook fields/,
   );
+});
+
+test("a legality repair preserves the provider's reasoning parts", async () => {
+  const responseMessages = [
+    {
+      role: "assistant" as const,
+      content: [
+        {
+          type: "reasoning" as const,
+          text: "",
+          providerOptions: { openai: { encryptedContent: "opaque-plan" } },
+        },
+        { type: "text" as const, text: '{"choices":[999]}' },
+      ],
+    },
+  ];
+  const provider = new ScriptedProvider([
+    { text: '{"choices":[999]}', usage: { output_tokens: 100 }, toolCalls: [], responseMessages },
+    decision([1]),
+  ]);
+  const engine = new LLMEngine("p1", "scripted", { provider });
+  assert.equal(await acceptedAct(engine, request(), { povLines: ["|turn|1"] }), "move 2");
+  assert.deepEqual(convertMessages(provider.calls[1]!.messages)[1], responseMessages[0]);
+});
+
+test("history survives game boundaries and reflection recovery keeps its series identity", async () => {
+  const first = new LLMEngine("p1", "scripted", {
+    provider: new ScriptedProvider([decision([1], "Preserve this reason.")]),
+  });
+  first.beginGame({ gameId: "g1", gameNumber: 1, seriesId: "s1" });
+  await acceptedAct(first, request(), { povLines: ["|turn|1", "|-ability|p2a: Rival|Levitate"] });
+  const task = first.prepareGameEnd({
+    gameNumber: 1,
+    seriesOver: false,
+    outcome: { winner: "rival", won: false },
+  });
+  const logs: JsonObject[] = [];
+  const provider = new ScriptedProvider([
+    {
+      text: "",
+      usage: {},
+      toolCalls: [
+        { id: "history-review", name: "read_battle_history", arguments: { game_number: 1 } },
+      ],
+    },
+    JSON.stringify({ summary: "Review", adjustment: "", notebook: {} }),
+    {
+      text: "",
+      usage: {},
+      toolCalls: [
+        { id: "history-play", name: "read_battle_history", arguments: { game_number: 1 } },
+      ],
+    },
+    decision([0]),
+  ]);
+  const resumed = new LLMEngine("p1", "scripted", {
+    provider,
+    initialContext: first.readContext().events,
+    contextLog: logs,
+  });
+  await resumed.completeGameEnd(task);
+  assert.equal(logs.at(-1)!.series_id, "s1");
+  resumed.beginGame({ gameId: "g2", gameNumber: 2, seriesId: "s1" });
+  await acceptedAct(resumed, request(), { povLines: ["|turn|1"] });
+  for (const index of [1, 3]) {
+    const result = text(provider.calls[index]!.messages.at(-1)?.content);
+    assert.match(result, /Levitate/);
+    assert.match(result, /Preserve this reason/);
+  }
 });

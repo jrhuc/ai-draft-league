@@ -13,7 +13,7 @@ import {
   extractTournamentRetrospective,
   type Reflection,
 } from "./llm-engine-support.js";
-import { classifyProviderFailure } from "./providers.js";
+import { assistantMessage, classifyProviderFailure } from "./providers.js";
 import type { Completion, JsonObject, Pid, ProviderMessage, ToolDefinition } from "./types.js";
 import { count } from "./value.js";
 import type { ToolQueryResult } from "./tool-batch.js";
@@ -113,7 +113,7 @@ export async function requestReflection(input: {
   try {
     for (let attempt = 0; attempt < 2 && !parsed; attempt += 1) {
       const completion = await session.completeToolLoop({
-        maxToolRounds: 2,
+        maxToolRounds: 8,
         finalNotice:
           "Tool budget for this review is exhausted; reply now with exactly the required JSON object.",
         complete: (currentMessages, finalRound) => input.complete(currentMessages, finalRound),
@@ -145,10 +145,7 @@ export async function requestReflection(input: {
           rejectedMemoryUpdate = memoryUpdateTelemetry(caught.update);
         }
         if (attempt === 0) {
-          messages.push({
-            role: "assistant",
-            content: rawResponse || "[the reply contained no visible text]",
-          });
+          messages.push(assistantMessage(completion));
           messages.push({
             role: "user",
             content:

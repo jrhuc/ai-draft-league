@@ -729,8 +729,7 @@ test("a draft roster switches only the series-final reflection to the prep-revie
     draftRoster: roster,
   }).endGame(finalGame);
   assert.equal(draftFinal.calls[0]!.system, DRAFT_SERIES_REFLECTION_SYSTEM);
-  assert.match(draftFinal.calls[0]!.system, /six you registered/);
-  assert.match(draftFinal.calls[0]!.system, /full roster/);
+  assert.match(draftFinal.calls[0]!.system, /available to your franchise manager/);
   assert.match(draftFinal.calls[0]!.messages[0]!.content ?? "", /left behind: Corviknight/);
 
   const draftMidSeries = new ScriptedProvider([reflection]);

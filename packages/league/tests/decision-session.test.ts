@@ -48,6 +48,8 @@ test("a decision session shares one finite budget across tool and repair loops",
   assert.deepEqual(finals, [false, false, true]);
   assert.equal(first.providerCalls, 3);
   assert.equal(first.toolRounds, 2);
+  assert.equal(first.usage.output_tokens, 3);
+  assert.equal(first.finalOutputTokens, 1);
   assert.equal(lookups, 2);
 
   await session.completeToolLoop({ maxToolRounds: 20, finalNotice: "commit", complete });
