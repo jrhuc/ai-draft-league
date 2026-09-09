@@ -2,7 +2,7 @@
 
 ## Format authority
 
-The primary league format is the pinned Pokémon Champions Reg M-B mod, not a Scarlet/Violet VGC format. Before changing rules, prompts, legality, or data projections, inspect the revision in `showdown.lock.json`, especially `pokemon-showdown/config/formats.ts` and `pokemon-showdown/data/mods/champions/`.
+The primary league format is the pinned Pokémon Champions Reg M-C mod, not a Scarlet/Violet VGC format. Before changing rules, prompts, legality, or data projections, inspect the revision in `showdown.lock.json`, especially `pokemon-showdown/config/formats.ts` and `pokemon-showdown/data/mods/champions/`.
 
 Pokémon Showdown is the authority for team legality, accepted battle actions, randomness, transitions, timers, and results. Keep the pin at a full official commit and keep installation checks intact.
 

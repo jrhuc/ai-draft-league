@@ -49,7 +49,7 @@ test("a full draft league drafts, plays weekly rounds, and crowns a champion", a
   );
   for (const row of rows) {
     assert.equal(row.mode, "draft");
-    assert.equal(row.board, "regmb-202607");
+    assert.equal(row.board, "regmc-202609");
     assert.deepEqual(row.transactions, [
       { after_week: 1, trades_allowed: 2 },
       { after_week: 2, trades_allowed: 2 },

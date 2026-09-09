@@ -129,7 +129,7 @@ function narrate(text: string, teams: [Team, Team]): string {
   return text
     .replace(/\bP([12])\b/g, (_, n: string) => teams[Number(n) - 1]!.name)
     .replace(
-      /\b([A-Z][a-z]+(?:-[A-Za-z]+)*)-Mega(?:-([XY]))?\b/g,
+      /\b([A-Z][a-z]+(?:-[A-Za-z]+)*)-Mega(?:-([XYZ]))?\b/g,
       (_, base: string, form?: string) => `Mega ${base}${form ? ` ${form}` : ""}`,
     );
 }

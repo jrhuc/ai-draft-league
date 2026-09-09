@@ -261,16 +261,22 @@ test("the system prompt lists the Champions item list, which Gen 9 knowledge get
     }),
   });
 
-  for (const item of ["Leftovers", "Life Orb", "Focus Sash", "Light Clay"]) {
+  for (const item of [
+    "Leftovers",
+    "Life Orb",
+    "Focus Sash",
+    "Light Clay",
+    "Rocky Helmet",
+    "Air Balloon",
+    "Eject Button",
+    "Grassy Seed",
+    "Psychic Seed",
+    "Terrain Extender",
+    "Leek",
+  ]) {
     assert.ok(system.includes(item), `${item} is legal here and must be offered`);
   }
-  for (const absent of [
-    "Assault Vest",
-    "Rocky Helmet",
-    "Safety Goggles",
-    "Booster Energy",
-    "Eviolite",
-  ]) {
+  for (const absent of ["Assault Vest", "Safety Goggles", "Booster Energy", "Eviolite"]) {
     assert.ok(
       !system.includes(absent),
       `${absent} does not exist in Champions and must not be offered`,

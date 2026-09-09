@@ -8,7 +8,7 @@ import { type MechanicsToolAvailability, mechanicsToolNotice } from "./prompt-ca
 import { FORMAT_AUTHORITY_NOTICE, MANAGER_CHARGE, renderPromptTemplate } from "./prompts.js";
 import { loadShowdown } from "./showdown.js";
 import { normalizeStageEvidence, type StageEvidence } from "./stage-evidence.js";
-import { fileSlug, isRecord, isText, replyJsonObject } from "./value.js";
+import { fileSlug, isText, replyJsonObject } from "./value.js";
 import type { BoardInfo, DraftBoardMonView } from "./views.js";
 
 const BOARD_SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -22,7 +22,7 @@ export const draftBoardMonSchema = z.object({
   base: z.string().min(1),
   types: z.array(z.string()),
   cost: z.number().int().min(1),
-  origin: z.enum(["base", "regmb"]),
+  origin: z.enum(["base", "regmb", "regmc"]),
   anchor: z.string().optional(),
   usage: z.string().optional(),
   listed: z.number().optional(),
@@ -218,8 +218,8 @@ export function loadBoard(
     }
     if (mon.item) {
       const item = dex.items.get(mon.item);
-      const target = isRecord(item.megaStone) ? item.megaStone[species.name] : item.megaStone;
-      if (!item.exists || target !== mon.forme) {
+      const target = item.megaStone?.[species.name];
+      if (!item.exists || item.isNonstandard || target !== mon.forme) {
         throw new Error(
           `board entry ${JSON.stringify(mon.id)} in ${file} has an invalid Mega forme or stone`,
         );
@@ -228,6 +228,7 @@ export function loadBoard(
     const battleForme = dex.species.get(mon.forme ?? mon.species);
     if (
       !battleForme.exists ||
+      battleForme.isNonstandard ||
       mon.types.length !== battleForme.types.length ||
       mon.types.some((type, index) => type !== battleForme.types[index])
     ) {

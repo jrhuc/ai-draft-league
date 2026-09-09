@@ -417,18 +417,21 @@ export class ShowdownReference {
           "powder move: no effect on Grass types, Overcoat, or Safety Goggles holders (including redirection)",
         );
       if (move.flags.sound) details.push("sound move: blocked by Soundproof, bypasses Substitute");
-      const description = cleanDescription(move.desc || move.shortDesc);
+      const text = this.dex.text.get(move);
+      const description = cleanDescription(text.desc || text.shortDesc);
       if (description) details.push(description);
       lines.push(`- Move ${move.name}: ${details.join("; ")}`);
     }
     for (const name of items) {
       const item = this.dex.items.get(name);
-      const description = item.exists ? cleanDescription(item.desc || item.shortDesc) : "";
+      const text = this.dex.text.get(item);
+      const description = item.exists ? cleanDescription(text.desc || text.shortDesc) : "";
       if (description) lines.push(`- Item ${item.name}: ${description}`);
     }
     for (const name of abilities) {
       const ability = this.dex.abilities.get(name);
-      const description = ability.exists ? cleanDescription(ability.desc || ability.shortDesc) : "";
+      const text = this.dex.text.get(ability);
+      const description = ability.exists ? cleanDescription(text.desc || text.shortDesc) : "";
       if (description) lines.push(`- Ability ${ability.name}: ${description}`);
     }
     for (const name of natures) {
@@ -497,8 +500,8 @@ export class ShowdownReference {
     const candidates = [
       name.replace(/-Male$/i, ""),
       name.replace(/-Female$/i, "-F"),
-      name.replace(/^Mega (.+?)(?: ([XY]))?$/i, (_, base, xy) =>
-        xy ? `${base}-Mega-${xy}` : `${base}-Mega`,
+      name.replace(/^Mega (.+?)(?: ([XYZ]))?$/i, (_, base, suffix) =>
+        suffix ? `${base}-Mega-${suffix}` : `${base}-Mega`,
       ),
       name.replace(/^Paldean (.+?)(?: (Aqua|Blaze|Combat))?$/i, (_, base, breed) =>
         breed ? `${base}-Paldea-${breed}` : `${base}-Paldea`,

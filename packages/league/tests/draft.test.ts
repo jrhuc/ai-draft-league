@@ -30,7 +30,7 @@ import {
   type TradeWindowState,
 } from "../src/trade-window.js";
 import type { Completion, JsonObject, ProviderMessage } from "../src/types.js";
-import { asRecord, isCount, isText } from "../src/value.js";
+import { asRecord } from "../src/value.js";
 import { accepted, rejection } from "./asserts.js";
 import {
   assertFormatAuthority,
@@ -41,7 +41,7 @@ import {
 } from "./draft-test-helpers.js";
 
 test("the bundled board fits eight coaches", () => {
-  assert.equal(BOARD.format, "gen9championsvgc2026regmbbo3");
+  assert.equal(BOARD.format, "gen9championsvgc2026regmcbo3");
   assert.equal(BOARD.budget, 100);
   assert.equal(BOARD.picks, 10);
   assert.equal(new Set(BOARD.mons.map((entry) => entry.id)).size, BOARD.mons.length);
@@ -66,30 +66,17 @@ test("mega entries register the base forme and lock their stone", () => {
     );
     const stone = dex.items.get(entry.item!);
     assert.ok(stone.exists, `${entry.id} names a real stone`);
-    const megaStone = stone.megaStone;
-    const target = isText(megaStone) ? megaStone : megaStone?.[registered.name];
-    assert.equal(target, entry.forme, `${entry.id} stone must produce its forme`);
+    assert.equal(
+      stone.megaStone?.[registered.name],
+      entry.forme,
+      `${entry.id} stone must produce its forme`,
+    );
   }
   const zard = mon("charizard-mega-y");
   assert.equal(zard.species, "Charizard");
   assert.equal(zard.item, "Charizardite Y");
   assert.equal(mon("charizard").item, undefined, "the base entry may never hold a stone");
   assert.equal(mon("charizard").base, zard.base, "base and mega share a species-clause key");
-});
-
-test("re-priced entries keep the prior listing and the usage that moved it", () => {
-  const adjusted = BOARD.mons.filter((entry) => entry.usage);
-  assert.ok(
-    adjusted.length > 40,
-    "the usage pass should have moved a meaningful share of the board",
-  );
-  for (const entry of adjusted) {
-    assert.ok(isCount(entry.listed) && entry.listed !== entry.cost);
-    assert.match(entry.usage!, /^#\d+ at [\d.]+%$/);
-  }
-  assert.equal(mon("farigiraf").cost, 18, "a Reg M-B staple should not stay at its Reg M-A price");
-  assert.equal(mon("toxapex").listed, 3, "Toxapex was exploitably cheap on the prior board");
-  assert.ok(mon("toxapex").cost > 3);
 });
 
 test("a board id must match its filename", (t) => {
@@ -228,9 +215,12 @@ test("the round robin pairs every coach once and plays one match a week", () => 
 
 test("trade-window swaps are atomic and may upgrade a base entry to its Mega", () => {
   const tyranitar = mon("tyranitar");
-  const megaTyranitar = mon("tyranitar-mega");
   const mrRime = mon("mr-rime");
   const absol = mon("absol");
+  const megaTyranitar = {
+    ...mon("tyranitar-mega"),
+    cost: tyranitar.cost + mrRime.cost - absol.cost,
+  };
   const excluded = new Set([tyranitar.base, mrRime.base, absol.base]);
   const support: DraftBoardMon[] = [];
   for (const candidate of [...BOARD.mons].sort((a, b) => a.cost - b.cost)) {
@@ -242,7 +232,11 @@ test("trade-window swaps are atomic and may upgrade a base entry to its Mega", (
   const roster = [tyranitar, mrRime, ...support];
   const spent = roster.reduce((sum, entry) => sum + entry.cost, 0);
   const state: TradeWindowState = {
-    board: { ...BOARD, budget: spent },
+    board: {
+      ...BOARD,
+      budget: spent,
+      mons: BOARD.mons.map((entry) => (entry.id === megaTyranitar.id ? megaTyranitar : entry)),
+    },
     models: ["openrouter:opus", "random"],
     teamNames: ["Opus", "Rival"],
     rosters: [roster, []],

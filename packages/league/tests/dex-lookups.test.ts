@@ -37,7 +37,7 @@ function scriptedProvider(
 }
 
 test("tool calls written as text are executed instead of failing the attempt", async () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const calls: { messages: ProviderMessage[]; options?: CompleteOptions }[] = [];
   const provider = scriptedProvider(
     [
@@ -67,7 +67,7 @@ test("tool calls written as text are executed instead of failing the attempt", a
 });
 
 test("fractional provider cost survives usage accumulation across tool rounds", async () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const calls: { messages: ProviderMessage[]; options?: CompleteOptions }[] = [];
   const toolCall = { id: "call-1", name: "lookup_species", arguments: { name: "Gengar" } };
   const provider = scriptedProvider(
@@ -99,7 +99,7 @@ test("fractional provider cost survives usage accumulation across tool rounds", 
 });
 
 test("exhausting the tool budget is announced before the forced-text round", async () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const calls: { messages: ProviderMessage[]; options?: CompleteOptions }[] = [];
   const toolCall = { id: "call-1", name: "lookup_species", arguments: { name: "Gengar" } };
   const provider = scriptedProvider(
@@ -127,8 +127,8 @@ test("exhausting the tool budget is announced before the forced-text round", asy
 });
 
 test("search_board is offered and dispatched only when a board search is supplied", async () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
-  const boardSearch = createBoardSearch(loadBoard("regmb-202607"), defaultPsDir());
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
+  const boardSearch = createBoardSearch(loadBoard("regmc-202609"), defaultPsDir());
   const toolCall = {
     id: "call-1",
     name: "search_board",
@@ -215,7 +215,7 @@ test("search_board is offered and dispatched only when a board search is supplie
 });
 
 test("unknown text tools are refused while final-round tool calls are ignored", async () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const calls: { messages: ProviderMessage[]; options?: CompleteOptions }[] = [];
   const lookups: { name: string; result: string }[] = [];
   const completion = await completeWithDexTools({
@@ -246,7 +246,7 @@ test("unknown text tools are refused while final-round tool calls are ignored", 
 });
 
 test("extra tools are offered beside the dex tools and dispatched to their own runner", async () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const calls: { messages: ProviderMessage[]; options?: CompleteOptions }[] = [];
   const provider = scriptedProvider(
     [
@@ -283,7 +283,7 @@ test("extra tools are offered beside the dex tools and dispatched to their own r
 });
 
 test("reasoning from every tool round survives into the final completion", async () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const calls: { messages: ProviderMessage[]; options?: CompleteOptions }[] = [];
   const provider = scriptedProvider(
     [

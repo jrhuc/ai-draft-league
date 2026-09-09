@@ -160,7 +160,7 @@ export class LLMEngine extends BaseEngine {
     }
     this.reference =
       options.reference ??
-      new ShowdownReference(options.format ?? "gen9championsvgc2026regmbbo3", options.psDir);
+      new ShowdownReference(options.format ?? "gen9championsvgc2026regmcbo3", options.psDir);
     this.memory = createBattleMemory(
       options.initialNotebook,
       `${this.reference.format}@${this.reference.revision}`,

@@ -104,7 +104,7 @@ test("duplicate IDs and malformed calls get one consistent wire reply and no uni
   const trace: JsonObject[] = [];
   await completeWithDexTools({
     provider: makeProvider(parseSpec("prime:tool-model"), { apiKey: "test-key", fetch }),
-    reference: new ShowdownReference("gen9championsvgc2026regmb"),
+    reference: new ShowdownReference("gen9championsvgc2026regmc"),
     policy: { maxTokens: 4096, toolRounds: 2 },
     spec: "prime:tool-model",
     system: "Build",
@@ -263,7 +263,7 @@ test("compatible batches replay each tool result and contiguous reasoning throug
       { ...base, choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] },
     ]);
   };
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const completion = await completeWithDexTools({
     provider: makeProvider(parseSpec("prime:tool-model"), { apiKey: "test-key", fetch }),
     reference,

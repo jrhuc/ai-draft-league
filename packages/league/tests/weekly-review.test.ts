@@ -24,7 +24,7 @@ import {
 import { storeCompletedSeriesFixture } from "./series-store-fixture.js";
 
 const USAGE = { input_tokens: 10, output_tokens: 5 };
-const BOARD = loadBoard("regmb-202607");
+const BOARD = loadBoard("regmc-202609");
 
 function reply(text: string): Completion {
   return { text, finishReason: "stop", usage: USAGE, toolCalls: [] };

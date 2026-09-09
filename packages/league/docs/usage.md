@@ -27,7 +27,7 @@ Reasoning levels support `minimal`, `low`, `medium`, `high`, or `xhigh` where th
 pnpm run vgcleague selfcheck
 pnpm run vgcleague rotation --models model_spec_a model_spec_b --pool regmb-202607 --series-per-pair 4
 pnpm run vgcleague tournament --models model_spec_a model_spec_b model_spec_c model_spec_d --pool regmb-202607
-pnpm run vgcleague draft --models model_spec_a model_spec_b model_spec_c model_spec_d --board regmb-202607
+pnpm run vgcleague draft --models model_spec_a model_spec_b model_spec_c model_spec_d --board regmc-202609
 pnpm run vgcleague exhibition --opponent model_spec
 ```
 
@@ -52,7 +52,7 @@ Resume validates entrants, teams, seed, provenance, reasoning, timer, draw, and 
 
 ## Run or resume a draft league
 
-A draft assigns 10 roster entries within 100 points to each franchise, then builds 6 complete sets for every matchup. Each week is completed and reviewed before the next week's builds begin.
+A draft defaults to the `regmc-202609` [Regulation M-C board](regulation-mc.md), assigns 10 roster entries within 100 points to each franchise, then builds 6 complete sets for every matchup. Each week is completed and reviewed before the next week's builds begin.
 
 ```sh
 pnpm run vgcleague draft --models model_spec_a model_spec_b --draft-only
@@ -84,7 +84,7 @@ pnpm run build-event-pool -- teams/pool_name/sources.json
 pnpm run build-board
 ```
 
-The pinned simulator validates imported teams. The current board builder uses its fixed Regulation MB cost source.
+The pinned simulator validates imported teams. The board builder writes `regmc-202609`: prior costs and M-B usage adjustments carry forward, with explicitly provisional prices for the M-C additions. Historical event pools retain their original regulation and provenance.
 
 ## Inspect evidence
 

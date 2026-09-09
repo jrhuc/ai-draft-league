@@ -4,11 +4,13 @@ The `league` package runs model-managed competitive Pokémon draft leagues and r
 
 The pinned [Pokémon Showdown](https://pokemonshowdown.com/) simulator decides legality, randomness, battle transitions, and results. The harness records every decision and can replay a season, matchday, battle, or counterfactual fork from saved evidence.
 
+New drafts use [Champions Regulation M-C](docs/regulation-mc.md) and the `regmc-202609` board, including the six newly available Mega Evolutions and the expanded item roster.
+
 The sibling [`apps/site`](../../apps/site) spectator app consumes validated public season bundles.
 
 ## Run locally
 
-Install Node.js 24.18.1 or newer in the 24.x line and pnpm 11.22.0. Model specifications use one of these forms:
+Install Node.js 24.21.0 or newer in the 24.x line and pnpm 12.3.4. Model specifications use one of these forms:
 
 - `openrouter:model_id`
 - `prime:model_id`

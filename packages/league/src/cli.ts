@@ -319,7 +319,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       allowPositionals: true,
       options: {
         ...EXPERIMENT_CLI_OPTIONS,
-        board: { type: "string", default: "regmb-202607" },
+        board: { type: "string", default: "regmc-202609" },
         "through-week": { type: "string" },
         resume: { type: "string" },
         "closed-sheets": { type: "boolean", default: false },

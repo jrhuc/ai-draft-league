@@ -7,7 +7,7 @@ import type { Completion, JsonObject, Provider, ProviderMessage } from "../src/t
 import type { TradeWindowState } from "../src/trade-window.js";
 import { legalTeamResponse } from "./fixtures/team-build.js";
 
-export const BOARD = loadBoard("regmb-202607");
+export const BOARD = loadBoard("regmc-202609");
 export const mon = (id: string): DraftBoardMon => {
   const found = BOARD.mons.find((candidate) => candidate.id === id);
   assert.ok(found, `board is missing ${id}`);

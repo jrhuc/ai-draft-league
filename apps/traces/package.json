@@ -8,6 +8,6 @@
     "deploy": "cp _headers dist/_headers && wrangler deploy"
   },
   "devDependencies": {
-    "wrangler": "4.127.0"
+    "wrangler": "4.128.0"
   }
 }

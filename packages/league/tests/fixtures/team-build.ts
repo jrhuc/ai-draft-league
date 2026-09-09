@@ -68,7 +68,7 @@ export const LEGAL_TEAM_IDS = [
   "whimsicott",
   "charizard-mega-y",
 ];
-const BOARD = loadBoard("regmb-202607");
+const BOARD = loadBoard("regmc-202609");
 const CANDIDATES = LEGAL_TEAM_IDS.map((id) => {
   const candidate = BOARD.mons.find((entry) => entry.id === id);
   if (!candidate) throw new Error(`board is missing ${id}`);

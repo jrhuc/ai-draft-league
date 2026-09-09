@@ -72,6 +72,199 @@ const REGMB_ADDITIONS: Array<{ name: string; cost: number; anchor: string }> = [
   { name: "Qwilfish", cost: 2, anchor: "unranked; cf. Sandaconda (2)" },
 ];
 
+const REGMC_ADDITIONS: Array<{ name: string; cost: number; anchor: string }> = [
+  {
+    name: "Rillaboom",
+    cost: 19,
+    anchor:
+      "Provisional: terrain control, Fake Out, Grassy Glide and pivoting; cf. Incineroar (18), without Assault Vest",
+  },
+  {
+    name: "Indeedee-F",
+    cost: 18,
+    anchor: "Provisional: Psychic Surge and Follow Me; cf. Farigiraf (18)",
+  },
+  {
+    name: "Salamence-Mega",
+    cost: 20,
+    anchor:
+      "Provisional: Intimidate into Aerilate, mixed offense, bulk and Tailwind; premium flexible Mega, cf. Mega Charizard Y (20)",
+  },
+  {
+    name: "Garchomp-Mega-Z",
+    cost: 16,
+    anchor:
+      "Provisional: 151 Speed, special coverage and Levitate; two below Garchomp (18) for losing item flexibility and Ground STAB",
+  },
+  {
+    name: "Baxcalibur-Mega",
+    cost: 15,
+    anchor:
+      "Provisional: 175 Attack and increased bulk, but unchanged 87 Speed and no Clear Amulet; cf. Baxcalibur (13)",
+  },
+  {
+    name: "Lucario-Mega-Z",
+    cost: 17,
+    anchor:
+      "Provisional: 164 Special Attack, 151 Speed and setup; Aura Guard halves contact damage, but Ground and special Fire remain threats",
+  },
+  {
+    name: "Baxcalibur",
+    cost: 13,
+    anchor:
+      "Provisional: strong Ice offense and setup with Clear Amulet access; below Dragonite (14), with fixed defensive typing",
+  },
+  {
+    name: "Absol-Mega-Z",
+    cost: 15,
+    anchor:
+      "Provisional: 151 Speed, Sharpness dual STAB and Fake Out immunity; fragile and unable to hold Focus Sash or Clear Amulet",
+  },
+  {
+    name: "Golisopod-Mega",
+    cost: 14,
+    anchor:
+      "Provisional: Bug/Steel bulk, Tough Claws, priority and Wide Guard; cf. Mega Scizor (13), with Fire and Psychic Terrain limitations",
+  },
+  {
+    name: "Indeedee",
+    cost: 12,
+    anchor: "Provisional: Psychic Surge and Expanding Force; cf. Farigiraf (18) without Follow Me",
+  },
+  {
+    name: "Salamence",
+    cost: 11,
+    anchor: "Provisional: Intimidate and Tailwind; cf. Dragonite (14)",
+  },
+  {
+    name: "Persian-Alola",
+    cost: 11,
+    anchor:
+      "Provisional: fast Fake Out, Parting Shot and Fur Coat; cf. Raichu (10) and Sableye (11)",
+  },
+  {
+    name: "Pawmot",
+    cost: 11,
+    anchor:
+      "Provisional: Fake Out, Nuzzle, Encore, Revival Blessing and offense; cf. Raichu (10), with limited defensive staying power",
+  },
+  {
+    name: "Cinderace",
+    cost: 8,
+    anchor:
+      "Provisional: fast Libero offense and pivoting; situational Court Change, below Meowscarada (12)",
+  },
+  {
+    name: "Arboliva",
+    cost: 6,
+    anchor:
+      "Provisional: slow special offense, Strength Sap, Pollen Puff and terrain interaction; needs support, below Vileplume (8)",
+  },
+  {
+    name: "Perrserker",
+    cost: 5,
+    anchor:
+      "Provisional: Fake Out and Steely Spirit support for a Steel partner; limited speed and special bulk, cf. Scrafty (3)",
+  },
+  {
+    name: "Toxtricity",
+    cost: 6,
+    anchor:
+      "Provisional: Punk Rock spread offense and Shift Gear; awkward speed, bulk and ally positioning",
+  },
+  {
+    name: "Toxtricity-Low-Key",
+    cost: 6,
+    anchor: "Provisional: Punk Rock spread offense; cf. Toxtricity (6)",
+  },
+  {
+    name: "Golisopod",
+    cost: 6,
+    anchor:
+      "Provisional: First Impression and Wide Guard, limited by Emergency Exit; cf. Araquanid",
+  },
+  {
+    name: "Inteleon",
+    cost: 5,
+    anchor: "Provisional: fast special Water offense and Icy Wind, but fragile; cf. Greninja (7)",
+  },
+  {
+    name: "Pincurchin",
+    cost: 4,
+    anchor:
+      "Provisional: Electric Surge and slow terrain denial; limited independent value, cf. Arboliva (6)",
+  },
+  {
+    name: "Sirfetch’d",
+    cost: 6,
+    anchor:
+      "Provisional: Scrappy, Leek crit pressure and First Impression; slow, specialized Fighting offense",
+  },
+  {
+    name: "Mabosstiff",
+    cost: 4,
+    anchor: "Provisional: Intimidate or Stakeout, limited speed; cf. Scrafty",
+  },
+  {
+    name: "Persian",
+    cost: 5,
+    anchor:
+      "Provisional: fast Fake Out and utility; cf. Persian-Alola (11) without Fur Coat or Parting Shot",
+  },
+  {
+    name: "Mr. Mime",
+    cost: 6,
+    anchor:
+      "Provisional: Fake Out, Wide Guard, Trick Room and coverage; useful support despite low HP",
+  },
+  {
+    name: "Squawkabilly",
+    cost: 4,
+    anchor: "Provisional: Intimidate, Parting Shot and Tailwind; cf. Staraptor (10)",
+  },
+  {
+    name: "Squawkabilly-Blue",
+    cost: 4,
+    anchor: "Provisional: same battle options as Squawkabilly (4)",
+  },
+  {
+    name: "Squawkabilly-Yellow",
+    cost: 4,
+    anchor: "Provisional: Sheer Force replaces Guts; cf. Squawkabilly (4)",
+  },
+  {
+    name: "Squawkabilly-White",
+    cost: 4,
+    anchor: "Provisional: same battle options as Squawkabilly-Yellow (4)",
+  },
+  {
+    name: "Thievul",
+    cost: 3,
+    anchor: "Provisional: Stakeout or Unburden and Parting Shot; cf. Persian (5)",
+  },
+  {
+    name: "Grapploct",
+    cost: 2,
+    anchor: "Provisional: slow Coaching and Octolock niche; below Passimian (3)",
+  },
+  {
+    name: "Gogoat",
+    cost: 3,
+    anchor: "Provisional: Grass Pelt and ally-targeting Milk Drink; cf. Arboliva (6)",
+  },
+  {
+    name: "Wigglytuff",
+    cost: 3,
+    anchor: "Provisional: Competitive and Helping Hand, limited defenses; cf. Audino",
+  },
+  { name: "Swalot", cost: 2, anchor: "Provisional: slow Poison support; cf. Muk" },
+  {
+    name: "Farfetch’d",
+    cost: 1,
+    anchor: "Provisional: Leek and support with low base stats; cf. Sirfetch’d (6)",
+  },
+];
+
 /** Reprice prior Reg M-A entries against Reg M-B ladder usage by quantile-matching usage rank to the
  * board's cost distribution and moving halfway to the target. */
 const USAGE_ADJUSTMENTS: Array<{ name: string; cost: number; usage: string }> = [
@@ -139,6 +332,74 @@ const USAGE_ADJUSTMENTS: Array<{ name: string; cost: number; usage: string }> = 
   { name: "Medicham-Mega", cost: 8, usage: "#209 at 0.06%" },
 ];
 
+const REGMC_CARRYOVER_PRICES = [
+  {
+    name: "Metagross",
+    cost: 10,
+    anchor: "Clear Body, item flexibility and bulky Steel offense; Smogon 12",
+  },
+  { name: "Garchomp-Mega", cost: 14, anchor: "Matchup-specific secondary Mega; Smogon 16" },
+  {
+    name: "Mawile-Mega",
+    cost: 16,
+    anchor: "Intimidate into Huge Power and useful defensive typing; Smogon 17",
+  },
+  {
+    name: "Blaziken-Mega",
+    cost: 14,
+    anchor: "Speed Boost offense with draft-specific coverage; Smogon 14",
+  },
+  { name: "Lucario-Mega", cost: 13, anchor: "Adaptability offense as a secondary Mega; Smogon 13" },
+  {
+    name: "Aegislash",
+    cost: 16,
+    anchor: "Flexible Steel/Ghost offense, defenses and Wide Guard; Smogon 16",
+  },
+  { name: "Liepard", cost: 10, anchor: "Fast Fake Out and Prankster disruption; Smogon 10" },
+  {
+    name: "Blastoise-Mega",
+    cost: 14,
+    anchor: "Partial reduction from 17 for Mega-slot competition; Smogon 11",
+  },
+  {
+    name: "Tyranitar-Mega",
+    cost: 14,
+    anchor: "Sand and bulk retain value despite Mega-slot competition; Smogon 12",
+  },
+  {
+    name: "Dragalge-Mega",
+    cost: 8,
+    anchor: "Specialized slow attacker with limited flexibility; Smogon 6",
+  },
+  {
+    name: "Camerupt-Mega",
+    cost: 8,
+    anchor: "Powerful but support-dependent Trick Room attacker; Smogon 6",
+  },
+  { name: "Altaria-Mega", cost: 7, anchor: "Niche Mega with limited immediate pressure; Smogon 5" },
+  {
+    name: "Azumarill",
+    cost: 10,
+    anchor: "Strong physical Water/Fairy with speed and setup constraints; Smogon 8",
+  },
+  {
+    name: "Kangaskhan",
+    cost: 7,
+    anchor: "Scrappy Fake Out niche without its Mega's power; Smogon 6",
+  },
+  {
+    name: "Sableye",
+    cost: 11,
+    anchor: "Prankster utility without a broad offensive role; Smogon 11",
+  },
+  { name: "Toxapex", cost: 5, anchor: "Narrow defensive matchup pick with low pressure; Smogon 5" },
+  {
+    name: "Pelipper",
+    cost: 16,
+    anchor: "Retains a weather-enabler premium in ten-pick rosters; Smogon 14",
+  },
+];
+
 const BOARD_ALIASES = new Map([
   ["Mega Charizard X", "Charizard-Mega-X"],
   ["Mega Charizard Y", "Charizard-Mega-Y"],
@@ -164,19 +425,19 @@ function dexNameFor(boardName: string): string {
 interface BoardEntrySource {
   name: string;
   cost: number;
-  origin: "base" | "regmb";
+  origin: DraftBoardMon["origin"];
   anchor?: string;
 }
 
 const baseCostsSchema = z.array(z.object({ name: z.string(), cost: z.number() }));
 
 function displayName(dexName: string): string {
-  const mega = /^(.+?)-Mega(?:-([XY]))?$/.exec(dexName);
+  const mega = /^(.+?)-Mega(?:-([XYZ]))?$/.exec(dexName);
   if (!mega) return dexName;
   return `Mega ${mega[1]}${mega[2] ? ` ${mega[2]}` : ""}`;
 }
 
-function buildBoard(boardId = "regmb-202607", format = "gen9championsvgc2026regmbbo3"): string {
+function buildBoard(boardId = "regmc-202609", format = "gen9championsvgc2026regmcbo3"): string {
   const psDir = defaultPsDir();
   const { Dex } = loadShowdown(psDir);
   const resolvedFormat = Dex.formats.get(format);
@@ -185,6 +446,7 @@ function buildBoard(boardId = "regmb-202607", format = "gen9championsvgc2026regm
 
   const stoneFor = new Map<string, { item: string; from: string }>();
   for (const item of dex.items.all()) {
+    if (item.isNonstandard) continue;
     const map = item.megaStone;
     if (!map) continue;
     for (const [from, to] of Object.entries(map)) stoneFor.set(to, { item: item.name, from });
@@ -198,6 +460,7 @@ function buildBoard(boardId = "regmb-202607", format = "gen9championsvgc2026regm
       origin: "base",
     })),
     ...REGMB_ADDITIONS.map((entry): BoardEntrySource => ({ ...entry, origin: "regmb" })),
+    ...REGMC_ADDITIONS.map((entry): BoardEntrySource => ({ ...entry, origin: "regmc" })),
   ];
 
   const adjustments = new Map<string, { cost: number; usage: string }>();
@@ -244,6 +507,12 @@ function buildBoard(boardId = "regmb-202607", format = "gen9championsvgc2026regm
   }
   if (adjustments.size)
     throw new Error(`unused usage adjustments: ${[...adjustments.keys()].join(", ")}`);
+  for (const entry of REGMC_CARRYOVER_PRICES) {
+    const mon = mons.find((mon) => (mon.forme || mon.species) === entry.name);
+    if (!mon) throw new Error(`carryover price ${entry.name} is not on the board`);
+    mon.cost = entry.cost;
+    mon.anchor = `M-C draft correction: ${entry.anchor}`;
+  }
   mons.sort((a, b) => b.cost - a.cost || a.name.localeCompare(b.name));
 
   const board = {
@@ -252,7 +521,7 @@ function buildBoard(boardId = "regmb-202607", format = "gen9championsvgc2026regm
     budget: 100,
     picks: 10,
     source:
-      "Costs 1-20 from a prior Regulation M-A draft board. Reg M-B additions are priced against comparable entries; each carries its anchor.",
+      "Reg M-C launch board. Earlier costs and historical M-B usage inform the baseline, with draft-specific carryover corrections and provisional M-C additions recorded in pricing anchors. Smogon comparisons use the July 25 VGC council review informed by the M-B Kickoff (90 points, eight picks, closed sheets), not post-finals prices: https://docs.google.com/spreadsheets/d/1q29XzWsljFjyuCcfbSeursvKi42joojilATgkaGwuMw/edit?gid=1183070207. Retained usage figures are M-B history, not M-C rankings.",
     mons,
   };
   fs.mkdirSync(BOARDS_DIR, { recursive: true });
@@ -264,9 +533,9 @@ function buildBoard(boardId = "regmb-202607", format = "gen9championsvgc2026regm
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const file = buildBoard();
   const board = draftBoardSchema.parse(JSON.parse(fs.readFileSync(file, "utf8")));
-  const added = board.mons.filter((mon) => mon.origin === "regmb").length;
+  const added = board.mons.filter((mon) => mon.origin === "regmc").length;
   const megas = board.mons.filter((mon) => mon.item).length;
   console.log(
-    `${file}: ${board.mons.length} entries (${board.mons.length - added} base, ${added} Reg M-B), ${megas} megas, costs ${Math.min(...board.mons.map((mon) => mon.cost))}-${Math.max(...board.mons.map((mon) => mon.cost))}`,
+    `${file}: ${board.mons.length} entries (${added} new in Reg M-C), ${megas} megas, costs ${Math.min(...board.mons.map((mon) => mon.cost))}-${Math.max(...board.mons.map((mon) => mon.cost))}`,
   );
 }

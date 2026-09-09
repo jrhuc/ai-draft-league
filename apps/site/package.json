@@ -19,17 +19,17 @@
     "@fontsource-variable/geist-mono": "5.3.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "react-router-dom": "7.18.2"
+    "react-router-dom": "7.18.3"
   },
   "devDependencies": {
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.5",
     "@vitejs/plugin-react": "6.1.1",
-    "happy-dom": "20.11.12",
+    "happy-dom": "20.13.0",
     "league": "workspace:*",
     "ui": "workspace:*",
     "vite": "npm:@voidzero-dev/vite-plus-core@0.3.0",
     "vite-plus": "0.3.0",
-    "wrangler": "4.127.0"
+    "wrangler": "4.128.0"
   }
 }

@@ -79,7 +79,7 @@ test("CLI resumes acquire the same atomic per-run lease", async (t) => {
   t.onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
   for (const [command, config] of [
     ["tournament", { models: ["random", "random"], seed: 1, pool: "test" }],
-    ["draft", { models: ["random", "random"], seed: 1, board: "regmb-202607" }],
+    ["draft", { models: ["random", "random"], seed: 1, board: "regmc-202609" }],
   ] as const) {
     const runDir = path.join(root, command);
     fs.mkdirSync(runDir);

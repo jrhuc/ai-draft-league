@@ -25,7 +25,7 @@ test("own requests render known sets and stats", () => {
 });
 
 test("post-preview prompts show percentage HP and compact bench sets", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const state = new PerspectiveState("p1");
   const rendered = state.render(
     {
@@ -94,7 +94,7 @@ test("open team sheets follow active nicknames", () => {
 });
 
 test("battle damage binds open-sheet abilities and ignores fabricated caller state", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const state = new PerspectiveState("p1");
   state.feed([
     "|showteam|p2|Toaster|Rotom-Heat|SitrusBerry|Levitate|overheat,thunderbolt,protect|Timid|||||50",
@@ -135,7 +135,7 @@ test("battle damage binds open-sheet abilities and ignores fabricated caller sta
 });
 
 test("live damage derives spread reduction from Showdown targets and live actives", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const request = (attacker: string, move: string, ally?: string): BattleRequest => ({
     active: [
       { moves: [{ move, id: move.toLowerCase().replaceAll(" ", ""), target: "normal" }] },
@@ -238,7 +238,7 @@ test("copied abilities are explained and reset from the open sheet on switch", (
 });
 
 test("suppressed abilities stay suppressed in live damage context", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const state = new PerspectiveState("p1");
   state.feed([
     "|showteam|p2|Toaster|Rotom-Heat|SitrusBerry|Levitate|overheat,protect|Timid|||||50",
@@ -480,7 +480,7 @@ test("Protect success reduction is tracked for the next menu", () => {
 });
 
 test("effective speed and action order use format ranges and explain redundant Encore", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const state = new PerspectiveState("p1");
   state.feed([
     "|showteam|p2|Tauros|Tauros-Paldea-Aqua|ChoiceScarf|Intimidate|CloseCombat,AquaJet|Adamant|||||50",
@@ -535,7 +535,7 @@ test("effective speed and action order use format ranges and explain redundant E
 });
 
 test("action order proves one-point and Tailwind speed guarantees", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const state = new PerspectiveState("p1");
   state.feed([
     "|showteam|p2|Garchomp||LifeOrb|RoughSkin|Earthquake|Jolly|||||50",
@@ -605,7 +605,7 @@ test("action order proves one-point and Tailwind speed guarantees", () => {
 });
 
 test("action order applies Gale Wings and Prankster priority modifiers", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const state = new PerspectiveState("p1");
   state.feed([
     "|showteam|p2|Mamoswine||FocusSash|ThickFat|IceShard,RockSlide|Adamant|||||50",

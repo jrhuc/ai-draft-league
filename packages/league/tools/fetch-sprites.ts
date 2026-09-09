@@ -14,7 +14,7 @@ const SPRITE_DIR = path.join(CLIENT_PUBLIC, "sprites");
 const SOURCE = "https://play.pokemonshowdown.com/sprites/gen5";
 const ITEM_SHEET_SOURCE = "https://play.pokemonshowdown.com/sprites/itemicons-sheet.png";
 const CONCURRENCY = 6;
-const FORMAT = "gen9championsvgc2026regmbbo3";
+const FORMAT = "gen9championsvgc2026regmcbo3";
 
 async function download(spriteId: string): Promise<Buffer | undefined> {
   const response = await fetch(`${SOURCE}/${spriteId}.png`, {

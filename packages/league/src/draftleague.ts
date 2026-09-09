@@ -43,7 +43,7 @@ export async function runDraftLeague(
 
   fs.mkdirSync(runDir, { recursive: true });
   const psDir = options.psDir ?? defaultPsDir();
-  const board = loadBoard(options.board ?? "regmb-202607", options.boardsDir ?? BOARDS_DIR, psDir);
+  const board = loadBoard(options.board ?? "regmc-202609", options.boardsDir ?? BOARDS_DIR, psDir);
   const distinctBases = new Set(board.mons.map((mon) => mon.base)).size;
   if (models.length * board.picks > distinctBases) {
     throw new Error(

@@ -1,6 +1,6 @@
 {
   "id": "noise-quartet",
-  "board": "regmb-202607",
+  "board": "regmc-202609",
   "description": "Four original rosters for a four-coach league: one sound, one functional but flawed, one deliberately incoherent, one underspent. The flaw field is tester-facing; coaches never see it.",
   "teams": [
     {

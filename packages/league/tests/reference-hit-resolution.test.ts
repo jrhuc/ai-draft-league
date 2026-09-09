@@ -4,7 +4,7 @@ import { ShowdownReference } from "../src/reference.js";
 import { filledStats, type PokemonSet } from "../src/reference-mechanics.js";
 import { loadShowdown } from "../src/showdown.js";
 
-const format = "gen9championsvgc2026regmb";
+const format = "gen9championsvgc2026regmc";
 const reference = new ShowdownReference(format);
 
 test("calculator refuses unresolved multi-target hit allocation", () => {

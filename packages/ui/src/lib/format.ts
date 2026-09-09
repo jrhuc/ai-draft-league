@@ -84,7 +84,7 @@ export function evLine(evs: { [stat: string]: number }): string {
 }
 
 export function displaySpecies(species: string): string {
-  const m = species.match(/^(.+)-Mega(?:-([XY]))?$/);
+  const m = species.match(/^(.+)-Mega(?:-([XYZ]))?$/);
   return m ? `Mega ${m[1]}${m[2] ? ` ${m[2]}` : ""}` : species;
 }
 

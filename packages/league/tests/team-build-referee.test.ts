@@ -10,7 +10,7 @@ import {
 } from "../src/teambuild.js";
 import { legalTeamResponse } from "./fixtures/team-build.js";
 
-const BOARD = loadBoard("regmb-202607");
+const BOARD = loadBoard("regmc-202609");
 const candidate = (id: string) => {
   const found = BOARD.mons.find((entry) => entry.id === id);
   assert.ok(found, `board is missing ${id}`);

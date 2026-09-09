@@ -29,7 +29,7 @@ const queries = [
 ] as const satisfies ReadonlyArray<{ name: string; arguments: JsonObject }>;
 
 test("mixed batched queries return the same mechanics as individual calls in one exchange", async () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const provider = new ScriptedProvider([
     {
       text: "",
@@ -69,7 +69,7 @@ test("mixed batched queries return the same mechanics as individual calls in one
 });
 
 test("wide native tool responses are handled without buying another tool round", async () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const names = [
     "Protect",
     "Earthquake",
@@ -134,7 +134,7 @@ test("batch queries cannot reach unoffered tools and one tool failure does not l
     },
     '{"sets":[]}',
   ]);
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   await completeWithDexTools({
     provider,
     reference,
@@ -187,7 +187,7 @@ test("native calls and multiple batches share a query budget that resets for the
   const seen: number[] = [];
   await completeWithDexTools({
     provider,
-    reference: new ShowdownReference("gen9championsvgc2026regmb"),
+    reference: new ShowdownReference("gen9championsvgc2026regmc"),
     policy,
     spec: "scripted",
     system: "build",
@@ -241,7 +241,7 @@ test("empty, malformed and oversized batches execute no queries", async () => {
   const trace: JsonObject[] = [];
   await completeWithDexTools({
     provider,
-    reference: new ShowdownReference("gen9championsvgc2026regmb"),
+    reference: new ShowdownReference("gen9championsvgc2026regmc"),
     policy,
     spec: "scripted",
     system: "build",
@@ -376,7 +376,7 @@ test("cancellation stops a batch before its remaining queries execute", async ()
   await assert.rejects(
     completeWithDexTools({
       provider,
-      reference: new ShowdownReference("gen9championsvgc2026regmb"),
+      reference: new ShowdownReference("gen9championsvgc2026regmc"),
       policy,
       spec: "scripted",
       system: "build",
@@ -418,7 +418,7 @@ test("native and batched duplicate queries share cached results without losing p
   const trace: JsonObject[] = [];
   await completeWithDexTools({
     provider,
-    reference: new ShowdownReference("gen9championsvgc2026regmb"),
+    reference: new ShowdownReference("gen9championsvgc2026regmc"),
     policy,
     spec: "scripted",
     system: "build",

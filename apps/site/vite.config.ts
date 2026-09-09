@@ -97,5 +97,8 @@ export default defineConfig({
   },
   test: {
     include: ["tests/**/*.test.ts?(x)"],
+    environmentOptions: {
+      happyDOM: { settings: { handleDisabledFileLoadingAsSuccess: true } },
+    },
   },
 });
