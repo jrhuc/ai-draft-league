@@ -12,6 +12,7 @@ import { makeRunDirectory, prepareDataDirectories, RESULTS_PATH, RUNS_DIR } from
 import type { ReasoningLevel } from "./providers.js";
 import { isReasoningLevel, nitroSpec } from "./providers.js";
 import type { ParsedSeriesRecord, SeriesRecord } from "./records.js";
+import { monitorRun, renderMonitorReport } from "./monitor.js";
 import { loadSeriesRecords, scopeRows, TEST_POOL } from "./records.js";
 import { writeReport } from "./report.js";
 import { runRotation } from "./rotation.js";
@@ -113,6 +114,8 @@ Commands:
       with matching native requests replays recorded decisions without provider calls. Random-seat,
       timer-autodefault, and other ineligible cases may restart or continue live (models, pool, seed,
       and provenance come from the run's recorded config)
+  monitor <run-dir|run-id> [--json]   harness monitors for a league run: decision integrity, tool predictions
+      against the simulator, draft horizon, roster usage and retention, memory continuity per barrier
   draft --models <spec> <spec>...     snake-draft rosters from a board, then a weekly round robin and playoffs
       each coach drafts 10 within a 100-point budget, then picks 6 and builds every set before each match
       [--board <name>] [--seed <n>] [--concurrency <n>] [--reasoning <level>] [--timer-scale <n|off>]
@@ -538,6 +541,19 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     console.log(
       `${bundle.tournament.title} exported with ${played} of ${bundle.entrants.length - 1} series to ${out}`,
     );
+    return 0;
+  }
+  if (command === "monitor") {
+    const { positionals, values } = parseArgs({
+      args: rest,
+      options: { json: { type: "boolean", default: false } },
+      allowPositionals: true,
+    });
+    const target = positionals[0];
+    if (!target) throw new Error("monitor requires a run directory or run id");
+    const runDir = fs.existsSync(target) ? path.resolve(target) : path.join(RUNS_DIR, target);
+    const report = monitorRun(runDir);
+    console.log(values.json ? JSON.stringify(report, null, 2) : renderMonitorReport(report));
     return 0;
   }
   if (command === "outcomes" || command === "report") {

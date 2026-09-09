@@ -60,6 +60,9 @@ export function transactionState(entrants = 2): TradeWindowState {
     results: Array.from({ length: entrants }, () => []),
     reflections: Array.from({ length: entrants }, () => []),
     history: [],
+    afterWeek: 0,
+    schedule: [],
+    usage: [],
     swapsAllowed: 6,
     swapsUsed: Array.from({ length: entrants }, () => 0),
   };

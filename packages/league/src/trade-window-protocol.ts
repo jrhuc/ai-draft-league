@@ -8,6 +8,7 @@ import type { FranchiseMemory } from "./franchise-memory.js";
 import type { MechanicsToolAvailability } from "./prompt-capabilities.js";
 import { FORMAT_AUTHORITY_NOTICE, MANAGER_CHARGE } from "./prompts.js";
 import type { ModelReasoningConfig, ReasoningLevel } from "./providers.js";
+import type { RosterUsageEntry } from "./roster-usage.js";
 import type { JsonObject, JsonValue, Provider } from "./types.js";
 import { clip, fileSlug, replyJsonObject, text } from "./value.js";
 import type { DraftTableRow } from "./views.js";
@@ -43,6 +44,7 @@ export const TRADE_WINDOW_PROMPT_POLICY = {
   resultsHeading: "YOUR ROUND-ROBIN RESULTS:",
   wordsHeading: "YOUR PRIVATE WORDS:",
   rostersHeading: "PUBLIC CURRENT ROSTERS:",
+  scheduleHeading: "YOUR REMAINING SCHEDULE (week | opponent | their current roster):",
   historyHeading: "PUBLIC TRANSACTIONS FROM EARLIER WINDOWS:",
   freeAgentsHeading: "UNDRAFTED FREE AGENTS (id | cost | name | types | base stats | abilities):",
   replyTemplate: [
@@ -183,6 +185,9 @@ export interface TradeWindowState {
   results: TradeWindowResult[][];
   reflections: string[][];
   history: string[];
+  afterWeek: number;
+  schedule: Array<{ index: number; week: number; entrants: [number, number] }>;
+  usage: RosterUsageEntry[];
   swapsAllowed: number;
   swapsUsed: number[];
 }

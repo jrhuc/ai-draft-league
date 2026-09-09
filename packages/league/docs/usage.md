@@ -98,6 +98,15 @@ Without `--pool`, reports exclude only the disposable `test` pool. Rows retain m
 
 Decision logs show authorized context and submitted choices. Join them with game and referee logs to establish accepted transitions and results. See [Evidence interpretation](measurement.md).
 
+Check how the harness behaved in one league run, not just whether its code passed:
+
+```sh
+pnpm run vgcleague monitor run_id
+pnpm run vgcleague monitor run_id --json
+```
+
+The monitor reads `league.sqlite` and the decision, trace, and game files of every completed series. It reports per-seat decision integrity (fallback, substitution, and parse-failure rates, tool queries, latency, tokens), a mechanics audit that replays every `estimate_damage` and `compare_action_order` result against what the simulator then did (wrong KO calls, damage outside the predicted range, inverted action order, with forme changes in the same turn marked), the share of draft reasons that name another coach or the season ahead, per-entry roster usage by week and opponent, entries never registered while owned, and how many board Pokémon each memory barrier names, carries, or drops. Findings are evidence to inspect, not verdicts.
+
 ## Archive and publish
 
 Archive run directories to verified tarballs without deleting their sources:

@@ -53,7 +53,9 @@ Model text cannot waive these checks.
 
 ## Supply manager context
 
-An acting manager receives standings, public rosters and transactions, its own results and reflections, private memory, the priced board, remaining free agents and swaps, and the current window rules. A trade recipient also receives the exact offer.
+An acting manager receives standings, its own results and reflections, its remaining schedule with each opponent's current roster, private memory, public rosters and transactions, public roster usage, the priced board, remaining free agents and swaps, and the current window rules. A trade recipient also receives the exact offer.
+
+Roster usage lists, for every entry on every roster, each completed week with the opponent, whether the entry was in the registered six, and the games it was brought to. It is a record, not a rate: an entry registered once against one coach reads as that fact. Sets are never included.
 
 Transaction rationales do not edit memory. If the roster changes, [reconciliation](weekly-review.md#reconcile-a-roster-change) updates memory before the next build. Rationales remain private from active managers and release only after the window completes.
 
