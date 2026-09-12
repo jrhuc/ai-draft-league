@@ -143,7 +143,7 @@ test("review tools expose authoritative series evidence and completed reviews re
       assert.doesNotMatch(publicEvidence, /Pressure early|Conserve speed/);
       assert.throws(() => task.validate({ set_pages: { lessons: "x".repeat(9000) } }), /8000/);
       return agentReply(task, {
-        notebook: "Lead Garchomp",
+        plan: "Lead Garchomp",
         set_pages: { scouting: "Public tells" },
       });
     },
@@ -258,7 +258,7 @@ test("a weekly review reply keeps unmentioned pages and rejects invalid memory e
     () => parseWeeklyReviewResult({ set_pages: { "Bad Name": "x" } }, current),
     /page name "Bad Name"/,
   );
-  assert.throws(() => parseWeeklyReviewResult({ notebook: 5 }, current), /notebook/);
+  assert.throws(() => parseWeeklyReviewResult({ plan: 5 }, current), /plan/);
 });
 
 test("reconciliation updates only changed seats and later reviews retrieve the exact memory snapshot", async () => {
@@ -279,7 +279,7 @@ test("reconciliation updates only changed seats and later reviews retrieve the e
   assert.match(renderWeeklyReviewPrompt(reconcile, 0), /YOUR ROSTER BEFORE THE WINDOW/);
   const reviews = await runWeeklyReview(reconcile, {
     ...options,
-    runAgent: scriptedAgent([{ notebook: "Reconciled" }]).run,
+    runAgent: scriptedAgent([{ plan: "Reconciled" }]).run,
   });
   assert.equal(reviews.length, 1);
   await runWeeklyReview(

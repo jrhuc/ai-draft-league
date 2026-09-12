@@ -37,7 +37,7 @@ import {
 import type { JsonObject } from "./types.js";
 import { count, fileSlug, text } from "./value.js";
 
-const MEMORY_NOTICE = `- Your memory is yours to organise: a notebook page shown to later managers and team builders, plus up to ${MEMORY_LIMITS.pages - 1} named pages they can fetch with read_memory_page. Each page holds at most ${MEMORY_LIMITS.pageChars} characters, ${MEMORY_LIMITS.totalChars} in all. The builder passes its team plan and set notes to the battle pilot. Completed series and earlier memory checkpoints remain available through the league tools; your review reasoning is recorded as evidence, but is not included in later prompts.`;
+const MEMORY_NOTICE = `- Your memory is yours to organise: a plan page shown to later managers and team builders, plus up to ${MEMORY_LIMITS.pages - 1} named pages they can fetch with read_memory_page. Each page holds at most ${MEMORY_LIMITS.pageChars} characters, ${MEMORY_LIMITS.totalChars} in all. The builder passes its team plan and set notes to the battle pilot. Completed series and earlier memory checkpoints remain available through the league tools; your review reasoning is recorded as evidence, but is not included in later prompts.`;
 
 const LEAGUE_TOOLS_NOTICE =
   `You have the Showdown dex tools and five league tools: read_public_series returns the spectator log of any completed series, read_own_series returns your own turn-by-turn choices with their stated reasons and your end-of-game notes, read_own_build returns the six you registered for a series, your plan, and what you brought, Mega Evolved, and lost in each game, read_memory_page returns one of your pages in full, and read_memory_history returns your memory as it stood after an earlier review or reconciliation. ${PARALLEL_TOOLS_RULE}`;
@@ -77,7 +77,7 @@ const WEEKLY_REVIEW_PROMPT_POLICY = {
   previousRosterHeading: "YOUR ROSTER BEFORE THE WINDOW:",
   currentRosterHeading: "YOUR ROSTER NOW:",
   replyTemplate: [
-    'Call submit_review with {"notebook":"<complete replacement notebook>","set_pages":{"<name>":"<complete page text>",...},"delete_pages":["<name>",...]}. Every field is optional and every omission keeps what exists: "set_pages" writes only the pages it names and leaves the rest as they are; only "delete_pages" removes a page. An optional "reasoning":"<concise note on what changed and why>" field is recorded as evidence.',
+    'Call submit_review with {"plan":"<complete replacement plan page>","set_pages":{"<name>":"<complete page text>",...},"delete_pages":["<name>",...]}. Every field is optional and every omission keeps what exists: "set_pages" writes only the pages it names and leaves the rest as they are; only "delete_pages" removes a page. An optional "reasoning":"<concise note on what changed and why>" field is recorded as evidence.',
     "An empty object {} keeps the current memory unchanged and is a complete answer.",
   ],
   rationaleLimit: 2_000,
@@ -171,11 +171,9 @@ const memoryPage = z
   .max(MEMORY_LIMITS.pageChars, `a page exceeds ${MEMORY_LIMITS.pageChars} characters`);
 
 export const weeklyReviewReplySchema = z.object({
-  notebook: memoryPage
+  plan: memoryPage
     .optional()
-    .describe(
-      "Complete replacement text for your notebook page; omit it to keep the current notebook.",
-    ),
+    .describe("Complete replacement text for your plan page; omit it to keep the current plan."),
   set_pages: z
     .record(z.string(), memoryPage)
     .optional()
@@ -196,7 +194,8 @@ export function parseWeeklyReviewResult(
 ): ParsedWeeklyReview {
   const reply = weeklyReviewReplySchema.safeParse(input);
   if (!reply.success) throw new Error(z.prettifyError(reply.error));
-  const { reasoning = "", ...memoryReply } = reply.data;
+  const { reasoning = "", plan, ...pages } = reply.data;
+  const memoryReply = plan === undefined ? pages : { ...pages, notebook: plan };
   const parsed = parseMemoryReply(memoryReply, current);
   return {
     memory: parsed.memory,
@@ -207,7 +206,7 @@ export function parseWeeklyReviewResult(
 function windowNotice(state: WeeklyReviewState): string {
   if (state.nextWindowWeek === null) return "Rosters are now locked for the rest of the season.";
   if (state.nextWindowWeek === state.week && state.stage === "week") {
-    return "A transaction window opens as soon as this review closes; your notebook is what you take into it.";
+    return "A transaction window opens as soon as this review closes; your plan page is what you take into it.";
   }
   return `The next transaction window opens after week ${state.nextWindowWeek}.`;
 }

@@ -32,7 +32,7 @@ test("drafts resume from committed picks, keep notebooks, and name franchises af
     }
     assert.throws(() => task.validate({ pick: "not-a-mon" }), /board id/);
     const pick = queues.get(task.model)!.shift()!;
-    assert.throws(() => task.validate({ pick, notebook: "x".repeat(10000) }), /notebook/);
+    assert.throws(() => task.validate({ pick, plan: "x".repeat(10000) }), /plan/);
     const search = task.tools?.find((tool) => tool.definition.name === "search_board");
     assert.ok(search);
     const dragons = search.run({ types: ["Dragon"] });
@@ -41,7 +41,7 @@ test("drafts resume from committed picks, keep notebooks, and name franchises af
     else assert.doesNotMatch(dragons, /^- garchomp \|/m);
     if (pick === "incineroar") assert.doesNotMatch(dragons, /^- garchomp-mega \|/m);
     if (["incineroar", "farigiraf"].includes(pick)) assert.match(task.prompt, /Private plan/);
-    return agentReply(task, { pick, notebook: pick === "incineroar" ? "" : "Private plan" });
+    return agentReply(task, { pick, plan: pick === "incineroar" ? "" : "Private plan" });
   };
   const options = { runDir: logDir, logDir, rng: seededRng(1), runAgent, reasoning: "high" };
   await assert.rejects(

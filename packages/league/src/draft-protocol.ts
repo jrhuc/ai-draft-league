@@ -106,7 +106,7 @@ export const DRAFT_PROMPT_POLICY = {
     "{{board}}",
   ],
   turnInstruction:
-    'Call submit_pick with {"pick":"<board-id>"}. Optional evidence fields are "reasoning":"<concise reason>" and, only when your durable plan changed, "notebook":"<complete replacement notes for later picks>". The notebook limit is 4000 characters; oversized updates are rejected.',
+    'Call submit_pick with {"pick":"<board-id>"}. Optional evidence fields are "reasoning":"<concise reason>" and, only when your durable plan changed, "plan":"<your complete plan for your remaining picks>". The plan limit is 4000 characters; oversized updates are rejected.',
   turnTemplate:
     "Overall pick {{pick}} of {{total}}; {{remaining}} left for you, {{budget}} points to fill them from what is still on the board.",
   boardHeading: `DRAFT BOARD (${BOARD_COLUMNS}):`,
@@ -114,7 +114,7 @@ export const DRAFT_PROMPT_POLICY = {
   takenHeading: "ALREADY DRAFTED:",
   nothingTaken: "- (nothing yet; you have the first pick)",
   rosterHeading: "YOUR ROSTER:",
-  notebookHeading: "YOUR PRIVATE DRAFT NOTE FROM YOUR PREVIOUS PICK:",
+  notebookHeading: "YOUR PLAN FROM YOUR PREVIOUS PICK:",
   emptyRoster: "- (empty)",
   notebookLimit: 4_000,
   rationaleLimit: 2_000,
@@ -472,15 +472,15 @@ export const pickReplySchema = z.object({
     .min(1, '"pick" must name a board id')
     .describe("The board id of the Pokémon you draft, copied exactly from the board list."),
   reasoning: z.string().optional().describe("A concise reason for this pick."),
-  notebook: z
+  plan: z
     .string()
     .max(
       DRAFT_PROMPT_POLICY.notebookLimit,
-      `notebook exceeds ${DRAFT_PROMPT_POLICY.notebookLimit} characters`,
+      `plan exceeds ${DRAFT_PROMPT_POLICY.notebookLimit} characters`,
     )
     .optional()
     .describe(
-      "Complete replacement for your private draft notes, shown to you at later picks. Omit it unless your durable plan changed.",
+      "Your plan for your remaining picks; replaces the previous plan. Omit it unless your plan changed.",
     ),
 });
 
@@ -499,7 +499,7 @@ export function parsePick(
     (candidate) => candidate.id === pickId || fileSlug(candidate.name) === pickId,
   );
   if (!mon) throw new Error(rejection(pickId, legal, state, drafter, models));
-  const evidence = normalizeStageEvidence(reply.data.reasoning, reply.data.notebook, {
+  const evidence = normalizeStageEvidence(reply.data.reasoning, reply.data.plan, {
     currentNotebook,
     rationaleLimit: DRAFT_PROMPT_POLICY.rationaleLimit,
     notebookLimit: DRAFT_PROMPT_POLICY.notebookLimit,
