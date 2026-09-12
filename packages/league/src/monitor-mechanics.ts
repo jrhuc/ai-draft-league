@@ -65,6 +65,7 @@ export interface GameMechanicsAudit {
 }
 
 const SURVIVAL_MARKERS = new Set(["Focus Sash", "Sturdy", "Disguise", "Ice Face", "Endure"]);
+const SCREENS = new Set(["Reflect", "Light Screen", "Aurora Veil"]);
 const RANGE_TOLERANCE = 2;
 
 interface SlotState {
@@ -123,6 +124,7 @@ export function observeGame(lines: readonly string[]): ObservedGame {
   const slots = new Map<string, SlotState>();
   const changedForme = new Set<string>();
   const helped = new Set<string>();
+  const screened = new Set<Pid>();
   const hits: ObservedHit[] = [];
   const orders: ObservedTurnOrder[] = [];
   let turn = 0;
@@ -154,6 +156,7 @@ export function observeGame(lines: readonly string[]): ObservedGame {
       markers: [
         ...(pending.attackerChangedForme ? ["attacker changed forme this turn"] : []),
         ...(changedForme.has(key) ? ["target changed forme this turn"] : []),
+        ...(screened.has(slotSide(key)) ? ["screen set this turn"] : []),
       ],
     };
     pending.hits.set(key, hit);
@@ -169,6 +172,7 @@ export function observeGame(lines: readonly string[]): ObservedGame {
       turn = Number(args[0]) || 0;
       changedForme.clear();
       helped.clear();
+      screened.clear();
       order = { turn, moves: [] };
       orders.push(order);
     } else if (kind === "switch" || kind === "drag" || kind === "replace") {
@@ -196,6 +200,8 @@ export function observeGame(lines: readonly string[]): ObservedGame {
       };
       if (!args.includes("[still]"))
         order.moves.push({ species: attacker.species, side: slotSide(key), move: args[1] });
+    } else if (kind === "-sidestart" && SCREENS.has(afterColon(args[1] ?? ""))) {
+      screened.add(args[0]?.startsWith("p2") ? "p2" : "p1");
     } else if (kind === "-singleturn" && afterColon(args[1] ?? "") === "Helping Hand") {
       helped.add(key);
     } else if (kind === "-zbroken") {

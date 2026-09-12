@@ -39,7 +39,8 @@ export const TEAMBUILD_PROMPT_POLICY = {
     'Exactly 6 entries in "sets", each one a board id from YOUR ROSTER below.',
   ],
   rosterHeading: "YOUR ROSTER (board id | name | types | base stats | abilities | legal moves):",
-  opponentHeading: "OPPONENT ROSTER — {{model}} (they pick 6 of these):",
+  opponentHeading:
+    "OPPONENT ROSTER — {{model}} (they register any 6 of these with new sets for this matchup; a six they brought before is not a commitment):",
   priorContextHeading:
     "YOUR SEASON SO FAR (your results, what you registered, and your notes against this coach):",
   priorContextNotice:
