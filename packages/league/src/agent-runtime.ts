@@ -8,6 +8,7 @@ import { z } from "zod";
 import "./opencode-loader.js";
 import { LiveRun } from "./live-run.js";
 import {
+  modelUpstreamRoutes,
   parseSpec,
   openRouterRouting,
   type OpenRouterRouting,
@@ -467,6 +468,22 @@ async function leaguePlugin(slot: AgentSlot) {
   return Plugin.define({
     id: "league",
     async setup(ctx) {
+      const routes = modelUpstreamRoutes();
+      if (routes.size)
+        await ctx.catalog.transform((editor) => {
+          for (const [from, upstream] of routes) {
+            const route = parseSpec(from);
+            const target = editor.model.get(route.provider, upstream);
+            if (!target)
+              throw new Error(
+                `VGC_MODEL_UPSTREAM target ${route.provider}:${upstream} is not in the catalog`,
+              );
+            editor.model.update(route.provider, route.model, (model) => {
+              model.modelID = target.modelID;
+              model.cost = target.cost;
+            });
+          }
+        });
       let validated = false;
       let cacheSystem = false;
       await ctx.agent.transform((editor) => {

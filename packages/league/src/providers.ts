@@ -14,6 +14,21 @@ export function openRouterRouting(): OpenRouterRouting {
   return routing;
 }
 
+/** `VGC_MODEL_UPSTREAM=opencode:muse-spark-1.3-contributor-free=muse-spark-1.3,...` bills a seat to another model id on the same provider without changing its recorded identity. */
+export function modelUpstreamRoutes(): Map<string, string> {
+  const routes = new Map<string, string>();
+  for (const entry of (process.env.VGC_MODEL_UPSTREAM ?? "").split(",")) {
+    const trimmed = entry.trim();
+    if (!trimmed) continue;
+    const separator = trimmed.lastIndexOf("=");
+    if (separator < 1 || separator === trimmed.length - 1)
+      throw new Error(`VGC_MODEL_UPSTREAM entry must be <provider>:<model>=<upstream model id>: ${trimmed}`);
+    parseSpec(trimmed.slice(0, separator));
+    routes.set(trimmed.slice(0, separator), trimmed.slice(separator + 1));
+  }
+  return routes;
+}
+
 const VARIANT = /^[a-z0-9][a-z0-9._-]*$/i;
 
 /** Any OpenCode variant id; availability on the selected model is checked by the host. */

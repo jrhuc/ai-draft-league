@@ -15,7 +15,7 @@ Use `<OpenCode-provider-id>:<model-id>`, or `random` for the baseline. Common pr
 
 Any other provider in the OpenCode catalog works with its own environment key; the catalog only lists providers whose key is present.
 
-OpenCode owns the provider catalog, credentials, and routing. Additional provider configuration belongs in `<run-dir>/agents/opencode.json`, using the [OpenCode V2 provider schema](https://opencode.ai/v2/docs/providers). The embedded host excludes project configuration and uses only league tools. Its native databases stay in the private run directory.
+OpenCode owns the provider catalog, credentials, and routing. `VGC_MODEL_UPSTREAM=opencode:muse-spark-1.3-contributor-free=muse-spark-1.3` bills a seat to another model id on the same provider (for example a free tier's paid twin once its quota is spent) while the run keeps recording the original identity; the target's cost table is used for spend. Additional provider configuration belongs in `<run-dir>/agents/opencode.json`, using the [OpenCode V2 provider schema](https://opencode.ai/v2/docs/providers). The embedded host excludes project configuration and uses only league tools. Its native databases stay in the private run directory.
 
 The SDK and plugin use matching, exactly pinned `dev` builds. OpenCode packages are exempt from pnpm's release-age delay so upgrades can use newly published model APIs.
 
