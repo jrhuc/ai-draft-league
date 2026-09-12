@@ -242,17 +242,17 @@ importers:
   packages/league:
     dependencies:
       '@opencode/client':
-        specifier: 0.0.0-dev-19421
-        version: 0.0.0-dev-19421(effect@4.0.0-rc.112)
+        specifier: 2.0.0
+        version: 2.0.0(effect@4.0.0-rc.112)
       '@opencode/codemode':
-        specifier: 0.0.0-dev-19421
-        version: 0.0.0-dev-19421
+        specifier: 2.0.0
+        version: 2.0.0
       '@opencode/plugin':
-        specifier: 0.0.0-dev-19421
-        version: 0.0.0-dev-19421(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
+        specifier: 2.0.0
+        version: 2.0.0(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
       '@opencode/sdk':
-        specifier: 0.0.0-dev-19421
-        version: 0.0.0-dev-19421(@aws-sdk/credential-provider-node@3.972.82)(@opentelemetry/api-logs@0.214.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.3)(ai@6.0.279(zod@4.6.1))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(typescript@7.0.2)(web-tree-sitter@0.25.10)(ws@8.21.3)(zod@4.6.1)
+        specifier: 2.0.0
+        version: 2.0.0(@aws-sdk/credential-provider-node@3.972.82)(@opentelemetry/api-logs@0.214.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.3)(ai@6.0.279(zod@4.6.1))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(typescript@7.0.2)(web-tree-sitter@0.25.10)(ws@8.21.3)(zod@4.6.1)
       zod:
         specifier: 4.6.1
         version: 4.6.1
@@ -1354,11 +1354,11 @@ packages:
     resolution: {integrity: sha512-WPCN8h8HaZhhUcrMG0zu+4D9vco0EZiEg/gCF1K3JPRN6UsHMiXq1HVIy5IlyfcoyjfViRmQmXYE4AuU3laBjA==}
     hasBin: true
 
-  '@opencode/ai@0.0.0-dev-19421':
-    resolution: {integrity: sha512-l35CHI5fVOb2TnPgLKhPuubtMB05qA0vtFIDCfUGVyqnzpWYV7GL4LJ0O4uh4JXEVRpSq6cIXxulyxrTZ8QCSQ==}
+  '@opencode/ai@2.0.0':
+    resolution: {integrity: sha512-dwKsv0JoriubbrLrfRnQ6aBrUpBV1t8fRB8uBx3ro2BYQjYBVj5S2vmGN7yWN1wobD1JOh5bGnDB72PIPHP/xQ==}
 
-  '@opencode/client@0.0.0-dev-19421':
-    resolution: {integrity: sha512-NyzIGR5dEUVKXTRinU+G2CCyjLLGGiROKOruQtTfec3JntXGt957hOvRFtdtsHGTbhxC5JOCyS/l/5eG8t43xg==}
+  '@opencode/client@2.0.0':
+    resolution: {integrity: sha512-32kRwHu/kKRFD/zQyhX5iSPJqCTleJtMQwqiA35LpFVOHlEG1itHq4WIWs4mjGhv5c/PhR66WV0Yrgmh+NvMYg==}
     peerDependencies:
       effect: 4.0.0-rc.112
       solid-js: '>=1.9.0'
@@ -1368,19 +1368,19 @@ packages:
       solid-js:
         optional: true
 
-  '@opencode/codemode@0.0.0-dev-19421':
-    resolution: {integrity: sha512-WXjYToTjSoIo1MhF6wjMwij4DwjJPN+z4l0Pt7bS1E5fF+uzLtlMEh82Q5BB0eG+I/mVBW/lHjFvtJkizciYGA==}
+  '@opencode/codemode@2.0.0':
+    resolution: {integrity: sha512-YG/SFe/x0iJdqGDHaUu3j5FxR8DVnTd3M256wmcLbwe76WgjsRjHADLKtLLCbiSjwJnkgbrVmqOPhPbx4V+bJw==}
 
-  '@opencode/core@0.0.0-dev-19421':
-    resolution: {integrity: sha512-OCDIlU1gcSjqtL7NTme/TEDZ+EILRbKx/eTtC8eZhmBua/+irFNfD5BQwbmWDd+ZEkI8oib6tVFug02yZMwfzw==}
+  '@opencode/core@2.0.0':
+    resolution: {integrity: sha512-7IA3+5ONJO/78hn5Yw/iMTl6FG6ttk7PLxR7D4LkCzZBtH9899FFojXBye7fWTYD7uujC7YlIlfiB6xLG1GZPw==}
 
-  '@opencode/plugin-browser@0.0.0-dev-19421':
-    resolution: {integrity: sha512-cR63/Nf0it/NenFrUpEwEjK6wQ+WLsgrPLsyyvlLq4H2sDyylQdMKEBBqR29oW2ik1d+SkYkN76ClPjwQvr71w==}
+  '@opencode/plugin-browser@2.0.0':
+    resolution: {integrity: sha512-O9BbPMrZv1oCsz7XkCCkdCP/dqlwG5poHjMvL6FrmHRLLv/1pwwDm+v/SJxql+1EDwVrXpH/l7DkE1kpygwy9g==}
 
-  '@opencode/plugin@0.0.0-dev-19421':
-    resolution: {integrity: sha512-fVRhgcim95Y40T9ZN+UcsUs+nD0gSOGQnBye3RRPBxohpxDPHMDgfvrtqAdipUNcM2SFHiNB3twJumyW2Ehjpw==}
+  '@opencode/plugin@2.0.0':
+    resolution: {integrity: sha512-AngGt9i8fUozDn3VS3byVPCU+ORKRFfkP0gW1nL2eFTl5qkmt5zBFaSDTH/HjGZGyShKsItD+tceUy1AA4Bv8w==}
     peerDependencies:
-      '@opencode/theme': 0.0.0-dev-19421
+      '@opencode/theme': 2.0.0
       '@opentui/core': '>=0.5.10'
       '@opentui/solid': '>=0.5.10'
       solid-js: '>=1.9.0'
@@ -1394,23 +1394,23 @@ packages:
       solid-js:
         optional: true
 
-  '@opencode/protocol@0.0.0-dev-19421':
-    resolution: {integrity: sha512-w37CqIfRj0Irk5JDwoopJnyO+YdofsRCDJHsus85ExtVN0WZWQmHQ/s+gN59inAHYfODJQP1tffpS95HZ+BZFg==}
+  '@opencode/protocol@2.0.0':
+    resolution: {integrity: sha512-Du+M4mZuoLuGErivMUAfhCBbdNvHQeB4OKduww6ZK1ULvkRdV/FfD4lLN/BPqVjuqP9eC3Wp0i9pNDohSks2xQ==}
 
-  '@opencode/schema@0.0.0-dev-19421':
-    resolution: {integrity: sha512-BFsWvKqqFfKFK+KiHHHOR8ZI87Jopsp6kfg4hdav2LF5OKpKBiVKrS7lhdY4FEtztwawD3Om2D/HLY23v9smfA==}
+  '@opencode/schema@2.0.0':
+    resolution: {integrity: sha512-NDPWFbreDJ1sCVk/FStaxgs+LbzGFzUEMCrfXQFQE12yd7nQg1WgYHLhjmz+fB0QdcLvvQcCVCLmFM/CE/7yhg==}
 
-  '@opencode/sdk@0.0.0-dev-19421':
-    resolution: {integrity: sha512-+8zJuHpc0+llOap0oUYXqpm8jYjjEPWZhh4sm/Gv/Db8tsEepOwe8gH4iO872+JAEQNcvKNluYw85UUlBsSPHA==}
+  '@opencode/sdk@2.0.0':
+    resolution: {integrity: sha512-iAi46WF6OkSiV8yMAP9IGesfC60MFEZK/ibIF/jTzPlJCNDIzFxJpdm/hcWExQkyJod7KueDEAqY6eeoUtun2A==}
 
-  '@opencode/server@0.0.0-dev-19421':
-    resolution: {integrity: sha512-t+Zf081ZmeVGBUSJJLDtr2LCwYh2OHTT86FmpWfOgShq0VJQUr6jf/XpPyBbvdXCozpD/q2uwj8btUUE6Pgvog==}
+  '@opencode/server@2.0.0':
+    resolution: {integrity: sha512-ybZ3fbJcNWB/ijGWUQN448GhDbSNYijGHOr8RvzEDnRjBhT4lVyLvdmD/xLYG7yOaiusCdZ5jF1zit9jW3bqmg==}
 
-  '@opencode/simulation@0.0.0-dev-19421':
-    resolution: {integrity: sha512-WQV8a1bU3LGl5HE+i6PTR8rVLqPBL0vCl0zpdvYWqUULphfnwDVdFSCUSeHNFr1HtBNbxYb+NRpLq+IkXxEG8Q==}
+  '@opencode/simulation@2.0.0':
+    resolution: {integrity: sha512-U+7X5qSNc/wNHzCSdJi4uywISSiG2Me2FBIWRWH8m0mipQdlZnzaMd8I2leFE55hL0SwszdSNwgwPzSSrIeu4Q==}
 
-  '@opencode/util@0.0.0-dev-19421':
-    resolution: {integrity: sha512-eg0E+KDd48ijRiUQAUuUpMe7vFkfy9w3brNyixUWAK/tQPbSY/Vc0bcbGnT47cNcPw8WQHoPgEGXtOFO0Djhnw==}
+  '@opencode/util@2.0.0':
+    resolution: {integrity: sha512-cnxU2M1OJ0P3d09i9jkvIan3H4CnUA22+S30AU50hJCEfF2Rid40UN7X3qJpk+l36wsAn1hfdNMTx7HBOIB5Ig==}
 
   '@openrouter/ai-sdk-provider@2.10.0':
     resolution: {integrity: sha512-FMsAEjLUt5pWuRE2LDC/LCvVrFjLlrEzUITH5+5SZtfq7KZ2wrOHjQVxzz92sju8S9ltpzW87CLW8/b0oBXVCw==}
@@ -5550,10 +5550,10 @@ snapshots:
       '@opencode-ai/pty-linux-x64-gnu': 0.1.13
       '@opencode-ai/pty-linux-x64-musl': 0.1.13
 
-  '@opencode/ai@0.0.0-dev-19421(supports-color@10.2.2)':
+  '@opencode/ai@2.0.0(supports-color@10.2.2)':
     dependencies:
       '@aws-sdk/credential-providers': 3.1057.0
-      '@opencode/schema': 0.0.0-dev-19421
+      '@opencode/schema': 2.0.0
       '@smithy/eventstream-codec': 4.2.14
       '@smithy/util-utf8': 4.2.2
       aws4fetch: 1.0.20
@@ -5562,20 +5562,20 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@opencode/client@0.0.0-dev-19421(effect@4.0.0-rc.112)':
+  '@opencode/client@2.0.0(effect@4.0.0-rc.112)':
     dependencies:
-      '@opencode/protocol': 0.0.0-dev-19421
-      '@opencode/schema': 0.0.0-dev-19421
+      '@opencode/protocol': 2.0.0
+      '@opencode/schema': 2.0.0
     optionalDependencies:
       effect: 4.0.0-rc.112
 
-  '@opencode/codemode@0.0.0-dev-19421':
+  '@opencode/codemode@2.0.0':
     dependencies:
       acorn: 8.15.0
       effect: 4.0.0-rc.112
       typescript: 5.8.2
 
-  '@opencode/core@0.0.0-dev-19421(@aws-sdk/credential-provider-node@3.972.82)(@opentelemetry/api-logs@0.214.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.3)(ai@6.0.279(zod@4.6.1))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(ws@8.21.0)':
+  '@opencode/core@2.0.0(@aws-sdk/credential-provider-node@3.972.82)(@opentelemetry/api-logs@0.214.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.3)(ai@6.0.279(zod@4.6.1))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
       '@ai-sdk/alibaba': 1.0.17(zod@4.1.8)
       '@ai-sdk/anthropic': 3.0.82(zod@4.1.8)
@@ -5594,12 +5594,12 @@ snapshots:
       '@lydell/node-pty': 1.2.0-beta.12
       '@modelcontextprotocol/sdk': 1.29.0(supports-color@10.2.2)(zod@4.1.8)
       '@opencode-ai/pty': 0.1.13
-      '@opencode/ai': 0.0.0-dev-19421(supports-color@10.2.2)
-      '@opencode/codemode': 0.0.0-dev-19421
-      '@opencode/plugin': 0.0.0-dev-19421(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
-      '@opencode/plugin-browser': 0.0.0-dev-19421(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
-      '@opencode/schema': 0.0.0-dev-19421
-      '@opencode/util': 0.0.0-dev-19421(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
+      '@opencode/ai': 2.0.0(supports-color@10.2.2)
+      '@opencode/codemode': 2.0.0
+      '@opencode/plugin': 2.0.0(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
+      '@opencode/plugin-browser': 2.0.0(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
+      '@opencode/schema': 2.0.0
+      '@opencode/util': 2.0.0(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
       '@parcel/watcher': 2.5.1
       '@silvia-odwyer/photon-node': 0.3.4
       '@standard-schema/spec': 1.1.0
@@ -5697,7 +5697,7 @@ snapshots:
       - valibot
       - ws
 
-  '@opencode/core@0.0.0-dev-19421(@aws-sdk/credential-provider-node@3.972.82)(@opentelemetry/api-logs@0.214.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.3)(ai@6.0.279(zod@4.6.1))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(ws@8.21.3)':
+  '@opencode/core@2.0.0(@aws-sdk/credential-provider-node@3.972.82)(@opentelemetry/api-logs@0.214.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.3)(ai@6.0.279(zod@4.6.1))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(ws@8.21.3)':
     dependencies:
       '@ai-sdk/alibaba': 1.0.17(zod@4.1.8)
       '@ai-sdk/anthropic': 3.0.82(zod@4.1.8)
@@ -5716,12 +5716,12 @@ snapshots:
       '@lydell/node-pty': 1.2.0-beta.12
       '@modelcontextprotocol/sdk': 1.29.0(supports-color@10.2.2)(zod@4.1.8)
       '@opencode-ai/pty': 0.1.13
-      '@opencode/ai': 0.0.0-dev-19421(supports-color@10.2.2)
-      '@opencode/codemode': 0.0.0-dev-19421
-      '@opencode/plugin': 0.0.0-dev-19421(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
-      '@opencode/plugin-browser': 0.0.0-dev-19421(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
-      '@opencode/schema': 0.0.0-dev-19421
-      '@opencode/util': 0.0.0-dev-19421(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
+      '@opencode/ai': 2.0.0(supports-color@10.2.2)
+      '@opencode/codemode': 2.0.0
+      '@opencode/plugin': 2.0.0(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
+      '@opencode/plugin-browser': 2.0.0(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
+      '@opencode/schema': 2.0.0
+      '@opencode/util': 2.0.0(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
       '@parcel/watcher': 2.5.1
       '@silvia-odwyer/photon-node': 0.3.4
       '@standard-schema/spec': 1.1.0
@@ -5819,10 +5819,10 @@ snapshots:
       - valibot
       - ws
 
-  '@opencode/plugin-browser@0.0.0-dev-19421(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)':
+  '@opencode/plugin-browser@2.0.0(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)':
     dependencies:
-      '@opencode/plugin': 0.0.0-dev-19421(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
-      '@opencode/schema': 0.0.0-dev-19421
+      '@opencode/plugin': 2.0.0(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
+      '@opencode/schema': 2.0.0
       effect: 4.0.0-rc.112
     transitivePeerDependencies:
       - '@opencode/theme'
@@ -5840,14 +5840,14 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@opencode/plugin@0.0.0-dev-19421(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)':
+  '@opencode/plugin@2.0.0(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)':
     dependencies:
       '@ai-sdk/provider': 3.0.8
-      '@opencode/ai': 0.0.0-dev-19421(supports-color@10.2.2)
-      '@opencode/client': 0.0.0-dev-19421(effect@4.0.0-rc.112)
-      '@opencode/protocol': 0.0.0-dev-19421
-      '@opencode/schema': 0.0.0-dev-19421
-      '@opencode/util': 0.0.0-dev-19421(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
+      '@opencode/ai': 2.0.0(supports-color@10.2.2)
+      '@opencode/client': 2.0.0(effect@4.0.0-rc.112)
+      '@opencode/protocol': 2.0.0
+      '@opencode/schema': 2.0.0
+      '@opencode/util': 2.0.0(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
       '@standard-schema/spec': 1.1.0
       effect: 4.0.0-rc.112
       zod: 4.1.8
@@ -5865,24 +5865,24 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@opencode/protocol@0.0.0-dev-19421':
+  '@opencode/protocol@2.0.0':
     dependencies:
-      '@opencode/schema': 0.0.0-dev-19421
+      '@opencode/schema': 2.0.0
       effect: 4.0.0-rc.112
 
-  '@opencode/schema@0.0.0-dev-19421':
+  '@opencode/schema@2.0.0':
     dependencies:
       '@standard-schema/spec': 1.1.0
       effect: 4.0.0-rc.112
 
-  '@opencode/sdk@0.0.0-dev-19421(@aws-sdk/credential-provider-node@3.972.82)(@opentelemetry/api-logs@0.214.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.3)(ai@6.0.279(zod@4.6.1))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(typescript@7.0.2)(web-tree-sitter@0.25.10)(ws@8.21.3)(zod@4.6.1)':
+  '@opencode/sdk@2.0.0(@aws-sdk/credential-provider-node@3.972.82)(@opentelemetry/api-logs@0.214.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.3)(ai@6.0.279(zod@4.6.1))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(typescript@7.0.2)(web-tree-sitter@0.25.10)(ws@8.21.3)(zod@4.6.1)':
     dependencies:
-      '@opencode/client': 0.0.0-dev-19421(effect@4.0.0-rc.112)
-      '@opencode/core': 0.0.0-dev-19421(@aws-sdk/credential-provider-node@3.972.82)(@opentelemetry/api-logs@0.214.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.3)(ai@6.0.279(zod@4.6.1))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(ws@8.21.3)
-      '@opencode/plugin': 0.0.0-dev-19421(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
-      '@opencode/schema': 0.0.0-dev-19421
-      '@opencode/server': 0.0.0-dev-19421(@aws-sdk/credential-provider-node@3.972.82)(@opentelemetry/api-logs@0.214.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.3)(ai@6.0.279(zod@4.6.1))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(typescript@7.0.2)(web-tree-sitter@0.25.10)(ws@8.21.3)(zod@4.6.1)
-      '@opencode/util': 0.0.0-dev-19421(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
+      '@opencode/client': 2.0.0(effect@4.0.0-rc.112)
+      '@opencode/core': 2.0.0(@aws-sdk/credential-provider-node@3.972.82)(@opentelemetry/api-logs@0.214.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.3)(ai@6.0.279(zod@4.6.1))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(ws@8.21.3)
+      '@opencode/plugin': 2.0.0(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
+      '@opencode/schema': 2.0.0
+      '@opencode/server': 2.0.0(@aws-sdk/credential-provider-node@3.972.82)(@opentelemetry/api-logs@0.214.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.3)(ai@6.0.279(zod@4.6.1))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(typescript@7.0.2)(web-tree-sitter@0.25.10)(ws@8.21.3)(zod@4.6.1)
+      '@opencode/util': 2.0.0(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
       effect: 4.0.0-rc.112
     transitivePeerDependencies:
       - '@aws-sdk/client-rds-data'
@@ -5959,15 +5959,15 @@ snapshots:
       - ws
       - zod
 
-  '@opencode/server@0.0.0-dev-19421(@aws-sdk/credential-provider-node@3.972.82)(@opentelemetry/api-logs@0.214.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.3)(ai@6.0.279(zod@4.6.1))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(typescript@7.0.2)(web-tree-sitter@0.25.10)(ws@8.21.3)(zod@4.6.1)':
+  '@opencode/server@2.0.0(@aws-sdk/credential-provider-node@3.972.82)(@opentelemetry/api-logs@0.214.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.3)(ai@6.0.279(zod@4.6.1))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(typescript@7.0.2)(web-tree-sitter@0.25.10)(ws@8.21.3)(zod@4.6.1)':
     dependencies:
       '@effect/platform-node': 4.0.0-rc.112(effect@4.0.0-rc.112)(redis@6.2.1(@opentelemetry/api@1.9.0))
       '@effect/platform-node-shared': 4.0.0-rc.112(effect@4.0.0-rc.112)
-      '@opencode/core': 0.0.0-dev-19421(@aws-sdk/credential-provider-node@3.972.82)(@opentelemetry/api-logs@0.214.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.3)(ai@6.0.279(zod@4.6.1))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(ws@8.21.3)
-      '@opencode/protocol': 0.0.0-dev-19421
-      '@opencode/schema': 0.0.0-dev-19421
-      '@opencode/simulation': 0.0.0-dev-19421(@aws-sdk/credential-provider-node@3.972.82)(@opentelemetry/api-logs@0.214.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@smithy/signature-v4@5.7.3)(ai@6.0.279(zod@4.6.1))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(typescript@7.0.2)(web-tree-sitter@0.25.10)
-      '@opencode/util': 0.0.0-dev-19421(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
+      '@opencode/core': 2.0.0(@aws-sdk/credential-provider-node@3.972.82)(@opentelemetry/api-logs@0.214.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.3)(ai@6.0.279(zod@4.6.1))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(ws@8.21.3)
+      '@opencode/protocol': 2.0.0
+      '@opencode/schema': 2.0.0
+      '@opencode/simulation': 2.0.0(@aws-sdk/credential-provider-node@3.972.82)(@opentelemetry/api-logs@0.214.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@smithy/signature-v4@5.7.3)(ai@6.0.279(zod@4.6.1))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(typescript@7.0.2)(web-tree-sitter@0.25.10)
+      '@opencode/util': 2.0.0(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
       drizzle-orm: 1.0.0-rc.5-169397b(@opentelemetry/api@1.9.0)(effect@4.0.0-rc.112)(zod@4.6.1)
       effect: 4.0.0-rc.112
     transitivePeerDependencies:
@@ -6045,13 +6045,13 @@ snapshots:
       - ws
       - zod
 
-  '@opencode/simulation@0.0.0-dev-19421(@aws-sdk/credential-provider-node@3.972.82)(@opentelemetry/api-logs@0.214.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@smithy/signature-v4@5.7.3)(ai@6.0.279(zod@4.6.1))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(typescript@7.0.2)(web-tree-sitter@0.25.10)':
+  '@opencode/simulation@2.0.0(@aws-sdk/credential-provider-node@3.972.82)(@opentelemetry/api-logs@0.214.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@smithy/signature-v4@5.7.3)(ai@6.0.279(zod@4.6.1))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(typescript@7.0.2)(web-tree-sitter@0.25.10)':
     dependencies:
-      '@opencode/ai': 0.0.0-dev-19421(supports-color@10.2.2)
-      '@opencode/core': 0.0.0-dev-19421(@aws-sdk/credential-provider-node@3.972.82)(@opentelemetry/api-logs@0.214.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.3)(ai@6.0.279(zod@4.6.1))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(ws@8.21.0)
-      '@opencode/plugin': 0.0.0-dev-19421(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
-      '@opencode/protocol': 0.0.0-dev-19421
-      '@opencode/util': 0.0.0-dev-19421(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
+      '@opencode/ai': 2.0.0(supports-color@10.2.2)
+      '@opencode/core': 2.0.0(@aws-sdk/credential-provider-node@3.972.82)(@opentelemetry/api-logs@0.214.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.3)(ai@6.0.279(zod@4.6.1))(graphql@16.14.2)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)(ws@8.21.0)
+      '@opencode/plugin': 2.0.0(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(@opentui/core@0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
+      '@opencode/protocol': 2.0.0
+      '@opencode/util': 2.0.0(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)
       '@opentui/core': 0.5.10(typescript@7.0.2)(web-tree-sitter@0.25.10)
       effect: 4.0.0-rc.112
       ws: 8.21.0
@@ -6127,7 +6127,7 @@ snapshots:
       - valibot
       - web-tree-sitter
 
-  '@opencode/util@0.0.0-dev-19421(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)':
+  '@opencode/util@2.0.0(@opentelemetry/api-logs@0.214.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(supports-color@10.2.2)':
     dependencies:
       '@effect/opentelemetry': 4.0.0-rc.112(@opentelemetry/api-logs@0.214.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.214.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.6.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0-rc.112)
       '@effect/platform-node': 4.0.0-rc.112(effect@4.0.0-rc.112)(redis@6.2.1(@opentelemetry/api@1.9.0))

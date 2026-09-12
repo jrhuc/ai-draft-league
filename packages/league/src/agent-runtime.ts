@@ -431,7 +431,7 @@ async function codeModeCatalog(tools: readonly AgentTool[]): Promise<string> {
     tools: Object.fromEntries(
       tools.map((tool) => [
         tool.definition.name,
-        // SAFETY: runtime.catalog() only renders signatures and never invokes execute.
+        // SAFETY: runtime.catalog only renders signatures and never invokes execute.
         Tool.make({
           description: tool.definition.description,
           input: tool.definition.parameters,
@@ -445,7 +445,7 @@ async function codeModeCatalog(tools: readonly AgentTool[]): Promise<string> {
   });
   return [
     CATALOG_INTRO,
-    ...runtime.catalog().map((entry) => `${entry.description}\n${entry.signature}`),
+    ...runtime.catalog.map((entry) => `${entry.description}\n${entry.signature}`),
   ].join("\n\n");
 }
 
