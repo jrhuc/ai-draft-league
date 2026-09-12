@@ -6,7 +6,7 @@ import type {
 } from "./reference.js";
 import { type PerspectiveStateView, MonState, SCREEN_MOVES, stateKey } from "./state-model.js";
 import type { JsonObject, Pid } from "./types.js";
-import { afterColon, text } from "./value.js";
+import { afterColon, count, text } from "./value.js";
 
 interface MonEntry {
   pid: Pid;
@@ -459,6 +459,12 @@ export function estimateDamage(
   authoritative.attacker_fainted_allies = [...state.sides[attacker.pid].mons.values()].filter(
     (mon) => mon.fainted,
   ).length;
+  authoritative.attacker_hits_taken =
+    args.attacker_hits_taken === undefined
+      ? attacker.benched
+        ? 0
+        : attacker.mon.timesAttacked
+      : Math.max(0, Math.trunc(count(args.attacker_hits_taken)));
   const moveTarget = reference.moveTarget(move);
   const liveFoes = active.filter((entry) => entry.pid !== attacker.pid).length;
   const hasLiveAlly = active.some(

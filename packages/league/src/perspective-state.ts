@@ -107,11 +107,13 @@ export class PerspectiveState {
           previousMon.boosts = {};
           previousMon.volatiles.clear();
           previousMon.choiceLock = undefined;
+          previousMon.timesAttacked = 0;
         }
         if (kind !== "replace") {
           mon.boosts = {};
           mon.volatiles.clear();
           mon.protectSuccessStreak = 0;
+          mon.timesAttacked = 0;
           mon.choiceLock = undefined;
         }
         this.sides[side].active[slot] = this.monKey(args[0]!);
@@ -157,9 +159,11 @@ export class PerspectiveState {
       mon.fainted = true;
       mon.boosts = {};
       mon.volatiles.clear();
-    } else if ((kind === "-damage" || kind === "-heal") && args.length >= 2)
-      this.setHp(this.mon(args[0]!), args[1]!);
-    else if (kind === "-sethp") {
+    } else if ((kind === "-damage" || kind === "-heal") && args.length >= 2) {
+      const mon = this.mon(args[0]!);
+      this.setHp(mon, args[1]!);
+      if (kind === "-damage" && !args.some((arg) => arg.startsWith("[from]"))) mon.timesAttacked += 1;
+    } else if (kind === "-sethp") {
       for (let index = 0; index < args.length - 1; index += 2) {
         if (args[index]!.startsWith("p")) this.setHp(this.mon(args[index]!), args[index + 1]!);
       }
@@ -627,6 +631,7 @@ export class PerspectiveState {
         attrs.push(
           `boosts ${boosts.map(([stat, value]) => `${STAT_LABELS.get(stat) ?? stat} ${value >= 0 ? "+" : ""}${value}`).join(", ")}`,
         );
+      if (mon.timesAttacked > 0) attrs.push(`hits taken ${mon.timesAttacked}`);
       if (mon.volatiles.size) attrs.push(`volatile ${[...mon.volatiles].sort().join(", ")}`);
       if (mon.moves.size)
         attrs.push(

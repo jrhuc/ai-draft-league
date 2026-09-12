@@ -17,6 +17,9 @@ export const FORMAT_AUTHORITY_NOTICE =
 export const PARALLEL_TOOLS_RULE =
   "Make independent tool calls together in one reply; call tools one after another only when a call depends on an earlier result.";
 
+export const NEW_BUILD_EVERY_MATCHUP =
+  "Every coach builds a new six from its roster with new sets for every matchup; the sets, items, moves and spreads you saw in this series were built for it and may not return.";
+
 export type SheetPolicy = "open" | "closed";
 
 export function renderPromptTemplate(
@@ -126,6 +129,7 @@ export const CLOSED_SERIES_REFLECTION_SYSTEM = [
   REFLECTION_EVIDENCE,
   "Identify the main reason for the game and series result, including whether your between-game adjustments helped or backfired.",
   REFLECTION_MEMORY_RULE,
+  NEW_BUILD_EVERY_MATCHUP,
   "The series is complete; leave next_game_plan empty.",
   `Call submit_review with {"summary":"why the game and series were won or lost","adjustment":"what you would change against this opponent in a future series","notebook":${NOTEBOOK_OBJECT}}.`,
 ].join("\n");
@@ -137,6 +141,7 @@ export const DRAFT_SERIES_REFLECTION_SYSTEM = [
   "Identify the main reason for the game and series result, including whether your between-game adjustments helped or backfired.",
   "Your review may include the preparation and play of this series. It will be available to your franchise manager.",
   REFLECTION_MEMORY_RULE,
+  NEW_BUILD_EVERY_MATCHUP,
   "The series is complete; leave next_game_plan empty.",
   `Call submit_review with {"summary":"why the game and series were won or lost","adjustment":"what you would change against this opponent in a future series","notebook":${NOTEBOOK_OBJECT}}.`,
 ].join("\n");

@@ -59,6 +59,8 @@ export class MonState {
   formes = new Set<string>();
   /** Successful consecutive Protect-like stalls; 0 means next Protect is full odds. */
   protectSuccessStreak = 0;
+  /** Direct hits since entering; Champions resets it on switch-out (Rage Fist). */
+  timesAttacked = 0;
 
   constructor(public ident: string) {}
 

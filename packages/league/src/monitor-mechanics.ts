@@ -13,6 +13,7 @@ export interface ObservedHit {
   hpAfter: number;
   fainted: boolean;
   crit: boolean;
+  helpingHand: boolean;
   spreadTargets: number;
   markers: string[];
 }
@@ -33,6 +34,7 @@ export interface DamagePrediction {
   shownHp: number;
   ko: "both" | "one" | "none" | null;
   crit: boolean;
+  helpingHand: boolean;
   spread: boolean;
 }
 
@@ -75,6 +77,7 @@ interface PendingMove {
   attacker: string;
   attackerSide: Pid;
   attackerChangedForme: boolean;
+  helpingHand: boolean;
   move: string;
   spreadTargets: number;
   hits: Map<string, ObservedHit>;
@@ -119,6 +122,7 @@ export interface ObservedGame {
 export function observeGame(lines: readonly string[]): ObservedGame {
   const slots = new Map<string, SlotState>();
   const changedForme = new Set<string>();
+  const helped = new Set<string>();
   const hits: ObservedHit[] = [];
   const orders: ObservedTurnOrder[] = [];
   let turn = 0;
@@ -145,6 +149,7 @@ export function observeGame(lines: readonly string[]): ObservedGame {
       hpAfter: slot?.hp ?? 100,
       fainted: false,
       crit: false,
+      helpingHand: pending.helpingHand,
       spreadTargets: pending.spreadTargets,
       markers: [
         ...(pending.attackerChangedForme ? ["attacker changed forme this turn"] : []),
@@ -163,6 +168,7 @@ export function observeGame(lines: readonly string[]): ObservedGame {
       flush();
       turn = Number(args[0]) || 0;
       changedForme.clear();
+      helped.clear();
       order = { turn, moves: [] };
       orders.push(order);
     } else if (kind === "switch" || kind === "drag" || kind === "replace") {
@@ -183,12 +189,17 @@ export function observeGame(lines: readonly string[]): ObservedGame {
         attacker: attacker.species,
         attackerSide: slotSide(key),
         attackerChangedForme: changedForme.has(key),
+        helpingHand: helped.has(key),
         move: args[1],
         spreadTargets: spread ? spread.slice(8).trim().split(",").filter(Boolean).length : 1,
         hits: new Map(),
       };
       if (!args.includes("[still]"))
         order.moves.push({ species: attacker.species, side: slotSide(key), move: args[1] });
+    } else if (kind === "-singleturn" && afterColon(args[1] ?? "") === "Helping Hand") {
+      helped.add(key);
+    } else if (kind === "-zbroken") {
+      hitFor(key)?.markers.push("through Protect");
     } else if (kind === "-damage" || kind === "-heal") {
       const slot = slots.get(key);
       const after = hpPercent(args[1] ?? "");
@@ -257,6 +268,7 @@ export function readPredictions(traceRows: readonly JsonObject[]): Predictions {
           shownHp: shown ? Number(shown[1]) : 100,
           ko: koVerdict(result),
           crit: args.is_critical_hit === true || /applied[^.]*critical hit/.test(result),
+          helpingHand: args.helping_hand === true,
           spread: /spread \(0\.75x\)/.test(result),
         });
       } else if (call.name === "compare_action_order") {
@@ -329,8 +341,13 @@ export function auditGame(
           speciesMatches(prediction.defender, hit.target),
       );
       for (const hit of matched) {
-        if (hit.crit !== prediction.crit || hit.spreadTargets > 1 !== prediction.spread) continue;
-        if (hit.markers.includes("immune")) continue;
+        if (
+          hit.crit !== prediction.crit ||
+          hit.helpingHand !== prediction.helpingHand ||
+          hit.spreadTargets > 1 !== prediction.spread
+        )
+          continue;
+        if (hit.markers.includes("immune") || hit.markers.includes("through Protect")) continue;
         audit.damageMatched += 1;
         const survived = hit.markers.some((marker) => SURVIVAL_MARKERS.has(marker));
         const dealt = hit.hpBefore - hit.hpAfter;

@@ -101,6 +101,7 @@ export const estimateDamageArgumentsSchema = z.object({
   attacker_hp_percent: optionalNumberSchema,
   defender_hp_percent: optionalNumberSchema,
   attacker_fainted_allies: optionalNumberSchema,
+  attacker_hits_taken: optionalNumberSchema,
   attacker_ally: optionalStringSchema,
   defender_ally: optionalStringSchema,
   attacker_ally_ability: optionalStringSchema,
@@ -154,6 +155,7 @@ interface ScratchDamageConfig {
   terrain?: string | undefined;
   helpingHand: boolean;
   faintedAllies: number;
+  attackerTimesAttacked: number;
   attackerAlly?: ScratchAlly | undefined;
   defenderAlly?: ScratchAlly | undefined;
   crit: boolean;
@@ -473,6 +475,7 @@ export function estimateDamage(
   const crit = args.is_critical_hit === true;
   const helpingHand = args.helping_hand === true;
   const faintedAllies = Math.max(0, Math.trunc(args.attacker_fainted_allies ?? 0));
+  const attackerTimesAttacked = Math.max(0, Math.trunc(args.attacker_hits_taken ?? 0));
   const allies: Partial<Record<"attacker" | "defender", ScratchAlly>> = {};
   for (const side of ["attacker", "defender"] as const) {
     const raw = args[`${side}_ally`];
@@ -508,6 +511,7 @@ export function estimateDamage(
       terrain: terrainId,
       helpingHand,
       faintedAllies,
+      attackerTimesAttacked,
       attackerAlly: allies.attacker,
       defenderAlly: allies.defender,
       crit,
@@ -593,6 +597,7 @@ export function estimateDamage(
   if (weatherId) applied.push(WEATHER_WORDS.get(weatherId) ?? weatherId);
   if (terrainId) applied.push(TERRAIN_WORDS.get(terrainId) ?? terrainId);
   if (helpingHand) applied.push("Helping Hand");
+  if (attackerTimesAttacked) applied.push(`attacker hit ${attackerTimesAttacked} times since entering`);
   if (crit) applied.push("critical hit");
   if (isSpread) applied.push("spread (0.75x)");
   for (const side of ["attacker", "defender"] as const) {
@@ -695,6 +700,7 @@ function scratchDamage(
     if (cfg.defenderStatus) def.status = battle.dex.toID(cfg.defenderStatus);
     if (cfg.helpingHand) att.addVolatile("helpinghand");
     att.side.totalFainted = cfg.faintedAllies;
+    att.timesAttacked = cfg.attackerTimesAttacked;
     if (cfg.attackerHpPercent !== undefined)
       att.hp = Math.max(1, Math.round((att.maxhp * cfg.attackerHpPercent) / 100));
     if (cfg.defenderHpPercent !== undefined)

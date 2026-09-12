@@ -131,9 +131,9 @@ export const ACTION_ORDER_TOOL: ToolDefinition = {
 };
 
 const DAMAGE_TOOL_DESCRIPTIONS = {
-  open: "Estimate conditional hit outcomes using the current battle request and open team sheets. Hits are assumed to connect; evaluated endpoints do not establish exhaustive KO certainty or resolve action-level effects such as protection or redirection. Supply only the two visible Pokémon and move; the harness applies known abilities, items, exact own stats, opposing nature ranges, boosts, status, HP, screens, weather, terrain, both active allies with their abilities, and the fainted count that scales Last Respects. Helping Hand and critical-hit flags are optional hypothetical modifiers.",
+  open: "Estimate conditional hit outcomes using the current battle request and open team sheets. Hits are assumed to connect; evaluated endpoints do not establish exhaustive KO certainty or resolve action-level effects such as protection or redirection. Supply only the two visible Pokémon and move; the harness applies known abilities, items, exact own stats, opposing nature ranges, boosts, status, HP, screens, weather, terrain, both active allies with their abilities, the fainted count that scales Last Respects, and the hits the attacker has taken that scale Rage Fist. Helping Hand, critical-hit and hits-taken inputs are optional hypothetical overrides.",
   closed:
-    "Estimate conditional hit outcomes using the current battle request and what the battle has revealed. Hits are assumed to connect; evaluated endpoints do not establish exhaustive KO certainty or resolve action-level effects such as protection or redirection. Supply only the two visible Pokémon and move; the harness applies revealed abilities and items, exact own stats, legal opposing stat ranges, boosts, status, HP, screens, weather, terrain, both active allies with their abilities, and the fainted count that scales Last Respects; anything unrevealed is treated as neutral across legal ranges. Helping Hand and critical-hit flags are optional hypothetical modifiers.",
+    "Estimate conditional hit outcomes using the current battle request and what the battle has revealed. Hits are assumed to connect; evaluated endpoints do not establish exhaustive KO certainty or resolve action-level effects such as protection or redirection. Supply only the two visible Pokémon and move; the harness applies revealed abilities and items, exact own stats, legal opposing stat ranges, boosts, status, HP, screens, weather, terrain, both active allies with their abilities, the fainted count that scales Last Respects, and the hits the attacker has taken that scale Rage Fist; anything unrevealed is treated as neutral across legal ranges. Helping Hand, critical-hit and hits-taken inputs are optional hypothetical overrides.",
 } satisfies Record<SheetPolicy, string>;
 
 export function decisionTools(sheets: SheetPolicy): ToolDefinition[] {
@@ -148,7 +148,7 @@ export function decisionTools(sheets: SheetPolicy): ToolDefinition[] {
           ...parameters,
           properties: {
             ...Object.fromEntries(
-              ["attacker", "defender", "move", "helping_hand", "is_critical_hit"].map((name) => [
+              ["attacker", "defender", "move", "helping_hand", "is_critical_hit", "attacker_hits_taken"].map((name) => [
                 name,
                 parameters.properties[name] ?? null,
               ]),

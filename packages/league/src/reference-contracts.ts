@@ -206,6 +206,12 @@ export const DEX_TOOLS: ToolDefinition[] = [
         description:
           "Compute as a critical hit: 1.5x, ignoring the defender's positive stages and screens.",
       },
+      attacker_hits_taken: {
+        type: "integer",
+        minimum: 0,
+        description:
+          "Direct hits the attacker has taken since it entered, which scale Rage Fist; defaults to the live count, which resets when it switches out.",
+      },
       attacker_hp_percent: {
         type: "number",
         minimum: 0,
