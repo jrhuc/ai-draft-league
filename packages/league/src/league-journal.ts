@@ -28,7 +28,6 @@ const storedCheckpointSchema = z.strictObject({
   roster_version: z.number().int().nonnegative(),
   memory_json: z.string().min(1),
   reasoning: z.string(),
-  fallback: z.union([z.literal(0), z.literal(1)]),
 });
 
 const rosterMonSchema = z.strictObject({
@@ -55,7 +54,6 @@ export interface FranchiseCheckpoint {
   rosterVersion: number;
   memory: Record<string, string>;
   reasoning: string;
-  fallback: boolean;
 }
 
 type RosterMon = z.infer<typeof rosterMonSchema>;
@@ -233,7 +231,6 @@ function checkpointFromStored(value: StoredRow): FranchiseCheckpoint {
     rosterVersion: row.roster_version,
     memory: memorySchema.parse(JSON.parse(row.memory_json)),
     reasoning: row.reasoning,
-    fallback: row.fallback === 1,
   };
 }
 
@@ -250,7 +247,6 @@ export function storeFranchiseCheckpoint(runDir: string, value: FranchiseCheckpo
         roster_version: value.rosterVersion,
         memory_json: JSON.stringify(memorySchema.parse(value.memory)),
         reasoning: value.reasoning,
-        fallback: value.fallback ? 1 : 0,
       },
       ["stage", "week", "entrant"],
       `franchise ${value.entrant} ${value.stage} ${value.week} checkpoint`,
@@ -279,7 +275,7 @@ export function readFranchiseCheckpoints(
     (database) =>
       database
         .prepare(
-          `SELECT stage, week, entrant, model, roster_version, memory_json, reasoning, fallback FROM franchise_checkpoints${where} ORDER BY week, stage, entrant`,
+          `SELECT stage, week, entrant, model, roster_version, memory_json, reasoning FROM franchise_checkpoints${where} ORDER BY week, stage, entrant`,
         )
         .all(...parameters)
         .map(checkpointFromStored),

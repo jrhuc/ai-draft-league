@@ -7,9 +7,7 @@ const CONSECUTIVE_DECISION_FAILURE_LIMIT = 3;
 
 export class LLMEngineStats {
   private decisions = 0;
-  private fallbacks = 0;
   private reflections = 0;
-  private reflectionFallbacks = 0;
   private moveSelections = 0;
   private switchSelections = 0;
   private protectSelections = 0;
@@ -42,23 +40,20 @@ export class LLMEngineStats {
   }
 
   decision(input: {
-    fallback: boolean;
     parseFailures: number;
     usage: Record<string, number> | undefined;
     substituted: boolean;
   }): void {
-    if (!input.fallback) this.consecutiveDecisionFailures = 0;
+    this.consecutiveDecisionFailures = 0;
     this.decisions += 1;
-    if (input.fallback) this.fallbacks += 1;
     this.parseFailures += input.parseFailures;
     this.cost += input.usage?.cost ?? 0;
     this.reasoningTokens += Math.trunc(input.usage?.reasoning_tokens ?? 0);
     if (input.substituted) this.substitutedActions += 1;
   }
 
-  reflection(fallback: boolean, usage: Record<string, number>): void {
+  reflection(usage: Record<string, number>): void {
     this.reflections += 1;
-    if (fallback) this.reflectionFallbacks += 1;
     this.cost += usage.cost ?? 0;
     this.reasoningTokens += Math.trunc(usage.reasoning_tokens ?? 0);
   }
@@ -125,9 +120,7 @@ export class LLMEngineStats {
   snapshot(): DecisionStats {
     const stats: DecisionStats = {
       decisions: this.decisions,
-      fallbacks: this.fallbacks,
       reflections: this.reflections,
-      reflection_fallbacks: this.reflectionFallbacks,
       move_selections: this.moveSelections,
       switch_selections: this.switchSelections,
       protect_selections: this.protectSelections,

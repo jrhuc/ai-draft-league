@@ -93,18 +93,6 @@ test("the first failure cancels queued and in-flight series before rethrowing", 
   assert.deepEqual(aborted, [1]);
 });
 
-test("key-carrying runs require a key for every hosted model", async (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-keys-"));
-  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
-  await assert.rejects(
-    runRotation(["random", "prime:test-model"], 1, directory, {
-      apiKeys: {},
-      recordsPath: path.join(directory, "results.jsonl"),
-    }),
-    /API key missing for prime:test-model/,
-  );
-});
-
 test("an aborted signal stops Rotation without recording", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-abort-"));
   t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));

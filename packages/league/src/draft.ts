@@ -7,7 +7,6 @@ export {
   draftBoardTable,
   draftTranscriptRowSchema,
   draftUserPrompt,
-  isRejection,
   legalPicks,
   loadBoard,
   maxAffordable,

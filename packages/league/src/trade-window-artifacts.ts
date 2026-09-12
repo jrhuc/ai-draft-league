@@ -1,12 +1,11 @@
 import { z } from "zod";
 
-import { isRejection } from "./draft.js";
+import type { DraftBoard, DraftBoardMon } from "./draft.js";
 import { commitRunArtifact, readRunArtifacts } from "./run-artifact-store.js";
 import {
   applyFreeAgency,
   applyTradeOffer,
   commitRosterState,
-  parseTradeDecision,
   rosterStateCopy,
   type TradeOffer,
   type TradeWindowArtifact,
@@ -14,6 +13,7 @@ import {
   type TradeWindowRoster,
   type TradeWindowState,
   validateLeagueRosterState,
+  validateRosterAssets,
 } from "./trade-window-protocol.js";
 import type { JsonValue } from "./types.js";
 
@@ -33,8 +33,6 @@ const offerEventSchema = z.strictObject({
   get: z.string().nullable(),
   message: z.string().nullable(),
   accepted: z.boolean().nullable(),
-  proposerFallback: z.boolean(),
-  responderFallback: z.boolean().nullable(),
   offerReasoning: z.string(),
   responseReasoning: z.string(),
   timestamp: z.string(),
@@ -45,7 +43,6 @@ const freeAgencyEventSchema = z.strictObject({
   model: z.string(),
   swaps: z.array(z.strictObject({ drop: z.string(), add: z.string() })),
   reasoning: z.string(),
-  fallback: z.boolean(),
   timestamp: z.string(),
 });
 const eventSchema = z.discriminatedUnion("kind", [offerEventSchema, freeAgencyEventSchema]);
@@ -61,8 +58,6 @@ const tradeWindowArtifactSchema = z.object({
       get: z.string().nullable(),
       message: z.string().nullable(),
       accepted: z.boolean().nullable(),
-      proposerFallback: z.boolean(),
-      responderFallback: z.boolean().nullable(),
       offerReasoning: z.string(),
       responseReasoning: z.string(),
     }),
@@ -73,7 +68,6 @@ const tradeWindowArtifactSchema = z.object({
       model: z.string(),
       swaps: z.array(z.object({ drop: z.string(), add: z.string() })),
       reasoning: z.string(),
-      fallback: z.boolean(),
     }),
   ),
   rosters: z.array(
@@ -125,7 +119,6 @@ export function replayWindowEvents(
         get: offer.get!,
         accepted: offer.accepted === true,
       });
-      validateLeagueRosterState(next, `roster after replayed offer ${cursor}`);
       commitRosterState(state, next);
       made += 1;
     }
@@ -144,41 +137,63 @@ export function replayWindowEvents(
     ) {
       throw new Error(`free-agency event ${index + 1} does not match the window order`);
     }
-    const parsed = parseTradeDecision(
-      JSON.stringify({ swaps: row.swaps, reasoning: row.reasoning }),
-      state,
-      entrant,
-    );
-    if (isRejection(parsed)) {
-      throw new Error(`free-agency event ${index + 1} is not a legal decision: ${parsed}`);
-    }
-    const next = applyFreeAgency(state, entrant, parsed.swaps);
-    validateLeagueRosterState(next, `roster after replayed free agency ${index + 1}`);
+    const next = applyFreeAgency(state, entrant, row.swaps);
     commitRosterState(state, next);
-    decisions.push({
-      entrant,
-      model: row.model,
-      swaps: parsed.swaps,
-      reasoning: parsed.reasoning,
-      fallback: row.fallback,
-    });
+    decisions.push({ entrant, model: row.model, swaps: row.swaps, reasoning: row.reasoning });
   }
   return { offers, decisions };
 }
 
-/** Puts a completed window's rosters, budgets, and swap counts onto `state`. */
-export function adoptWindowArtifact(state: TradeWindowState, artifact: TradeWindowArtifact): void {
-  const monById = new Map(state.board.mons.map((mon) => [mon.id, mon] as const));
-  const next = rosterStateCopy(state);
-  for (const stored of artifact.rosters) {
-    next.rosters[stored.entrant] = stored.roster.map(({ id }) => {
+export interface WindowRoster {
+  entrant: number;
+  roster: DraftBoardMon[];
+  budget: number;
+}
+
+export function windowRosters(
+  artifact: TradeWindowArtifact,
+  board: DraftBoard,
+  models: readonly string[],
+): WindowRoster[] {
+  const context = `transaction artifact after week ${artifact.after_week}`;
+  const monById = new Map(board.mons.map((mon) => [mon.id, mon] as const));
+  const rows = models.map((model, entrant) => {
+    const stored = artifact.rosters.filter((row) => row.entrant === entrant);
+    if (stored.length !== 1)
+      throw new Error(`${context} has ${stored.length} roster rows for entrant ${entrant}`);
+    const row = stored[0]!;
+    if (row.model !== model)
+      throw new Error(`${context} stores entrant ${entrant} as ${row.model}, not ${model}`);
+    if (row.spent !== board.budget - row.budget_left)
+      throw new Error(`${context} entrant ${entrant} spent and budget_left disagree`);
+    const roster = row.roster.map(({ id, name, cost }) => {
       const mon = monById.get(id);
-      if (!mon) throw new Error(`transaction artifact names unknown board id ${id}`);
+      if (!mon || mon.name !== name || mon.cost !== cost)
+        throw new Error(`${context} entrant ${entrant} names unknown board asset ${id}`);
       return mon;
     });
-    next.budgets[stored.entrant] = stored.budget_left;
+    return { entrant, roster, budget: row.budget_left };
+  });
+  if (artifact.rosters.length !== rows.length)
+    throw new Error(`${context} stores rosters for unknown entrants`);
+  validateRosterAssets(
+    board,
+    rows.map((row) => row.roster),
+    rows.map((row) => row.budget),
+    context,
+  );
+  return rows;
+}
+
+/** Puts a completed window's rosters, budgets, and swap counts onto `state`. */
+export function adoptWindowArtifact(state: TradeWindowState, artifact: TradeWindowArtifact): void {
+  const next = rosterStateCopy(state);
+  for (const { entrant, roster, budget } of windowRosters(artifact, state.board, state.models)) {
+    next.rosters[entrant] = roster;
+    next.budgets[entrant] = budget;
   }
   next.swapsUsed.splice(0, next.swapsUsed.length, ...artifact.swaps_used);
+  validateLeagueRosterState(next, `adopted transaction artifact after week ${artifact.after_week}`);
   commitRosterState(state, next);
 }
 

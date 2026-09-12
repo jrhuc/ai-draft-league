@@ -15,7 +15,6 @@ import { TeamsPage } from "@/routes/teams";
 import { TransactionsPage } from "@/routes/transactions";
 
 const dev = import.meta.env.DEV;
-const LivePage = dev ? lazy(() => import("@/routes/live")) : null;
 const ArchivePage = dev ? lazy(() => import("@/routes/archive")) : null;
 const DevNav = dev ? lazy(() => import("@/components/dev-nav")) : null;
 
@@ -100,16 +99,6 @@ export function App() {
         />
         <Route path="/transactions" element={<TransactionsPage />} />
         <Route path="/playoffs" element={<PlayoffsPage />} />
-        {LivePage ? (
-          <Route
-            path="/live"
-            element={
-              <Suspense fallback={null}>
-                <LivePage />
-              </Suspense>
-            }
-          />
-        ) : null}
         {ArchivePage ? (
           <Route
             path="/archive"

@@ -21,7 +21,6 @@ function franchise(entrant: number, pick: number): LeagueFranchiseView {
     cost: 10,
     pick,
     rationale: "PUBLIC_PICK_RATIONALE",
-    fallback: false,
     acquired: "draft" as const,
   };
   return {
@@ -42,7 +41,6 @@ function franchise(entrant: number, pick: number): LeagueFranchiseView {
       cost: null,
       toolLookups: 0,
       parseFailures: 0,
-      fallbacks: 0,
       moveSelections: 0,
       switchSelections: 0,
       protectSelections: 0,
@@ -147,7 +145,6 @@ function fixture(): SeasonFixture {
       champion: { entrant: 0, model: "provider:model-0", team: "Franchise 0" },
       draftOnly: false,
       lifecycle: "complete",
-      liveSeries: [],
       transactions: [],
       swapsAllowed: 6,
       weeklyReviews: [
@@ -159,7 +156,6 @@ function fixture(): SeasonFixture {
           reasoning: "PUBLIC_WEEKLY_REVIEW",
           memoryPages: 2,
           memoryCharacters: 140,
-          fallback: false,
         },
         {
           week: 1,
@@ -169,7 +165,6 @@ function fixture(): SeasonFixture {
           reasoning: "",
           memoryPages: 0,
           memoryCharacters: 0,
-          fallback: false,
         },
         {
           week: 2,
@@ -179,7 +174,6 @@ function fixture(): SeasonFixture {
           reasoning: PRIVATE_SENTINEL,
           memoryPages: 2,
           memoryCharacters: 140,
-          fallback: false,
         },
       ],
       seasonReviews: [
@@ -190,7 +184,6 @@ function fixture(): SeasonFixture {
           didWell: PRIVATE_SENTINEL,
           didPoorly: PRIVATE_SENTINEL,
           wouldChange: PRIVATE_SENTINEL,
-          fallback: false,
         },
       ],
       franchises: [0, 1, 2, 3].map((entrant) => franchise(entrant, entrant + 1)),
@@ -252,7 +245,6 @@ function gamesFor(series: LeagueSeriesView[]): Map<string, PublicSeasonGameInput
             action: "Protect",
             rationale: "PUBLIC_DECISION_RATIONALE",
             notebook: PRIVATE_SENTINEL,
-            fallback: false,
             automatic: false,
             latencyMs: 1200,
             totalTokens: 900,
@@ -271,11 +263,6 @@ function gamesFor(series: LeagueSeriesView[]): Map<string, PublicSeasonGameInput
             response: "{}",
             usage: { output_tokens: 900 },
             latencyMs: 1200,
-            maxTokens: null,
-            timer: null,
-            fallback: false,
-            error: null,
-            failedAttempts: [],
           },
         ],
         reflections: [
@@ -285,7 +272,6 @@ function gamesFor(series: LeagueSeriesView[]): Map<string, PublicSeasonGameInput
             summary: "PUBLIC_REFLECTION",
             adjustment: "Lead differently",
             notebook: PRIVATE_SENTINEL,
-            fallback: false,
             seriesOver: false,
           },
         ],

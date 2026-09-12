@@ -3,9 +3,8 @@ import type { DraftBoardMon, DraftState } from "../src/draft.js";
 import { loadBoard } from "../src/draft.js";
 import { emptyMemory } from "../src/franchise-memory.js";
 import { FORMAT_AUTHORITY_NOTICE } from "../src/prompts.js";
-import type { Completion, JsonObject, Provider, ProviderMessage } from "../src/types.js";
+import type { JsonObject } from "../src/types.js";
 import type { TradeWindowState } from "../src/trade-window.js";
-import { legalTeamResponse } from "./fixtures/team-build.js";
 
 export const BOARD = loadBoard("regmc-202609");
 export const mon = (id: string): DraftBoardMon => {
@@ -68,21 +67,6 @@ export function transactionState(entrants = 2): TradeWindowState {
   };
 }
 
-export function scriptedProvider(
-  responses: string[],
-  onComplete?: (messages: ProviderMessage[]) => void,
-): Provider {
-  let call = 0;
-  return {
-    complete(_system, messages): Promise<Completion> {
-      onComplete?.(messages);
-      const text = responses[Math.min(call, responses.length - 1)]!;
-      call += 1;
-      return Promise.resolve({ text, usage: { total_tokens: 10 }, toolCalls: [] });
-    },
-  };
-}
-
 export const TEAMBUILD_ROSTER = [
   "garchomp",
   "incineroar",
@@ -113,7 +97,3 @@ export function teambuildRequest(overrides: JsonObject = {}) {
     ...overrides,
   };
 }
-
-export const GOOD_TEAM = legalTeamResponse(
-  "Rain beats their sun core, so Pelipper leads with Charizard held back.",
-);

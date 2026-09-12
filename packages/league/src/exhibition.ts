@@ -1,10 +1,11 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
 import { z } from "zod";
 
 import { writeAtomicJson } from "./atomic-json.js";
+import { type AgentRuntime, withAgentHost, type AgentProgress } from "./agent-runtime.js";
 import { LLMEngine } from "./llm-engine.js";
 import { defaultPsDir, RESULTS_PATH } from "./paths.js";
 import type { ReasoningLevel } from "./providers.js";
@@ -20,32 +21,6 @@ import { loadPool, validatePool } from "./teams.js";
 import { DEFAULT_TIMER_SCALE } from "./timer.js";
 import type { Pid } from "./types.js";
 
-const EXTERNAL_ADAPTER_MODEL_VISIBLE_VERSION = 1;
-const EXTERNAL_ADAPTER_PROTOCOL = {
-  bridge_api: {
-    transport: "localhost-http-post-json-bearer-v1",
-    routes: {
-      "/status": "status-and-pending-exchange-id-v1",
-      "/poll": "authorized-exchange-and-status-long-poll-v1",
-      "/messages": "authorized-pending-exchange-messages-v1",
-      "/context": "cursor-query-json-v1",
-      "/tools": "decision-bound-tool-definitions-v1",
-      "/tool": "decision-bound-lookup-v1",
-      "/submit": "exchange-id-and-text-v1",
-    },
-  },
-  authorized_view: "one-seat-only-v1",
-  context: "cursor-addressable-authorized-series-stream-v1",
-  tools: "live-decision-bound-lookups-v1",
-  limits: {
-    bridge_poll_wait_ms: 55_000,
-    client_poll_wait_ms: 25_000,
-    request_body_bytes: 1_000_000,
-    invalid_reply_corrections: 1,
-    battle_timer: "disabled",
-  },
-} as const;
-
 export interface ExhibitionOptions {
   opponent: string;
   seat?: Pid;
@@ -58,6 +33,7 @@ export interface ExhibitionOptions {
   recordsPath?: string;
   agentDir?: string;
   onNotice?: (line: string) => void;
+  onAgentProgress?: (progress: AgentProgress) => void;
   onReady?: (info: { url: string; agentDir: string }) => void;
 }
 
@@ -66,11 +42,23 @@ export async function runExhibition(
   runDir: string,
   options: ExhibitionOptions,
 ): Promise<SeriesRecord> {
+  return withAgentHost(
+    runDir,
+    (agents) => executeExhibition(runDir, agents, options),
+    options.onAgentProgress,
+  );
+}
+
+async function executeExhibition(
+  runDir: string,
+  agents: AgentRuntime,
+  options: ExhibitionOptions,
+): Promise<SeriesRecord> {
   const seatSide: Pid = options.seat ?? "p1";
   const oppSide: Pid = seatSide === "p1" ? "p2" : "p1";
   const seatName = options.name ?? "cli-agent";
-  if (options.opponent !== "random")
-    validateReasoning(parseSpec(options.opponent), options.reasoning);
+  if (options.opponent !== "random") parseSpec(options.opponent);
+  validateReasoning(options.reasoning);
   const notice = options.onNotice ?? (() => {});
   const psDir = options.psDir ?? defaultPsDir();
   const pool = loadPool(options.pool ?? "test");
@@ -99,42 +87,10 @@ export async function runExhibition(
   const executionHarnesses = {
     [seatSide]: {
       adapter: "trusted-external-bridge",
-      version: 4,
-      filesystem_isolation: false,
-      process_isolation: false,
-      network_isolation: false,
-      host_filesystem_access: "unrestricted-unobserved",
-      host_process_access: "unrestricted-unobserved",
-      arbitrary_network_access: "unrestricted-unobserved",
-      workspace_policy: "fresh-directory-0700-v1",
-      credential_policy: "exclusive-artifacts-0600-v1",
-      delegation: "unrestricted-unobserved",
-      context: "cursor-addressable-authorized-series-stream-v1",
-      tools: "live-decision-bound-lookups-v1",
-      model_visible_adapter: {
-        version: EXTERNAL_ADAPTER_MODEL_VISIBLE_VERSION,
-        digest: externalAdapterDigest(),
-      },
-      evidence_log: {
-        version: 1,
-        collection: "host-side-jsonl-v1",
-        artifacts: ["decisions", "trace", "context", "bridge-tools"],
-        presented_through_adapter: false,
-      },
+      isolated: false,
     },
     [oppSide]: {
-      adapter: options.opponent === "random" ? "random-engine" : "llm-engine",
-      version: 2,
-      filesystem_isolation: false,
-      process_isolation: false,
-      network_isolation: false,
-      host_filesystem_access: "not-exposed-through-model-api",
-      host_process_access: "not-exposed-through-model-api",
-      arbitrary_network_access: "not-exposed-through-model-api",
-      delegation: "none",
-      context:
-        options.opponent === "random" ? "none" : "bounded-game-timeline-and-series-notebook-v1",
-      tools: options.opponent === "random" ? "none" : "provider-tool-loop-v1",
+      adapter: options.opponent === "random" ? "random-engine" : "opencode",
     },
   };
   writeAtomicJson(
@@ -156,18 +112,13 @@ export async function runExhibition(
   const toolLog = path.join(seriesDir, `${seatSide}-bridge-tools.jsonl`);
   let seatEngine: LLMEngine | undefined;
   const bridge = new SeatBridge({
-    tools: () => seatEngine?.decisionToolDefinitions() ?? [],
     context: (query) => {
       if (!seatEngine) throw new Error("seat engine is not ready");
       return seatEngine.readContext(query);
     },
-    lookup: (name, args) => {
-      if (!seatEngine) throw new Error("seat engine is not ready");
-      return seatEngine.lookupDecisionTool(name, args);
-    },
     onExchange: (view) =>
       notice(
-        `seat ${view.phase} exchange ${view.id} pending; the agent should run: node seat.mjs wait`,
+        `seat ${view.task} exchange ${view.id} pending; the agent should run: node seat.mjs wait`,
       ),
     onTool: (name, args, result) =>
       fs.appendFileSync(
@@ -195,7 +146,7 @@ export async function runExhibition(
 
     const names = { p1: `p1-${players.p1}`, p2: `p2-${players.p2}` };
     seatEngine = new LLMEngine(seatSide, seatName, {
-      provider: bridge.provider(),
+      runAgent: bridge.runAgent,
       decisionLog: path.join(seriesDir, `${seatSide}-decisions.jsonl`),
       traceLog: path.join(seriesDir, `${seatSide}-trace.jsonl`),
       contextLog: path.join(seriesDir, `${seatSide}-context.jsonl`),
@@ -204,6 +155,7 @@ export async function runExhibition(
       reference,
     });
     const opponentEngine = makeEngine({
+      runAgent: agents.run,
       pid: oppSide,
       spec: options.opponent,
       seed: engineSeed,
@@ -228,6 +180,8 @@ export async function runExhibition(
       gameSeeds,
       seriesId,
       seriesDir,
+      runDir,
+      onLiveGame: agents.live.game,
       format: pool.format,
       psDir,
       timerScale: DEFAULT_TIMER_SCALE,
@@ -353,8 +307,9 @@ async function call(route, body) {
 }
 
 function printExchange(exchange) {
-  console.log('--- ' + exchange.phase + ' exchange ' + exchange.id + ' ---');
+  console.log('--- ' + exchange.task + ' exchange ' + exchange.id + ': reply with ' + exchange.submission.name + ' arguments ---');
   console.log(exchange.prompt);
+  console.log('--- ' + exchange.submission.name + ' parameters: ' + JSON.stringify(exchange.submission.parameters) + ' ---');
   console.log('--- reply: write the JSON response to a file, then: node seat.mjs submit <file> ---');
 }
 
@@ -382,9 +337,6 @@ const commands = {
     const data = await call('/poll', { waitMs: 0 });
     console.log(data.exchange ? data.exchange.system : 'No exchange pending.');
   },
-  async messages() {
-    console.log(JSON.stringify(await call('/messages'), null, 2));
-  },
   async context() {
     const query = args[0] ? JSON.parse(args[0]) : {};
     console.log(JSON.stringify(await call('/context', query), null, 2));
@@ -406,9 +358,10 @@ const commands = {
     const source = args[0] && args[0] !== '-' ? fs.readFileSync(args[0], 'utf8') : fs.readFileSync(0, 'utf8');
     const current = await call('/poll', { waitMs: 0 });
     if (!current.exchange) throw new Error('no exchange is pending');
-    const needed = current.exchange.phase === 'decision' ? '"choices"' : '"summary"';
-    if (!source.includes(needed) && !force)
-      throw new Error('response contains no ' + needed + ' key; pass --force to submit anyway');
+    const required = current.exchange.submission.parameters.required ?? [];
+    const missing = required.filter((key) => !source.includes('"' + key + '"'));
+    if (missing.length && !force)
+      throw new Error('response lacks required key(s) ' + missing.join(', ') + '; pass --force to submit anyway');
     const data = await call('/submit', { id: current.exchange.id, text: source });
     console.log('Submitted exchange ' + data.id + '.');
   },
@@ -416,7 +369,7 @@ const commands = {
 
 const run = commands[command];
 if (!run) {
-  console.log('Usage: node seat.mjs <status|wait|show|system|messages|context|tools|tool|submit> [args] [--force]');
+  console.log('Usage: node seat.mjs <status|wait|show|system|context|tools|tool|submit> [args] [--force]');
   process.exitCode = 2;
 } else {
   run().catch((error) => {
@@ -441,32 +394,16 @@ Loop:
 3. Write your JSON reply to a file, then \`node seat.mjs submit <file>\`.
 4. Repeat until \`wait\` reports the series is over or the host is gone.
 
-Two exchange kinds:
-
-- **decision**: pick actions from the numbered menus. The exact required JSON reply format
-  is in the system prompt: print it once with \`node seat.mjs system\`.
-- **reflection**: after each game, return the requested game-review JSON.
+Each exchange names the tool whose arguments you must reply with (submit_action for decisions,
+submit_review for game reviews) and prints that tool's JSON schema; the system prompt
+(\`node seat.mjs system\`) explains the fields.
 
 Notes:
 
-- An invalid reply gets one correction exchange; a second invalid reply forfeits that
-  decision to a default legal action.
+- An invalid submission returns a validation error. Correct it and submit the same exchange again.
 - There is no move timer. Take the time you need, but submit every exchange; the game
   cannot continue without you.
 - \`node seat.mjs status\` shows the game number and series score.
 - \`node seat.mjs context '{"after":"ctx-00000010","limit":50}'\` retrieves authorized full-history events that the compact prompt may omit.
 - When the host process exits, requests fail with a connection error; the series is over.
 `;
-
-function externalAdapterDigest(): string {
-  return createHash("sha256")
-    .update(
-      JSON.stringify({
-        version: EXTERNAL_ADAPTER_MODEL_VISIBLE_VERSION,
-        seat_instructions: SEAT_INSTRUCTIONS,
-        seat_client: SEAT_CLIENT,
-        protocol: EXTERNAL_ADAPTER_PROTOCOL,
-      }),
-    )
-    .digest("hex");
-}

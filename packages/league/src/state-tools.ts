@@ -4,7 +4,7 @@ import type {
   SpeedProfile,
   SpeedProfileInput,
 } from "./reference.js";
-import { type PerspectiveStateView, type MonState, SCREEN_MOVES, stateKey } from "./state-model.js";
+import { type PerspectiveStateView, MonState, SCREEN_MOVES, stateKey } from "./state-model.js";
 import type { JsonObject, Pid } from "./types.js";
 import { afterColon, text } from "./value.js";
 
@@ -16,6 +16,53 @@ interface MonEntry {
 
 interface FoundMon extends MonEntry {
   benched: boolean;
+}
+
+/** `Garchomp-Mega-Z` and `Mega Garchomp Z` both reduce to `garchomp`. */
+function demega(key: string): string {
+  return key.replace(/^mega(.*?)[xyz]?$/, "$1").replace(/mega[xyz]?$/, "");
+}
+
+function megaScenario(
+  state: PerspectiveStateView,
+  entry: FoundMon,
+  reference: ShowdownReference,
+): FoundMon {
+  const { mon, pid } = entry;
+  const mega =
+    mon.item && !mon.itemConsumed ? reference.megaSpecies(mon.species, mon.item) : undefined;
+  if (!mega)
+    throw new Error(`${mon.species} has no legal Mega Evolution with its known held item.`);
+  if ([...state.sides[pid].mons.values()].some((other) => other.mega))
+    throw new Error(`${pid} has already used its Mega Evolution.`);
+  if (pid === state.pid && !entry.benched && !mon.canMegaEvo)
+    throw new Error(`Showdown does not currently allow ${mon.species} to Mega Evolve.`);
+  return {
+    ...entry,
+    mon: Object.assign(new MonState(mon.ident), mon, {
+      species: mega.name,
+      ability: mega.abilities[0],
+      abilitySuppressed: false,
+      stats: reference.megaStats(mon.species, mega, mon.stats, mon.nature),
+      mega: true,
+    }),
+  };
+}
+
+function scenarioPair(
+  state: PerspectiveStateView,
+  first: FoundMon,
+  second: FoundMon,
+  firstMega: boolean,
+  secondMega: boolean,
+  reference: ShowdownReference,
+): [FoundMon, FoundMon] {
+  if (firstMega && secondMega && first.pid === second.pid)
+    throw new Error("Only one Pokémon per side can Mega Evolve.");
+  return [
+    firstMega ? megaScenario(state, first, reference) : first,
+    secondMega ? megaScenario(state, second, reference) : second,
+  ];
 }
 
 interface PriorityContext {
@@ -64,7 +111,6 @@ function findMon(state: PerspectiveStateView, query: string): FoundMon | undefin
   const normalized = stateKey(query);
   const prefixed = /^(ally|foe)(.+)$/.exec(normalized);
   const wanted = prefixed ? prefixed[2]! : normalized;
-  const demega = (key: string) => key.replace(/mega[xy]?$/, "").replace(/^mega/, "");
   for (const pid of ["p1", "p2"] as const) {
     if (prefixed && (pid === state.pid) !== (prefixed[1] === "ally")) continue;
     const side = state.sides[pid];
@@ -72,8 +118,7 @@ function findMon(state: PerspectiveStateView, query: string): FoundMon | undefin
     for (const [key, mon] of side.mons) {
       if (activeKeys.has(key) || mon.fainted) continue;
       const monKey = stateKey(mon.species);
-      if (monKey === wanted || demega(monKey) === wanted || monKey === demega(wanted))
-        return { pid, slot: -1, mon, benched: true };
+      if (demega(monKey) === demega(wanted)) return { pid, slot: -1, mon, benched: true };
     }
   }
   return undefined;
@@ -98,14 +143,8 @@ function findActive(state: PerspectiveStateView, query: string): MonEntry | unde
       stateKey(entry.mon.species) === wanted || stateKey(afterColon(entry.mon.ident)) === wanted,
   );
   if (exact) return exact;
-  const demega = (key: string) => key.replace(/mega[xy]?$/, "").replace(/^mega/, "");
   const wantedBase = demega(wanted);
-  return candidates.find((entry) => {
-    const entryKey = stateKey(entry.mon.species);
-    return (
-      demega(entryKey) === wanted || entryKey === wantedBase || demega(entryKey) === wantedBase
-    );
-  });
+  return candidates.find((entry) => demega(stateKey(entry.mon.species)) === wantedBase);
 }
 
 export function speedProfile(
@@ -167,14 +206,23 @@ export function compareActionOrder(
   const secondName = text(args.second).trim();
   if (!firstName || !secondName)
     return "first and second are required active Pokémon names or ally/foe slot labels.";
-  const first = findMon(state, firstName);
-  const second = findMon(state, secondName);
+  let first = findMon(state, firstName);
+  let second = findMon(state, secondName);
   const active = activeEntries(state).map(
     (entry) => `${entry.pid === state.pid ? "ally" : "foe"} ${entry.slot}: ${entry.mon.species}`,
   );
   if (!first || !second)
     return `Could not resolve ${!first ? JSON.stringify(firstName) : JSON.stringify(secondName)}. Active Pokémon: ${active.join("; ") || "none"}; benched Pokémon may be named directly.`;
   if (first.mon === second.mon) return "first and second must identify different Pokémon.";
+
+  [first, second] = scenarioPair(
+    state,
+    first,
+    second,
+    args.first_mega === true,
+    args.second_mega === true,
+    reference,
+  );
 
   const firstProfile = speedProfile(state, first.pid, first.mon, reference);
   const secondProfile = speedProfile(state, second.pid, second.mon, reference);
@@ -185,6 +233,8 @@ export function compareActionOrder(
   const switchKeys = new Set(["switch", "switchout", "switching", "swap"]);
   const firstIsSwitch = switchKeys.has(stateKey(firstMove));
   const secondIsSwitch = switchKeys.has(stateKey(secondMove));
+  if ((firstIsSwitch && args.first_mega === true) || (secondIsSwitch && args.second_mega === true))
+    throw new Error("A Pokémon cannot Mega Evolve while switching out.");
   const grassyTerrain = [...state.fields.values()].some((effect) => /grassy/i.test(effect.name));
   const contextFor = (mon: MonState): PriorityContext => {
     const context: PriorityContext = { itemConsumed: mon.itemConsumed, grassyTerrain };
@@ -263,6 +313,10 @@ export function compareActionOrder(
     describe(`${second.mon.species}${second.benched ? " (benched)" : ""}`, secondProfile),
     `${orderText} (${reason}).`,
   ];
+  if (args.first_mega === true || args.second_mega === true)
+    lines.unshift(
+      "Hypothetical Mega Evolution: projected forme, ability, and raw stats; current field and boosts held fixed. Ambiguous stats retain legal ranges.",
+    );
   const notes = [
     ...firstInfo.notes.map((note) => `${first.mon.species}: ${note}`),
     ...secondInfo.notes.map((note) => `${second.mon.species}: ${note}`),
@@ -310,8 +364,8 @@ export function estimateDamage(
   const defenderName = text(args.defender).trim();
   const move = text(args.move).trim();
   if (!attackerName || !defenderName || !move) return "attacker, defender, and move are required.";
-  const attacker = findMon(state, attackerName);
-  const defender = findMon(state, defenderName);
+  let attacker = findMon(state, attackerName);
+  let defender = findMon(state, defenderName);
   const visible = activeEntries(state).map(
     (entry) => `${entry.pid === state.pid ? "ally" : "foe"} ${entry.slot}: ${entry.mon.species}`,
   );
@@ -321,6 +375,43 @@ export function estimateDamage(
   }
   if (attacker.mon === defender.mon)
     return "attacker and defender must identify different Pokémon.";
+
+  [attacker, defender] = scenarioPair(
+    state,
+    attacker,
+    defender,
+    args.attacker_mega === true,
+    args.defender_mega === true,
+    reference,
+  );
+
+  const active = activeEntries(state);
+  const switches: string[] = [];
+  const replacedSlots = new Set<string>();
+  for (const [side, entry] of [
+    ["attacker", attacker],
+    ["defender", defender],
+  ] as const) {
+    const replaces = text(args[`${side}_replaces`]).trim();
+    if (!entry.benched) {
+      if (replaces) throw new Error(`${entry.mon.species} is already active.`);
+      continue;
+    }
+    const outgoing = replaces ? findActive(state, replaces) : undefined;
+    if (!outgoing || outgoing.pid !== entry.pid)
+      throw new Error(
+        `${entry.mon.species} is benched. Set ${side}_replaces to the same-side active Pokémon or slot it would replace: ${visible.join("; ")}.`,
+      );
+    if (outgoing.mon.ident === attacker.mon.ident || outgoing.mon.ident === defender.mon.ident)
+      throw new Error("A switch-in cannot replace the other Pokémon in the damage calculation.");
+    const key = `${outgoing.pid}:${outgoing.slot}`;
+    if (replacedSlots.has(key)) throw new Error("Two switch-ins cannot replace the same slot.");
+    replacedSlots.add(key);
+    active[
+      active.findIndex((other) => other.pid === outgoing.pid && other.slot === outgoing.slot)
+    ] = { ...entry, slot: outgoing.slot };
+    switches.push(`${entry.mon.species} replaces ${outgoing.mon.species}`);
+  }
 
   const exactStats = (entry: MonEntry, includeHp: boolean) => {
     if (entry.pid !== state.pid) return {};
@@ -368,11 +459,10 @@ export function estimateDamage(
   authoritative.attacker_fainted_allies = [...state.sides[attacker.pid].mons.values()].filter(
     (mon) => mon.fainted,
   ).length;
-  const active = activeEntries(state);
   const moveTarget = reference.moveTarget(move);
   const liveFoes = active.filter((entry) => entry.pid !== attacker.pid).length;
   const hasLiveAlly = active.some(
-    (entry) => entry.pid === attacker.pid && entry.mon !== attacker.mon,
+    (entry) => entry.pid === attacker.pid && entry.mon.ident !== attacker.mon.ident,
   );
   authoritative.is_spread_hit =
     moveTarget === "allAdjacentFoes"
@@ -384,7 +474,9 @@ export function estimateDamage(
     ["attacker", attacker],
     ["defender", defender],
   ] as const) {
-    const ally = active.find((other) => other.pid === entry.pid && other.mon !== entry.mon);
+    const ally = active.find(
+      (other) => other.pid === entry.pid && other.mon.ident !== entry.mon.ident,
+    );
     if (!ally) continue;
     const allyAbility = ability(ally.mon);
     if (side === "attacker") {
@@ -417,6 +509,13 @@ export function estimateDamage(
           : " (ability unknown)"
     }`;
   };
-  const context = `Live battle and known team-sheet state applied: ${known(attacker, "attacker")}; ${known(defender, "defender")}.`;
-  return `${context}\n${reference.lookup("estimate_damage", authoritative)}`;
+  const scenario =
+    args.attacker_mega === true || args.defender_mega === true
+      ? "Hypothetical Mega Evolution: projected forme, ability, and raw stats; current field and boosts held fixed. Ambiguous stats retain legal ranges. "
+      : "";
+  const context = `${scenario}Live battle and known team-sheet state applied: ${known(attacker, "attacker")}; ${known(defender, "defender")}.`;
+  const switchContext = switches.length
+    ? `Hypothetical switch-in: ${switches.join("; ")}. Current weather, terrain and boosts held fixed; switch-in events are not simulated.\n`
+    : "";
+  return `${switchContext}${context}\n${reference.lookup("estimate_damage", authoritative)}`;
 }

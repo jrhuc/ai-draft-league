@@ -3,13 +3,10 @@ import {
   DECISION_NOTE_LIMIT,
   NEXT_GAME_PLAN_CHAR_LIMIT,
   renderStrategicMemory,
-  renderVerifiedReferenceMemory,
   SERIES_MEMORY_CHAR_LIMIT,
   TEAM_PLAYBOOK_CHAR_LIMIT,
-  VERIFIED_REFERENCE_CHAR_LIMIT,
 } from "./battle-memory.js";
 import type { SlotMenu } from "./choices.js";
-import { MAX_TOOL_QUERIES_PER_ROUND } from "./tool-batch.js";
 
 export const MANAGER_CHARGE =
   "The franchise is yours for the whole season: you draft its roster, review it after every week, trade and sign in the transaction windows, and each matchup’s six is built and piloted on your behalf from the roster and memory you leave behind. The goal is not to run the franchise correctly but to win the league: you are judged on results against the other coaches, nothing else.";
@@ -52,16 +49,17 @@ const TOOL_RULES = {
     "lookup_matchup reports only the type chart. estimate_damage reports conditional hit outcomes at evaluated endpoints, not exhaustive KO certainty: it binds the abilities, items, stats, stages, status, HP, screens, weather, terrain, and both active allies with their abilities that the battle has revealed so far, and treats anything unrevealed as neutral across legal ranges. Use compare_action_order for Speed order. Trust a tool only for the factors its result says it applied.",
 } satisfies Record<SheetPolicy, string>;
 
-const NOTEBOOK_RULE = `Your private notebook has team_playbook (maximum ${TEAM_PLAYBOOK_CHAR_LIMIT} characters), series_memory (maximum ${SERIES_MEMORY_CHAR_LIMIT}), and next_game_plan (maximum ${NEXT_GAME_PLAN_CHAR_LIMIT}); the combined strategic limit is ${DECISION_NOTE_LIMIT}. Include only changed fields: each supplied string replaces that field, omitted fields stay unchanged, and an empty string clears a field. The harness separately retains up to ${VERIFIED_REFERENCE_CHAR_LIMIT} characters of mechanics returned by actual species, move, item, and ability lookups. You cannot write that verified reference memory directly.`;
+const NOTEBOOK_RULE = `Your private notebook has team_playbook (maximum ${TEAM_PLAYBOOK_CHAR_LIMIT} characters), series_memory (maximum ${SERIES_MEMORY_CHAR_LIMIT}), and next_game_plan (maximum ${NEXT_GAME_PLAN_CHAR_LIMIT}); the combined strategic limit is ${DECISION_NOTE_LIMIT}. Include only changed fields: each supplied string replaces that field, omitted fields stay unchanged, and an empty string clears a field.`;
 const HISTORY_RULE =
-  "Each decision starts with the supplied state, timeline, and notebook; previous reasoning is not replayed. read_battle_history retrieves your private observations, submitted choices and stated reasons, and reviews from any game in this series. Your notes and build briefing are context you may revise as play develops.";
+  "This conversation continues throughout the game, including your tool results and prior decisions. A new game starts a new conversation with your notebook and build briefing. OpenCode may compact a long conversation; read_battle_history retrieves your private observations, submitted choices and stated reasons, and reviews from any game in this series. Your notes and build briefing are context you may revise as play develops.";
 const NOTEBOOK_OBJECT =
   '{"team_playbook":"transferable facts about piloting your team","series_memory":"facts and tendencies specific to this opponent","next_game_plan":"immediate plan and contingencies for the next game"}';
 
-const RETURN_JSON = "Return only the JSON object requested in the current decision prompt.";
+const SUBMIT_ACTION =
+  "Submit your joint decision using submit_action. After acceptance, end your reply and await the next observation.";
 
 const TIMER_RULE =
-  "The battle timer runs while you think and use tools, and your reply is token-capped to what your generation speed fits into the remaining clock — a reply cut off at the cap submits nothing, so match depth to the clock and hurry when the turn timer or bank is short.";
+  "The battle timer runs while you think and use tools. Submit your decision before the clock expires; match depth to the remaining turn time and bank.";
 
 export function battleSystemPrompt(options: { sheets: SheetPolicy; timed: boolean }): string {
   return [
@@ -70,20 +68,15 @@ export function battleSystemPrompt(options: { sheets: SheetPolicy; timed: boolea
     TOOL_RULES[options.sheets],
     NOTEBOOK_RULE,
     HISTORY_RULE,
-    `Independent tool queries can share one response or one batch_tools call, up to ${MAX_TOOL_QUERIES_PER_ROUND} queries total per round.`,
     ...(options.timed ? [TIMER_RULE] : []),
-    RETURN_JSON,
+    SUBMIT_ACTION,
   ].join("\n");
 }
-
-export const SYSTEM = battleSystemPrompt({ sheets: "open", timed: false });
-
-export const TIMED_SYSTEM = battleSystemPrompt({ sheets: "open", timed: true });
 
 const REFLECTION_EVIDENCE =
   "Use the supplied private battle evidence and authoritative outcome. read_battle_history retrieves earlier games and your stated reasons for submitted choices in this series. Do not invent hidden information.";
 const REFLECTION_MEMORY_RULE = `${NOTEBOOK_RULE} Update your notebook where useful: team_playbook carries own-team context, series_memory carries current-opponent context, and next_game_plan carries your immediate plan. An empty notebook object keeps all three fields. Decide what is worth retaining.`;
-const REFLECTION_RESPONSE = `Respond with exactly one JSON object: {"summary":"your assessment of the game","adjustment":"what, if anything, to keep or change next game","notebook":${NOTEBOOK_OBJECT}}.`;
+const REFLECTION_RESPONSE = `Call submit_review with {"summary":"your assessment of the game","adjustment":"what, if anything, to keep or change next game","notebook":${NOTEBOOK_OBJECT}}.`;
 
 export const REFLECTION_SYSTEM = [
   "You are reviewing one completed game in a best-of-three VGC series.",
@@ -100,14 +93,14 @@ export const TOURNAMENT_REFLECTION_SYSTEM = [
   REFLECTION_EVIDENCE,
   "Identify the main reasons for the result and what, if anything, to keep or change for the next game.",
   REFLECTION_MEMORY_RULE,
-  `Respond with exactly one JSON object: {"summary":"why the game was won or lost","adjustment":"what to keep or change next game","notebook":${NOTEBOOK_OBJECT}}.`,
+  `Call submit_review with {"summary":"why the game was won or lost","adjustment":"what to keep or change next game","notebook":${NOTEBOOK_OBJECT}}.`,
 ].join("\n");
 
 const SERIES_REFLECTION_OVER =
   "You are reviewing the final game of a best-of-three VGC series that is now over: the stated result and final score are authoritative, and there is no next game against this opponent in this series.";
 const SERIES_REFLECTION_RESULT =
   "Identify the main reasons for the game and series result, including whether your between-game adaptations helped or backfired.";
-const SERIES_REFLECTION_RESPONSE = `Respond with exactly one JSON object: {"summary":"why the game and series were won or lost","adjustment":"what to keep or change with this team in the next match","notebook":${NOTEBOOK_OBJECT}}.`;
+const SERIES_REFLECTION_RESPONSE = `Call submit_review with {"summary":"why the game and series were won or lost","adjustment":"what to keep or change with this team in the next match","notebook":${NOTEBOOK_OBJECT}}.`;
 
 export const SERIES_REFLECTION_SYSTEM = [
   SERIES_REFLECTION_OVER,
@@ -126,7 +119,7 @@ export const TOURNAMENT_RETROSPECTIVE_SYSTEM = [
   "This is a retrospective, not a decision. Nothing you write changes the result, and there is no next round to prepare for.",
   "Judge only the supplied final game, including what you did well and poorly with the fixed team. Do not claim evidence from earlier games or rounds. Do not assume an interaction or damage result against this opponent generalizes to a different team.",
   "Credit sound choices plainly even in a loss, and identify real weaknesses plainly even in a win.",
-  'Respond with exactly one JSON object: {"summary":"<1-2 sentences on how the final game ended>","did_well":"<2-4 sentences>","did_poorly":"<2-4 sentences>","would_change":"<2-4 sentences, each one concrete>"}.',
+  'Call submit_review with {"summary":"<1-2 sentences on how the final game ended>","did_well":"<2-4 sentences>","did_poorly":"<2-4 sentences>","would_change":"<2-4 sentences, each one concrete>"}.',
 ].join("\n");
 
 export const CLOSED_SERIES_REFLECTION_SYSTEM = [
@@ -136,7 +129,7 @@ export const CLOSED_SERIES_REFLECTION_SYSTEM = [
   "Identify the main reason for the game and series result, including whether your between-game adjustments helped or backfired.",
   REFLECTION_MEMORY_RULE,
   "The series is complete; leave next_game_plan empty.",
-  `Respond with exactly one JSON object: {"summary":"why the game and series were won or lost","adjustment":"what you would change against this opponent in a future series","notebook":${NOTEBOOK_OBJECT}}.`,
+  `Call submit_review with {"summary":"why the game and series were won or lost","adjustment":"what you would change against this opponent in a future series","notebook":${NOTEBOOK_OBJECT}}.`,
 ].join("\n");
 
 export const DRAFT_SERIES_REFLECTION_SYSTEM = [
@@ -147,7 +140,7 @@ export const DRAFT_SERIES_REFLECTION_SYSTEM = [
   "Your review may include the preparation and play of this series. It will be available to your franchise manager.",
   REFLECTION_MEMORY_RULE,
   "The series is complete; leave next_game_plan empty.",
-  `Respond with exactly one JSON object: {"summary":"why the game and series were won or lost","adjustment":"what you would change against this opponent in a future series","notebook":${NOTEBOOK_OBJECT}}.`,
+  `Call submit_review with {"summary":"why the game and series were won or lost","adjustment":"what you would change against this opponent in a future series","notebook":${NOTEBOOK_OBJECT}}.`,
 ].join("\n");
 
 export interface DecisionPrompt {
@@ -156,6 +149,7 @@ export interface DecisionPrompt {
   menus: SlotMenu[];
   transcript?: string[];
   memory: BattleMemory;
+  initial?: boolean;
   seriesContext?: string;
   matchups?: string[];
 }
@@ -163,12 +157,8 @@ export interface DecisionPrompt {
 export function renderDecision(input: DecisionPrompt): string {
   const lines: string[] = [];
   if (input.seriesContext) lines.push("Match context:", input.seriesContext, "");
-  lines.push("Private strategic memory:", renderStrategicMemory(input.memory), "");
-  lines.push(
-    "Verified reference memory from prior authoritative lookups:",
-    renderVerifiedReferenceMemory(input.memory),
-    "",
-  );
+  if (input.initial !== false)
+    lines.push("Private strategic memory:", renderStrategicMemory(input.memory), "");
   lines.push("Authoritative battle state and roster reference:", input.state, "");
   if (input.matchups?.length)
     lines.push(
@@ -177,7 +167,7 @@ export function renderDecision(input: DecisionPrompt): string {
       "",
     );
   if (input.transcript?.length)
-    lines.push("Compact private battle timeline (your POV):", ...input.transcript, "");
+    lines.push("New private battle observations (your POV):", ...input.transcript, "");
 
   const sharedTeamMenu =
     input.menus.length > 1 &&
@@ -203,10 +193,10 @@ export function renderDecision(input: DecisionPrompt): string {
   }
   lines.push(
     "",
-    `Return one JSON object with {"choices":[${input.menus.map((_, index) => `N${index + 1}`).join(",")}]}.`,
+    `Call submit_action with {"choices":[${input.menus.map((_, index) => `N${index + 1}`).join(",")}]}.`,
     `You may add "rationale":"final reason" and, only when durable plans changed, "notebook":${NOTEBOOK_OBJECT}.`,
     "In notebook, omit unchanged fields; an empty string clears a field.",
-    `Each choice is the zero-based index for its displayed slot${sharedTeamMenu ? " or ordered team position" : ""}. Include no prose outside JSON.`,
+    `Each choice is the zero-based index for its displayed slot${sharedTeamMenu ? " or ordered team position" : ""}.`,
   );
   return lines.join("\n");
 }

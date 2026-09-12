@@ -4,13 +4,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { z } from "zod";
+import type { AgentProgress } from "./agent-runtime.js";
 import type { DraftLeagueOptions } from "./draftleague-protocol.js";
 import type { ExhibitionOptions } from "./exhibition.js";
 import { exportSeasonBundle } from "./export-season.js";
 import { draftLeagueConfigSchema } from "./league-store.js";
 import { makeRunDirectory, prepareDataDirectories, RESULTS_PATH, RUNS_DIR } from "./paths.js";
 import type { ReasoningLevel } from "./providers.js";
-import { isReasoningLevel, nitroSpec } from "./providers.js";
+import { isReasoningLevel } from "./providers.js";
 import type { ParsedSeriesRecord, SeriesRecord } from "./records.js";
 import { monitorRun, renderMonitorReport } from "./monitor.js";
 import { loadSeriesRecords, scopeRows, TEST_POOL } from "./records.js";
@@ -31,7 +32,7 @@ const EXPERIMENT_CLI_OPTIONS = {
   concurrency: { type: "string", default: "4" },
   reasoning: { type: "string" },
   "timer-scale": { type: "string" },
-  nitro: { type: "boolean", default: false },
+  progress: { type: "boolean" },
 } as const;
 
 interface ExperimentCliValues {
@@ -39,7 +40,6 @@ interface ExperimentCliValues {
   concurrency: string;
   reasoning?: string;
   "timer-scale"?: string;
-  nitro: boolean;
 }
 
 type ExperimentExecutionOptions = Pick<
@@ -103,10 +103,10 @@ Commands:
   selfcheck                           run one random-vs-random series through the simulator
   rotation --models <spec> <spec>...  run the controlled team-rotation protocol
       [--series-per-pair <n>] [--pool <name>] [--seed <n>] [--concurrency <n>] [--reasoning <level>]
-      [--timer-scale <n|off>] [--nitro]
+      [--timer-scale <n|off>] [--progress]
   tournament --models <spec> <spec>...  play a single-elimination BO3 bracket; each model keeps one team
       [--pool <name>] [--seed <n>] [--concurrency <n>] [--reasoning <level>] [--timer-scale <n|off>]
-      [--nitro] [--provenance <disclosed|blind>] [--resume <run-dir>]
+      [--provenance <disclosed|blind>] [--resume <run-dir>]
       a pool that seeds its teams keeps the real bracket order instead of drawing positions at random
       --provenance disclosed (default) may name the event and teams; placements/finishes stay withheld
       blind withholds the event context too
@@ -119,7 +119,7 @@ Commands:
   draft --models <spec> <spec>...     snake-draft rosters from a board, then a weekly round robin and playoffs
       each coach drafts 10 within a 100-point budget, then picks 6 and builds every set before each match
       [--board <name>] [--seed <n>] [--concurrency <n>] [--reasoning <level>] [--timer-scale <n|off>]
-      [--nitro] [--through-week <n>] [--resume <run-dir>] [--closed-sheets]
+      [--through-week <n>] [--resume <run-dir>] [--closed-sheets]
       [--transactions <weeks|off>] [--swaps <n>] [--draft-only] [--rosters <preset.json>]
       --swaps sets each franchise's season allowance of free-agent swaps (default 6)
       --draft-only stops once rosters are drafted and plays no games; resume the run to play the season
@@ -134,7 +134,7 @@ Commands:
   exhibition --opponent <spec>        host one bo3 where a terminal agent plays a seat over a local bridge
       [--seat p1|p2] [--name <label>] [--pool <name>] [--seed <n>] [--port <n>] [--reasoning <level>]
       [--agent-dir <path>]
-      opponent specs: openrouter:<model-id>, prime:<model-id>, gateway:<model-id>, opencode-go:<model-id>, opencode-zen:<model-id>, or random
+      opponent specs: <OpenCode-provider-id>:<model-id> or random
   outcomes [--pool <name>]            print contextual per-series outcomes without an aggregate ranking
   report [--out <path>] [--pool <name>]  write an HTML report
   export-season --run <id> --through-week <n> [--title <text>] [--out <file>] [--traces-dir <dir>]
@@ -145,15 +145,11 @@ Commands:
       atomically write one validated public tournament bundle for a pool bracket;
       every recorded series is released, unplayed bracket slots stay open
 
-Model specs are exactly openrouter:<model-id>, prime:<model-id>, gateway:<model-id>,
-opencode-go:<model-id>, opencode-zen:<model-id>, or random.
-CLI calls read OPENROUTER_API_KEY, PRIME_API_KEY, AI_GATEWAY_API_KEY, or OPENCODE_API_KEY
-for the selected provider. Model IDs are entered manually.
-
-
---nitro adds the :nitro throughput-routing variant to every OpenRouter spec that
-does not already carry a routing variant. Faster, usually pricier; skip it when
-slower seats set the pace anyway.
+Model specs are <OpenCode-provider-id>:<model-id> or random.
+OpenCode owns credentials, routing, model capabilities, and reasoning variants.
+Configure providers in <run-dir>/agents/opencode.json or use their environment keys.
+--reasoning selects an OpenCode model variant.
+--progress streams live agent activity and session spend on stderr for every run mode.
 
 Without --pool, outcomes and report retain all rows except the disposable "test" pool;
 pass --pool <name> to inspect every row in one pool. All modes remain contextual rows
@@ -182,8 +178,7 @@ function optionalInteger(name: string, value: string | undefined): number | unde
 
 function reasoningLevel(value: string | undefined): ReasoningLevel | undefined {
   if (value === undefined) return undefined;
-  if (!isReasoningLevel(value))
-    throw new Error("--reasoning must be one of: minimal, low, medium, high, xhigh, max");
+  if (!isReasoningLevel(value)) throw new Error("--reasoning must name an OpenCode model variant");
   return value;
 }
 
@@ -200,11 +195,10 @@ function experimentModels(
   command: string,
   models: string[] | undefined,
   positionals: string[],
-  nitro = false,
 ): string[] {
   const selected = [...(models ?? []), ...positionals];
   if (selected.length < 2) throw new Error(`${command} requires at least two --models`);
-  return nitro ? selected.map(nitroSpec) : selected;
+  return selected;
 }
 
 function experimentExecution(values: ExperimentCliValues): ExperimentExecutionOptions {
@@ -214,6 +208,10 @@ function experimentExecution(values: ExperimentCliValues): ExperimentExecutionOp
     reasoning: reasoningLevel(values.reasoning),
     timerScale: timerScaleOption(values["timer-scale"]),
   };
+}
+
+function agentProgress(enabled?: boolean): ((progress: AgentProgress) => void) | undefined {
+  return enabled ? (progress) => console.error(`[agent] ${JSON.stringify(progress)}`) : undefined;
 }
 
 export async function main(argv = process.argv.slice(2)): Promise<number> {
@@ -230,7 +228,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         pool: { type: "string", default: "test" },
       },
     });
-    const models = experimentModels(command, values.models, positionals, values.nitro);
+    const models = experimentModels(command, values.models, positionals);
     const execution = experimentExecution(values);
     const runDir = makeRunDirectory();
     const rows = await withRunStatus(runDir, () =>
@@ -238,6 +236,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         pool: values.pool,
         concurrency: positiveInteger("concurrency", values.concurrency),
         ...execution,
+        onAgentProgress: agentProgress(values.progress),
       }),
     );
     printResults(rows);
@@ -267,7 +266,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         : undefined;
     const models = storedConfig
       ? storedConfig.models
-      : experimentModels(command, values.models, positionals, values.nitro);
+      : experimentModels(command, values.models, positionals);
     let execution: ExperimentExecutionOptions;
     if (storedConfig) {
       const storedReasoning = storedConfig.reasoning
@@ -294,6 +293,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       throw new Error('--provenance must be "disclosed" or "blind"');
     const runDir = resumeDir ?? makeRunDirectory();
     const tournamentOptions: TournamentOptions = {
+      onAgentProgress: agentProgress(values.progress),
       provenance,
       concurrency: storedConfig?.concurrency ?? positiveInteger("concurrency", values.concurrency),
       ...execution,
@@ -344,7 +344,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       : undefined;
     const models = storedConfig
       ? storedConfig.models
-      : experimentModels(command, values.models, positionals, values.nitro);
+      : experimentModels(command, values.models, positionals);
     let execution: ExperimentExecutionOptions;
     if (storedConfig) {
       const storedReasoning = storedConfig.reasoning
@@ -378,6 +378,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     const runDir = resumeDir ?? makeRunDirectory();
     let lastTeambuilds = 0;
     const draftOptions: DraftLeagueOptions = {
+      onAgentProgress: agentProgress(values.progress),
       board: storedConfig ? storedConfig.board : values.board,
       concurrency: storedConfig?.concurrency ?? positiveInteger("concurrency", values.concurrency),
       ...execution,
@@ -386,18 +387,15 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         if (event.draft.phase === "draft" && event.draft.picks.length > 0) {
           const pick = event.draft.picks[event.draft.picks.length - 1]!;
           const coach = event.draft.teamNames[pick.entrant] || event.draft.entrants[pick.entrant];
-          console.log(
-            `pick ${pick.pick}: ${coach} takes ${pick.mon}${pick.fallback ? " (fallback)" : ""}`,
-          );
+          console.log(`pick ${pick.pick}: ${coach} takes ${pick.mon}`);
         }
         if (event.draft.teambuilds.length > lastTeambuilds) {
           lastTeambuilds = event.draft.teambuilds.length;
           const build = event.draft.teambuilds[lastTeambuilds - 1]!;
-          const repaired = build.sets.filter((set) => set.repaired).length;
           console.log(
             `teambuild: ${event.draft.teamNames[build.entrant] || event.draft.entrants[build.entrant]} vs ` +
               `${event.draft.teamNames[build.opponent] || event.draft.entrants[build.opponent]} — ` +
-              `${build.brought.join(", ")}${repaired ? ` (${repaired} repaired)` : ""}`,
+              build.brought.join(", "),
           );
         }
       },
@@ -442,6 +440,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         port: { type: "string" },
         reasoning: { type: "string" },
         "agent-dir": { type: "string" },
+        progress: { type: "boolean" },
       },
     });
     if (!values.opponent) throw new Error("exhibition requires --opponent <spec|random>");
@@ -453,6 +452,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     const { runExhibition } = await import("./exhibition.js");
     const runDir = makeRunDirectory();
     const exhibitionOptions: ExhibitionOptions = {
+      onAgentProgress: agentProgress(values.progress),
       opponent,
       seat,
       name: values.name,

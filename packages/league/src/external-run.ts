@@ -1,15 +1,7 @@
 import fs from "node:fs";
 import { z } from "zod";
 import { readRunJson } from "./run-artifacts.js";
-
-const runStatusSchema = z
-  .object({
-    state: z.enum(["running", "done"]).optional().catch(undefined),
-    error: z.string().optional().catch(undefined),
-    start_time: z.string().optional().catch(undefined),
-  })
-  .nullable()
-  .catch(null);
+import { isProcessAlive, runStatusSchema } from "./run-status.js";
 
 const summaryConfigSchema = z
   .object({ mode: z.string().optional().catch(undefined) })
@@ -19,7 +11,7 @@ const summaryConfigSchema = z
 export type ExternalRunSummary = {
   runId: string;
   mode: string;
-  state: "running" | "done" | "unknown";
+  state: "running" | "done" | "failed" | "stopped" | "unknown";
   error: string | null;
   startTime: string | null;
 };
@@ -34,11 +26,14 @@ export function listExternalRuns(runsDir: string): ExternalRunSummary[] {
   return entries
     .filter((entry) => entry.isDirectory())
     .map((entry) => {
-      const status = runStatusSchema.parse(readRunJson(runsDir, entry.name, "status.json"));
+      const status = runStatusSchema.safeParse(
+        readRunJson(runsDir, entry.name, "status.json"),
+      ).data;
       const config = summaryConfigSchema.parse(readRunJson(runsDir, entry.name, "config.json"));
-      const stored = status?.state;
       const state: ExternalRunSummary["state"] =
-        stored === "running" ? "running" : stored === "done" ? "done" : "unknown";
+        status?.state === "running" && status.pid !== undefined && !isProcessAlive(status.pid)
+          ? "stopped"
+          : (status?.state ?? "unknown");
       return {
         runId: entry.name,
         mode: config?.mode ?? "unknown",

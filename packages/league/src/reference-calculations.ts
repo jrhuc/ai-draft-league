@@ -110,7 +110,7 @@ export const estimateDamageArgumentsSchema = z.object({
 });
 
 type StatBoosts = z.infer<typeof boostInputSchema>;
-export type CalculateStatsArguments = z.infer<typeof calculateStatsArgumentsSchema>;
+type CalculateStatsArguments = z.infer<typeof calculateStatsArgumentsSchema>;
 export type MatchupArguments = z.infer<typeof matchupArgumentsSchema>;
 export type EstimateDamageArguments = z.infer<typeof estimateDamageArgumentsSchema>;
 

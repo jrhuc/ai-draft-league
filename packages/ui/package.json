@@ -10,15 +10,15 @@
     "fmt": "vp fmt"
   },
   "dependencies": {
-    "react": "19.2.8",
-    "react-dom": "19.2.8",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
     "react-router-dom": "7.18.3",
-    "zod": "4.5.4"
+    "zod": "4.6.1"
   },
   "devDependencies": {
-    "@types/react": "19.2.18",
-    "@types/react-dom": "19.2.5",
-    "vite": "npm:@voidzero-dev/vite-plus-core@0.3.0",
-    "vite-plus": "0.3.0"
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.3.1",
+    "vite-plus": "0.3.1"
   }
 }

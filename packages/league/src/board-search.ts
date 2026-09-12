@@ -1,47 +1,40 @@
 import { z } from "zod";
+import type { Dex } from "pokemon-showdown";
 
-import type { DraftBoard, DraftBoardMon } from "./draft.js";
+import type { DraftBoard, DraftBoardMon } from "./draft-protocol.js";
 import { loadShowdown, type ShowdownApi } from "./showdown.js";
 import type { JsonObject, ToolDefinition } from "./types.js";
-import { asStrings, text } from "./value.js";
 
-const SORTS = ["cost", "bst", "name"] as const;
-type Sort = "cost" | "bst" | "name";
-const sortSchema = z.enum(SORTS);
-const finiteNumberSchema = z.number().finite();
+const searchSchema = z.strictObject({
+  types: z
+    .array(z.string())
+    .default([])
+    .describe('Every listed type must occur on the same form. ["Fire","Flying"] requires both.'),
+  max_cost: z.number().int().optional(),
+  min_cost: z.number().int().optional(),
+  learns: z.string().optional().describe("Move legally learned in this format."),
+  ability: z.string().optional().describe("Ability in any slot of the base or Mega form."),
+  min_bst: z.number().int().optional().describe("Minimum base stat total of the matching form."),
+  sort: z
+    .enum(["cost", "bst", "name"])
+    .default("cost")
+    .describe("cost: high to low; bst: highest matching form first; name: A to Z."),
+  limit: z.number().int().min(1).max(100).default(40),
+  include_unavailable: z
+    .boolean()
+    .default(false)
+    .describe("During the draft, include entries that are not legal picks for you."),
+});
+
+export const BOARD_COLUMNS =
+  "id | cost | name | types | HP/Atk/Def/SpA/SpD/Spe | abilities; Mega entries show base -> Mega";
 
 export const BOARD_SEARCH_TOOL: ToolDefinition = {
   name: "search_board",
   description:
-    "Filter and sort the draft board. Searches every entry on the board, including ones already drafted, so check " +
-    "the drafted list before picking. Combine any filters; omit them all to re-sort the whole board.",
-  parameters: {
-    type: "object",
-    properties: {
-      types: {
-        type: "array",
-        items: { type: "string" },
-        description:
-          'Entries carrying every listed type. ["Fire"] matches Fire/Flying; ["Fire","Flying"] matches only both.',
-      },
-      max_cost: { type: "integer" },
-      min_cost: { type: "integer" },
-      learns: {
-        type: "string",
-        description: "Move name. Entries whose legal movepool in this format contains it.",
-      },
-      ability: { type: "string", description: "Ability name, matched against every ability slot." },
-      min_bst: { type: "integer", description: "Minimum base stat total." },
-      sort: {
-        type: "string",
-        enum: [...SORTS],
-        description: "cost and bst sort high to low, name A to Z. Defaults to cost.",
-      },
-      limit: { type: "integer", description: "Rows returned, 1 to 100. Defaults to 40." },
-    },
-    required: [],
-    additionalProperties: false,
-  },
+    "Filter and sort the board. During the draft, defaults to your currently legal picks; otherwise searches the full board. " +
+    "Mega entries show both forms; their stone is required in either form. Type, ability, stat and move filters must match together on one form.",
+  parameters: z.record(z.string(), z.json()).parse(z.toJSONSchema(searchSchema, { io: "input" })),
 };
 
 export interface BoardSearch {
@@ -53,58 +46,56 @@ export function baseCostsBySpecies(mons: readonly DraftBoardMon[]): Map<string, 
   return new Map(mons.filter((mon) => !mon.item).map((mon) => [mon.species, mon.cost]));
 }
 
+function boardForms(mon: DraftBoardMon, dex: ShowdownApi["Dex"]): Dex.Species[] {
+  return [mon.species, ...(mon.forme ? [mon.forme] : [])].map((name) => dex.species.get(name));
+}
+
+function formSummary(species: Dex.Species): string {
+  const stats = species.baseStats;
+  return (
+    `${species.types.join("/")} | ` +
+    `${stats.hp}/${stats.atk}/${stats.def}/${stats.spa}/${stats.spd}/${stats.spe} | ` +
+    Object.values(species.abilities).join("/")
+  );
+}
+
 export function boardRow(
   mon: DraftBoardMon,
   dex: ShowdownApi["Dex"],
   baseCosts?: ReadonlyMap<string, number>,
 ): string {
   const baseCost = mon.item ? baseCosts?.get(mon.species) : undefined;
-  const species = dex.species.get(mon.forme ?? mon.species);
-  const stats = species.baseStats;
-  const abilities = Object.values(species.abilities ?? {})
-    .filter(Boolean)
-    .join("/");
+  const forms = boardForms(mon, dex);
+  const details = forms
+    .map((species, index) =>
+      mon.forme
+        ? `${index === 0 ? "base" : "Mega"} ${species.name}: ${formSummary(species)}`
+        : formSummary(species),
+    )
+    .join(" -> ");
   return (
-    `- ${mon.id} | ${mon.cost} | ${mon.name} | ${mon.types.join("/")} | ` +
-    `${stats.hp}/${stats.atk}/${stats.def}/${stats.spa}/${stats.spd}/${stats.spe} | ${abilities}` +
-    (mon.item ? ` | holds ${mon.item}` : "") +
+    `- ${mon.id} | ${mon.cost} | ${mon.name} | ${details}` +
+    (mon.item ? ` | locked item: ${mon.item}` : "") +
     (baseCost === undefined ? "" : ` | base ${mon.species} costs ${baseCost}`)
   );
 }
 
-function baseStatTotal(stats: {
-  hp: number;
-  atk: number;
-  def: number;
-  spa: number;
-  spd: number;
-  spe: number;
-}): number {
-  return stats.hp + stats.atk + stats.def + stats.spa + stats.spd + stats.spe;
-}
-
 const normalize = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-function readString(args: JsonObject, key: string): string {
-  return text(args[key]).trim();
-}
-
-function readInteger(args: JsonObject, key: string): number | undefined {
-  const result = finiteNumberSchema.safeParse(args[key]);
-  return result.success ? Math.trunc(result.data) : undefined;
-}
-
-export function createBoardSearch(board: DraftBoard, psDir: string): BoardSearch {
+export function createBoardSearch(
+  board: DraftBoard,
+  psDir: string,
+  legal?: readonly DraftBoardMon[],
+): BoardSearch {
   const { Dex } = loadShowdown(psDir);
   const dex = Dex.mod(Dex.formats.get(board.format).mod || "base");
   const baseCosts = baseCostsBySpecies(board.mons);
   const movePools = new Map<string, Set<string>>();
-  const movePool = (mon: DraftBoardMon): Set<string> => {
-    const key = mon.forme ?? mon.species;
-    let pool = movePools.get(key);
+  const movePool = (species: Dex.Species): Set<string> => {
+    let pool = movePools.get(species.id);
     if (!pool) {
-      pool = new Set(dex.species.getMovePool(dex.species.get(key).id));
-      movePools.set(key, pool);
+      pool = new Set(dex.species.getMovePool(species.id));
+      movePools.set(species.id, pool);
     }
     return pool;
   };
@@ -112,16 +103,21 @@ export function createBoardSearch(board: DraftBoard, psDir: string): BoardSearch
   return {
     definition: BOARD_SEARCH_TOOL,
     run(args: JsonObject): string {
-      const types = asStrings(args.types).map(normalize);
-      const maxCost = readInteger(args, "max_cost");
-      const minCost = readInteger(args, "min_cost");
-      const minBst = readInteger(args, "min_bst");
-      const learns = readString(args, "learns");
-      const ability = readString(args, "ability");
-      const sortResult = sortSchema.safeParse(readString(args, "sort") || "cost");
-      if (!sortResult.success) return `sort must be one of ${SORTS.join(", ")}.`;
-      const sort: Sort = sortResult.data;
-      const limit = Math.min(Math.max(readInteger(args, "limit") ?? 40, 1), 100);
+      const parsed = searchSchema.safeParse(args);
+      if (!parsed.success) return z.prettifyError(parsed.error);
+      const {
+        types,
+        max_cost,
+        min_cost,
+        min_bst,
+        learns,
+        ability,
+        sort,
+        limit,
+        include_unavailable,
+      } = parsed.data;
+      const pool = include_unavailable ? board.mons : (legal ?? board.mons);
+      const scope = legal && !include_unavailable ? "legal picks" : "full board";
 
       let move = "";
       if (learns) {
@@ -138,42 +134,47 @@ export function createBoardSearch(board: DraftBoard, psDir: string): BoardSearch
         abilityName = resolved.name;
       }
 
-      const matched = board.mons.filter((mon) => {
-        if (maxCost !== undefined && mon.cost > maxCost) return false;
-        if (minCost !== undefined && mon.cost < minCost) return false;
-        const species = dex.species.get(mon.forme ?? mon.species);
-        if (
-          types.length &&
-          !types.every((type) => species.types.some((own: string) => normalize(own) === type))
-        )
-          return false;
-        if (minBst !== undefined && baseStatTotal(species.baseStats) < minBst) return false;
-        if (abilityName && !Object.values(species.abilities ?? {}).includes(abilityName))
-          return false;
-        if (move && !movePool(mon).has(move)) return false;
-        return true;
+      const matched = pool.flatMap((mon) => {
+        if (max_cost !== undefined && mon.cost > max_cost) return [];
+        if (min_cost !== undefined && mon.cost < min_cost) return [];
+        const forms = boardForms(mon, dex).filter(
+          (species) =>
+            types.every((type) =>
+              species.types.some((own) => normalize(own) === normalize(type)),
+            ) &&
+            (min_bst === undefined || species.bst >= min_bst) &&
+            (!abilityName || Object.values(species.abilities).includes(abilityName)) &&
+            (!move || movePool(species).has(move)),
+        );
+        return forms.length
+          ? [{ mon, forms, bst: Math.max(...forms.map((form) => form.bst)) }]
+          : [];
       });
 
       matched.sort((a, b) => {
-        if (sort === "name") return a.name.localeCompare(b.name);
-        if (sort === "bst") {
-          const left = baseStatTotal(dex.species.get(a.forme ?? a.species).baseStats);
-          const right = baseStatTotal(dex.species.get(b.forme ?? b.species).baseStats);
-          if (left !== right) return right - left;
-          return b.cost - a.cost || a.name.localeCompare(b.name);
-        }
-        return b.cost - a.cost || a.name.localeCompare(b.name);
+        if (sort === "name") return a.mon.name.localeCompare(b.mon.name);
+        if (sort === "bst" && a.bst !== b.bst) return b.bst - a.bst;
+        return b.mon.cost - a.mon.cost || a.mon.name.localeCompare(b.mon.name);
       });
 
-      if (!matched.length) return "No board entries match those filters.";
+      if (!matched.length) return `No board entries match those filters (${scope}).`;
       const shown = matched.slice(0, limit);
       const heading =
         `Board search: ${matched.length} match${matched.length === 1 ? "" : "es"}` +
         (matched.length > shown.length
           ? `, showing the first ${shown.length} by ${sort}`
           : ` sorted by ${sort}`) +
-        " (id | cost | name | types | base stats | abilities):";
-      return [heading, ...shown.map((mon) => boardRow(mon, dex, baseCosts))].join("\n");
+        ` (${scope}; ${BOARD_COLUMNS}):`;
+      const formFilter = types.length || abilityName || min_bst !== undefined || move;
+      return [
+        heading,
+        ...shown.map(({ mon, forms }) => {
+          const row = boardRow(mon, dex, baseCosts);
+          return mon.forme && formFilter
+            ? `${row} | matches: ${forms.map((form) => form.name).join(", ")}`
+            : row;
+        }),
+      ].join("\n");
     },
   };
 }

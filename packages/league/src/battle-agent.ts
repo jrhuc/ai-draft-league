@@ -8,9 +8,7 @@ import { seededRng } from "./random.js";
 
 export const DECISION_STAT_NAMES = [
   "decisions",
-  "fallbacks",
   "reflections",
-  "reflection_fallbacks",
   "move_selections",
   "switch_selections",
   "protect_selections",
@@ -106,7 +104,10 @@ export abstract class BaseEngine implements BattleAgent {
     if (completed instanceof Promise) return completed.then(() => undefined);
   }
   observe(_lines: string[]): void {}
-  abandonDecision(): void {}
+  abandonDecision(): void {
+    this.activeSubmissionId = undefined;
+    this.submissionState = {};
+  }
   decisionStats(): DecisionStats {
     return {};
   }
@@ -129,11 +130,12 @@ export abstract class BaseEngine implements BattleAgent {
       const submitted = submissionState.submitted;
       return submitted?.choice === choice ? submitted : null;
     } finally {
-      this.activeSubmissionId = undefined;
+      if (this.submissionState === submissionState) this.activeSubmissionId = undefined;
     }
   }
 
   async act(request: BattleRequest, context: AgentContext): Promise<string> {
+    const submissionState = this.submissionState;
     const menus = buildMenus(request, this.menuHints(request));
     if (!menus.length) return "";
     /** Forfeit is always present on real turns, so it must not turn a single-option forced turn into a
@@ -142,6 +144,7 @@ export abstract class BaseEngine implements BattleAgent {
       (menu) => menu.filter((item) => item.kind !== "forfeit").length === 1,
     );
     let choices = automatic ? menus.map(() => 0) : await this.decideJoint(menus, request, context);
+    if (submissionState !== this.submissionState) return "";
     let parts: string[];
     let substitution: ChoiceSubstitution | undefined;
     try {
@@ -182,9 +185,7 @@ export abstract class BaseEngine implements BattleAgent {
     showdownError?: string,
   ): void {
     const held = this.pendingEvidence.get(submission.submissionId);
-    const replayed = held === null && this.pendingEvidence.has(submission.submissionId);
     this.pendingEvidence.delete(submission.submissionId);
-    if (replayed) return;
     const row: JsonObject = {
       ...(held ?? this.basicSubmissionRow(submission)),
       submission_id: submission.submissionId,
@@ -218,10 +219,6 @@ export abstract class BaseEngine implements BattleAgent {
   ): SubmissionSource {
     return substitution ? "model-default" : automatic ? "automatic" : "model";
   }
-  protected restoreSubmission(submission: ActionSubmission): void {
-    this.submissionState.submitted = submission;
-    this.pendingEvidence.set(submission.submissionId, null);
-  }
   protected holdSubmissionEvidence(submission: ActionSubmission, row: JsonObject): void {
     this.pendingEvidence.set(submission.submissionId, row);
   }
@@ -244,7 +241,6 @@ export abstract class BaseEngine implements BattleAgent {
       pid: this.pid,
       action: submission.choice,
       automatic: submission.source === "automatic",
-      fallback: submission.source === "model-default",
     };
   }
 
@@ -326,11 +322,20 @@ export abstract class BaseEngine implements BattleAgent {
 }
 
 export class RandomEngine extends BaseEngine {
-  private readonly random: Rng;
+  private random: Rng;
 
-  constructor(pid: Pid, seed: string | number = Math.random(), decisionLog?: DecisionLog) {
+  constructor(
+    pid: Pid,
+    private readonly seed: string | number = Math.random(),
+    decisionLog?: DecisionLog,
+  ) {
     super(pid, decisionLog);
     this.random = seededRng(seed);
+  }
+
+  override beginGame(context: GameStart): void {
+    super.beginGame(context);
+    this.random = seededRng(`${this.seed}:game:${context.gameNumber}`);
   }
 
   protected override submissionSource(

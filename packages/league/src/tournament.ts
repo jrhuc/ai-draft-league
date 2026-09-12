@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { type AgentRuntime, withAgentHost } from "./agent-runtime.js";
 import path from "node:path";
 import { z } from "zod";
 
@@ -48,6 +49,7 @@ interface StoredTournament {
 
 interface PlayMatchContext extends ModelReasoningConfig {
   runDir: string;
+  agents: AgentRuntime;
   format: string;
   poolId: string | null;
   runSeed: number;
@@ -58,7 +60,6 @@ interface PlayMatchContext extends ModelReasoningConfig {
   };
   briefing?: string;
   provenance: ProvenanceMode;
-  apiKeys?: Readonly<Record<string, string>>;
   onEvent?: (event: TournamentEvent) => void;
   signal?: AbortSignal;
   contributor?: ContributorAttribution;
@@ -221,6 +222,19 @@ export async function runTournament(
   models: string[],
   runDir: string,
   options: TournamentOptions = {},
+): Promise<SeriesRecord[]> {
+  return withAgentHost(
+    runDir,
+    (agents) => executeTournament(models, runDir, agents, options),
+    options.onAgentProgress,
+  );
+}
+
+async function executeTournament(
+  models: string[],
+  runDir: string,
+  agents: AgentRuntime,
+  options: TournamentOptions,
 ): Promise<SeriesRecord[]> {
   if (models.length < 2) throw new Error("a tournament needs at least two models");
 
@@ -393,6 +407,7 @@ export async function runTournament(
     try {
       const matchContext: PlayMatchContext = {
         runDir,
+        agents,
         format,
         poolId,
         runSeed: seed,
@@ -403,7 +418,6 @@ export async function runTournament(
         timerScale,
         briefing: briefingFor(match),
         reasoning: options.reasoning,
-        apiKeys: options.apiKeys,
         reasoningByModel: options.reasoningByModel,
         onEvent: options.onEvent,
         contributor: options.contributor,
@@ -475,6 +489,7 @@ async function playMatch(
     format: context.format,
     psDir: context.psDir,
     runDir: context.runDir,
+    agents: context.agents,
     requireWinner: true,
     timerScale: context.timerScale,
     onGameUpdate: (game, lines, publicLines) =>
@@ -488,7 +503,6 @@ async function playMatch(
     tournamentRound: context.finalRound ? "final" : "round",
     reasoningByModel: context.reasoningByModel,
     reasoning: context.reasoning,
-    apiKeys: context.apiKeys,
     signal: context.signal,
   };
   const { winnerSide, fields, coachNotes } = await new MatchRunner(seriesContext).run();

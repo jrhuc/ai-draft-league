@@ -16,7 +16,6 @@ import { reasoningForModel } from "./providers.js";
 import { commitRunArtifact, readRunArtifacts } from "./run-artifact-store.js";
 import { ShowdownReference } from "./reference.js";
 import {
-  agentPolicyIdentity,
   readCompletedSeriesDecisionRows,
   readCompletedSeriesEvidence,
   recordedSeriesIdentity,
@@ -30,6 +29,7 @@ import type {
   RecordedSeriesFields,
 } from "./recorded-series.js";
 import { SimBattle } from "./sim.js";
+import type { LiveGame } from "./public/live-protocol.js";
 import {
   chanceEventCounts,
   closedSheetsFormat,
@@ -63,13 +63,14 @@ export interface Bo3Context {
   gameSeeds: Array<[number, number, number, number]>;
   seriesId: string;
   seriesDir: string;
-  runDir?: string;
+  runDir: string;
   format: string;
   psDir: string;
   timerScale?: TimerScale;
   attemptId?: string;
   signal?: AbortSignal;
   onGameStart?: (game: number) => void;
+  onLiveGame?: (game: LiveGame) => void;
   onGameUpdate?: (game: number, lines: string[], publicLines: string[]) => void;
   onGameEnd?: (
     game: number,
@@ -93,8 +94,7 @@ export interface Bo3Result {
 }
 
 export async function playBo3(context: Bo3Context): Promise<Bo3Result> {
-  const { engines, names, seriesId } = context;
-  const runDir = context.runDir ?? context.seriesDir;
+  const { engines, names, seriesId, runDir } = context;
   const submissionNamespace = context.attemptId ?? randomUUID();
   const ownsAttempt = context.attemptId === undefined;
   let stored = ownsAttempt ? readStoredSeries(runDir, seriesId) : undefined;
@@ -117,7 +117,6 @@ export async function playBo3(context: Bo3Context): Promise<Bo3Result> {
         initial_notebook_digests: { p1: null, p2: null },
         draft_roster_digests: { p1: null, p2: null },
         briefing_digests: { p1: null, p2: null },
-        agent_policy: agentPolicyIdentity(),
       },
     } satisfies RecordedSeriesIdentity;
     createStoredSeries(runDir, seriesId, new Date().toISOString(), identity);
@@ -162,14 +161,22 @@ export async function playBo3(context: Bo3Context): Promise<Bo3Result> {
     const index = games.length;
     context.signal?.throwIfAborted();
     const gameNumber = index + 1;
-    const gameId = `${seriesId}-${gameNumber}`;
+    const gameId = `${seriesId}-${gameNumber}${context.timerScale && context.timerScale !== "off" ? `-${submissionNamespace}` : ""}`;
     const start: GameStart = { gameId, gameNumber, seriesId, seriesScore: { ...score } };
-    const modelFallbacksAtStart = {
-      p1: engines.p1.decisionStats().fallbacks ?? 0,
-      p2: engines.p2.decisionStats().fallbacks ?? 0,
-    };
     for (const engine of Object.values(engines)) engine.beginGame(start);
     context.onGameStart?.(gameNumber);
+    const live: LiveGame = {
+      seriesId,
+      game: gameNumber,
+      attempt: submissionNamespace,
+      players: context.players,
+      score: { ...score },
+      raw: "",
+      turn: 0,
+      winner: null,
+      state: "playing",
+    };
+    context.onLiveGame?.(live);
     const players = {
       p1: { name: names.p1, team: context.teams.p1.packed },
       p2: { name: names.p2, team: context.teams.p2.packed },
@@ -178,6 +185,13 @@ export async function playBo3(context: Bo3Context): Promise<Bo3Result> {
     fs.writeFileSync(logPath, "", "utf8");
     const onUpdate = (lines: string[], publicLines: string[]) => {
       if (lines.length) fs.appendFileSync(logPath, `${lines.join("\n")}\n`, "utf8");
+      if (publicLines.length) {
+        live.raw += `${publicLines.join("\n")}\n`;
+        for (const line of publicLines) {
+          if (line.startsWith("|turn|")) live.turn = Number(line.slice(6));
+        }
+        context.onLiveGame?.(live);
+      }
       context.onGameUpdate?.(gameNumber, lines, publicLines);
     };
     const outcome = context.runBattle
@@ -194,10 +208,10 @@ export async function playBo3(context: Bo3Context): Promise<Bo3Result> {
     context.signal?.throwIfAborted();
     const winnerSide = (["p1", "p2"] as const).find((pid) => names[pid] === outcome.winner);
     if (winnerSide) score[winnerSide] += 1;
-    const modelChoiceFallbacks = {
-      p1: (engines.p1.decisionStats().fallbacks ?? 0) - modelFallbacksAtStart.p1,
-      p2: (engines.p2.decisionStats().fallbacks ?? 0) - modelFallbacksAtStart.p2,
-    };
+    live.state = "ended";
+    live.winner = winnerSide ? context.players[winnerSide] : null;
+    live.score = { ...score };
+    context.onLiveGame?.(live);
     const nextFolded = foldSeriesGames(
       context.gameSeeds,
       [
@@ -221,7 +235,6 @@ export async function playBo3(context: Bo3Context): Promise<Bo3Result> {
           turns: outcome.turns,
           pov_lines: outcome.pov[pid],
           errors: outcome.errors[pid],
-          model_choice_fallbacks: modelChoiceFallbacks[pid],
           simulator_substitutions: outcome.simulatorSubstitutions[pid],
           timer_autodefaults: outcome.timerAutodefaults[pid],
         },
@@ -250,7 +263,6 @@ export async function playBo3(context: Bo3Context): Promise<Bo3Result> {
       winner_side: winnerSide ?? null,
       turns: outcome.turns,
       errors: outcome.errors,
-      model_choice_fallbacks: modelChoiceFallbacks,
       simulator_substitutions: outcome.simulatorSubstitutions,
       timer_autodefaults: outcome.timerAutodefaults,
       chance_events: chanceEventCounts(outcome.log),
@@ -320,7 +332,6 @@ function projectedDecisionStats(rows: JsonObject[]): DecisionStats {
   for (const row of rows) {
     if (row.kind === "game_reflection") {
       add("reflections");
-      if (row.fallback === true) add("reflection_fallbacks");
       const reasoningTokens = numericDecisionStatSchema.safeParse(row.reasoning_tokens);
       if (reasoningTokens.success) add("reasoning_tokens", reasoningTokens.data);
       const cost = numericDecisionStatSchema.safeParse(row.cost);
@@ -331,7 +342,6 @@ function projectedDecisionStats(rows: JsonObject[]): DecisionStats {
     if (row.submission_source !== "model" && row.submission_source !== "model-default") continue;
     if (row.automatic === true) continue;
     add("decisions");
-    if (row.fallback === true) add("fallbacks");
     if (Array.isArray(row.tool_lookups)) add("tool_lookups", row.tool_lookups.length);
     const parseFailures = numericDecisionStatSchema.safeParse(row.parse_failures);
     if (parseFailures.success) add("parse_failures", parseFailures.data);
@@ -467,6 +477,7 @@ async function runRecordedSeries(context: RecordedSeriesContext): Promise<Record
 
     const engineFor = (pid: Pid) => {
       const setup: EngineSetup = {
+        runAgent: context.agents.run,
         pid,
         spec: context.players[pid],
         seed: context.engineSeeds[pid],
@@ -479,7 +490,6 @@ async function runRecordedSeries(context: RecordedSeriesContext): Promise<Record
         reasoning: reasoning[pid],
         reference,
         signal: context.signal,
-        apiKey: context.apiKeys?.[context.players[pid]],
         initialNotebook: adopted
           ? (latestSeriesMemory(adopted, pid) ?? context.initialNotebooks?.[pid])
           : context.initialNotebooks?.[pid],
@@ -514,6 +524,7 @@ async function runRecordedSeries(context: RecordedSeriesContext): Promise<Record
       seriesId,
       seriesDir,
       runDir: context.runDir,
+      onLiveGame: context.agents.live.game,
       format: battleFormat,
       psDir: context.psDir,
       timerScale,

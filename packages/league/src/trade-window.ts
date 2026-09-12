@@ -2,6 +2,8 @@ export {
   readTradeWindowArtifact,
   readTradeWindowArtifacts,
   readTransactionEvents,
+  type WindowRoster,
+  windowRosters,
 } from "./trade-window-artifacts.js";
 export {
   applyFreeAgency,

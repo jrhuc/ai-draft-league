@@ -13,7 +13,6 @@ const rosterSlotSchema = pokemonSchema.extend({
   acquired: z.enum(["draft", "trade", "free-agency"]),
   overallPick: z.number().int().positive().nullable(),
   rationale: z.string(),
-  fallback: z.boolean(),
 });
 const recordSchema = z.strictObject({
   seriesWins: z.number().int().nonnegative(),
@@ -72,7 +71,6 @@ const decisionSchema = z.strictObject({
   /** The chosen options as the menu presented them, one per acting slot. */
   selection: z.array(z.string()),
   rationale: z.string(),
-  fallback: z.boolean(),
   automatic: z.boolean(),
   latencyMs: z.number().nonnegative().nullable(),
   reasoningTokens: z.number().int().nonnegative().nullable(),
@@ -95,16 +93,6 @@ export const publicDecisionTraceSchema = z.strictObject({
   response: z.string(),
   usage: z.record(z.string(), z.number()),
   latencyMs: z.number().nonnegative(),
-  maxTokens: z.number().int().positive().nullable(),
-  timer: z
-    .strictObject({
-      turnSeconds: z.number().nullable(),
-      bankSeconds: z.number().nullable(),
-    })
-    .nullable(),
-  fallback: z.boolean(),
-  error: z.string().nullable(),
-  failedAttempts: z.array(z.strictObject({ response: z.string(), error: z.string() })),
 });
 /** One released game's traces, aligned index-for-index with the bundle's decisions. */
 export const publicGameTracesSchema = z.strictObject({
@@ -131,7 +119,6 @@ const reflectionSchema = z.strictObject({
   result: z.enum(["won", "lost", "tied"]),
   summary: z.string(),
   adjustment: z.string(),
-  fallback: z.boolean(),
 });
 const gameSummarySchema = z.strictObject({
   number: z.number().int().positive(),
@@ -165,7 +152,6 @@ const weeklyReviewSchema = z.strictObject({
   /** Size of the memory the review left behind; the pages themselves stay private. */
   memoryPages: z.number().int().nonnegative(),
   memoryCharacters: z.number().int().nonnegative(),
-  fallback: z.boolean(),
 });
 
 export const publicSeasonBundleSchema = z.strictObject({
@@ -231,7 +217,6 @@ export const publicSeasonBundleSchema = z.strictObject({
         franchiseId: franchiseRef,
         pokemon: pokemonSchema,
         rationale: z.string(),
-        fallback: z.boolean(),
       }),
     ),
   }),
@@ -271,7 +256,6 @@ export const publicSeasonBundleSchema = z.strictObject({
           swaps: z.array(z.strictObject({ drop: z.string(), add: z.string() })),
           swapsRemaining: z.number().int().nonnegative().nullable(),
           reasoning: z.string(),
-          fallback: z.boolean(),
         }),
       ),
     }),
@@ -315,7 +299,6 @@ export const publicSeasonBundleSchema = z.strictObject({
       didWell: z.string(),
       didPoorly: z.string(),
       wouldChange: z.string(),
-      fallback: z.boolean(),
     }),
   ),
 });

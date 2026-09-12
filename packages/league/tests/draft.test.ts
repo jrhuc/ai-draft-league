@@ -29,9 +29,9 @@ import {
   runTradeWindow,
   type TradeWindowState,
 } from "../src/trade-window.js";
-import type { Completion, JsonObject, ProviderMessage } from "../src/types.js";
+import type { JsonObject } from "../src/types.js";
+import { agentReply, scriptedAgent } from "./agent-test-helpers.js";
 import { asRecord } from "../src/value.js";
-import { accepted, rejection } from "./asserts.js";
 import {
   assertFormatAuthority,
   BOARD,
@@ -256,15 +256,15 @@ test("trade-window swaps are atomic and may upgrade a base entry to its Mega", (
     swapsUsed: [0, 0],
   };
 
-  const overBudget = parseTradeDecision(
-    JSON.stringify({
-      swaps: [{ drop: tyranitar.id, add: megaTyranitar.id }],
-      reasoning: "Upgrade Tyranitar.",
-    }),
-    state,
-    0,
+  assert.throws(
+    () =>
+      parseTradeDecision(
+        { swaps: [{ drop: tyranitar.id, add: megaTyranitar.id }], reasoning: "Upgrade Tyranitar." },
+        state,
+        0,
+      ),
+    /above the .* budget/,
   );
-  assert.match(rejection(overBudget), /above the .* budget/);
   const beforeRejected = structuredClone(state);
   assert.throws(
     () => applyFreeAgency(state, 0, [{ drop: tyranitar.id, add: megaTyranitar.id }]),
@@ -272,18 +272,16 @@ test("trade-window swaps are atomic and may upgrade a base entry to its Mega", (
   );
   assert.deepEqual(state, beforeRejected, "a rejected list mutates nothing");
 
-  const parsed = accepted(
-    parseTradeDecision(
-      JSON.stringify({
-        swaps: [
-          { drop: tyranitar.id, add: megaTyranitar.id },
-          { drop: mrRime.id, add: absol.id },
-        ],
-        reasoning: "Trade depth for the Mega upgrade.",
-      }),
-      state,
-      0,
-    ),
+  const parsed = parseTradeDecision(
+    {
+      swaps: [
+        { drop: tyranitar.id, add: megaTyranitar.id },
+        { drop: mrRime.id, add: absol.id },
+      ],
+      reasoning: "Trade depth for the Mega upgrade.",
+    },
+    state,
+    0,
   );
   const applied = applyFreeAgency(state, 0, parsed.swaps);
   assert.deepEqual(state, beforeRejected, "an accepted transition does not mutate its prior state");
@@ -317,29 +315,42 @@ test("coach trades validate both rosters and apply an accepted exchange atomical
     swapsAllowed: 6,
     swapsUsed: [0, 0],
   } satisfies TradeWindowState;
-  const parsed = accepted(
-    parseTradeOffer(
-      JSON.stringify({
-        offer: { to: 1, give: "charizard-mega-y", get: "tyranitar", message: "A direct exchange." },
-        reasoning: "Private valuation.",
-      }),
-      state,
-      0,
-    ),
+  const parsed = parseTradeOffer(
+    {
+      offer: { to: 1, give: "charizard-mega-y", get: "tyranitar", message: "A direct exchange." },
+      reasoning: "Private valuation.",
+    },
+    state,
+    0,
   );
-  assert.match(
-    rejection(
+  assert.throws(
+    () =>
       parseTradeOffer(
-        '{"offer":{"to":"1","give":"charizard-mega-y","get":"tyranitar","message":"A direct exchange."},"reasoning":"Private valuation.","notebook":"Plan around Tyranitar."}',
+        {
+          offer: {
+            to: "1",
+            give: "charizard-mega-y",
+            get: "tyranitar",
+            message: "A direct exchange.",
+          },
+          reasoning: "Private valuation.",
+          notebook: "Plan around Tyranitar.",
+        },
         state,
         0,
       ),
-    ),
-    /entrant index/,
+    /offer\.to/,
   );
   assert.deepEqual(
     parseTradeOffer(
-      '{"offer":{"to":1,"give":"charizard-mega-y (21)","get":"Tyranitar (17)","message":"As listed."}}',
+      {
+        offer: {
+          to: 1,
+          give: "charizard-mega-y (21)",
+          get: "Tyranitar (17)",
+          message: "As listed.",
+        },
+      },
       state,
       0,
     ),
@@ -348,22 +359,21 @@ test("coach trades validate both rosters and apply an accepted exchange atomical
       reasoning: "",
     },
   );
-  assert.match(
-    rejection(
+  assert.throws(
+    () =>
       parseTradeOffer(
-        '{"offer":{"to":0,"give":"charizard-mega-y","get":"tyranitar","message":"Self."}}',
+        { offer: { to: 0, give: "charizard-mega-y", get: "tyranitar", message: "Self." } },
         state,
         0,
       ),
-    ),
     /you are entrant 0/,
   );
-  assert.deepEqual(parseTradeResponse('{"accept":true,"reasoning":"Worth it."}'), {
+  assert.deepEqual(parseTradeResponse({ accept: true, reasoning: "Worth it." }), {
     accept: true,
     reasoning: "Worth it.",
   });
-  assert.deepEqual(parseTradeResponse('{"accept":true}'), { accept: true, reasoning: "" });
-  assert.deepEqual(parseTradeResponse('{"accept":false,"notebook":"ignored"}'), {
+  assert.deepEqual(parseTradeResponse({ accept: true }), { accept: true, reasoning: "" });
+  assert.deepEqual(parseTradeResponse({ accept: false, notebook: "ignored" }), {
     accept: false,
     reasoning: "",
   });
@@ -440,45 +450,37 @@ test("coach offers resolve before free agency and replay without model calls", a
     swapsAllowed: 6,
     swapsUsed: [0, 0],
   });
-  const queues = new Map<string, string[]>([
+  const queues = new Map<string, JsonObject[]>([
     [
       models[1]!,
       [
-        JSON.stringify({
+        {
           offer: { to: 0, give: cheap[10]!.id, get: cheap[0]!.id, message: "Swap role players?" },
           reasoning: "The exchange fits.",
           notebook: "Use the incoming role player.",
-        }),
-        JSON.stringify({
+        },
+        {
           offer: {
             to: 0,
             give: cheap[11]!.id,
             get: cheap[1]!.id,
             message: "A separate second offer?",
           },
-        }),
-        JSON.stringify({
-          swaps: [],
-          reasoning: "Done.",
-          notebook: "Use the incoming role player.",
-        }),
+        },
+        { swaps: [], reasoning: "Done.", notebook: "Use the incoming role player." },
       ],
     ],
     [
       models[0]!,
       [
-        JSON.stringify({
+        {
           accept: true,
           reasoning: "The exchange also fits us.",
           notebook: "Weighed the incoming offer.",
-        }),
-        JSON.stringify({ accept: false }),
-        JSON.stringify({
-          offer: null,
-          reasoning: "No outbound offer.",
-          notebook: "Keep the trade.",
-        }),
-        JSON.stringify({ swaps: [], reasoning: "Done.", notebook: "Keep the trade." }),
+        },
+        { accept: false },
+        { offer: null, reasoning: "No outbound offer.", notebook: "Keep the trade." },
+        { swaps: [], reasoning: "Done.", notebook: "Keep the trade." },
       ],
     ],
   ]);
@@ -490,17 +492,15 @@ test("coach offers resolve before free agency and replay without model calls", a
     psDir: defaultPsDir(),
     position: { afterWeek: 1, index: 0, count: 1 },
     tradesAllowed: 2,
-    makeTradeProvider: (spec) => ({
-      complete(system: string, messages: ProviderMessage[]): Promise<Completion> {
-        systems.push(system);
-        const response = queues.get(spec)?.shift();
-        assert.ok(response, `unexpected call for ${spec}`);
-        const asked = prompts.get(spec) ?? [];
-        asked.push(messages[messages.length - 1]?.content ?? "");
-        prompts.set(spec, asked);
-        return Promise.resolve({ text: response, usage: {}, toolCalls: [] });
-      },
-    }),
+    runAgent: async (task) => {
+      systems.push(task.system);
+      const response = queues.get(task.model)?.shift();
+      assert.ok(response, `unexpected call for ${task.model}`);
+      const asked = prompts.get(task.model) ?? [];
+      asked.push(task.prompt);
+      prompts.set(task.model, asked);
+      return agentReply(task, response);
+    },
   });
   const answering = prompts.get(models[0]!)?.[0] ?? "";
   assert.equal(systems.length, 7);
@@ -510,14 +510,12 @@ test("coach offers resolve before free agency and replay without model calls", a
   }
   assert.equal(artifact.offers.length, 3, "the proposer may make multiple independent offers");
   assert.equal(artifact.offers[0]!.accepted, true);
-  assert.equal(artifact.offers[0]!.proposerFallback, false);
-  assert.equal(artifact.offers[0]!.responderFallback, false);
   assert.equal(artifact.offers[1]!.accepted, false);
-  assert.equal(artifact.offers[1]!.proposerFallback, false);
-  assert.equal(artifact.offers[1]!.responderFallback, false);
   assert.equal(artifact.offers[2]!.to, null);
-  assert.equal(artifact.offers[2]!.proposerFallback, false);
-  assert.equal(artifact.offers[2]!.responderFallback, null);
+  assert.match(prompts.get(models[1]!)![1]!, /ACCEPTED by entrant 0/);
+  assert.match(prompts.get(models[1]!)![2]!, /REJECTED by entrant 0/);
+  assert.match(prompts.get(models[1]!)![2]!, /The Pokémon were not exchanged/);
+  assert.doesNotMatch(prompts.get(models[1]!)![1]!, /The exchange also fits us/);
   assert.deepEqual(
     artifact.rosters.map((roster) => roster.entrant),
     [0, 1],
@@ -536,12 +534,10 @@ test("coach offers resolve before free agency and replay without model calls", a
     psDir: defaultPsDir(),
     position: { afterWeek: 1, index: 0, count: 1 },
     tradesAllowed: 2,
-    makeTradeProvider: () => ({
-      complete(): Promise<Completion> {
-        replayCalls += 1;
-        throw new Error("replay must not call providers");
-      },
-    }),
+    runAgent: async () => {
+      replayCalls += 1;
+      throw new Error("replay must not call agents");
+    },
   });
   assert.equal(replayCalls, 0);
   assert.deepEqual(replayed, artifact);
@@ -552,7 +548,7 @@ test("coach offers resolve before free agency and replay without model calls", a
   );
 });
 
-test("offer artifacts distinguish exhausted parsing from deliberate and random decisions", async (t) => {
+test("failed trade submissions stop the window without recording an invented rejection", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-trade-fallbacks-"));
   t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const state = transactionState();
@@ -565,55 +561,21 @@ test("offer artifacts distinguish exhausted parsing from deliberate and random d
       message: "One independent offer.",
     },
   };
-  accepted(parseTradeOffer(JSON.stringify(offer), state, 1));
-  const calls = new Map<string, number>();
-  const artifact = await runTradeWindow(state, {
-    runDir: directory,
-    psDir: defaultPsDir(),
-    position: { afterWeek: 1, index: 0, count: 1 },
-    tradesAllowed: 1,
-    makeTradeProvider: (spec) => ({
-      complete(): Promise<Completion> {
-        const call = (calls.get(spec) ?? 0) + 1;
-        calls.set(spec, call);
-        if (spec === "test:proposer") {
-          return Promise.resolve({
-            text: JSON.stringify(call === 1 ? offer : { swaps: [] }),
-            usage: {},
-            toolCalls: [],
-          });
-        }
-        return Promise.resolve({
-          text: call <= 6 ? "not json" : JSON.stringify({ swaps: [] }),
-          usage: {},
-          toolCalls: [],
-        });
+  parseTradeOffer(offer, state, 1);
+  await assert.rejects(
+    runTradeWindow(state, {
+      runDir: directory,
+      psDir: defaultPsDir(),
+      position: { afterWeek: 1, index: 0, count: 1 },
+      tradesAllowed: 1,
+      runAgent: async (task) => {
+        if (task.model === "test:proposer") return agentReply(task, offer);
+        throw new Error("no accepted response");
       },
     }),
-  });
-
-  assert.deepEqual(
-    artifact.offers.map(({ from, accepted, proposerFallback, responderFallback }) => ({
-      from,
-      accepted,
-      proposerFallback,
-      responderFallback,
-    })),
-    [
-      { from: 1, accepted: false, proposerFallback: false, responderFallback: true },
-      { from: 0, accepted: null, proposerFallback: true, responderFallback: null },
-    ],
+    /no accepted response/,
   );
-  assert.equal(
-    artifact.offers[0]!.responseReasoning,
-    "",
-    "fallback rejection invents no private rationale",
-  );
-  assert.equal(
-    artifact.offers[1]!.offerReasoning,
-    "",
-    "fallback no-offer invents no private rationale",
-  );
+  assert.equal(readTransactionEvents(directory, 1).length, 0);
 });
 
 test("trade-offer caps are enforced by direct, fresh-league, and stored-resume ingress", async (t) => {
@@ -628,6 +590,7 @@ test("trade-offer caps are enforced by direct, fresh-league, and stored-resume i
       psDir: defaultPsDir(),
       position: { afterWeek: 1, index: 0, count: 1 },
       tradesAllowed: invalid,
+      runAgent: scriptedAgent([]).run,
     }),
     /between 0 and 3/,
   );
@@ -730,17 +693,11 @@ test("the trade window runs lowest seed first and replays completed seats", asyn
     psDir: defaultPsDir(),
     position: { afterWeek: 2, index: 0, count: 1 },
     tradesAllowed: 0,
-    makeTradeProvider: (spec) => ({
-      complete(system: string, messages: ProviderMessage[]): Promise<Completion> {
-        calls.push(spec);
-        prompts.set(spec, `${system}\n${messages[0]?.content ?? ""}`);
-        return Promise.resolve({
-          text: JSON.stringify(responses.get(spec)),
-          usage: {},
-          toolCalls: [],
-        });
-      },
-    }),
+    runAgent: async (task) => {
+      calls.push(task.model);
+      prompts.set(task.model, `${task.system}\n${task.prompt}`);
+      return agentReply(task, responses.get(task.model)!);
+    },
   });
   assert.deepEqual(artifact.order, [2, 1, 0]);
   assert.match(prompts.get(models[2]!) ?? "", /You are test:worst, manager of a franchise/);
@@ -761,12 +718,10 @@ test("the trade window runs lowest seed first and replays completed seats", asyn
     psDir: defaultPsDir(),
     position: { afterWeek: 2, index: 0, count: 1 },
     tradesAllowed: 0,
-    makeTradeProvider: () => ({
-      complete(): Promise<Completion> {
-        replayCalls += 1;
-        throw new Error("replayed decisions must not call a provider");
-      },
-    }),
+    runAgent: async () => {
+      replayCalls += 1;
+      throw new Error("replayed decisions must not call an agent");
+    },
   });
   assert.equal(replayCalls, 0);
   assert.deepEqual(replayed.decisions, artifact.decisions);

@@ -13,7 +13,8 @@ import {
   readTransactionEvents,
   runTradeWindow,
 } from "../src/trade-window.js";
-import type { Completion, JsonObject } from "../src/types.js";
+import type { JsonObject } from "../src/types.js";
+import { agentReply, scriptedAgent } from "./agent-test-helpers.js";
 import { asRecord } from "../src/value.js";
 import { BOARD, transactionState } from "./draft-test-helpers.js";
 
@@ -81,13 +82,11 @@ test("a transaction window resumes after its last committed event without repeat
   for (const drop of state.rosters[0]!) {
     for (const add of BOARD.mons) {
       if (owned.has(add.id)) continue;
-      const parsed = parseTradeDecision(
-        JSON.stringify({ swaps: [{ drop: drop.id, add: add.id }] }),
-        state,
-        0,
-      );
-      if (!(parsed instanceof Object) || !parsed.swaps[0]) continue;
-      swap = parsed.swaps[0];
+      try {
+        swap = parseTradeDecision({ swaps: [{ drop: drop.id, add: add.id }] }, state, 0).swaps[0];
+      } catch {
+        continue;
+      }
       break;
     }
     if (swap) break;
@@ -100,19 +99,13 @@ test("a transaction window resumes after its last committed event without repeat
     runTradeWindow(state, {
       ...options,
       position,
-      makeTradeProvider: (spec) => ({
-        complete(): Promise<Completion> {
-          calls.push(spec);
-          if (spec === "test:second") throw new Error("provider outage");
-          return Promise.resolve({
-            text: JSON.stringify({ swaps: [] }),
-            usage: {},
-            toolCalls: [],
-          });
-        },
-      }),
+      runAgent: async (task) => {
+        calls.push(task.model);
+        if (task.model === "test:second") throw new Error("provider outage");
+        return agentReply(task, { swaps: [] });
+      },
     }),
-    /trade window cannot continue/,
+    /provider outage/,
   );
   assert.deepEqual(calls, ["test:first", "test:second"]);
   assert.equal(readTransactionEvents(directory, 1).length, 1, "the first decision is committed");
@@ -121,33 +114,76 @@ test("a transaction window resumes after its last committed event without repeat
   const artifact = await runTradeWindow(state, {
     ...options,
     position,
-    makeTradeProvider: (spec) => ({
-      complete(): Promise<Completion> {
-        calls.push(spec);
-        if (spec === "test:first") throw new Error("a committed decision is not asked again");
-        return Promise.resolve({
-          text: JSON.stringify({ swaps: [swap] }),
-          usage: {},
-          toolCalls: [],
-        });
-      },
-    }),
+    runAgent: async (task) => {
+      calls.push(task.model);
+      if (task.model === "test:first") throw new Error("a committed decision is not asked again");
+      return agentReply(task, { swaps: [swap!] });
+    },
   });
   assert.deepEqual(calls, ["test:first", "test:second", "test:second"]);
   assert.equal(readTransactionEvents(directory, 1).length, 2);
   assert.deepEqual(readTradeWindowArtifact(directory, 1), artifact);
   assert.ok(state.rosters[0]!.some((candidate) => candidate.id === swap.add));
 
-  const replayed = await runTradeWindow(transactionState(), {
-    ...options,
-    position,
-    makeTradeProvider: () => ({
-      complete(): Promise<Completion> {
-        throw new Error("a completed window must not call providers");
+  const replayed = await runTradeWindow(
+    { ...transactionState(), models: state.models },
+    { ...options, position, runAgent: scriptedAgent([]).run },
+  );
+  assert.deepEqual(replayed, artifact);
+});
+
+test("a resumed offer receives the committed rejection without the responder's private reasoning", async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-offer-feedback-"));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const state = transactionState();
+  state.models = ["test:responder", "test:proposer"];
+  const offer = {
+    to: 0,
+    give: state.rosters[1]![0]!.id,
+    get: state.rosters[0]![0]!.id,
+    message: "Swap these?",
+  };
+  const options = {
+    runDir: directory,
+    psDir: defaultPsDir(),
+    tradesAllowed: 2,
+    position: { afterWeek: 1, index: 0, count: 1 },
+  };
+  let pendingPrompt = "";
+  await assert.rejects(
+    runTradeWindow(state, {
+      ...options,
+      runAgent: async (task) => {
+        if (task.task === "offer-1-1") return agentReply(task, { offer });
+        if (task.task === "response-1-1")
+          return agentReply(task, { accept: false, reasoning: "PRIVATE_COUNTERPLAN" });
+        pendingPrompt = task.prompt;
+        throw new Error("interrupt after rejection");
       },
     }),
+    /interrupt after rejection/,
+  );
+  const calls: string[] = [];
+  await runTradeWindow(state, {
+    ...options,
+    runAgent: async (task) => {
+      calls.push(task.task);
+      if (task.task === "offer-1-2") {
+        assert.equal(task.prompt, pendingPrompt);
+        assert.match(
+          task.prompt,
+          new RegExp(`REJECTED by entrant 0: entrant 1 offered ${offer.give} for ${offer.get}`),
+        );
+        assert.doesNotMatch(task.prompt, /PRIVATE_COUNTERPLAN/);
+      }
+      return agentReply(
+        task,
+        task.submission.name === "submit_offer" ? { offer: null } : { swaps: [] },
+      );
+    },
   });
-  assert.deepEqual(replayed, artifact);
+  assert.equal(calls[0], "offer-1-2");
+  assert.ok(!calls.includes("response-1-1"));
 });
 
 test("a two-coach league plays one week and a single final", async (t) => {

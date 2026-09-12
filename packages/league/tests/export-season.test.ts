@@ -133,7 +133,6 @@ test.each(["nested", "shared", "write failure"])(
       action: "move 1",
       rationale: "stated",
       automatic: false,
-      fallback: false,
       latency_ms: 1200,
       total_tokens: 900,
       reasoning_tokens: 300,
@@ -155,11 +154,7 @@ test.each(["nested", "shared", "write failure"])(
       raw_response: '{"choices":[0]}',
       usage: { output_tokens: 900, reasoning_tokens: 300 },
       latency_ms: 1200,
-      max_tokens: 4096,
-      timer: null,
       tool_calls: [{ name: "lookup_move", arguments: { name: "Protect" }, result: "Protect: ..." }],
-      fallback: false,
-      error: null,
     };
     fs.writeFileSync(
       path.join(seriesDir, "p1-trace.jsonl"),

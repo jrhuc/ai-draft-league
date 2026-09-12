@@ -144,14 +144,6 @@ export function PickPath({ picks, franchises }: { picks: DraftPick[]; franchises
                       {drafter?.name ?? pick.franchiseId}
                     </Link>
                     {drafter ? <span className="model">{modelLabel(drafter.model)}</span> : null}
-                    {pick.fallback ? (
-                      <span
-                        className="chip chip-warn"
-                        title="The model's response failed validation and the harness picked for it"
-                      >
-                        AUTO
-                      </span>
-                    ) : null}
                   </div>
                   <p>{pick.rationale || "No stated reason recorded."}</p>
                 </div>

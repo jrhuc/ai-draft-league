@@ -29,12 +29,15 @@ import {
   cleanDescription,
   effectivenessDetail,
   effectivenessLabel,
+  filledStats,
   id,
   investmentLimits,
   modifyRange,
   SPEED_HALVING_ITEMS,
   speciesMoveType,
   statRange,
+  statSet,
+  STAT_IDS,
   TARGET_TAGS,
   typeModifier,
   uniqueNames,
@@ -87,6 +90,42 @@ export class ShowdownReference {
     if (!species.exists) return undefined;
     const abilities = uniqueNames(Object.values(species.abilities));
     return abilities.length === 1 ? abilities[0] : undefined;
+  }
+
+  megaSpecies(name: string, itemName: string): Dex.Species | undefined {
+    const species = this.getSpecies(name);
+    const item = this.dex.items.get(itemName);
+    const target = item.megaStone?.[species.name];
+    if (!target || this.formatLegalityError("item", itemName)) return undefined;
+    const mega = this.dex.species.get(target);
+    return mega.exists && !mega.isNonstandard ? mega : undefined;
+  }
+
+  megaStats(name: string, mega: Dex.Species, stats: Record<string, number>, nature?: string) {
+    const base = this.getSpecies(name);
+    const limits = investmentLimits(this.battle);
+    const natures = nature ? [this.dex.natures.get(nature)] : this.dex.natures.all();
+    const projected: Record<string, number> = {};
+    for (const stat of STAT_IDS) {
+      if (stats[stat] === undefined) continue;
+      const values = new Set<number>();
+      for (const alignment of natures) {
+        for (let ev = 0; ev <= limits.perStat; ev += 1) {
+          for (let iv = limits.fixedIvs ? 31 : 0; iv <= 31; iv += 1) {
+            const set = statSet(
+              this.battle,
+              alignment.name,
+              { ...filledStats(0), [stat]: ev },
+              filledStats(iv),
+            );
+            if (this.battle.statModify(base.baseStats, set, stat) === stats[stat])
+              values.add(this.battle.statModify(mega.baseStats, set, stat));
+          }
+        }
+      }
+      if (values.size === 1) projected[stat] = [...values][0]!;
+    }
+    return projected;
   }
 
   moveTarget(name: string): string | undefined {
@@ -154,26 +193,16 @@ export class ShowdownReference {
         return [[move.id, details.join("/")]];
       }),
     );
-    const mega: string[] = [];
-    const item = mon.item ? this.dex.items.get(mon.item) : undefined;
-    if (item?.exists && item.megaStone) {
-      for (const formeName of species.otherFormes ?? []) {
-        const forme = this.dex.species.get(formeName);
-        if (!forme.exists || !/^Mega(?:-|$)/.test(forme.forme)) continue;
-        const target = item.megaStone[species.name];
-        if (id(target ?? "") !== id(forme.name)) continue;
-        const [megaLow, megaHigh] = statRange(this.battle, forme.baseStats, knownNature, "spe");
-        mega.push(
-          `if Mega Evolved -> ${forme.name}: ${forme.types.join("/")}, ability ${uniqueNames(Object.values(forme.abilities)).join("/")}, ${baseStats(forme.baseStats)}, raw Speed ${megaLow}-${megaHigh}`,
-        );
-      }
-    }
     const reference: CompactMonReference = {
       types: species.types.join("/"),
       speed: `${low}-${high}`,
       moves,
     };
-    if (mega.length) reference.mega = mega.join("; ");
+    const mega = mon.item ? this.megaSpecies(species.name, mon.item) : undefined;
+    if (mega) {
+      const [megaLow, megaHigh] = statRange(this.battle, mega.baseStats, knownNature, "spe");
+      reference.mega = `if Mega Evolved -> ${mega.name}: ${mega.types.join("/")}, ability ${uniqueNames(Object.values(mega.abilities)).join("/")}, ${baseStats(mega.baseStats)}, raw Speed ${megaLow}-${megaHigh}`;
+    }
     return reference;
   }
 
@@ -375,28 +404,23 @@ export class ShowdownReference {
       }
       for (const itemName of uniqueNames(sets.map((set) => set[1]))) {
         const item = this.dex.items.get(itemName);
-        if (!item.exists || !item.megaStone) continue;
-        for (const formeName of species.otherFormes ?? []) {
-          const mega = this.dex.species.get(formeName);
-          if (!mega.exists || !/^Mega(?:-|$)/.test(mega.forme)) continue;
-          const target = item.megaStone[species.name];
-          if (id(target ?? "") !== id(mega.name)) continue;
-          const ranges = sets.flatMap(([, visibleItem, natureName]) => {
-            if (id(visibleItem ?? "") !== id(itemName)) return [];
-            const nature = natureName ? this.dex.natures.get(natureName) : undefined;
-            const knownNature = nature?.exists ? nature : undefined;
-            const [low, high] = statRange(this.battle, mega.baseStats, knownNature, "spe");
-            return [
-              `raw Speed ${low}-${high}${knownNature ? ` with ${knownNature.name} alignment` : ""}`,
-            ];
-          });
-          const megaAbilities = uniqueNames(Object.values(mega.abilities));
-          for (const ability of megaAbilities)
-            if (!abilities.some((current) => id(current) === id(ability))) abilities.push(ability);
-          details.push(
-            `with ${item.name} -> ${mega.name} (${mega.types.join("/")}, ${baseStats(mega.baseStats)}, abilities ${megaAbilities.join("/")}${ranges.length ? `; ${[...new Set(ranges)].sort().join(", ")}` : ""})`,
-          );
-        }
+        const mega = this.megaSpecies(species.name, itemName);
+        if (!mega) continue;
+        const ranges = sets.flatMap(([, visibleItem, natureName]) => {
+          if (id(visibleItem ?? "") !== id(itemName)) return [];
+          const nature = natureName ? this.dex.natures.get(natureName) : undefined;
+          const knownNature = nature?.exists ? nature : undefined;
+          const [low, high] = statRange(this.battle, mega.baseStats, knownNature, "spe");
+          return [
+            `raw Speed ${low}-${high}${knownNature ? ` with ${knownNature.name} alignment` : ""}`,
+          ];
+        });
+        const megaAbilities = uniqueNames(Object.values(mega.abilities));
+        for (const ability of megaAbilities)
+          if (!abilities.some((current) => id(current) === id(ability))) abilities.push(ability);
+        details.push(
+          `with ${item.name} -> ${mega.name} (${mega.types.join("/")}, ${baseStats(mega.baseStats)}, abilities ${megaAbilities.join("/")}${ranges.length ? `; ${[...new Set(ranges)].sort().join(", ")}` : ""})`,
+        );
       }
       lines.push(`- Species ${species.name}: ${details.join("; ")}`);
     }

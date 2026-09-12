@@ -36,7 +36,7 @@ export class LLMEngineContext {
       write({
         kind: "agent_context",
         pid,
-        series_id: event.payload.series_id ?? null,
+        series_id: this.identity().seriesId ?? null,
         context_id: event.id,
         sequence: event.sequence,
         context_kind: event.kind,

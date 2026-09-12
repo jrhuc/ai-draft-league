@@ -97,22 +97,16 @@ test("resolved games survive an adaptation crash and resume without replaying Sh
   );
 });
 
-test("game summaries distinguish model defaults, simulator substitutions, and timer defaults", async (t) => {
+test("game summaries record simulator substitutions and timer defaults per side", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-series-evidence-"));
   t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
   const context = matchContext(directory);
-  let fallbacks = 5;
-  context.engines.p1.decisionStats = () => ({ fallbacks });
-  context.runBattle = async () => {
-    fallbacks = 8;
-    return {
-      ...outcome("Side One"),
-      simulatorSubstitutions: { p1: 1, p2: 0 },
-      timerAutodefaults: { p1: 2, p2: 0 },
-    };
-  };
+  context.runBattle = async () => ({
+    ...outcome("Side One"),
+    simulatorSubstitutions: { p1: 1, p2: 0 },
+    timerAutodefaults: { p1: 2, p2: 0 },
+  });
   const result = await playBo3(context);
-  assert.deepEqual(result.games[0]!.model_choice_fallbacks, { p1: 3, p2: 0 });
   assert.deepEqual(result.games[0]!.simulator_substitutions, { p1: 1, p2: 0 });
   assert.deepEqual(result.games[0]!.timer_autodefaults, { p1: 2, p2: 0 });
 });

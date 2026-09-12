@@ -124,9 +124,6 @@ function DecisionTraceBody({
         <div className="hero-row">
           <Model spec={team.model} />
           {decision.automatic ? <span className="chip chip-solid">AUTO</span> : null}
-          {decision.fallback && !decision.automatic ? (
-            <span className="chip chip-warn">fallback</span>
-          ) : null}
           {trace ? <span className="hint">{usageLine(trace)}</span> : null}
         </div>
         <div className="trace-actions">
@@ -198,29 +195,12 @@ function DecisionTraceBody({
               <summary>Response</summary>
               <pre className="trace-code">{trace.response || "(empty)"}</pre>
             </details>
-            {trace.failedAttempts.length ? (
-              <>
-                <h2>Rejected attempts</h2>
-                {trace.failedAttempts.map((attempt, i) => (
-                  <details key={i} className="trace-fold">
-                    <summary>{attempt.error}</summary>
-                    <pre className="trace-code">{attempt.response || "(empty)"}</pre>
-                  </details>
-                ))}
-              </>
-            ) : null}
             <details className="trace-panel trace-fold">
               <summary>
                 Prompt ({tokens(trace.prompt.length)} characters, including supplied memory)
               </summary>
               <div className="trace-text">{trace.prompt}</div>
             </details>
-            {trace.error ? (
-              <>
-                <h2>Error</h2>
-                <p className="trace-text">{trace.error}</p>
-              </>
-            ) : null}
           </>
         ) : null}
 

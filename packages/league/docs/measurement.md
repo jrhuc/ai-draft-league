@@ -21,7 +21,7 @@ Derived archive and spectator views are projections. They do not change the reco
 
 ## Describe recorded behavior
 
-State that a choice was submitted, a fallback occurred, a Pokémon was drafted or brought, a move succeeded, or a series ended with a score. Attribute rationale as stated reasoning, not hidden intent.
+State that a choice was submitted, a Pokémon was drafted or brought, a move succeeded, or a series ended with a score. Attribute rationale as stated reasoning, not hidden intent.
 
 Do not infer belief, honesty, deception, enjoyment, understanding, or exploitability from model text. Do not turn one season's standings into a model ranking or treat provider retries and helper labels as outcomes.
 

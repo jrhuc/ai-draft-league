@@ -64,8 +64,8 @@ export async function runDraftPhase(
       rosterPolicy: transactionPolicyLine(schedule, swapsAllowed),
       reasoning: options.reasoning,
       reasoningByModel: options.reasoningByModel,
-      apiKeys: options.apiKeys,
       signal: options.signal,
+      runAgent: context.agents.run,
       onPick: (view, state) => {
         runtime.picks = [...runtime.picks, view];
         runtime.adoptDraftState(state);
@@ -118,7 +118,6 @@ export async function runDraftPhase(
       rosterVersion: 0,
       memory: franchise.memory,
       reasoning: "",
-      fallback: false,
     });
   }
   runtime.storeRosterVersion(0);

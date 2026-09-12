@@ -11,7 +11,6 @@ import { recordRow } from "./records.js";
 import type { RecordedSeriesContext } from "./series.js";
 import { MatchRunner } from "./series.js";
 import { runTeambuild, type TeamBuildOptions } from "./teambuild.js";
-import { validateTeam } from "./teams.js";
 import type { Pid } from "./types.js";
 import type { TeamBuildView } from "./views.js";
 
@@ -77,7 +76,7 @@ async function teambuildFor(
   opponent: number,
   signal: AbortSignal,
 ): Promise<StoredBuild> {
-  const { board, entrants, options, psDir, runDir, seed, sheetPolicy } = context;
+  const { agents, board, entrants, options, psDir, runDir, seed, sheetPolicy } = context;
   const franchise = runtime.franchises[entrant]!;
   const rival = runtime.franchises[opponent]!;
   const stored = context.storedBuilds.get(`${plan.index}:${entrant}`);
@@ -97,7 +96,6 @@ async function teambuildFor(
       opponentRosterIds: rival.roster.map((mon) => mon.id),
     });
   const adopt = (build: StoredBuild): StoredBuild => {
-    validateTeam(build.packed, board.format, psDir);
     runtime.teambuilds.push(build.view);
     options.onEvent?.({ type: "draft", draft: runtime.draftView(true) });
     return build;
@@ -105,13 +103,13 @@ async function teambuildFor(
   if (reused) return adopt(reused);
   const teambuildOptions: TeamBuildOptions = {
     runDir,
+    runAgent: agents.run,
     psDir,
     logDir: path.join(runDir, "teambuild"),
     rng: seededRng(`${seed}:tb:${plan.index}:${entrant}`),
     signal,
     reasoning: options.reasoning,
     reasoningByModel: options.reasoningByModel,
-    apiKeys: options.apiKeys,
   };
   const result = await runTeambuild(
     {
@@ -131,7 +129,7 @@ async function teambuildFor(
     },
     teambuildOptions,
   );
-  return adopt({ packed: result.packed, view: result.view });
+  return adopt({ packed: result.packed, view: result.view, memory: result.artifact.task.notebook });
 }
 
 function applyOutcome(
@@ -167,8 +165,17 @@ export async function playSeries(
   plan: DraftLeagueSeriesPlan,
   signal: AbortSignal,
 ): Promise<SeriesRecord> {
-  const { board, configuredTransactions, entrants, options, psCommit, psDir, runDir, seed } =
-    context;
+  const {
+    agents,
+    board,
+    configuredTransactions,
+    entrants,
+    options,
+    psCommit,
+    psDir,
+    runDir,
+    seed,
+  } = context;
   const [a, b] = plan.entrants!;
   const players = { p1: entrants[a]!, p2: entrants[b]! };
   options.onEvent?.({ type: "series-players", index: plan.index, players });
@@ -184,7 +191,10 @@ export async function playSeries(
       p1: { id: `${entrants[a]} wk${plan.round}`, packed: home.packed },
       p2: { id: `${entrants[b]} wk${plan.round}`, packed: away.packed },
     },
-    briefings: { p1: buildBriefing(home.view), p2: buildBriefing(away.view) },
+    briefings: {
+      p1: buildBriefing(home.view, home.memory),
+      p2: buildBriefing(away.view, away.memory),
+    },
     draftRosters: {
       p1: draftRosterSummary(runtime.franchises[a]!.roster, home.view),
       p2: draftRosterSummary(runtime.franchises[b]!.roster, away.view),
@@ -194,11 +204,11 @@ export async function playSeries(
     format: board.format,
     psDir,
     runDir,
+    agents,
     signal,
     requireWinner: plan.stage === "playoff",
     closedSheets: options.closedSheets,
     reasoning: options.reasoning,
-    apiKeys: options.apiKeys,
     reasoningByModel: options.reasoningByModel,
     timerScale: context.timerScale,
     onGameUpdate: (game, lines, publicLines) =>

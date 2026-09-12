@@ -23,7 +23,6 @@ function writeTeamPreviewRows(seriesDir: string, gameCount: number): void {
       outcome: "accepted",
       submission_id: `${pid}-preview-${index + 1}`,
       automatic: false,
-      fallback: false,
       latency_ms: 100,
       total_tokens: 100,
     }));
@@ -108,7 +107,6 @@ test("a completed pool bracket exports its entrants, bracket, and replay evidenc
       rationale: "sash means the burst line is safe",
       notebook: "watch the sash",
       automatic: false,
-      fallback: false,
       latency_ms: 1200,
       total_tokens: 900,
       reasoning_tokens: 400,
@@ -121,7 +119,6 @@ test("a completed pool bracket exports its entrants, bracket, and replay evidenc
       summary: "the lead pair held",
       adjustment: "keep the same lead",
       notebook: "carry: lead safe",
-      fallback: false,
       total_tokens: 700,
       reasoning_tokens: 300,
     })}\n`,

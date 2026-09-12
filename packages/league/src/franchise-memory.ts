@@ -62,26 +62,27 @@ interface MemoryReply {
 
 /** Every field is optional and every omission keeps what exists: `notebook` replaces the notebook page,
  * `set_pages` writes the named pages and leaves the rest alone, and only `delete_pages` removes a page. */
-export function parseMemoryReply(
-  record: JsonObject,
-  current: FranchiseMemory,
-): MemoryReply | string {
+export function parseMemoryReply(record: JsonObject, current: FranchiseMemory): MemoryReply {
   if (record.pages !== undefined) {
-    return '"pages" is not a field; write pages with "set_pages" and remove them with "delete_pages"';
+    throw new Error(
+      '"pages" is not a field; write pages with "set_pages" and remove them with "delete_pages"',
+    );
   }
   const notebook = z.string().safeParse(record.notebook);
   if (record.notebook !== undefined && !notebook.success) {
-    return '"notebook" must be a string holding the complete replacement notebook';
+    throw new Error('"notebook" must be a string holding the complete replacement notebook');
   }
   const next = { ...current };
   if (notebook.success) next[NOTEBOOK_PAGE] = notebook.data.trim();
   const deleted = new Set<string>();
   if (record.delete_pages !== undefined) {
     const deletePages = z.array(z.string()).safeParse(record.delete_pages);
-    if (!deletePages.success) return '"delete_pages" must be an array of page names';
+    if (!deletePages.success) throw new Error('"delete_pages" must be an array of page names');
     for (const name of deletePages.data) {
       if (name === NOTEBOOK_PAGE)
-        return `the "${NOTEBOOK_PAGE}" page cannot be deleted; replace it with "notebook"`;
+        throw new Error(
+          `the "${NOTEBOOK_PAGE}" page cannot be deleted; replace it with "notebook"`,
+        );
       deleted.add(name);
       delete next[name];
     }
@@ -89,18 +90,21 @@ export function parseMemoryReply(
   if (record.set_pages !== undefined) {
     const setPages = z.object({}).passthrough().safeParse(record.set_pages);
     if (!setPages.success)
-      return '"set_pages" must be an object mapping page names to their complete text';
+      throw new Error('"set_pages" must be an object mapping page names to their complete text');
     for (const [name, candidate] of Object.entries(setPages.data)) {
       if (name === NOTEBOOK_PAGE)
-        return `"set_pages" may not contain "${NOTEBOOK_PAGE}"; that page is the "notebook" field`;
+        throw new Error(
+          `"set_pages" may not contain "${NOTEBOOK_PAGE}"; that page is the "notebook" field`,
+        );
       const text = z.string().safeParse(candidate);
-      if (!text.success) return `page ${JSON.stringify(name)} must be a string`;
-      if (deleted.has(name)) return `page ${JSON.stringify(name)} is both set and deleted`;
+      if (!text.success) throw new Error(`page ${JSON.stringify(name)} must be a string`);
+      if (deleted.has(name))
+        throw new Error(`page ${JSON.stringify(name)} is both set and deleted`);
       next[name] = text.data.trim();
     }
   }
   const problem = validateMemory(next);
-  if (problem) return problem;
+  if (problem) throw new Error(problem);
   return { memory: canonicalMemory(next) };
 }
 

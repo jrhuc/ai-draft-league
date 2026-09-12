@@ -2,7 +2,6 @@ import type { WeeklyReview } from "./season";
 
 type WeeklyReviewPresentation = WeeklyReview & {
   stageLabel: "Weekly review" | "Post-transaction reconciliation";
-  fallbackLabel: "Fallback review" | null;
   reasoningText: string;
 };
 
@@ -22,7 +21,6 @@ export function weeklyReviewsForFranchise(
       ...review,
       stageLabel:
         review.stage === "transactions" ? "Post-transaction reconciliation" : "Weekly review",
-      fallbackLabel: review.fallback ? "Fallback review" : null,
       reasoningText: review.reasoning.trim() || "No stated reason recorded.",
     }));
 }

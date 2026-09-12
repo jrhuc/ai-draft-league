@@ -8,7 +8,6 @@ import { count, text } from "./value.js";
 export interface DraftHorizonStats {
   entrant: number;
   picks: number;
-  fallbackPicks: number;
   withoutReason: number;
   namingAnotherCoach: number;
   namingTheSeason: number;
@@ -28,7 +27,6 @@ export interface MemoryContinuity {
   entrant: number;
   stage: FranchiseCheckpoint["stage"];
   week: number;
-  fallback: boolean;
   notebookChars: number;
   pages: number;
   totalChars: number;
@@ -65,13 +63,11 @@ export function draftHorizonStats(
     const stats: DraftHorizonStats = {
       entrant,
       picks: own.length,
-      fallbackPicks: 0,
       withoutReason: 0,
       namingAnotherCoach: 0,
       namingTheSeason: 0,
     };
     for (const pick of own) {
-      if (pick.fallback === true) stats.fallbackPicks += 1;
       const rationale = text(pick.rationale).trim();
       if (!rationale) {
         stats.withoutReason += 1;
@@ -156,7 +152,6 @@ export function memoryContinuity(
       entrant: checkpoint.entrant,
       stage: checkpoint.stage,
       week: checkpoint.week,
-      fallback: checkpoint.fallback,
       notebookChars: (checkpoint.memory.notebook ?? "").length,
       pages: pages.length,
       totalChars: pages.reduce((sum, page) => sum + checkpoint.memory[page]!.length, 0),

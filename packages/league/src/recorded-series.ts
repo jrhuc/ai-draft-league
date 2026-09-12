@@ -2,10 +2,10 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
+import type { AgentRuntime } from "./agent-runtime.js";
 import { readJsonlObjects } from "./jsonl.js";
-import { LIBERAL_DECISION_BUDGET } from "./decision-session.js";
 import type { ModelReasoningConfig, ReasoningLevel } from "./providers.js";
-import { reasoningForModel } from "./providers.js";
+import { reasoningForModel, reasoningLevelSchema } from "./providers.js";
 import { findStoredSeries, latestSeriesMemory, readStoredSeries } from "./series-store.js";
 import { foldSeriesGames, gameSeedSchema } from "./series-core.js";
 import { showdownCommit } from "./showdown.js";
@@ -25,7 +25,7 @@ export interface RecordedSeriesContext extends ModelReasoningConfig {
   format: string;
   psDir: string;
   runDir: string;
-  apiKeys?: Readonly<Record<string, string>>;
+  agents: AgentRuntime;
   signal?: AbortSignal;
   onGameUpdate?: (game: number, lines: string[], publicLines: string[]) => void;
   onGameEnd?: (
@@ -102,7 +102,6 @@ const pidOptionalDigestSchema = z.strictObject({
   p1: sha256Schema.nullable(),
   p2: sha256Schema.nullable(),
 });
-const reasoningLevelSchema = z.enum(["minimal", "low", "medium", "high", "xhigh", "max"]);
 export const recordedSeriesIdentitySchema = z.strictObject({
   players: pidTextSchema,
   team_ids: pidTextSchema,
@@ -121,27 +120,10 @@ export const recordedSeriesIdentitySchema = z.strictObject({
     initial_notebook_digests: pidOptionalDigestSchema,
     draft_roster_digests: pidOptionalDigestSchema,
     briefing_digests: pidOptionalDigestSchema,
-    agent_policy: z.strictObject({
-      revision: z.literal("decision-session-v1"),
-      max_provider_calls: z.number().int().positive(),
-      max_tool_rounds: z.number().int().positive(),
-      max_tool_queries: z.number().int().positive(),
-      max_output_tokens: z.number().int().positive(),
-    }),
   }),
 });
 
 export type RecordedSeriesIdentity = z.infer<typeof recordedSeriesIdentitySchema>;
-
-export function agentPolicyIdentity(): RecordedSeriesIdentity["scaffold"]["agent_policy"] {
-  return {
-    revision: "decision-session-v1",
-    max_provider_calls: LIBERAL_DECISION_BUDGET.maxProviderCalls,
-    max_tool_rounds: LIBERAL_DECISION_BUDGET.maxToolRounds,
-    max_tool_queries: LIBERAL_DECISION_BUDGET.maxToolQueries,
-    max_output_tokens: LIBERAL_DECISION_BUDGET.maxOutputTokens,
-  };
-}
 
 export function recordedSeriesIdentity(context: RecordedSeriesContext): RecordedSeriesIdentity {
   return recordedSeriesIdentitySchema.parse({
@@ -162,7 +144,6 @@ export function recordedSeriesIdentity(context: RecordedSeriesContext): Recorded
       initial_notebook_digests: optionalTextDigests(context.initialNotebooks),
       draft_roster_digests: optionalTextDigests(context.draftRosters),
       briefing_digests: optionalTextDigests(context.briefings),
-      agent_policy: agentPolicyIdentity(),
     },
   });
 }

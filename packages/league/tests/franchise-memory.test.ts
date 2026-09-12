@@ -9,7 +9,7 @@ import {
   renderMemory,
   validateMemory,
 } from "../src/franchise-memory.js";
-import { accepted, rejection } from "./asserts.js";
+import { rejection } from "./asserts.js";
 
 test("memory limits reject with the reason instead of clipping", () => {
   assert.equal(validateMemory(emptyMemory("x".repeat(MEMORY_LIMITS.pageChars))), undefined);
@@ -35,10 +35,11 @@ test("memory limits reject with the reason instead of clipping", () => {
 
 test("a reply changes only what it names: set_pages merges, delete_pages removes, omissions keep", () => {
   const current = { notebook: "old", lessons: "keep", scouting: "drop" };
-  const kept = accepted(parseMemoryReply({ notebook: " new " }, current));
+  const kept = parseMemoryReply({ notebook: " new " }, current);
   assert.deepEqual(kept.memory, { notebook: "new", lessons: "keep", scouting: "drop" });
-  const merged = accepted(
-    parseMemoryReply({ set_pages: { lessons: "revised", plans: "new page" } }, current),
+  const merged = parseMemoryReply(
+    { set_pages: { lessons: "revised", plans: "new page" } },
+    current,
   );
   assert.deepEqual(merged.memory, {
     notebook: "old",
@@ -46,37 +47,30 @@ test("a reply changes only what it names: set_pages merges, delete_pages removes
     plans: "new page",
     scouting: "drop",
   });
-  const pruned = accepted(
-    parseMemoryReply({ notebook: "old", delete_pages: ["scouting", "missing"] }, current),
+  const pruned = parseMemoryReply(
+    { notebook: "old", delete_pages: ["scouting", "missing"] },
+    current,
   );
   assert.deepEqual(pruned.memory, { notebook: "old", lessons: "keep" });
-  const unchanged = accepted(parseMemoryReply({}, current));
+  const unchanged = parseMemoryReply({}, current);
   assert.deepEqual(unchanged.memory, current);
-  assert.match(
-    rejection(parseMemoryReply({ set_pages: { notebook: "x" } }, current)),
+  assert.throws(
+    () => parseMemoryReply({ set_pages: { notebook: "x" } }, current),
     /may not contain/,
   );
-  assert.match(rejection(parseMemoryReply({ set_pages: ["x"] }, current)), /must be an object/);
-  assert.match(
-    rejection(parseMemoryReply({ notebook: 3 }, current)),
-    /"notebook" must be a string/,
-  );
-  assert.match(
-    rejection(parseMemoryReply({ delete_pages: "scouting" }, current)),
-    /must be an array/,
-  );
-  assert.match(
-    rejection(parseMemoryReply({ delete_pages: ["notebook"] }, current)),
+  assert.throws(() => parseMemoryReply({ set_pages: ["x"] }, current), /must be an object/);
+  assert.throws(() => parseMemoryReply({ notebook: 3 }, current), /"notebook" must be a string/);
+  assert.throws(() => parseMemoryReply({ delete_pages: "scouting" }, current), /must be an array/);
+  assert.throws(
+    () => parseMemoryReply({ delete_pages: ["notebook"] }, current),
     /cannot be deleted/,
   );
-  assert.match(
-    rejection(
-      parseMemoryReply({ set_pages: { lessons: "x" }, delete_pages: ["lessons"] }, current),
-    ),
+  assert.throws(
+    () => parseMemoryReply({ set_pages: { lessons: "x" }, delete_pages: ["lessons"] }, current),
     /both set and deleted/,
   );
-  assert.match(
-    rejection(parseMemoryReply({ notebook: "n", pages: {} }, current)),
+  assert.throws(
+    () => parseMemoryReply({ notebook: "n", pages: {} }, current),
     /"pages" is not a field/,
   );
 });

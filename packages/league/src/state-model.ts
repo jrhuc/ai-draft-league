@@ -52,6 +52,7 @@ export class MonState {
   abilitySuppressed = false;
   nature: string | undefined;
   mega = false;
+  canMegaEvo = false;
   fainted = false;
   preview = false;
   brought: boolean | undefined;

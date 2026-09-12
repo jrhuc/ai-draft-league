@@ -15,7 +15,6 @@ import { harnessCommit } from "./showdown.js";
 import {
   decodeTeamBuildJournalRow,
   replayTeamBuildArtifact,
-  type TeamBuildArtifact,
   type TeamBuildJournalEntry,
   type TeamBuildSheetPolicy,
 } from "./teambuild.js";
@@ -118,9 +117,7 @@ export function loadStoredPicks(
   return rows.flatMap((row, index) => {
     const entrant = order[index];
     if (entrant === undefined) return [];
-    return [
-      { pick: row.pick, entrant, mon: row.mon, rationale: row.rationale, fallback: row.fallback },
-    ];
+    return [{ pick: row.pick, entrant, mon: row.mon, rationale: row.rationale }];
   });
 }
 
@@ -170,6 +167,7 @@ export function promoteDraftOnlyConfig(
 export interface StoredBuild {
   packed: string;
   view: TeamBuildView;
+  memory: string;
 }
 
 /** A stored build is reused only when it was made for exactly this matchup, rosters, and sheet policy. */
@@ -188,17 +186,10 @@ export function linkedStoredArtifact(
     rosterIds: string[];
     opponentRosterIds: string[];
   },
-): StoredBuild | undefined {
-  let replayed: { artifact: TeamBuildArtifact; packed: string };
-  try {
-    replayed = replayTeamBuildArtifact(entry.artifact, { psDir: context.psDir });
-  } catch {
-    return undefined;
-  }
+): StoredBuild {
+  const replayed = replayTeamBuildArtifact(entry.artifact, { psDir: context.psDir });
   const task = replayed.artifact.task;
   if (
-    replayed.artifact.executionPolicy !== "league-resilient" ||
-    task.executionPolicy !== "league-resilient" ||
     task.model !== context.model ||
     task.format !== context.format ||
     task.sheetPolicy !== context.sheetPolicy ||
@@ -219,9 +210,15 @@ export function linkedStoredArtifact(
       context.opponentRosterIds,
     )
   ) {
-    return undefined;
+    throw new Error(
+      `stored team build ${context.seriesIndex}:${context.entrant} does not match its matchup`,
+    );
   }
-  return { packed: replayed.packed, view: structuredClone(entry.view) };
+  return {
+    packed: replayed.packed,
+    view: entry.view,
+    memory: entry.artifact.task.notebook,
+  };
 }
 
 export function loadStoredBuilds(runDir: string): Map<string, TeamBuildJournalEntry> {

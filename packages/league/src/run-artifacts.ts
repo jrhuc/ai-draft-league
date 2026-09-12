@@ -4,28 +4,19 @@ import path from "node:path";
 import { z } from "zod";
 
 import type {
-  BattleLogEntryView,
-  BattleSnapshot,
-  DecisionView,
   LeagueGameDecisionView,
   LeagueGameReflectionView,
   LeagueGameResponse,
-  MonView,
   TeamBuildSetView,
 } from "./views.js";
 import { BattleLog } from "./battlelog.js";
-import { readJsonlObjects } from "./jsonl.js";
 import { SAFE_SEGMENT } from "./path-safety.js";
 import { readCompletedSeriesDecisionRows } from "./recorded-series.js";
 import type { SeriesRecord } from "./records.js";
-import { runStatusSchema } from "./run-status.js";
-import { listStoredSeries } from "./series-store.js";
+import { isProcessAlive, runStatusSchema } from "./run-status.js";
 import { loadShowdown } from "./showdown.js";
-import { PerspectiveState, type MonState } from "./perspective-state.js";
 import type { JsonValue, Pid } from "./types.js";
-import { afterColon, isErrnoCode } from "./value.js";
 
-const pidSchema = z.enum(["p1", "p2"]);
 const runLeaseArtifactSchema = z.looseObject({ pid: z.number().optional().catch(undefined) });
 const decisionLogArtifactSchema = z.looseObject({
   kind: z.string(),
@@ -39,7 +30,6 @@ const decisionArtifactSchema = z.looseObject({
   submission_id: z.string().optional(),
   action: z.string(),
   automatic: z.boolean(),
-  fallback: z.boolean(),
   game_number: z.number().finite(),
   turn: z.number().finite(),
   phase: z.string(),
@@ -52,7 +42,6 @@ const decisionArtifactSchema = z.looseObject({
 });
 const reflectionArtifactSchema = z.looseObject({
   kind: z.literal("game_reflection"),
-  fallback: z.boolean(),
   game_number: z.number().finite(),
   result: z.enum(["won", "lost", "tied"]),
   series_over: z.boolean(),
@@ -162,75 +151,8 @@ export function viewTeamSheet(packed: string): TeamBuildSetView[] {
       nature: set.nature,
       moves: set.moves,
       evs: { ...set.evs },
-      repaired: false,
-      repairs: [],
     };
   });
-}
-
-function snapshotMon(battle: PerspectiveState, pid: Pid, mon: MonState): MonView {
-  const boosts = Object.entries(mon.boosts)
-    .filter(([, value]) => value)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([stat, value]) => `${stat} ${value > 0 ? "+" : ""}${value}`)
-    .join(", ");
-  const target = mon.lastMove?.target ? ` → ${afterColon(mon.lastMove.target)}` : "";
-  const volatiles = [...mon.volatiles]
-    .map((volatile) => (/^perish(\d)$/i.test(volatile) ? `Perish ${volatile.slice(-1)}` : volatile))
-    .sort()
-    .join(", ");
-  return {
-    species: mon.species,
-    spriteId: spriteIdFor(mon.species),
-    slot: battle.activeSlot(pid, mon)?.toUpperCase() ?? "",
-    hp: mon.fainted ? "fainted" : (mon.hp ?? ""),
-    status: mon.fainted ? "" : (mon.status ?? ""),
-    fainted: mon.fainted,
-    boosts,
-    volatiles,
-    lastMove: mon.lastMove ? `${mon.lastMove.name}${target} · T${mon.lastMove.turn}` : "",
-  };
-}
-
-function snapshotBattle(
-  battle: PerspectiveState,
-  players: Record<Pid, string> | undefined,
-  log: BattleLogEntryView[],
-  decisions: DecisionView[] = [],
-  spend?: Record<Pid, { ms: number; tokens: number }>,
-): BattleSnapshot {
-  const side = (pid: Pid) => ({
-    player: players?.[pid] ?? pid,
-    conditions: battle.conditionLabels(pid),
-    mons: battle.visibleMons(pid).map((mon) => snapshotMon(battle, pid, mon)),
-  });
-  const timerView = (pid: Pid) => {
-    const timer = battle.timers[pid];
-    if (!timer) return null;
-    const drained = timer.running ? (Date.now() - timer.at) / 1000 : 0;
-    const remaining = (value: number | null) =>
-      value === null ? null : Math.max(0, Math.round(value - drained));
-    return {
-      seconds: remaining(timer.seconds),
-      turnSeconds: remaining(timer.turnSeconds),
-      elapsedSeconds: timer.running ? Math.max(0, Math.floor(drained)) : null,
-      running: timer.running,
-    };
-  };
-  const spendView = (pid: Pid) => ({
-    seconds: Math.round((spend?.[pid]?.ms ?? 0) / 1000),
-    tokens: spend?.[pid]?.tokens ?? 0,
-  });
-  return {
-    turn: battle.turn,
-    weather: battle.weatherLabel(),
-    fields: battle.fieldLabels(),
-    sides: { p1: side("p1"), p2: side("p2") },
-    timers: { p1: timerView("p1"), p2: timerView("p2") },
-    spend: { p1: spendView("p1"), p2: spendView("p2") },
-    log,
-    decisions,
-  };
 }
 
 export function isRunLive(runsDir: string, runId: string): boolean {
@@ -239,12 +161,7 @@ export function isRunLive(runsDir: string, runId: string): boolean {
   const lease = runLeaseArtifactSchema.safeParse(readRunJson(runsDir, runId, ".run.lease"));
   const pid = status.data.pid ?? (lease.success ? lease.data.pid : undefined);
   if (pid === undefined) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return isErrnoCode(error, "EPERM");
-  }
+  return isProcessAlive(pid);
 }
 
 export function readRunJson(runsDir: string, runId: string, ...segments: string[]): JsonValue {
@@ -253,53 +170,6 @@ export function readRunJson(runsDir: string, runId: string, ...segments: string[
   } catch {
     return null;
   }
-}
-
-export function readRunLines(runsDir: string, runId: string, ...segments: string[]) {
-  return readJsonlObjects(path.join(runsDir, runId, ...segments));
-}
-
-export interface UnfinishedSeries {
-  seriesId: string;
-  seriesIndex: number | null;
-  game: number;
-  turn: number;
-  decisions: number;
-  players: Record<Pid, string> | null;
-}
-
-export function scanUnfinishedSeries(
-  runsDir: string,
-  runId: string,
-  rows: SeriesRecord[],
-): UnfinishedSeries[] {
-  const seen = new Set(rows.map((row) => row.series_id ?? ""));
-  const found: UnfinishedSeries[] = [];
-  for (const series of listStoredSeries(path.join(runsDir, runId))) {
-    const { seriesId } = series;
-    if (!SAFE_SEGMENT.test(seriesId) || seen.has(seriesId)) continue;
-    let decisions = 0;
-    let game = 0;
-    let turn = 0;
-    for (const pid of PIDS) {
-      const lines = readRunLines(runsDir, runId, "series", seriesId, `${pid}-decisions.jsonl`);
-      decisions += lines.length;
-      const last = lines[lines.length - 1];
-      if (last) {
-        game = Math.max(game, count(last.game_number));
-        turn = Math.max(turn, count(last.turn));
-      }
-    }
-    found.push({
-      seriesId,
-      seriesIndex: series.seriesIndex,
-      game: Math.max(1, game),
-      turn,
-      decisions,
-      players: series.players,
-    });
-  }
-  return found.sort((a, b) => a.seriesId.localeCompare(b.seriesId));
 }
 
 export interface SeriesSlot {
@@ -317,7 +187,7 @@ export function buildSeriesGame(
   seriesIndex: number,
   game: number,
   slot: SeriesSlot,
-  row: SeriesRecord | undefined,
+  row: SeriesRecord,
 ): LeagueGameResponse | null {
   const { seriesId, sides, stage, round } = slot;
   if (!SAFE_SEGMENT.test(runId) || !SAFE_SEGMENT.test(seriesId)) return null;
@@ -340,9 +210,7 @@ export function buildSeriesGame(
     [0, "p1"],
     [1, "p2"],
   ] as const) {
-    const artifacts = row
-      ? readCompletedSeriesDecisionRows(path.join(runsDir, runId), seriesId, pid)
-      : readRunLines(runsDir, runId, "series", seriesId, `${pid}-decisions.jsonl`);
+    const artifacts = readCompletedSeriesDecisionRows(path.join(runsDir, runId), seriesId, pid);
     for (const artifact of artifacts) {
       const parsed = decisionArtifactUnion.safeParse(artifact);
       if (!parsed.success) {
@@ -382,7 +250,6 @@ export function buildSeriesGame(
                   wouldChange: entry.would_change,
                 }
               : undefined,
-          fallback: entry.fallback,
           seriesOver: entry.series_over,
         });
         continue;
@@ -396,7 +263,6 @@ export function buildSeriesGame(
         action: entry.action,
         rationale: entry.rationale,
         notebook: entry.notebook ?? "",
-        fallback: entry.fallback,
         automatic: entry.automatic,
         latencyMs: entry.latency_ms,
         totalTokens: entry.total_tokens,
@@ -414,69 +280,17 @@ export function buildSeriesGame(
       "utf8",
     );
   } catch {
-    if (row) return null;
+    return null;
   }
   const battleLog = new BattleLog(10_000);
   battleLog.feed(raw.split("\n"));
-  const live = !row && isRunLive(runsDir, runId);
-  let snapshot: BattleSnapshot | null = null;
-  if (live && !/^\|(?:win\||tie\b)/m.test(raw)) {
-    const state = new PerspectiveState("p1");
-    state.feed(raw.split("\n"));
-    const spendFor = (side: 0 | 1) => ({
-      ms: decisions.reduce(
-        (total, entry) => total + (entry.side === side ? (entry.latencyMs ?? 0) : 0),
-        0,
-      ),
-      tokens: decisions.reduce(
-        (total, entry) => total + (entry.side === side ? (entry.totalTokens ?? 0) : 0),
-        0,
-      ),
-    });
-    snapshot = snapshotBattle(
-      state,
-      { p1: slot.models[sides[0]]!, p2: slot.models[sides[1]]! },
-      [],
-      [],
-      {
-        p1: spendFor(0),
-        p2: spendFor(1),
-      },
-    );
-  }
-
-  const parsedGameRows = z.array(gameArtifactSchema).safeParse(row?.games);
+  const parsedGameRows = z.array(gameArtifactSchema).safeParse(row.games);
   const gameRows = parsedGameRows.success ? parsedGameRows.data : [];
-  const logWinner = (text: string): number | null => {
-    const lines = text.split("\n");
-    const players = new Map<string, Pid>();
-    for (const line of lines) {
-      const match = /^\|player\|(p[12])\|([^|]+)\|/.exec(line);
-      if (!match) continue;
-      const pid = pidSchema.safeParse(match[1]);
-      const player = z.string().min(1).safeParse(match[2]);
-      if (pid.success && player.success) players.set(player.data, pid.data);
-    }
-    const winLine = lines.find((line) => line.startsWith("|win|"));
-    const pid = winLine === undefined ? undefined : players.get(winLine.slice(5).trim());
-    return pid === undefined ? null : pid === "p1" ? sides[0] : sides[1];
-  };
   const winnerOf = (number: number): number | null => {
     const gameRow = gameRows[number - 1];
     if (gameRow?.winner_side === "p1") return sides[0];
     if (gameRow?.winner_side === "p2") return sides[1];
-    if (row) return null;
-    if (number === game) return raw ? logWinner(raw) : null;
-    try {
-      return logWinner(
-        fs.readFileSync(
-          path.join(runsDir, runId, "series", seriesId, `game-${number}.log`),
-          "utf8",
-        ),
-      );
-    } catch {
-      return null;
-    }
+    return null;
   };
   const games = [...gameNumbers].sort((first, second) => first - second);
   return {
@@ -494,8 +308,6 @@ export function buildSeriesGame(
       slot.labels[sides[1]] ?? `Seat ${sides[1] + 1}`,
     ],
     winner: winnerOf(game),
-    live,
-    snapshot,
     raw,
     log: battleLog.entries,
     decisions,

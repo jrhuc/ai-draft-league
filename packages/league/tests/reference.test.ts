@@ -65,12 +65,22 @@ test("Champions stat ranges and exact spreads use Stat Points with fixed maximum
   );
 });
 
-test("Mega formes require the visible matching stone", () => {
-  const rendered = new ShowdownReference("gen9championsvgc2026regmc")
+test("Mega references follow the stone's species mapping, including alternate base formes", () => {
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
+  const rendered = reference
     .render({ speciesSets: [["Charizard", "Choice Specs"]], items: ["Choice Specs"] })
     .join("\n");
   assert.match(rendered, /Species Charizard: Fire\/Flying; base stats .* Speed 100/);
   assert.doesNotMatch(rendered, /Charizard-Mega/);
+  for (const [species, item, mega] of [
+    ["Floette-Eternal", "Floettite", "Floette-Mega"],
+    ["Meowstic", "Meowsticite", "Meowstic-M-Mega"],
+    ["Meowstic-F", "Meowsticite", "Meowstic-F-Mega"],
+  ] as const) {
+    assert.match(reference.lookup("lookup_species", { name: species, item }), new RegExp(mega));
+    assert.match(reference.describeCompact({ species, item })?.mega ?? "", new RegExp(mega));
+    assert.equal(reference.describeCompact({ species, item: "Gengarite" })?.mega, undefined);
+  }
 });
 
 test("active matchup chart resolves Weather Ball under the live weather", () => {

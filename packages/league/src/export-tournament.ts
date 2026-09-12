@@ -275,7 +275,6 @@ export function buildTournamentExport(
             selection: [...decision.selection],
             rationale: decision.rationale,
             notebook: decision.notebook,
-            fallback: decision.fallback,
             automatic: decision.automatic,
             latencyMs: decision.latencyMs,
             reasoningTokens: decision.reasoningTokens,
@@ -287,7 +286,6 @@ export function buildTournamentExport(
             adjustment: reflection.adjustment,
             notebook: reflection.notebook,
             retrospective: reflection.retrospective,
-            fallback: reflection.fallback,
           })),
         };
       }),
