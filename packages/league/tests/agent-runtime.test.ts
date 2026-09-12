@@ -735,7 +735,7 @@ it("admits suspended native sessions only after checking the resumed league task
   });
   await suspended.sessions.prompt({
     sessionID: session.id,
-    text: `${task.prompt}\n\nSubmit using ${task.submission.name}. Rejected submissions return validation errors; correct them and submit again.`,
+    text: task.prompt,
     metadata: { task: task.task, system: task.system },
   });
   await started.promise;

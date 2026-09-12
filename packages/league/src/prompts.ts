@@ -46,11 +46,7 @@ const SHEET_RULES = {
     "Team sheets are closed: opposing moves, items, abilities, and natures are unknown until the battle reveals them, and species alone never implies a set. Your own request stats are exact; foe damage must stay a range.",
 } satisfies Record<SheetPolicy, string>;
 
-const TOOL_RULES = {
-  open: `lookup_matchup reports only the type chart. estimate_damage reports conditional hit outcomes at evaluated endpoints, not exhaustive KO certainty: it binds known abilities, items, stats, stages, status, HP, screens, weather, terrain, and both active allies with their abilities from the current battle and open team sheets. Use compare_action_order for Speed order. Trust a tool only for the factors its result says it applied. ${PARALLEL_TOOLS_RULE}`,
-  closed:
-    `lookup_matchup reports only the type chart. estimate_damage reports conditional hit outcomes at evaluated endpoints, not exhaustive KO certainty: it binds the abilities, items, stats, stages, status, HP, screens, weather, terrain, and both active allies with their abilities that the battle has revealed so far, and treats anything unrevealed as neutral across legal ranges. Use compare_action_order for Speed order. Trust a tool only for the factors its result says it applied. ${PARALLEL_TOOLS_RULE}`,
-} satisfies Record<SheetPolicy, string>;
+const TOOL_RULES = `Use compare_action_order for Speed order. Trust a tool only for the factors its result says it applied. ${PARALLEL_TOOLS_RULE}`;
 
 const NOTEBOOK_RULE = `Your private notebook has team_playbook (maximum ${TEAM_PLAYBOOK_CHAR_LIMIT} characters), series_memory (maximum ${SERIES_MEMORY_CHAR_LIMIT}), and next_game_plan (maximum ${NEXT_GAME_PLAN_CHAR_LIMIT}); the combined strategic limit is ${DECISION_NOTE_LIMIT}. Include only changed fields: each supplied string replaces that field, omitted fields stay unchanged, and an empty string clears a field.`;
 const HISTORY_RULE =
@@ -59,7 +55,7 @@ const NOTEBOOK_OBJECT =
   '{"team_playbook":"transferable facts about piloting your team","series_memory":"facts and tendencies specific to this opponent","next_game_plan":"immediate plan and contingencies for the next game"}';
 
 const SUBMIT_ACTION =
-  "Submit your joint decision using submit_action. After acceptance, end your reply and await the next observation.";
+  "Submit your joint decision with submit_action: choices holds the zero-based menu index for each displayed slot in slot order, or the ordered team position at team preview. Add rationale for your final reason and, only when durable plans changed, the changed notebook fields. After acceptance, end your reply and await the next observation.";
 
 const TIMER_RULE =
   "The battle timer runs while you think and use tools. Submit your decision before the clock expires; match depth to the remaining turn time and bank.";
@@ -68,7 +64,7 @@ export function battleSystemPrompt(options: { sheets: SheetPolicy; timed: boolea
   return [
     ...SYSTEM_CORE_BEFORE_SHEETS,
     SHEET_RULES[options.sheets],
-    TOOL_RULES[options.sheets],
+    TOOL_RULES,
     NOTEBOOK_RULE,
     HISTORY_RULE,
     ...(options.timed ? [TIMER_RULE] : []),
@@ -193,12 +189,5 @@ export function renderDecision(input: DecisionPrompt): string {
       for (const [index, item] of menu.entries()) lines.push(`  ${index}. ${item.label}`);
     }
   }
-  lines.push(
-    "",
-    `Call submit_action with {"choices":[${input.menus.map((_, index) => `N${index + 1}`).join(",")}]}.`,
-    `You may add "rationale":"final reason" and, only when durable plans changed, "notebook":${NOTEBOOK_OBJECT}.`,
-    "In notebook, omit unchanged fields; an empty string clears a field.",
-    `Each choice is the zero-based index for its displayed slot${sharedTeamMenu ? " or ordered team position" : ""}.`,
-  );
   return lines.join("\n");
 }

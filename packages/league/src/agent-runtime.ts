@@ -125,7 +125,14 @@ class ActiveTask {
   ) {
     this.routing =
       parseSpec(task.model).provider === "openrouter" ? openRouterRouting() : undefined;
-    this.system = [task.system, catalog, COMPACTION_SYSTEM].filter(Boolean).join("\n\n");
+    this.system = [
+      task.system,
+      `Submit using ${task.submission.name}. Rejected submissions return validation errors; correct them and submit again.`,
+      catalog,
+      COMPACTION_SYSTEM,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
     this.toolNames = [
       ...(task.tools?.length ? ["execute"] : []),
       ...(task.tools ?? []).map((tool) => tool.definition.name),
@@ -648,10 +655,9 @@ async function executeTask<T>(task: AgentTask<T>, owner: AgentHost): Promise<Age
       throw new Error(`Agent session configuration changed: ${task.session}`);
     await host.sessions.interrupt({ sessionID: session.id, continue: false });
     await slot.reload?.();
-    const prompt = `${task.prompt}\n\nSubmit using ${task.submission.name}. Rejected submissions return validation errors; correct them and submit again.`;
     const plan = planTask(
       task,
-      prompt,
+      task.prompt,
       session.id,
       (await host.sessions.export({ sessionID: session.id })).messages,
       await host.sessions.inbox.list({ sessionID: session.id }),
@@ -669,7 +675,7 @@ async function executeTask<T>(task: AgentTask<T>, owner: AgentHost): Promise<Age
     else
       await host.sessions.prompt({
         sessionID: session.id,
-        text: prompt,
+        text: task.prompt,
         metadata: { task: task.task, system: task.system },
         resume: true,
       });
