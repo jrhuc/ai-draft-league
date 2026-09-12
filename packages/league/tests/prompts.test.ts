@@ -1,3 +1,4 @@
+import { decisionTools } from "../src/llm-engine-support.js";
 import { applyMemoryUpdate, emptyBattleMemory } from "../src/battle-memory.js";
 import { notebook } from "./engine-test-helpers.js";
 import assert from "node:assert/strict";
@@ -23,9 +24,10 @@ test("system prompt names the tools and reserves timer policy for timed play", (
     FORMAT_AUTHORITY_NOTICE,
     "Pokémon Champions and this regulation may postdate your training data. Treat the rules in this prompt and the pinned Pokémon Showdown simulator as authoritative. Do not import mechanics from other Pokémon games or formats. If a mechanic is absent from the rules and legal actions, treat it as unavailable rather than trying to correct the format.",
   );
-  assert.match(SYSTEM, /lookup_matchup/);
-  assert.match(SYSTEM, /estimate_damage/);
   assert.match(SYSTEM, /compare_action_order/);
+  assert.match(SYSTEM, /zero-based menu index/);
+  assert.match(SYSTEM, /independent tool calls together in one reply/);
+  assert.doesNotMatch(SYSTEM, /exhaustive KO certainty/);
   assert.doesNotMatch(SYSTEM, /battle timer/);
   assert.match(TIMED_SYSTEM, /battle timer/);
   assert.match(SYSTEM, /submit_action/);
@@ -45,7 +47,10 @@ test("closed-sheet system prompt never claims open team sheets", () => {
   const closed = battleSystemPrompt({ sheets: "closed", timed: false });
   assert.match(closed, /Team sheets are closed/);
   assert.doesNotMatch(closed, /open team sheets/i);
-  assert.match(closed, /estimate_damage/);
+  const damage = (sheets: "open" | "closed") =>
+    decisionTools(sheets).find((tool) => tool.name === "estimate_damage")!.description;
+  assert.match(damage("closed"), /unrevealed is treated as neutral across legal ranges/);
+  assert.doesNotMatch(damage("open"), /unrevealed/);
   assertFormatAuthority(closed);
   assert.match(battleSystemPrompt({ sheets: "closed", timed: true }), /battle timer/);
 });
@@ -66,9 +71,8 @@ test("decision prompt leads with merged state and keeps mechanics compact", () =
   );
   assert.ok(prompt.indexOf("Active matchup reference") < prompt.indexOf("Choose for Swampert"));
   assert.match(prompt, /Series memory \(5\/3000\): notes/);
-  assert.match(prompt, /only when durable plans changed, "notebook":\{"team_playbook"/);
   assert.doesNotMatch(prompt, /at most \d+ characters/);
-  assert.equal(prompt.match(/"choices"/g)?.length, 1);
+  assert.doesNotMatch(prompt, /"choices"|"notebook"/);
 });
 
 test("team preview renders one shared ordered menu", () => {
@@ -86,5 +90,5 @@ test("team preview renders one shared ordered menu", () => {
 
   assert.equal(prompt.match(/Pick Gengar/g)?.length, 1);
   assert.match(prompt, /choices 1-2 lead; choices 3-4 back/);
-  assert.match(prompt, /"choices":\[N1,N2,N3,N4\]/);
+  assert.doesNotMatch(prompt, /"choices"/);
 });
