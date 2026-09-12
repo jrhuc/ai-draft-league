@@ -27,8 +27,10 @@ The trace contract includes `runId` in every game file and `digests` in the mani
 Exports replace their output files individually, writing traces and the archive before the manifest and bundle. Other files in the destination are preserved, including earlier exports. Use a fresh trace destination for a clean deployment set. Publication across the bundle and trace files is not transactional.
 
 ```sh
-pnpm --filter site deploy
-pnpm --filter traces deploy
+pnpm --filter site run deploy
+pnpm --filter traces run deploy
 ```
+
+The traces Worker's route needs the `aidraftleague.com` zone. Until that zone exists in the Cloudflare account, the site serves from `ai-draft-league.jrhu.workers.dev` and the traces ship inside the site's own assets instead: after `vp build` in `apps/site`, copy `apps/traces/dist/traces` to `apps/site/dist/traces` and run `wrangler deploy` there.
 
 The site reads the committed artifact. It does not run Pokémon Showdown or recompute standings. See the [publication boundary](architecture.md#read-and-publish-data) for included and excluded evidence.
