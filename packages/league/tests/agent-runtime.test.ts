@@ -319,7 +319,11 @@ it("keeps concurrent seats' credentials, tools, and observations private within 
 
 it("returns lookups and validation errors to the model and logs the stage line", async () => {
   const { runDir, task, requests, host } = await fixture((_body, index) => {
-    if (index === 1) return { tool: "lookup_species", input: { species: "Pikachu" } };
+    if (index === 1)
+      return {
+        tool: "execute",
+        input: { code: 'return await tools.lookup_species({ species: "Pikachu" });' },
+      };
     return { input: { pick: index === 2 ? "Raichu" : "Pikachu" } };
   });
   const lookup: AgentTool = {
@@ -351,12 +355,14 @@ it("returns lookups and validation errors to the model and logs the stage line",
     { name: "submit_pick", arguments: { pick: "Pikachu" }, result: expect.any(String) },
   ]);
   expect(requests).toHaveLength(3);
+  expect(JSON.stringify(requests[0])).toContain("tools.lookup_species(");
   const toolResults = (body: JsonObject | undefined) =>
     openAiMessages
       .parse(body?.messages)
       .filter((message) => message.role === "tool")
       .map((message) => message.content);
-  expect(toolResults(requests[1])).toEqual(["Pikachu: Electric mouse"]);
+  expect(toolResults(requests[1])).toHaveLength(1);
+  expect(toolResults(requests[1])[0]).toContain("Pikachu: Electric mouse");
   const rejected = toolResults(requests[2]);
   expect(rejected).toHaveLength(2);
   expect(rejected[1]).toContain("Only Pikachu is legal.");

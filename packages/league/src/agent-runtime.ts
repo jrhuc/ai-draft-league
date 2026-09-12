@@ -69,6 +69,8 @@ type UserMessage = Extract<Message, { type: "user" }>;
 
 const object = z.record(z.string(), z.json());
 const SUBMISSION_REMINDERS = 2;
+const CATALOG_INTRO =
+  "Code Mode catalog: these are all the tools callable inside `execute` through `tools`, with their exact signatures. Run independent calls concurrently with `Promise.all` and return every result you need to read.";
 const SUBMISSION_FAILURES = 5;
 
 const COMPACTION_SYSTEM = `When asked for a conversation checkpoint, follow these summary instructions only for that checkpoint:
@@ -105,6 +107,7 @@ function hasActivity(type: OpenCodeEvent["type"]): type is keyof typeof ACTIVITI
 class ActiveTask {
   submitted = false;
   attempts = 0;
+  readonly calls: AgentResult<unknown>["tools"] = [];
   failure?: Error;
   activity: AgentActivity = "starting";
   tool?: string;
@@ -116,11 +119,15 @@ class ActiveTask {
   readonly system: string;
   readonly toolNames: string[];
 
-  constructor(readonly task: AgentTask<unknown>) {
+  constructor(
+    readonly task: AgentTask<unknown>,
+    catalog: string,
+  ) {
     this.routing =
       parseSpec(task.model).provider === "openrouter" ? openRouterRouting() : undefined;
-    this.system = `${task.system}\n\n${COMPACTION_SYSTEM}`;
+    this.system = [task.system, catalog, COMPACTION_SYSTEM].filter(Boolean).join("\n\n");
     this.toolNames = [
+      ...(task.tools?.length ? ["execute"] : []),
       ...(task.tools ?? []).map((tool) => tool.definition.name),
       task.submission.name,
     ];
@@ -146,9 +153,9 @@ class AgentSlot {
   ready = Promise.withResolvers<ActiveTask>();
   reload?: () => Promise<void>;
 
-  begin(task: AgentTask<unknown>): ActiveTask {
+  begin(task: AgentTask<unknown>, catalog: string): ActiveTask {
     if (this.active) throw new Error(`Agent session already has an active task: ${task.session}`);
-    const active = new ActiveTask(task);
+    const active = new ActiveTask(task, catalog);
     this.active = active;
     this.ready.resolve(active);
     return active;
@@ -416,6 +423,32 @@ function planTask<T>(
   return { kind: prior || pending ? "resume" : "fresh" };
 }
 
+/** Rendered with the runtime's own signature generator; OpenCode's inline listing truncates descriptions. */
+async function codeModeCatalog(tools: readonly AgentTool[]): Promise<string> {
+  if (tools.length === 0) return "";
+  const { CodeMode, Tool } = await import("@opencode/codemode");
+  const runtime = CodeMode.make({
+    tools: Object.fromEntries(
+      tools.map((tool) => [
+        tool.definition.name,
+        // SAFETY: runtime.catalog() only renders signatures and never invokes execute.
+        Tool.make({
+          description: tool.definition.description,
+          input: tool.definition.parameters,
+          output: { type: ["string", "null"] },
+          execute: (() => {
+            throw new Error("catalog only");
+          }) as never,
+        }),
+      ]),
+    ),
+  });
+  return [
+    CATALOG_INTRO,
+    ...runtime.catalog().map((entry) => `${entry.description}\n${entry.signature}`),
+  ].join("\n\n");
+}
+
 async function leaguePlugin(slot: AgentSlot) {
   /** The resolver must be registered before loading the SDK's extensionless imports. */
   const { Plugin } = await import("@opencode/plugin");
@@ -447,19 +480,34 @@ async function leaguePlugin(slot: AgentSlot) {
       await ctx.tool.transform((editor) => {
         const active = slot.active ?? initial;
         const { task, admitted } = active;
+        const record = (name: string, args: JsonObject, run: () => string): string => {
+          try {
+            const result = run();
+            active.calls.push({ name, arguments: args, result });
+            return result;
+          } catch (error) {
+            const result = error instanceof Error ? error.message : String(error);
+            active.calls.push({ name, arguments: args, result });
+            throw error;
+          }
+        };
         for (const tool of editor.list()) editor.remove(tool.id);
         for (const tool of task.tools ?? [])
           editor.add({
             name: tool.definition.name,
             description: tool.definition.description,
             input: tool.definition.parameters,
-            options: { codemode: false },
             execute: async (input) => {
               await admitted.promise;
               task.signal?.throwIfAborted();
-              if (active.submitted)
-                throw new Error("This task already has an accepted submission.");
-              return { content: tool.run(object.parse(input)) };
+              const args = object.parse(input);
+              return {
+                content: record(tool.definition.name, args, () => {
+                  if (active.submitted)
+                    throw new Error("This task already has an accepted submission.");
+                  return tool.run(args);
+                }),
+              };
             },
           });
         editor.add({
@@ -470,14 +518,21 @@ async function leaguePlugin(slot: AgentSlot) {
           execute: async (input) => {
             await admitted.promise;
             task.signal?.throwIfAborted();
+            const args = object.parse(input);
             if (active.submitted)
-              return { content: "This task already has an accepted submission. End your reply." };
-            task.validate(object.parse(input));
+              return {
+                content: record(
+                  task.submission.name,
+                  args,
+                  () => "This task already has an accepted submission. End your reply.",
+                ),
+              };
+            const content = record(task.submission.name, args, () => {
+              task.validate(args);
+              return "Submission accepted. End your reply; await the next observation.";
+            });
             active.submitted = true;
-            return {
-              content: "Submission accepted. End your reply; await the next observation.",
-              metadata: { accepted: true },
-            };
+            return { content, metadata: { accepted: true } };
           },
         });
       });
@@ -547,15 +602,19 @@ async function executeTask<T>(task: AgentTask<T>, owner: AgentHost): Promise<Age
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
   const spec = parseSpec(task.model);
   const slot = owner.slot(task.session);
+  const catalog = await codeModeCatalog(task.tools ?? []);
   let submitted: { value: T } | undefined;
-  const active = slot.begin({
-    ...task,
-    validate(input) {
-      const value = task.validate(input);
-      submitted = { value };
-      return value;
+  const active = slot.begin(
+    {
+      ...task,
+      validate(input) {
+        const value = task.validate(input);
+        submitted = { value };
+        return value;
+      },
     },
-  });
+    catalog,
+  );
   owner.emit(active.progress());
   const { admitted, finished } = active;
   let host: Host | undefined;
@@ -627,7 +686,7 @@ async function executeTask<T>(task: AgentTask<T>, owner: AgentHost): Promise<Age
       if (active.failure) throw active.failure;
       const completed = await host.sessions.export({ sessionID: session.id });
       const accepted = acceptedResult(task, session.id, completed.messages, submitted);
-      if (accepted) return accepted;
+      if (accepted) return active.calls.length ? { ...accepted, tools: [...active.calls] } : accepted;
       const last = taskMessages(completed.messages, task.task).findLast(
         (message) => message.type === "assistant",
       );
