@@ -70,7 +70,7 @@ type UserMessage = Extract<Message, { type: "user" }>;
 const object = z.record(z.string(), z.json());
 const SUBMISSION_REMINDERS = 2;
 const CATALOG_INTRO =
-  "Code Mode catalog: these are all the tools callable inside `execute` through `tools`, with their exact signatures. Run independent calls concurrently with `Promise.all` and return every result you need to read.";
+  "Code Mode catalog: these are all the tools callable inside `execute` through `tools`, with their exact signatures. Run independent calls concurrently with `Promise.all` and return every result you need to read. A call the harness rejects returns its error message as its result instead of throwing, so the rest of the batch still completes.";
 const SUBMISSION_FAILURES = 5;
 /** Anthropic refusal stops are stochastic on identical input; OpenCode reports them as a normal stop. */
 const CONTENT_FILTER_RETRIES = 3;
@@ -510,13 +510,17 @@ async function leaguePlugin(slot: AgentSlot) {
               await admitted.promise;
               task.signal?.throwIfAborted();
               const args = object.parse(input);
-              return {
-                content: record(tool.definition.name, args, () => {
+              let content: string;
+              try {
+                content = record(tool.definition.name, args, () => {
                   if (active.submitted)
                     throw new Error("This task already has an accepted submission.");
                   return tool.run(args);
-                }),
-              };
+                });
+              } catch (error) {
+                content = `Error: ${error instanceof Error ? error.message : String(error)}`;
+              }
+              return { content };
             },
           });
         editor.add({
