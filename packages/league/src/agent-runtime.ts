@@ -72,6 +72,8 @@ const SUBMISSION_REMINDERS = 2;
 const CATALOG_INTRO =
   "Code Mode catalog: these are all the tools callable inside `execute` through `tools`, with their exact signatures. Run independent calls concurrently with `Promise.all` and return every result you need to read.";
 const SUBMISSION_FAILURES = 5;
+/** Anthropic refusal stops are stochastic on identical input; OpenCode reports them as a normal stop. */
+const CONTENT_FILTER_RETRIES = 3;
 
 const COMPACTION_SYSTEM = `When asked for a conversation checkpoint, follow these summary instructions only for that checkpoint:
 Summarize this private Pokémon coaching conversation for continued play. Use the requested summary headings, including ## Objective.
@@ -679,6 +681,7 @@ async function executeTask<T>(task: AgentTask<T>, owner: AgentHost): Promise<Age
         metadata: { task: task.task, system: task.system },
         resume: true,
       });
+    let filtered = 0;
     for (let reminders = 0; ; reminders += 1) {
       try {
         await Promise.race([
@@ -696,7 +699,18 @@ async function executeTask<T>(task: AgentTask<T>, owner: AgentHost): Promise<Age
       const last = taskMessages(completed.messages, task.task).findLast(
         (message) => message.type === "assistant",
       );
-      if (last && "error" in last && last.error) throw new Error(last.error.message);
+      if (last && "error" in last && last.error) {
+        if (last.error.type !== "provider.content-filter" || filtered >= CONTENT_FILTER_RETRIES)
+          throw new Error(last.error.message);
+        filtered += 1;
+        reminders -= 1;
+        await host.sessions.synthetic({
+          sessionID: session.id,
+          text: "Continue the pending task and submit it using its submission tool.",
+          resume: true,
+        });
+        continue;
+      }
       if (reminders >= SUBMISSION_REMINDERS)
         throw new Error(
           `No accepted ${task.submission.name} submission after ${reminders} reminders`,
