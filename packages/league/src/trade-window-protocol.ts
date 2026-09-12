@@ -5,7 +5,7 @@ import { BOARD_COLUMNS } from "./board-search.js";
 
 import type { DraftBoard, DraftBoardMon } from "./draft.js";
 import type { FranchiseMemory } from "./franchise-memory.js";
-import { FORMAT_AUTHORITY_NOTICE, MANAGER_CHARGE } from "./prompts.js";
+import { FORMAT_AUTHORITY_NOTICE, MANAGER_CHARGE, PARALLEL_TOOLS_RULE } from "./prompts.js";
 import type { ModelReasoningConfig } from "./providers.js";
 import type { AgentRunner } from "./agent-runtime.js";
 import type { RosterUsageEntry } from "./roster-usage.js";
@@ -19,10 +19,8 @@ export const MAX_TRADE_OFFERS = 3;
 export const DEFAULT_SWAPS_ALLOWED = 6;
 export const MAX_SWAPS_ALLOWED = 20;
 
-export const FREE_AGENCY_AVAILABLE_MECHANICS_TOOLS =
-  "You have the same Showdown dex tools as during the draft. Use them only where the supplied evidence and board do not answer the question.";
-export const TRADE_OFFER_AVAILABLE_MECHANICS_TOOLS =
-  "You have the same Showdown dex tools as during the draft. Use them only where the supplied evidence and rosters do not answer the question.";
+export const FREE_AGENCY_AVAILABLE_MECHANICS_TOOLS = `You have the same Showdown dex tools as during the draft. Use them only where the supplied evidence and board do not answer the question. ${PARALLEL_TOOLS_RULE}`;
+export const TRADE_OFFER_AVAILABLE_MECHANICS_TOOLS = `You have the same Showdown dex tools as during the draft. Use them only where the supplied evidence and rosters do not answer the question. ${PARALLEL_TOOLS_RULE}`;
 
 export const TRADE_WINDOW_PROMPT_POLICY = {
   systemTemplate: [

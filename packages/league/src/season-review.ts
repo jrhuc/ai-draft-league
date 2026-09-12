@@ -8,7 +8,12 @@ import { referenceTools, runStage, submissionTool } from "./stage-agent.js";
 import type { DraftBoard, DraftBoardMon } from "./draft.js";
 import type { DraftPickView, DraftTableRow } from "./views.js";
 import { commitRunArtifact, readRunArtifacts } from "./run-artifact-store.js";
-import { FORMAT_AUTHORITY_NOTICE, MANAGER_CHARGE, renderPromptTemplate } from "./prompts.js";
+import {
+  FORMAT_AUTHORITY_NOTICE,
+  MANAGER_CHARGE,
+  PARALLEL_TOOLS_RULE,
+  renderPromptTemplate,
+} from "./prompts.js";
 import { reasoningForModel, type ModelReasoningConfig } from "./providers.js";
 import { ShowdownReference } from "./reference.js";
 import { mapLimit } from "./series.js";
@@ -30,7 +35,7 @@ const SEASON_REVIEW_PROMPT_POLICY = {
     "- Credit what you got right as plainly as what you got wrong. A season that went well still had weak spots, and a season that went badly still had sound calls.",
     "- Keeping a roster unchanged at the window was a decision like any other; judge it as one.",
     "",
-    "You have the same Showdown dex tools as during the draft. Use them only to check a fact you intend to state.",
+    `You have the same Showdown dex tools as during the draft. Use them only to check a fact you intend to state. ${PARALLEL_TOOLS_RULE}`,
   ],
   outcomeHeading: "HOW YOUR SEASON ENDED:",
   standingsHeading: "FINAL LEAGUE STANDINGS (rank | coach | W-L | games):",

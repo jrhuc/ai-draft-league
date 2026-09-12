@@ -1,4 +1,4 @@
-import { FORMAT_AUTHORITY_NOTICE, renderPromptTemplate } from "./prompts.js";
+import { FORMAT_AUTHORITY_NOTICE, PARALLEL_TOOLS_RULE, renderPromptTemplate } from "./prompts.js";
 import { type TeamBuildSheetPolicy, type TeamBuildTask } from "./teambuild-protocol.js";
 import { type DexLike, legalItems, legalMoves } from "./teambuild-validation.js";
 
@@ -29,6 +29,7 @@ export const TEAMBUILD_PROMPT_POLICY = {
     "what a spread outruns, and how hard an attack lands. They compute from the",
     "simulator this league runs on. Trust the mechanics and factors each result explicitly says it applied;",
     "a hypothetical damage result does not imply omitted abilities or field effects.",
+    PARALLEL_TOOLS_RULE,
     "",
     "Choose the 6 for this specific opponent and build their sets. Call submit_team with:",
     '{"team_plan": "<2-5 sentences on the matchup and how these six answer it>",',
@@ -69,6 +70,7 @@ const GENERAL_TEAMBUILD_PROMPT_POLICY = {
     "",
     "You have the Showdown dex tools. Use them while you build: check legal moves, items, abilities, speed benchmarks,",
     "and damage against representative threats. The tools compute from the simulator this task validates against.",
+    PARALLEL_TOOLS_RULE,
     "",
     "Call submit_team with:",
     '{"team_plan": "<2-5 sentences on the team and its modes>",',

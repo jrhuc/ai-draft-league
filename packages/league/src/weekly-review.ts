@@ -21,7 +21,12 @@ import { type GameSummary, seriesGameSummaries } from "./game-usage.js";
 import type { DraftTableRow, TeamBuildView } from "./views.js";
 import { BattleLog } from "./battlelog.js";
 import { readFranchiseCheckpoints, storeFranchiseCheckpoint } from "./league-journal.js";
-import { FORMAT_AUTHORITY_NOTICE, MANAGER_CHARGE, renderPromptTemplate } from "./prompts.js";
+import {
+  FORMAT_AUTHORITY_NOTICE,
+  MANAGER_CHARGE,
+  PARALLEL_TOOLS_RULE,
+  renderPromptTemplate,
+} from "./prompts.js";
 import { reasoningForModel, type ModelReasoningConfig } from "./providers.js";
 import { ShowdownReference } from "./reference.js";
 import {
@@ -35,7 +40,7 @@ import { count, fileSlug, text } from "./value.js";
 const MEMORY_NOTICE = `- Your memory is yours to organise: a notebook page shown to later managers and team builders, plus up to ${MEMORY_LIMITS.pages - 1} named pages they can fetch with read_memory_page. Each page holds at most ${MEMORY_LIMITS.pageChars} characters, ${MEMORY_LIMITS.totalChars} in all. The builder passes its team plan and set notes to the battle pilot. Completed series and earlier memory checkpoints remain available through the league tools; your review reasoning is recorded as evidence, but is not included in later prompts.`;
 
 const LEAGUE_TOOLS_NOTICE =
-  "You have the Showdown dex tools and five league tools: read_public_series returns the spectator log of any completed series, read_own_series returns your own turn-by-turn choices with their stated reasons and your end-of-game notes, read_own_build returns the six you registered for a series, your plan, and what you brought, Mega Evolved, and lost in each game, read_memory_page returns one of your pages in full, and read_memory_history returns your memory as it stood after an earlier review or reconciliation.";
+  `You have the Showdown dex tools and five league tools: read_public_series returns the spectator log of any completed series, read_own_series returns your own turn-by-turn choices with their stated reasons and your end-of-game notes, read_own_build returns the six you registered for a series, your plan, and what you brought, Mega Evolved, and lost in each game, read_memory_page returns one of your pages in full, and read_memory_history returns your memory as it stood after an earlier review or reconciliation. ${PARALLEL_TOOLS_RULE}`;
 
 const WEEKLY_REVIEW_PROMPT_POLICY = {
   systemTemplate: [

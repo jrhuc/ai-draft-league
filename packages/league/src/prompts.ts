@@ -14,6 +14,9 @@ export const MANAGER_CHARGE =
 export const FORMAT_AUTHORITY_NOTICE =
   "Pokémon Champions and this regulation may postdate your training data. Treat the rules in this prompt and the pinned Pokémon Showdown simulator as authoritative. Do not import mechanics from other Pokémon games or formats. If a mechanic is absent from the rules and legal actions, treat it as unavailable rather than trying to correct the format.";
 
+export const PARALLEL_TOOLS_RULE =
+  "Make independent tool calls together in one reply; call tools one after another only when a call depends on an earlier result.";
+
 export type SheetPolicy = "open" | "closed";
 
 export function renderPromptTemplate(
@@ -44,9 +47,9 @@ const SHEET_RULES = {
 } satisfies Record<SheetPolicy, string>;
 
 const TOOL_RULES = {
-  open: "lookup_matchup reports only the type chart. estimate_damage reports conditional hit outcomes at evaluated endpoints, not exhaustive KO certainty: it binds known abilities, items, stats, stages, status, HP, screens, weather, terrain, and both active allies with their abilities from the current battle and open team sheets. Use compare_action_order for Speed order. Trust a tool only for the factors its result says it applied.",
+  open: `lookup_matchup reports only the type chart. estimate_damage reports conditional hit outcomes at evaluated endpoints, not exhaustive KO certainty: it binds known abilities, items, stats, stages, status, HP, screens, weather, terrain, and both active allies with their abilities from the current battle and open team sheets. Use compare_action_order for Speed order. Trust a tool only for the factors its result says it applied. ${PARALLEL_TOOLS_RULE}`,
   closed:
-    "lookup_matchup reports only the type chart. estimate_damage reports conditional hit outcomes at evaluated endpoints, not exhaustive KO certainty: it binds the abilities, items, stats, stages, status, HP, screens, weather, terrain, and both active allies with their abilities that the battle has revealed so far, and treats anything unrevealed as neutral across legal ranges. Use compare_action_order for Speed order. Trust a tool only for the factors its result says it applied.",
+    `lookup_matchup reports only the type chart. estimate_damage reports conditional hit outcomes at evaluated endpoints, not exhaustive KO certainty: it binds the abilities, items, stats, stages, status, HP, screens, weather, terrain, and both active allies with their abilities that the battle has revealed so far, and treats anything unrevealed as neutral across legal ranges. Use compare_action_order for Speed order. Trust a tool only for the factors its result says it applied. ${PARALLEL_TOOLS_RULE}`,
 } satisfies Record<SheetPolicy, string>;
 
 const NOTEBOOK_RULE = `Your private notebook has team_playbook (maximum ${TEAM_PLAYBOOK_CHAR_LIMIT} characters), series_memory (maximum ${SERIES_MEMORY_CHAR_LIMIT}), and next_game_plan (maximum ${NEXT_GAME_PLAN_CHAR_LIMIT}); the combined strategic limit is ${DECISION_NOTE_LIMIT}. Include only changed fields: each supplied string replaces that field, omitted fields stay unchanged, and an empty string clears a field.`;
@@ -73,8 +76,7 @@ export function battleSystemPrompt(options: { sheets: SheetPolicy; timed: boolea
   ].join("\n");
 }
 
-const REFLECTION_EVIDENCE =
-  "Use the supplied private battle evidence and authoritative outcome. read_battle_history retrieves earlier games and your stated reasons for submitted choices in this series. Do not invent hidden information.";
+const REFLECTION_EVIDENCE = `Use the supplied private battle evidence and authoritative outcome. read_battle_history retrieves earlier games and your stated reasons for submitted choices in this series. Do not invent hidden information. ${PARALLEL_TOOLS_RULE}`;
 const REFLECTION_MEMORY_RULE = `${NOTEBOOK_RULE} Update your notebook where useful: team_playbook carries own-team context, series_memory carries current-opponent context, and next_game_plan carries your immediate plan. An empty notebook object keeps all three fields. Decide what is worth retaining.`;
 const REFLECTION_RESPONSE = `Call submit_review with {"summary":"your assessment of the game","adjustment":"what, if anything, to keep or change next game","notebook":${NOTEBOOK_OBJECT}}.`;
 

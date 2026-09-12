@@ -4,7 +4,12 @@ import path from "node:path";
 import { z } from "zod";
 import { baseCostsBySpecies, BOARD_COLUMNS, boardRow } from "./board-search.js";
 import { BOARDS_DIR, defaultPsDir } from "./paths.js";
-import { FORMAT_AUTHORITY_NOTICE, MANAGER_CHARGE, renderPromptTemplate } from "./prompts.js";
+import {
+  FORMAT_AUTHORITY_NOTICE,
+  MANAGER_CHARGE,
+  PARALLEL_TOOLS_RULE,
+  renderPromptTemplate,
+} from "./prompts.js";
 import { loadShowdown } from "./showdown.js";
 import { normalizeStageEvidence, type StageEvidence } from "./stage-evidence.js";
 import type { JsonObject } from "./types.js";
@@ -69,6 +74,7 @@ const DRAFT_AVAILABLE_MECHANICS_TOOLS = [
   "from the simulator this league runs on. Trust the mechanics and factors each result explicitly says it applied;",
   "a hypothetical damage result does not imply omitted abilities or field effects. search_board filters and re-sorts the",
   "board by type, price, ability, base stat total, or legal move. It defaults to your legal picks and shows both forms of Mega entries.",
+  PARALLEL_TOOLS_RULE,
 ].join("\n");
 
 export const DRAFT_PROMPT_POLICY = {
