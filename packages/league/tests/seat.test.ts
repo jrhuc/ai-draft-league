@@ -22,10 +22,6 @@ test("unscoped play data includes exhibitions without turning them into a rankin
 test("seat bridge keeps a pending exchange, tools, and private context behind one token", async () => {
   const lookups: string[] = [];
   const bridge = new SeatBridge({
-    lookup: (name, args) => {
-      lookups.push(name);
-      return `result for ${text(args.name)}`;
-    },
     context: (query) => ({ query: { ...query } }),
   });
   const url = await bridge.listen(0);
@@ -44,19 +40,42 @@ test("seat bridge keeps a pending exchange, tools, and private context behind on
       401,
     );
 
-    const completion = bridge
-      .provider()
-      .complete("SYSTEM TEXT", [{ role: "user", content: "prompt text" }]);
-    const poll: { exchange: { id: number; phase: string; system: string; prompt: string } } =
-      await (await post("/poll", { waitMs: 2000 })).json();
-    assert.deepEqual(
-      {
-        phase: poll.exchange.phase,
-        system: poll.exchange.system,
-        prompt: poll.exchange.prompt,
+    const completion = bridge.runAgent({
+      session: "seat",
+      task: "decision-1",
+      model: "external",
+      system: "SYSTEM TEXT",
+      prompt: "prompt text",
+      submission: {
+        name: "submit_action",
+        description: "Submit",
+        parameters: { type: "object", required: ["choices"] },
       },
-      { phase: "decision", system: "SYSTEM TEXT", prompt: "prompt text" },
-    );
+      validate: (input) => {
+        assert.deepEqual(input, { choices: [0] });
+        return input;
+      },
+      tools: [
+        {
+          definition: { name: "lookup_move", description: "Look up move", parameters: {} },
+          run: (input) => {
+            lookups.push("lookup_move");
+            return `result for ${text(input.name)}`;
+          },
+        },
+      ],
+    });
+    const poll: { exchange: JsonObject } = await (await post("/poll", { waitMs: 2000 })).json();
+    const { id: _id, ...view } = poll.exchange;
+    assert.deepEqual(view, {
+      task: "decision-1",
+      system: "SYSTEM TEXT",
+      prompt: "prompt text",
+      submission: {
+        name: "submit_action",
+        parameters: { type: "object", required: ["choices"] },
+      },
+    });
 
     const tool: { result: string } = await (
       await post("/tool", { name: "lookup_move", arguments: { name: "Protect" } })
@@ -72,16 +91,17 @@ test("seat bridge keeps a pending exchange, tools, and private context behind on
       (await post("/submit", { id: poll.exchange.id, text: '{"choices":[0]}' })).status,
       200,
     );
-    assert.equal((await completion).text, '{"choices":[0]}');
+    assert.equal((await completion).response, '{"choices":[0]}');
   } finally {
     bridge.close();
   }
 });
 
 function decide(prompt: string): number[] {
+  if (prompt.includes("Ordered team menu")) return [0, 1, 2, 3];
   const menus: string[][] = [];
   for (const line of prompt.split("\n")) {
-    if (/^Slot \d+ — /.test(line)) menus.push([]);
+    if (/^Slot \d+: /.test(line)) menus.push([]);
     else if (menus.length && /^ {2}\d+\. /.test(line))
       menus.at(-1)!.push(line.replace(/^ {2}\d+\. /, ""));
     else if (menus.length && line === "") break;
@@ -237,7 +257,9 @@ test("an exhibition series against random plays to completion through the bridge
   let driving = true;
   const driver = (async () => {
     while (driving) {
-      let data: { exchange: { id: number; phase: string; prompt: string } | null };
+      let data: {
+        exchange: { id: number; prompt: string; submission: { name: string } } | null;
+      };
       try {
         const response = await fetch(`${url}/poll`, {
           method: "POST",
@@ -250,32 +272,33 @@ test("an exhibition series against random plays to completion through the bridge
       }
       if (!data.exchange) continue;
       prompts.push(data.exchange.prompt);
-      if (data.exchange.phase === "decision" && battleTools.length === 0) {
+      if (data.exchange.submission.name === "submit_action" && battleTools.length === 0) {
         const response = await fetch(`${url}/tools`, { method: "POST", headers, body: "{}" });
         const listed: { tools: typeof battleTools } = await response.json();
         battleTools = listed.tools;
       }
       const text =
-        data.exchange.phase === "reflection"
-          ? '{"summary":"s","adjustment":"a","notebook":"n"}'
+        data.exchange.submission.name === "submit_review"
+          ? '{"summary":"s","adjustment":"a"}'
           : JSON.stringify({
               choices: decide(data.exchange.prompt),
               rationale: "r",
-              notebook: "n",
             });
-      try {
-        await fetch(`${url}/submit`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ id: data.exchange.id, text }),
-        });
-      } catch {
-        return;
-      }
+      const submitted = await fetch(`${url}/submit`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ id: data.exchange.id, text }),
+      });
+      assert.equal(submitted.status, 200, await submitted.text());
     }
   })();
 
-  const row = await rowPromise;
+  const row = await Promise.race([
+    rowPromise,
+    driver.then(() => {
+      throw new Error("driver exited before series completed");
+    }),
+  ]);
   driving = false;
   await driver;
 
@@ -286,54 +309,15 @@ test("an exhibition series against random plays to completion through the bridge
   assert.deepEqual(row.execution_harnesses, {
     p1: {
       adapter: "trusted-external-bridge",
-      version: 4,
-      filesystem_isolation: false,
-      process_isolation: false,
-      network_isolation: false,
-      host_filesystem_access: "unrestricted-unobserved",
-      host_process_access: "unrestricted-unobserved",
-      arbitrary_network_access: "unrestricted-unobserved",
-      workspace_policy: "fresh-directory-0700-v1",
-      credential_policy: "exclusive-artifacts-0600-v1",
-      delegation: "unrestricted-unobserved",
-      context: "cursor-addressable-authorized-series-stream-v1",
-      tools: "live-decision-bound-lookups-v1",
-      model_visible_adapter: {
-        version: 1,
-        digest: "9497a731bd2215903a801480ddd2e56dbf59e85f7919ff35d57aa57017909095",
-      },
-      evidence_log: {
-        version: 1,
-        collection: "host-side-jsonl-v1",
-        artifacts: ["decisions", "trace", "context", "bridge-tools"],
-        presented_through_adapter: false,
-      },
+      isolated: false,
     },
     p2: {
       adapter: "random-engine",
-      version: 2,
-      filesystem_isolation: false,
-      process_isolation: false,
-      network_isolation: false,
-      host_filesystem_access: "not-exposed-through-model-api",
-      host_process_access: "not-exposed-through-model-api",
-      arbitrary_network_access: "not-exposed-through-model-api",
-      delegation: "none",
-      context: "none",
-      tools: "none",
     },
   });
   assert.ok(battleTools.some((tool) => tool.name === "compare_action_order"));
   const damage = battleTools.find((tool) => tool.name === "estimate_damage");
   assert.ok(damage);
-  const damageParameters = asRecord(damage.parameters.properties);
-  assert.deepEqual(Object.keys(damageParameters), [
-    "attacker",
-    "defender",
-    "move",
-    "helping_hand",
-    "is_critical_hit",
-  ]);
   const score = asRecord(row.score);
   assert.equal(Math.max(Number(score.p1), Number(score.p2)), 2);
   assert.ok(prompts.some((prompt) => prompt.includes("Ordered team menu")));

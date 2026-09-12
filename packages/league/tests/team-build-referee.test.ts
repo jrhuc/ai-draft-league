@@ -8,9 +8,10 @@ import {
   type TeamBuildTask,
   validateTeamBuildSubmission,
 } from "../src/teambuild.js";
-import { legalTeamResponse } from "./fixtures/team-build.js";
+import type { JsonObject } from "../src/types.js";
+import { legalTeamReply } from "./fixtures/team-build.js";
 
-const BOARD = loadBoard("regmb-202607");
+const BOARD = loadBoard("regmc-202609");
 const candidate = (id: string) => {
   const found = BOARD.mons.find((entry) => entry.id === id);
   assert.ok(found, `board is missing ${id}`);
@@ -25,6 +26,7 @@ const CANDIDATES = [
   "charizard-mega-y",
 ].map(candidate);
 const CREATED_AT = "2026-03-17T00:00:00.000Z";
+const OPTIONS = { psDir: defaultPsDir(), createdAt: CREATED_AT };
 
 function task(): TeamBuildTask {
   return {
@@ -32,7 +34,6 @@ function task(): TeamBuildTask {
     model: "scripted:model",
     format: BOARD.format,
     sheetPolicy: "open",
-    executionPolicy: "strict",
     constraint: {
       kind: "frozen-candidate-pool",
       id: "referee-pool",
@@ -45,57 +46,54 @@ function task(): TeamBuildTask {
   };
 }
 
-const RESPONSE = legalTeamResponse(
-  "Flexible speed control lets this team pressure both fast and slow modes.",
-);
+type Reply = { notebook?: string; sets: Array<{ item: string; evs: { hp: unknown } }> };
+
+const reply = (): Reply & JsonObject =>
+  legalTeamReply("Flexible speed control lets this team pressure both fast and slow modes.");
 
 test("provider-free construction referee produces an exactly replayable artifact", () => {
-  const result = validateTeamBuildSubmission(task(), RESPONSE, {
-    psDir: defaultPsDir(),
-    attempts: 1,
-    createdAt: CREATED_AT,
-  });
-  assert.equal(result.status, "accepted");
-  if (result.status !== "accepted") return;
-  const replayed = replayTeamBuildArtifact(result.artifact, { psDir: defaultPsDir() });
-  assert.deepEqual(replayed.artifact, result.artifact);
-  assert.equal(replayed.packed, result.packed);
+  const artifact = validateTeamBuildSubmission(task(), reply(), { ...OPTIONS, attempts: 1 });
+  const replayed = replayTeamBuildArtifact(artifact, { psDir: defaultPsDir() });
+  assert.deepEqual(replayed.artifact, artifact);
+  assert.equal(replayed.packed, artifact.action.packed);
 });
 
-test("provider-free construction referee rejects malformed and illegal free text", () => {
-  const malformed = validateTeamBuildSubmission(task(), '{"sets": []}', {
-    psDir: defaultPsDir(),
-    createdAt: CREATED_AT,
-  });
-  assert.equal(malformed.status, "rejected");
+test("provider-free construction referee rejects malformed and illegal sets", () => {
+  assert.throws(() => validateTeamBuildSubmission(task(), { sets: [] }, OPTIONS), /exactly 6/);
 
-  const illegal: { sets: Array<{ item: string }> } = JSON.parse(RESPONSE);
+  const illegal = reply();
   illegal.sets[0]!.item = "Not An Item";
-  const rejected = validateTeamBuildSubmission(task(), JSON.stringify(illegal), {
-    psDir: defaultPsDir(),
-    createdAt: CREATED_AT,
-  });
-  assert.equal(rejected.status, "rejected");
-  if (rejected.status !== "rejected") return;
-  assert.equal(rejected.artifact.action, null);
-  assert.equal(rejected.artifact.fallback, false);
-  assert.equal(rejected.artifact.validation.repaired, false);
-  assert.ok(rejected.problems.some((problem) => problem.includes("canonical Showdown name")));
+  assert.throws(
+    () => validateTeamBuildSubmission(task(), illegal, OPTIONS),
+    /canonical Showdown name/,
+  );
+
+  for (const hp of ["2", -1, 1.5, 100]) {
+    const invalid = reply();
+    invalid.sets[0]!.evs.hp = hp;
+    assert.throws(() => validateTeamBuildSubmission(task(), invalid, OPTIONS), /evs\.hp|in HP/);
+  }
+
+  const oversized = reply();
+  oversized.notebook = "x".repeat(4001);
+  assert.throws(() => validateTeamBuildSubmission(task(), oversized, OPTIONS), /notebook.*4000/);
+
+  const maximal = reply();
+  maximal.notebook = "x".repeat(4000);
+  assert.equal(
+    validateTeamBuildSubmission(task(), maximal, OPTIONS).evidence.notebook,
+    maximal.notebook,
+  );
 });
 
 test("semantic replay rejects action sets or roster ids that do not match packed bytes", () => {
-  const result = validateTeamBuildSubmission(task(), RESPONSE, {
-    psDir: defaultPsDir(),
-    createdAt: CREATED_AT,
-  });
-  assert.equal(result.status, "accepted");
-  if (result.status !== "accepted") return;
+  const artifact = validateTeamBuildSubmission(task(), reply(), OPTIONS);
 
-  const changedSet = structuredClone(result.artifact);
-  changedSet.action!.sets[0]!.nature = "Adamant";
-  assert.throws(() => replayTeamBuildArtifact(changedSet), /do not exactly match|inconsistent/);
+  const changedSet = structuredClone(artifact);
+  changedSet.action.sets[0]!.nature = "Adamant";
+  assert.throws(() => replayTeamBuildArtifact(changedSet), /do not exactly match/);
 
-  const changedSelection = structuredClone(result.artifact);
-  changedSelection.action!.selected[0] = "not-owned";
-  assert.throws(() => replayTeamBuildArtifact(changedSelection), /does not own/);
+  const changedSelection = structuredClone(artifact);
+  changedSelection.action.selected[0] = "not-owned";
+  assert.throws(() => replayTeamBuildArtifact(changedSelection), /frozen candidate pool/);
 });

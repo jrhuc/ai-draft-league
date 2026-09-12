@@ -93,7 +93,6 @@ export function TransactionsPage() {
                       swaps left
                     </span>
                   ) : null}
-                  {move.fallback ? <span className="chip chip-warn">AUTO</span> : null}
                 </div>
                 {move.swaps.map((swap) => (
                   <div key={`${swap.drop}-${swap.add}`} className="swap">

@@ -60,7 +60,7 @@ function ownerAt(file: string): LeaseOwner | null {
   }
 }
 
-function isLive(pid: number): boolean {
+export function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
@@ -69,7 +69,6 @@ function isLive(pid: number): boolean {
   }
 }
 
-/** Acquires one atomic process lease, replacing an owner only after its PID is no longer live. */
 export function acquireLease(leasePath: string): () => void {
   fs.mkdirSync(path.dirname(leasePath), { recursive: true });
   const owner: LeaseOwner = {
@@ -92,7 +91,8 @@ export function acquireLease(leasePath: string): () => void {
       } catch (error) {
         if (errorCode(error) !== "EEXIST") throw error;
         const current = ownerAt(leasePath);
-        if (current && isLive(current.pid)) throw new LeaseBusyError(leasePath, current.pid);
+        if (current && isProcessAlive(current.pid))
+          throw new LeaseBusyError(leasePath, current.pid);
         const stale = `${leasePath}.stale-${randomUUID()}`;
         try {
           fs.renameSync(leasePath, stale);

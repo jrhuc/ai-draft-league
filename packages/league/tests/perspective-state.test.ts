@@ -6,6 +6,8 @@ import { summarizeBattleEvents } from "../src/battle-transcript.js";
 import { LEAGUE_ROOT } from "../src/paths.js";
 import { ShowdownReference } from "../src/reference.js";
 import { PerspectiveState } from "../src/perspective-state.js";
+import { filledStats, type PokemonSet } from "../src/reference-mechanics.js";
+import { loadShowdown } from "../src/showdown.js";
 import type { BattleRequest } from "../src/types.js";
 import { asRecord, count } from "../src/value.js";
 
@@ -25,7 +27,7 @@ test("own requests render known sets and stats", () => {
 });
 
 test("post-preview prompts show percentage HP and compact bench sets", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const state = new PerspectiveState("p1");
   const rendered = state.render(
     {
@@ -94,7 +96,7 @@ test("open team sheets follow active nicknames", () => {
 });
 
 test("battle damage binds open-sheet abilities and ignores fabricated caller state", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const state = new PerspectiveState("p1");
   state.feed([
     "|showteam|p2|Toaster|Rotom-Heat|SitrusBerry|Levitate|overheat,thunderbolt,protect|Timid|||||50",
@@ -134,8 +136,180 @@ test("battle damage binds open-sheet abilities and ignores fabricated caller sta
   assert.doesNotMatch(result, /Pressure|burned|attacker_stats\.atk 1/);
 });
 
+test("Mega scenarios use the simulator's new stats and ability without changing live state", () => {
+  const format = "gen9championsvgc2026regmc";
+  const reference = new ShowdownReference(format);
+  const set: PokemonSet = {
+    name: "Metagross",
+    species: "Metagross",
+    item: "Metagrossite",
+    ability: "Clear Body",
+    nature: "Jolly",
+    moves: ["Ice Punch"],
+    level: 50,
+    gender: "",
+    evs: { ...filledStats(0), hp: 2, atk: 32, spe: 32 },
+    ivs: filledStats(31),
+  };
+  const filler = {
+    ...set,
+    name: "Magikarp",
+    species: "Magikarp",
+    ability: "Honey Gather",
+    item: "",
+    moves: ["Splash"],
+  };
+  const battle = new (loadShowdown().Battle)({
+    formatid: format,
+    seed: "1,2,3,4",
+    p1: { name: "Pilot", team: [set, filler] },
+    p2: {
+      name: "Rival",
+      team: [
+        {
+          ...set,
+          name: "Indeedee-F",
+          species: "Indeedee-F",
+          item: "",
+          ability: "Own Tempo",
+          moves: ["Protect"],
+        },
+        filler,
+      ],
+    },
+  });
+  try {
+    battle.makeChoices("default", "default");
+    const mon = battle.p1.active[0]!;
+    const request: BattleRequest = {
+      active: [{ canMegaEvo: true, moves: [{ move: "Ice Punch", target: "normal" }] }],
+      side: {
+        pokemon: [
+          {
+            ident: "p1: Metagross",
+            details: "Metagross, L50",
+            condition: `${mon.hp}/${mon.maxhp}`,
+            active: true,
+            item: "Metagrossite",
+            ability: "Clear Body",
+            stats: { ...mon.storedStats },
+          },
+        ],
+      },
+    };
+    const state = new PerspectiveState("p1");
+    state.feed([
+      "|switch|p1a: Metagross|Metagross, L50|157/157",
+      "|showteam|p1|Metagross||Metagrossite|ClearBody|IcePunch|Jolly|||||50",
+      "|switch|p2a: Indeedee-F|Indeedee-F, L50|100/100",
+      "|showteam|p2|Indeedee-F|||OwnTempo|Protect|Serious|||||50",
+    ]);
+    const args = { attacker: "ally 1", defender: "foe 1", move: "Ice Punch" };
+    const base = state.estimateDamage(args, request, reference);
+    const projected = state.estimateDamage({ ...args, attacker_mega: true }, request, reference);
+    assert.equal(battle.actions.runMegaEvo(mon), true);
+    const expected = reference.lookup("estimate_damage", {
+      attacker: mon.species.name,
+      attacker_ability: mon.getAbility().name,
+      attacker_item: "Metagrossite",
+      attacker_nature: "Jolly",
+      attacker_stats: { ...mon.storedStats },
+      defender: "Indeedee-F",
+      defender_ability: "Own Tempo",
+      defender_nature: "Serious",
+      attacker_hp_percent: 100,
+      defender_hp_percent: 100,
+      move: "Ice Punch",
+    });
+    assert.match(projected, /Hypothetical Mega Evolution/);
+    assert.match(projected, /Tough Claws/);
+    assert.ok(projected.endsWith(expected), projected);
+    assert.notEqual(projected, base);
+    assert.equal(state.estimateDamage(args, request, reference), base);
+    const order = state.compareActionOrder(
+      { first: "ally 1", second: "foe 1", first_mega: true },
+      reference,
+    );
+    assert.match(order, new RegExp(`Metagross-Mega: raw Speed ${mon.storedStats.spe};`));
+    assert.throws(
+      () =>
+        state.compareActionOrder(
+          { first: "ally 1", second: "foe 1", first_mega: true, first_move: "switch" },
+          reference,
+        ),
+      /switching out/,
+    );
+    assert.throws(
+      () => state.estimateDamage({ ...args, defender_mega: true }, request, reference),
+      /known held item/,
+    );
+    request.active![0]!.canMegaEvo = false;
+    assert.throws(
+      () => state.estimateDamage({ ...args, attacker_mega: true }, request, reference),
+      /Showdown does not currently allow/,
+    );
+    request.active![0]!.canMegaEvo = true;
+    state.feed(["|-mega|p1b: Other|Charizard|CharizarditeY"]);
+    assert.throws(
+      () => state.estimateDamage({ ...args, attacker_mega: true }, request, reference),
+      /already used/,
+    );
+  } finally {
+    battle.destroy();
+  }
+});
+
+test("opposing Mega projections use only the revealed stone and preserve hidden stat ranges", () => {
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
+  const state = new PerspectiveState("p1");
+  state.feed([
+    "|switch|p1a: Gardevoir|Gardevoir, L50|143/143",
+    "|switch|p2a: Gyarados|Gyarados, L50|100/100",
+    "|-item|p2a: Gyarados|Gyaradosite",
+  ]);
+  const args = { attacker: "ally 1", defender: "foe 1", move: "Psychic" };
+  const base = state.estimateDamage(args, {}, reference);
+  const mega = state.estimateDamage({ ...args, defender_mega: true }, {}, reference);
+  assert.match(mega, /defender Gyarados-Mega \(Mold Breaker\)/);
+  assert.match(mega, /0% damage/);
+  assert.doesNotMatch(base, /0% damage/);
+  assert.equal(state.estimateDamage(args, {}, reference), base);
+  const order = state.compareActionOrder(
+    { first: "ally 1", second: "foe 1", second_mega: true },
+    reference,
+  );
+  assert.match(order, /Gyarados-Mega: raw Speed \d+–\d+/);
+  state.feed(["|-enditem|p2a: Gyarados|Gyaradosite"]);
+  assert.throws(
+    () => state.estimateDamage({ ...args, defender_mega: true }, {}, reference),
+    /known held item/,
+  );
+});
+
+test("tool queries resolve a Mega Z forme by its base species or spoken name", () => {
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
+  const state = new PerspectiveState("p1");
+  state.feed([
+    "|switch|p1a: Gardevoir|Gardevoir, L50|143/143",
+    "|switch|p2a: Garchomp|Garchomp, L50|100/100",
+    "|detailschange|p2a: Garchomp|Garchomp-Mega-Z, L50",
+    "|-mega|p2a: Garchomp|Garchomp|Garchompite Z",
+  ]);
+  const exact = state.estimateDamage(
+    { attacker: "Gardevoir", defender: "Garchomp-Mega-Z", move: "Moonblast" },
+    {},
+    reference,
+  );
+  assert.match(exact, /defender Garchomp-Mega-Z/);
+  for (const defender of ["Garchomp", "Mega Garchomp Z", "foe Garchomp"])
+    assert.equal(
+      state.estimateDamage({ attacker: "Gardevoir", defender, move: "Moonblast" }, {}, reference),
+      exact,
+    );
+});
+
 test("live damage derives spread reduction from Showdown targets and live actives", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const request = (attacker: string, move: string, ally?: string): BattleRequest => ({
     active: [
       { moves: [{ move, id: move.toLowerCase().replaceAll(" ", ""), target: "normal" }] },
@@ -218,6 +392,61 @@ test("live damage derives spread reduction from Showdown targets and live active
   assert.match(allyAndFoe, /spread \(0\.75x\)/);
 });
 
+test("switch-in damage keeps the chosen remaining ally and matches the resulting live field", () => {
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
+  const state = new PerspectiveState("p1");
+  state.feed([
+    "|showteam|p2|Incineroar||SitrusBerry|Intimidate|flareblitz|Careful|||||50]Torkoal|||Drought|eruption|Quiet|||||50",
+    "|switch|p2a: Incineroar|Incineroar, L50|100/100",
+    "|switch|p2b: Torkoal|Torkoal, L50|100/100",
+    "|-weather|SunnyDay|[from] ability: Drought|[of] p2b: Torkoal",
+  ]);
+  const mons = [
+    { species: "Mimikyu", ability: "disguise" },
+    { species: "Altaria", ability: "cloudnine" },
+    { species: "Palafin", ability: "zerotohero" },
+  ].map(({ species, ability }, index) => ({
+    ident: `p1: ${species}`,
+    details: `${species}, L50`,
+    condition: "207/207",
+    active: index < 2,
+    stats: { atk: 134, def: 93, spa: 73, spd: 107, spe: 120 },
+    moves: ["protect"],
+    ability,
+  }));
+  const request: BattleRequest = { side: { pokemon: mons } };
+  const args = { attacker: "Incineroar", defender: "Palafin", move: "Flare Blitz" };
+  const before = state.render(request);
+  assert.throws(() => state.estimateDamage(args, request, reference), /Set defender_replaces/);
+  assert.throws(
+    () => state.estimateDamage({ ...args, defender_replaces: "foe1" }, request, reference),
+    /same-side active/,
+  );
+  const cloudNine = state.estimateDamage(
+    { ...args, defender_replaces: "ally1" },
+    request,
+    reference,
+  );
+  const sun = state.estimateDamage({ ...args, defender_replaces: "Altaria" }, request, reference);
+  assert.match(cloudNine, /Palafin replaces Mimikyu/);
+  assert.match(cloudNine, /defender ally Altaria \(Cloud Nine\)/);
+  assert.match(sun, /defender ally Mimikyu \(Disguise\)/);
+  assert.notEqual(cloudNine.match(/\d+\.\d+-\d+\.\d+%/)?.[0], sun.match(/\d+\.\d+-\d+\.\d+%/)?.[0]);
+  assert.equal(state.render(request), before, "hypotheses must not mutate battle state");
+
+  state.feed(["|switch|p1a: Palafin|Palafin, L50|207/207"]);
+  const live = state.estimateDamage(
+    args,
+    {
+      side: {
+        pokemon: [{ ...mons[2]!, active: true }, mons[1]!, { ...mons[0]!, active: false }],
+      },
+    },
+    reference,
+  );
+  assert.equal(cloudNine.split("\n").at(-1), live.split("\n").at(-1));
+});
+
 test("copied abilities are explained and reset from the open sheet on switch", () => {
   assert.deepEqual(
     summarizeBattleEvents([
@@ -238,7 +467,7 @@ test("copied abilities are explained and reset from the open sheet on switch", (
 });
 
 test("suppressed abilities stay suppressed in live damage context", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const state = new PerspectiveState("p1");
   state.feed([
     "|showteam|p2|Toaster|Rotom-Heat|SitrusBerry|Levitate|overheat,protect|Timid|||||50",
@@ -480,7 +709,7 @@ test("Protect success reduction is tracked for the next menu", () => {
 });
 
 test("effective speed and action order use format ranges and explain redundant Encore", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const state = new PerspectiveState("p1");
   state.feed([
     "|showteam|p2|Tauros|Tauros-Paldea-Aqua|ChoiceScarf|Intimidate|CloseCombat,AquaJet|Adamant|||||50",
@@ -535,7 +764,7 @@ test("effective speed and action order use format ranges and explain redundant E
 });
 
 test("action order proves one-point and Tailwind speed guarantees", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const state = new PerspectiveState("p1");
   state.feed([
     "|showteam|p2|Garchomp||LifeOrb|RoughSkin|Earthquake|Jolly|||||50",
@@ -605,7 +834,7 @@ test("action order proves one-point and Tailwind speed guarantees", () => {
 });
 
 test("action order applies Gale Wings and Prankster priority modifiers", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const state = new PerspectiveState("p1");
   state.feed([
     "|showteam|p2|Mamoswine||FocusSash|ThickFat|IceShard,RockSlide|Adamant|||||50",

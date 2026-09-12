@@ -2,8 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { AppErrorBoundary } from "ui/components/app-error";
-import { App } from "@/App";
-import { SeasonProvider } from "@/lib/season-context";
+import { SiteRouter } from "@/site-router";
 
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
@@ -23,9 +22,7 @@ createRoot(root).render(
   <StrictMode>
     <AppErrorBoundary>
       <BrowserRouter>
-        <SeasonProvider>
-          <App />
-        </SeasonProvider>
+        <SiteRouter />
       </BrowserRouter>
     </AppErrorBoundary>
   </StrictMode>,

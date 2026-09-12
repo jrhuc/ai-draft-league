@@ -160,7 +160,7 @@ async function runTransactionWindow(
   runtime: LeagueCoordinator,
   index: number,
 ): Promise<void> {
-  const { entrants, options, plans, psDir, runDir, schedule, swapsAllowed } = context;
+  const { agents, entrants, options, plans, psDir, runDir, schedule, swapsAllowed } = context;
   const window = schedule[index]!;
   runtime.transition({ phase: "window", week: window.afterWeek, rosterVersion: index });
   options.onEvent?.({ type: "draft", draft: runtime.draftView(true) });
@@ -214,12 +214,12 @@ async function runTransactionWindow(
     },
     {
       runDir,
+      runAgent: agents.run,
       psDir,
       position: { afterWeek: window.afterWeek, index, count: schedule.length },
       tradesAllowed: window.tradesAllowed,
       reasoning: options.reasoning,
       reasoningByModel: options.reasoningByModel,
-      apiKeys: options.apiKeys,
       signal: options.signal,
     },
   );

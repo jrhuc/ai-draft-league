@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { type AgentRuntime, withAgentHost } from "./agent-runtime.js";
 import path from "node:path";
 
 import { writeAtomicJson } from "./atomic-json.js";
@@ -57,6 +58,20 @@ export async function runRotation(
   runDir: string,
   options: RotationOptions = {},
 ): Promise<SeriesRecord[]> {
+  return withAgentHost(
+    runDir,
+    (agents) => executeRotation(models, seriesPerPair, runDir, agents, options),
+    options.onAgentProgress,
+  );
+}
+
+async function executeRotation(
+  models: string[],
+  seriesPerPair: number,
+  runDir: string,
+  agents: AgentRuntime,
+  options: RotationOptions,
+): Promise<SeriesRecord[]> {
   if (models.length < 2) throw new Error("at least two models are required");
   if (seriesPerPair % 2) {
     const message = "warning: an odd --series-per-pair leaves each pair's last matchup unmirrored";
@@ -108,6 +123,7 @@ export async function runRotation(
       format: pool.format,
       psDir,
       runDir,
+      agents,
       signal,
       timerScale,
       onGameUpdate: (game, lines, publicLines) =>
@@ -118,7 +134,6 @@ export async function runRotation(
         options.onEvent?.({ type: "decision", index: plan.index, pid, row }),
       reasoning: options.reasoning,
       reasoningByModel: options.reasoningByModel,
-      apiKeys: options.apiKeys,
     };
     const { fields } = await new MatchRunner(seriesContext).run();
     const row: SeriesRecord = {

@@ -38,7 +38,6 @@ const decisionSchema = z.strictObject({
   rationale: z.string(),
   /** The model's full scratchpad as rewritten at this decision; empty when untouched. */
   notebook: z.string(),
-  fallback: z.boolean(),
   automatic: z.boolean(),
   latencyMs: z.number().nonnegative().nullable(),
   reasoningTokens: z.number().int().nonnegative().nullable(),
@@ -53,7 +52,6 @@ const reflectionSchema = z.strictObject({
   retrospective: z
     .strictObject({ didWell: z.string(), didPoorly: z.string(), wouldChange: z.string() })
     .optional(),
-  fallback: z.boolean(),
 });
 const setSchema = z.strictObject({
   id,

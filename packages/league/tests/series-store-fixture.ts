@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { agentPolicyIdentity, type RecordedSeriesIdentity } from "../src/recorded-series.js";
+import type { RecordedSeriesIdentity } from "../src/recorded-series.js";
 import {
   completeStoredAdaptation,
   createStoredSeries,
@@ -40,7 +40,6 @@ function fixtureIdentity(
       initial_notebook_digests: { p1: null, p2: null },
       draft_roster_digests: { p1: null, p2: null },
       briefing_digests: { p1: null, p2: null },
-      agent_policy: agentPolicyIdentity(),
     },
     ...overrides,
   };
@@ -84,7 +83,6 @@ export function storeCompletedSeriesFixture(
         winner_side: game.winnerSide,
         turns: game.turns ?? 1,
         errors: zeros,
-        model_choice_fallbacks: zeros,
         simulator_substitutions: zeros,
         timer_autodefaults: zeros,
         chance_events: chanceEventCounts(bytes.toString("utf8").split("\n")),

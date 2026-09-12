@@ -119,11 +119,6 @@ test("a decision's full trace page loads the game's trace file beside the stated
             response: "{}",
             usage: { input_tokens: 100, cached_input_tokens: 40, output_tokens: 10 },
             latencyMs: 1000,
-            maxTokens: null,
-            timer: null,
-            fallback: false,
-            error: null,
-            failedAttempts: [],
           },
     ),
   };

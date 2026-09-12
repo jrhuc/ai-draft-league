@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import type { AgentContextEvent } from "./agent-context.js";
+import type { AgentProgress, AgentRunner } from "./agent-runtime.js";
 import type { DecisionLog } from "./battle-agent.js";
 import { RandomEngine } from "./battle-agent.js";
 import { LLMEngine } from "./llm-engine.js";
@@ -16,8 +17,8 @@ export interface ExperimentOptions extends ModelReasoningConfig {
   timerScale?: TimerScale;
   recordsPath?: string;
   psDir?: string;
-  apiKeys?: Readonly<Record<string, string>>;
   signal?: AbortSignal;
+  onAgentProgress?: (progress: AgentProgress) => void;
   contributor?: ContributorAttribution;
   closedSheets?: boolean;
 }
@@ -57,6 +58,7 @@ export async function mapLimit<T, R>(
 }
 
 export interface EngineSetup {
+  runAgent: AgentRunner;
   pid: Pid;
   spec: string;
   seed: number;
@@ -69,7 +71,6 @@ export interface EngineSetup {
   reasoning?: ReasoningLevel | undefined;
   reference?: ShowdownReference | undefined;
   signal?: AbortSignal | undefined;
-  apiKey?: string | undefined;
   initialNotebook?: string | undefined;
   draftRoster?: string | undefined;
   briefing?: string | undefined;
@@ -81,6 +82,7 @@ export function makeEngine(setup: EngineSetup): RandomEngine | LLMEngine {
   if (spec === "random") return new RandomEngine(pid, seed, setup.decisionLog);
   return new LLMEngine(pid, spec, {
     ...Object.fromEntries(Object.entries(rest).filter(([, value]) => value !== undefined)),
+    runAgent: setup.runAgent,
     decisionLog: setup.decisionLog,
     traceLog: setup.traceLog,
     format: setup.format,
@@ -123,7 +125,6 @@ export const seriesGameResultSchema = z.strictObject({
   winner_side: z.enum(["p1", "p2"]).nullable(),
   turns: z.number().int().nonnegative(),
   errors: sideCountSchema,
-  model_choice_fallbacks: sideCountSchema,
   simulator_substitutions: sideCountSchema,
   timer_autodefaults: sideCountSchema,
   chance_events: z.strictObject({ p1: chanceEventCountsSchema, p2: chanceEventCountsSchema }),

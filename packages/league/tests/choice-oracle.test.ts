@@ -13,7 +13,7 @@ import { activeRequest, requestActionCandidates } from "./fixtures/fork.js";
 
 const Showdown = loadShowdown();
 const SEED = "31,41,59,26" as const;
-const FORMAT = "gen9championsvgc2026regmbbo3";
+const FORMAT = "gen9championsvgc2026regmcbo3";
 
 type PokemonSet = NonNullable<Parameters<typeof Showdown.Teams.pack>[0]>[number];
 

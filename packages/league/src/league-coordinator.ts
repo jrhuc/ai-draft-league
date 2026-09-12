@@ -1,3 +1,4 @@
+import type { AgentRunner, AgentRuntime } from "./agent-runtime.js";
 import type { DraftBoard, DraftBoardMon, DraftState } from "./draft.js";
 import type { DraftLeagueOptions, DraftLeagueSeriesPlan } from "./draftleague-protocol.js";
 import { rankedTable } from "./draftleague-protocol.js";
@@ -13,12 +14,14 @@ import type { Rng } from "./random.js";
 import type { SeriesRecord } from "./records.js";
 import type { TeamBuildJournalEntry, TeamBuildSheetPolicy } from "./teambuild.js";
 import type { TradeWindowArtifact, TransactionSchedule } from "./trade-window.js";
+import { windowRosters } from "./trade-window-artifacts.js";
 import type { Pid, TimerScale } from "./types.js";
 import type { DraftTableRow, DraftView, TeamBuildView } from "./views.js";
 
 export interface DraftLeagueContext {
   models: string[];
   runDir: string;
+  agents: AgentRuntime;
   runId: string;
   recordsPath: string;
   options: DraftLeagueOptions;
@@ -44,8 +47,8 @@ export interface DraftLeagueContext {
 
 export interface ReviewStageOptions extends ModelReasoningConfig {
   runDir: string;
+  runAgent: AgentRunner;
   psDir: string;
-  apiKeys?: Readonly<Record<string, string>>;
   signal?: AbortSignal;
 }
 
@@ -244,17 +247,14 @@ export class LeagueCoordinator {
   }
 
   adoptWindow(artifact: TradeWindowArtifact): void {
-    const monById = new Map(this.context.board.mons.map((mon) => [mon.id, mon] as const));
-    for (const stored of artifact.rosters) {
-      const franchise = this.franchises[stored.entrant];
-      if (!franchise)
-        throw new Error(`transaction artifact names unknown entrant ${stored.entrant}`);
-      franchise.roster = stored.roster.map(({ id }) => {
-        const mon = monById.get(id);
-        if (!mon) throw new Error(`transaction artifact names unknown board id ${id}`);
-        return mon;
-      });
-      franchise.budget = stored.budget_left;
+    for (const { entrant, roster, budget } of windowRosters(
+      artifact,
+      this.context.board,
+      this.context.entrants,
+    )) {
+      const franchise = this.franchises[entrant]!;
+      franchise.roster = roster;
+      franchise.budget = budget;
     }
     this.windowArtifacts.push(artifact);
     this.storeRosterVersion(this.windowArtifacts.length);

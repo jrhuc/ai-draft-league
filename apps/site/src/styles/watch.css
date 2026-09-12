@@ -1,5 +1,37 @@
 .watch h1 {
   margin: 0.25rem 0 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+.live-agents {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 1rem;
+}
+
+.live-task {
+  overflow-wrap: anywhere;
+  font-size: 0.8rem;
+}
+
+.live-follow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.live-series {
+  flex-wrap: wrap;
+}
+
+.live-log {
+  max-height: 28rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 1rem;
+  font-size: 0.8rem;
 }
 
 .watch-table {

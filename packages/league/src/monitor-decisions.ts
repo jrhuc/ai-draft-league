@@ -11,7 +11,6 @@ export interface SeatDecisionStats {
   label: string;
   decisions: number;
   automatic: number;
-  fallbacks: number;
   substitutions: number;
   parseFailureDecisions: number;
   notebookUpdates: number;
@@ -19,7 +18,6 @@ export interface SeatDecisionStats {
   latencySeconds: Spread;
   totalTokens: Spread;
   reflections: number;
-  reflectionFallbacks: number;
 }
 
 export function spread(values: readonly number[]): Spread {
@@ -42,10 +40,8 @@ export function seatDecisionStats(label: string, rows: readonly JsonObject[]): S
     label,
     decisions: decisions.length,
     automatic: decisions.length - modelDecisions.length,
-    fallbacks: modelDecisions.filter((row) => row.fallback === true).length,
-    substitutions: modelDecisions.filter(
-      (row) => row.fallback !== true && text(row.submission_source) === "model-default",
-    ).length,
+    substitutions: modelDecisions.filter((row) => text(row.submission_source) === "model-default")
+      .length,
     parseFailureDecisions: modelDecisions.filter((row) => count(row.parse_failures) > 0).length,
     notebookUpdates: modelDecisions.filter(
       (row) => asRecord(row.evidence_supplied).notebook_update === true,
@@ -54,6 +50,5 @@ export function seatDecisionStats(label: string, rows: readonly JsonObject[]): S
     latencySeconds: spread(modelDecisions.map((row) => Math.round(count(row.latency_ms) / 1000))),
     totalTokens: spread(modelDecisions.map((row) => count(row.total_tokens))),
     reflections: reflections.length,
-    reflectionFallbacks: reflections.filter((row) => row.fallback === true).length,
   };
 }

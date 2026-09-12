@@ -1,15 +1,11 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { PokeBall } from "../components/pokeball";
 
-/**
- * A fetched, schema-parsed bundle behind a context: one Provider that boots,
- * retries, and optionally re-polls, plus the hooks pages read it through.
- */
 export function createBundle<T>(
   load: () => Promise<T>,
   siteTitle: (bundle: T) => string,
   failure: string,
-  pollMs: () => number | null = () => null,
+  subscribe?: (refresh: () => void) => (() => void) | undefined,
 ) {
   const Context = createContext<T | null>(null);
   let pending: Promise<T> | null = null;
@@ -35,33 +31,35 @@ export function createBundle<T>(
     const [attempt, setAttempt] = useState(0);
     useEffect(() => {
       let live = true;
+      let loading = false;
+      let requested = false;
       setFailed(false);
-      loadOnce().then(
-        (value) => {
-          if (live) setBundle(value);
-        },
-        () => {
-          if (live) setFailed(true);
-        },
-      );
-      const interval = pollMs();
-      const timer =
-        interval === null
-          ? null
-          : setInterval(() => {
-              void load().then(
-                (value) => {
-                  if (live) setBundle(value);
-                },
-                () => undefined,
-              );
-            }, interval);
+      const refresh = async (): Promise<void> => {
+        requested = true;
+        if (loading) return;
+        loading = true;
+        while (live && requested) {
+          requested = false;
+          try {
+            const value = await loadOnce();
+            if (live) {
+              setBundle(value);
+              setFailed(false);
+            }
+          } catch {
+            if (live) setFailed(true);
+          }
+        }
+        loading = false;
+      };
+      void refresh();
+      const unsubscribe = subscribe?.(() => void refresh());
       return () => {
         live = false;
-        if (timer !== null) clearInterval(timer);
+        unsubscribe?.();
       };
     }, [attempt]);
-    if (failed) {
+    if (failed && !bundle) {
       return (
         <div className="boot" role="alert">
           <h1>{failure}</h1>
@@ -80,7 +78,19 @@ export function createBundle<T>(
         </div>
       );
     }
-    return <Context.Provider value={bundle}>{children}</Context.Provider>;
+    return (
+      <Context.Provider value={bundle}>
+        {failed ? (
+          <p className="watch-notice" role="status">
+            Live refresh failed. Showing the last loaded season.{" "}
+            <button type="button" onClick={() => setAttempt((value) => value + 1)}>
+              Retry
+            </button>
+          </p>
+        ) : null}
+        {children}
+      </Context.Provider>
+    );
   }
 
   function useBundle(): T {

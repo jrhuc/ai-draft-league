@@ -18,7 +18,7 @@ function pasteFromPool(file: string): string {
 test("default pool loads in manifest order and validates", () => {
   const pool = loadPool();
   assert.equal(pool.id, "test");
-  assert.equal(pool.format, "gen9championsvgc2026regmbbo3");
+  assert.equal(pool.format, "gen9championsvgc2026regmcbo3");
   assert.deepEqual(
     pool.teams.map((team) => team.id),
     [
@@ -43,7 +43,7 @@ test("pool loader uses custom directories and rejects invalid manifests", (t) =>
   fs.writeFileSync(path.join(poolDir, "b.team"), "beta");
   const manifest = {
     id: "snapshot",
-    format: "gen9championsvgc2026regmbbo3",
+    format: "gen9championsvgc2026regmcbo3",
     teams: [
       { id: "a", file: "a.team" },
       { id: "b", file: "b.team" },
@@ -56,7 +56,7 @@ test("pool loader uses custom directories and rejects invalid manifests", (t) =>
   ]);
   fs.writeFileSync(
     path.join(poolDir, "pool.json"),
-    JSON.stringify({ ...manifest, format: "gen9championsvgc2026regmb" }),
+    JSON.stringify({ ...manifest, format: "gen9championsvgc2026regmc" }),
   );
   assert.throws(() => loadPool("snapshot", root), /BO3 format/);
   fs.writeFileSync(
@@ -157,7 +157,7 @@ test("Mega formes with a distinct source forme name normalize to that forme", ()
     () =>
       validateTeam(
         "Floette-Mega||Floettite|FlowerVeil|Protect|Serious|||||50|",
-        "gen9championsvgc2026regmbbo3",
+        "gen9championsvgc2026regmcbo3",
       ),
     /entered as Floette-Eternal holding Floettite/,
   );
@@ -168,7 +168,7 @@ test("packed teams that still name a Mega forme fail validation loudly", () => {
     () =>
       validateTeam(
         "Swampert-Mega||Swampertite|Damp|Protect,WaveCrash|Adamant|||||50|",
-        "gen9championsvgc2026regmbbo3",
+        "gen9championsvgc2026regmcbo3",
       ),
     /base formes/,
   );
@@ -179,7 +179,7 @@ test("Champions validation applies each species’ current learnset", () => {
     () =>
       validateTeam(
         "Annihilape||SitrusBerry|Defiant|FinalGambit,Protect|Jolly|||||50|",
-        "gen9championsvgc2026regmbbo3",
+        "gen9championsvgc2026regmcbo3",
       ),
     /can't learn Final Gambit/,
   );
@@ -187,7 +187,7 @@ test("Champions validation applies each species’ current learnset", () => {
     () =>
       validateTeam(
         "Incineroar||SitrusBerry|Intimidate|KnockOff,FakeOut|Careful|||||50|",
-        "gen9championsvgc2026regmbbo3",
+        "gen9championsvgc2026regmcbo3",
       ),
     /can't learn Knock Off/,
   );

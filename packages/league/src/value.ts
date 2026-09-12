@@ -16,24 +16,8 @@ export function isText(value: JsonValue | undefined): value is string {
   return typeof value === "string";
 }
 
-export function isCount(value: JsonValue | undefined): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
-
 export function count(value: JsonValue | undefined, fallback = 0): number {
-  return isCount(value) ? value : fallback;
-}
-
-export function replyJsonObject(response: string): JsonObject | string {
-  const match = /\{[\s\S]*\}/.exec(response);
-  if (!match) return "the reply contained no JSON object";
-  let parsed: JsonValue;
-  try {
-    parsed = JSON.parse(match[0]);
-  } catch {
-    return "the JSON object did not parse";
-  }
-  return isRecord(parsed) ? parsed : "the reply must be one JSON object";
+  return Number.isFinite(value) ? Number(value) : fallback;
 }
 
 export function asStrings(value: JsonValue | undefined): string[] {

@@ -1,18 +1,9 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { test } from "vite-plus/test";
-import { storeSeriesFixture } from "./series-store-fixture.js";
-import { buildTournamentGame, buildTournaments } from "../src/evidence.js";
+import { buildTournaments } from "../src/evidence.js";
 import { TEAMS_DIR } from "../src/paths.js";
 import type { ParsedSeriesRecord } from "../src/records.js";
-import type { JsonObject } from "../src/types.js";
 import { seriesRecordFixture } from "./fixtures/records.js";
-
-function decisionLine(latency: number, turn: number, extra: JsonObject = {}): string {
-  return `${JSON.stringify({ kind: "decision", latency_ms: latency, game_number: 1, turn, phase: "turn", ...extra })}\n`;
-}
 
 function tournamentMatch(
   seriesIndex: number,
@@ -117,60 +108,4 @@ test("tournament archives include open team sheets for the shared match viewer",
   assert.equal(archive.entrants[0]!.teamSheet?.length, 6);
   assert.equal(archive.entrants[1]!.teamSheet?.length, 6);
   assert.ok(archive.entrants[0]!.teamSheet?.every((set) => set.spriteId && set.moves.length > 0));
-});
-
-test("live CLI tournament series join the bracket by their current series index", () => {
-  const runsDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-live-tournament-"));
-  const runId = "cup-live";
-  const runDir = path.join(runsDir, runId);
-  const seriesDir = path.join(runDir, "series", "series-live");
-  fs.mkdirSync(seriesDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(runDir, "config.json"),
-    `${JSON.stringify({
-      mode: "tournament",
-      pool: null,
-      entrants: [
-        { model: "provider:alpha", team: "Alpha team" },
-        { model: "provider:beta", team: "Beta team" },
-        { model: "provider:gamma", team: "Gamma team" },
-        { model: "provider:delta", team: "Delta team" },
-      ],
-    })}\n`,
-    "utf8",
-  );
-  fs.writeFileSync(
-    path.join(runDir, "status.json"),
-    `${JSON.stringify({ state: "running", pid: process.pid, start_time: "2026-08-06T21:00:00.000Z" })}\n`,
-    "utf8",
-  );
-  storeSeriesFixture(runDir, "series-live", {
-    series_index: 1,
-    players: { p1: "provider:beta", p2: "provider:gamma" },
-  });
-  fs.writeFileSync(path.join(seriesDir, "p1-decisions.jsonl"), decisionLine(900, 2), "utf8");
-  fs.writeFileSync(
-    path.join(seriesDir, "game-1.log"),
-    "|player|p1|p1-provider:beta||\n|player|p2|p2-provider:gamma||\n|turn|2\n",
-    "utf8",
-  );
-  try {
-    const archive = buildTournaments([], runsDir, null).tournaments[0]!;
-    assert.equal(archive.when, "2026-08-06T21:00:00.000Z");
-    assert.deepEqual(archive.liveSeries[0], {
-      seriesId: "series-live",
-      seriesIndex: 1,
-      round: 0,
-      slots: [1, 2],
-      game: 1,
-      turn: 2,
-      decisions: 1,
-    });
-    const game = buildTournamentGame([], runsDir, runId, 1, 1);
-    assert.ok(game, "the inferred series index opens the live game");
-    assert.deepEqual(game.teamNames, ["Beta team", "Gamma team"]);
-    assert.equal(game.snapshot?.turn, 2);
-  } finally {
-    fs.rmSync(runsDir, { recursive: true, force: true });
-  }
 });

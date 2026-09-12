@@ -1,20 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
+import type { z } from "zod";
 
 import { type BoardSearch, createBoardSearch } from "./board-search.js";
-import { completeWithDexTools, type DexToolRequest } from "./dex-lookups.js";
+import { referenceTools, runStage, submissionTool } from "./stage-agent.js";
 import type { DraftBoardMon } from "./draft.js";
-import { draftBoardTable, isRejection } from "./draft.js";
+import { draftBoardTable } from "./draft.js";
 import { MEMORY_TOOL_NOTICE, memoryPageTool, renderMemory } from "./franchise-memory.js";
-import { type MechanicsToolAvailability, mechanicsToolNotice } from "./prompt-capabilities.js";
 import { renderPromptTemplate } from "./prompts.js";
-import type { ReasoningLevel } from "./providers.js";
-import {
-  classifyProviderFailure,
-  makeProvider,
-  parseSpec,
-  reasoningForModel,
-} from "./providers.js";
+import { reasoningForModel } from "./providers.js";
 import { ShowdownReference } from "./reference.js";
 import { renderRosterUsage, ROSTER_USAGE_HEADING } from "./roster-usage.js";
 import { commitRunArtifact, readRunArtifacts } from "./run-artifact-store.js";
@@ -32,7 +26,7 @@ import {
   commitRosterState,
   DEFAULT_TRADES_ALLOWED,
   describeWindowPosition,
-  FREE_AGENCY_AVAILABLE_MECHANICS_TOOLS,
+  freeAgencyReplySchema,
   ownerMap,
   parseTradeDecision,
   parseTradeOffer,
@@ -43,11 +37,12 @@ import {
   type RunTradeWindowOptions,
   rosterStateCopy,
   swapsRemaining,
-  TRADE_OFFER_AVAILABLE_MECHANICS_TOOLS,
   TRADE_OFFER_PROMPT_POLICY,
   TRADE_WINDOW_PROMPT_POLICY,
   type TradeOffer,
+  tradeOfferReplySchema,
   type TradePromptRenderOptions,
+  tradeResponseReplySchema,
   type TradeWindowArtifact,
   type TradeWindowDecision,
   type TradeWindowPosition,
@@ -55,20 +50,8 @@ import {
   validateLeagueRosterState,
   validateTradesAllowed,
 } from "./trade-window-protocol.js";
-import type { JsonObject, Provider, ProviderMessage } from "./types.js";
+import type { JsonObject } from "./types.js";
 import { fileSlug } from "./value.js";
-
-interface TradeSeatLog {
-  phase?: "offer" | "response" | "free_agency";
-  attempt: number;
-  system?: string;
-  user: string;
-  response: string;
-  reasoning?: string;
-  usage?: Record<string, number>;
-  tool_lookups?: { name: string; arguments: JsonObject; result: string }[];
-  error?: string;
-}
 
 function promptValues(state: TradeWindowState, entrant: number, position: TradeWindowPosition) {
   return [
@@ -84,24 +67,24 @@ function systemPrompt(
   state: TradeWindowState,
   entrant: number,
   position: TradeWindowPosition,
-  mechanicsTools: MechanicsToolAvailability = "available",
 ): string {
-  const rendered = renderPromptTemplate(TRADE_WINDOW_PROMPT_POLICY.systemTemplate, [
+  return renderPromptTemplate(TRADE_WINDOW_PROMPT_POLICY.systemTemplate, [
     ...promptValues(state, entrant, position),
     ["swapsAllowed", String(state.swapsAllowed)],
     ["swapsLeft", String(swapsRemaining(state, entrant))],
   ]);
-  return rendered.replace(
-    FREE_AGENCY_AVAILABLE_MECHANICS_TOOLS,
-    mechanicsToolNotice(mechanicsTools, FREE_AGENCY_AVAILABLE_MECHANICS_TOOLS),
-  );
 }
 
 function rosterLine(roster: readonly DraftBoardMon[]): string {
   return roster.map((mon) => `${mon.id} (${mon.cost})`).join(", ");
 }
 
-function seatDossier(state: TradeWindowState, entrant: number, psDir: string): string[] {
+function seatDossier(
+  state: TradeWindowState,
+  entrant: number,
+  psDir: string,
+  offers: readonly TradeOffer[] = [],
+): string[] {
   const owners = ownerMap(state);
   const available = state.board.mons.filter((mon) => !owners.has(mon.id));
   const lines: string[] = [TRADE_WINDOW_PROMPT_POLICY.standingsHeading];
@@ -147,6 +130,16 @@ function seatDossier(state: TradeWindowState, entrant: number, psDir: string): s
   );
   if (state.history.length)
     lines.push("", TRADE_WINDOW_PROMPT_POLICY.historyHeading, ...state.history);
+  if (offers.length)
+    lines.push(
+      "",
+      "RESOLVED OFFERS IN THIS WINDOW (submission validation is not counterparty acceptance):",
+      ...offers.map((offer) =>
+        offer.to === null
+          ? `- Entrant ${offer.from} made no further offer.`
+          : `- ${offer.accepted ? "ACCEPTED" : "REJECTED"} by entrant ${offer.to}: entrant ${offer.from} offered ${offer.give} for ${offer.get}. ${offer.accepted ? "The Pokémon were exchanged." : "The Pokémon were not exchanged."}`,
+      ),
+    );
   lines.push(
     "",
     draftBoardTable(state.board, psDir, available, TRADE_WINDOW_PROMPT_POLICY.freeAgentsHeading),
@@ -156,9 +149,14 @@ function seatDossier(state: TradeWindowState, entrant: number, psDir: string): s
   return lines;
 }
 
-function userPrompt(state: TradeWindowState, entrant: number, psDir: string): string {
+function userPrompt(
+  state: TradeWindowState,
+  entrant: number,
+  psDir: string,
+  offers: readonly TradeOffer[] = [],
+): string {
   return [
-    ...seatDossier(state, entrant, psDir),
+    ...seatDossier(state, entrant, psDir, offers),
     `Budget: ${state.board.budget - state.budgets[entrant]!}/${state.board.budget} spent; each drop refunds its listed price.`,
     "",
     ...TRADE_WINDOW_PROMPT_POLICY.replyTemplate,
@@ -170,37 +168,33 @@ function offerSystemPrompt(
   entrant: number,
   position: TradeWindowPosition,
   offer: { number: number; allowed: number },
-  mechanicsTools: MechanicsToolAvailability = "available",
 ): string {
-  const rendered = renderPromptTemplate(TRADE_OFFER_PROMPT_POLICY.systemTemplate, [
+  return renderPromptTemplate(TRADE_OFFER_PROMPT_POLICY.systemTemplate, [
     ...promptValues(state, entrant, position),
     ["offerNumber", String(offer.number)],
     ["offersAllowed", String(offer.allowed)],
   ]);
-  return rendered.replace(
-    TRADE_OFFER_AVAILABLE_MECHANICS_TOOLS,
-    mechanicsToolNotice(mechanicsTools, TRADE_OFFER_AVAILABLE_MECHANICS_TOOLS),
-  );
 }
 
 function responseSystemPrompt(
   state: TradeWindowState,
   entrant: number,
   position: TradeWindowPosition,
-  mechanicsTools: MechanicsToolAvailability = "available",
 ): string {
-  const rendered = renderPromptTemplate(
+  return renderPromptTemplate(
     TRADE_OFFER_PROMPT_POLICY.responseSystemTemplate,
     promptValues(state, entrant, position),
   );
-  return mechanicsTools === "available"
-    ? rendered
-    : `${rendered}\n\n${mechanicsToolNotice(mechanicsTools, TRADE_OFFER_AVAILABLE_MECHANICS_TOOLS)}`;
 }
 
-function offerUserPrompt(state: TradeWindowState, entrant: number, psDir: string): string {
+function offerUserPrompt(
+  state: TradeWindowState,
+  entrant: number,
+  psDir: string,
+  offers: readonly TradeOffer[] = [],
+): string {
   return [
-    ...seatDossier(state, entrant, psDir),
+    ...seatDossier(state, entrant, psDir, offers),
     `Budget: ${state.board.budget - state.budgets[entrant]!}/${state.board.budget} spent.`,
     "",
     ...TRADE_OFFER_PROMPT_POLICY.offerReplyTemplate,
@@ -212,6 +206,7 @@ function responseUserPrompt(
   offer: ParsedTradeOffer["offer"],
   from: number,
   psDir: string,
+  offers: readonly TradeOffer[],
 ): string {
   if (!offer) throw new Error("a null offer has no response prompt");
   const byId = new Map(state.board.mons.map((mon) => [mon.id, mon] as const));
@@ -220,7 +215,7 @@ function responseUserPrompt(
   const responder = offer.to;
   const nextSpent = state.board.budget - state.budgets[responder]! - received.cost + given.cost;
   return [
-    ...seatDossier(state, responder, psDir),
+    ...seatDossier(state, responder, psDir, offers),
     `Budget: ${state.board.budget - state.budgets[responder]!}/${state.board.budget} spent.`,
     "",
     "TRADE OFFER ON THE TABLE:",
@@ -248,7 +243,6 @@ export function renderTradeOfferPrompt(
       entrant,
       options.position ?? RENDER_POSITION,
       { number: 1, allowed: DEFAULT_TRADES_ALLOWED },
-      options.mechanicsTools ?? "available",
     ),
     "",
     offerUserPrompt(state, entrant, psDir),
@@ -263,113 +257,51 @@ export function renderFreeAgencyPrompt(
 ): string {
   validateLeagueRosterState(state);
   return [
-    systemPrompt(
-      state,
-      entrant,
-      options.position ?? RENDER_POSITION,
-      options.mechanicsTools ?? "available",
-    ),
+    systemPrompt(state, entrant, options.position ?? RENDER_POSITION),
     "",
     userPrompt(state, entrant, psDir),
   ].join("\n");
 }
 
-async function completeTradePhase<T extends object>(request: {
-  provider: Provider;
+type TradePhase = "offer" | "response" | "free_agency";
+
+const REPLY_SCHEMAS = {
+  offer: tradeOfferReplySchema,
+  response: tradeResponseReplySchema,
+  free_agency: freeAgencyReplySchema,
+} satisfies Record<TradePhase, z.ZodType>;
+
+async function completeTradePhase<T>(request: {
+  task: string;
   state: TradeWindowState;
   entrant: number;
   system: string;
   user: string;
-  phase: "offer" | "response" | "free_agency";
+  phase: TradePhase;
   seatLog: string;
   reference: ShowdownReference;
   boardSearch: BoardSearch;
   options: RunTradeWindowOptions;
-  policy: {
-    attempts: number;
-    maxTokens: number;
-    toolRounds: number;
-    truncatedTemplate: string;
-    rejectionTemplate: string;
-  };
-  cutoff: string;
-  parse: (response: string) => T | string;
-}): Promise<T | undefined> {
-  const messages: ProviderMessage[] = [{ role: "user", content: request.user }];
-  let parsed: T | undefined;
-  for (let attempt = 1; attempt <= request.policy.attempts && parsed === undefined; attempt += 1) {
-    const promptForAttempt = messages[messages.length - 1]!.content ?? "";
-    let response = "";
-    let usage: Record<string, number> | undefined;
-    let reasoningTrace: string | undefined;
-    let error: string | undefined;
-    let terminalError: Error | undefined;
-    const lookups: { name: string; arguments: JsonObject; result: string }[] = [];
-    try {
-      const completionRequest: DexToolRequest = {
-        provider: request.provider,
-        system: request.system,
-        messages,
-        spec: request.state.models[request.entrant]!,
-        reference: request.reference,
-        boardSearch: request.boardSearch,
-        extraTools: [memoryPageTool(() => request.state.memories[request.entrant]!)],
-        policy: request.policy,
-        onLookup: (call) => lookups.push(call),
-        signal: request.options.signal,
-      };
-      const completion = await completeWithDexTools(completionRequest);
-      response = completion.text;
-      usage = completion.usage;
-      reasoningTrace = completion.reasoning;
-      const candidate = request.parse(response || completion.reasoning || "");
-      if (isRejection(candidate)) {
-        error = completion.finishReason === "length" ? request.cutoff : candidate;
-        messages.push({
-          role: "assistant",
-          content: response || "[the reply contained no visible text]",
-        });
-        messages.push({
-          role: "user",
-          content:
-            completion.finishReason === "length"
-              ? request.policy.truncatedTemplate.replace(
-                  "{{budget}}",
-                  String(request.policy.maxTokens),
-                )
-              : request.policy.rejectionTemplate.replace("{{error}}", candidate),
-        });
-      } else {
-        parsed = candidate;
-      }
-    } catch (cause) {
-      const failure = classifyProviderFailure(cause, request.state.models[request.entrant]!);
-      error = failure.summary;
-      terminalError = new Error(`${failure.summary} The trade window cannot continue.`, { cause });
-    }
-    const seatEntry: TradeSeatLog =
-      attempt === 1
-        ? {
-            phase: request.phase,
-            attempt,
-            system: request.system,
-            user: promptForAttempt,
-            response,
-          }
-        : {
-            phase: request.phase,
-            attempt,
-            user: promptForAttempt,
-            response,
-          };
-    if (usage) seatEntry.usage = usage;
-    if (reasoningTrace) seatEntry.reasoning = reasoningTrace;
-    if (lookups.length) seatEntry.tool_lookups = lookups;
-    if (error) seatEntry.error = error;
-    fs.appendFileSync(request.seatLog, `${JSON.stringify(seatEntry)}\n`, "utf8");
-    if (terminalError) throw terminalError;
-  }
-  return parsed;
+  parse: (input: JsonObject) => T;
+}): Promise<T> {
+  const model = request.state.models[request.entrant]!;
+  const result = await runStage({
+    session: `window-${request.state.afterWeek}-${request.entrant}`,
+    task: request.task,
+    model,
+    reasoning: reasoningForModel(model, request.options),
+    system: request.system,
+    prompt: request.user,
+    tools: referenceTools(request.reference, request.boardSearch, [
+      memoryPageTool(() => request.state.memories[request.entrant]!),
+    ]),
+    submission: submissionTool(`submit_${request.phase}`, REPLY_SCHEMAS[request.phase]),
+    validate: request.parse,
+    runner: request.options.runAgent,
+    signal: request.options.signal,
+    logFile: request.seatLog,
+  });
+  return result.value;
 }
 
 export function transactionLogDir(runDir: string, afterWeek: number): string {
@@ -411,15 +343,6 @@ export async function runTradeWindow(
     });
   };
   fs.mkdirSync(logDir, { recursive: true });
-  const providers = liveState.models.map((model) => {
-    if (model === "random") return undefined;
-    const make =
-      options.makeTradeProvider ??
-      ((spec: string, apiKey: string | undefined, reasoning: ReasoningLevel | undefined) => {
-        return makeProvider(parseSpec(spec), { apiKey, reasoning });
-      });
-    return make(model, options.apiKeys?.[model], reasoningForModel(model, options));
-  });
   const reference = new ShowdownReference(liveState.board.format, options.psDir);
   const boardSearch = createBoardSearch(liveState.board, options.psDir);
   const seatLog = (entrant: number) =>
@@ -432,58 +355,47 @@ export async function runTradeWindow(
       if (prior.some((offer) => offer.to === null)) continue;
       let made = prior.length;
       while (made < tradesAllowed) {
-        const provider = providers[entrant];
         let parsed: ParsedTradeOffer | undefined;
-        let proposerFallback = false;
-        if (provider) {
+        if (liveState.models[entrant] !== "random") {
           const completed = await completeTradePhase({
-            provider,
+            task: `offer-${entrant}-${made + 1}`,
             state: liveState,
             entrant,
             system: offerSystemPrompt(liveState, entrant, windowPosition, {
               number: made + 1,
               allowed: tradesAllowed,
             }),
-            user: offerUserPrompt(liveState, entrant, options.psDir),
+            user: offerUserPrompt(liveState, entrant, options.psDir, offers),
             phase: "offer",
             seatLog: seatLog(entrant),
             reference,
             boardSearch,
             options,
-            policy: TRADE_OFFER_PROMPT_POLICY,
-            cutoff: "the reply was cut off before completing the trade reply",
-            parse: (response) => parseTradeOffer(response, liveState, entrant),
+            parse: (input) => parseTradeOffer(input, liveState, entrant),
           });
-          proposerFallback = completed === undefined;
           parsed = completed;
         }
         parsed ??= { offer: null, reasoning: "" };
         let response: ParsedTradeResponse | undefined;
-        let responderFallback: boolean | null = null;
         let offerOutcome: TradeWindowState | null = null;
         if (parsed.offer) {
           const responder = parsed.offer.to;
-          const responseProvider = providers[responder];
-          if (responseProvider) {
+          if (liveState.models[responder] !== "random") {
             const completed = await completeTradePhase({
-              provider: responseProvider,
+              task: `response-${entrant}-${made + 1}`,
               state: liveState,
               entrant: responder,
               system: responseSystemPrompt(liveState, responder, windowPosition),
-              user: responseUserPrompt(liveState, parsed.offer, entrant, options.psDir),
+              user: responseUserPrompt(liveState, parsed.offer, entrant, options.psDir, offers),
               phase: "response",
               seatLog: seatLog(responder),
               reference,
               boardSearch,
               options,
-              policy: TRADE_OFFER_PROMPT_POLICY,
-              cutoff: "the reply was cut off before completing the trade reply",
               parse: parseTradeResponse,
             });
-            responderFallback = completed === undefined;
-            response = completed ?? { accept: false, reasoning: "" };
+            response = completed;
           } else {
-            responderFallback = false;
             response = { accept: false, reasoning: "" };
           }
           offerOutcome = applyTradeOffer(liveState, {
@@ -502,8 +414,6 @@ export async function runTradeWindow(
           get: parsed.offer?.get ?? null,
           message: parsed.offer?.message ?? null,
           accepted: response?.accept ?? null,
-          proposerFallback,
-          responderFallback,
           offerReasoning: parsed.reasoning,
           responseReasoning: response?.reasoning ?? "",
         };
@@ -519,30 +429,23 @@ export async function runTradeWindow(
   for (const [position, entrant] of order.entries()) {
     if (position < decisions.length) continue;
     options.signal?.throwIfAborted();
-    const provider = providers[entrant];
     let parsed: ParsedTradeDecision | undefined;
-    let fallback = false;
-    if (provider) {
+    if (liveState.models[entrant] !== "random") {
       parsed = await completeTradePhase({
-        provider,
+        task: `free-agency-${entrant}`,
         state: liveState,
         entrant,
         system: systemPrompt(liveState, entrant, windowPosition),
-        user: userPrompt(liveState, entrant, options.psDir),
+        user: userPrompt(liveState, entrant, options.psDir, offers),
         phase: "free_agency",
         seatLog: seatLog(entrant),
         reference,
         boardSearch,
         options,
-        policy: TRADE_WINDOW_PROMPT_POLICY,
-        cutoff: "the reply was cut off before completing the transaction list",
-        parse: (response) => parseTradeDecision(response, liveState, entrant),
+        parse: (input) => parseTradeDecision(input, liveState, entrant),
       });
     }
-    if (!parsed) {
-      parsed = { swaps: [], reasoning: "" };
-      fallback = Boolean(provider);
-    }
+    parsed ??= { swaps: [], reasoning: "" };
     const nextState = applyFreeAgency(liveState, entrant, parsed.swaps);
     validateLeagueRosterState(nextState, `roster after live free agency for entrant ${entrant}`);
     const decision: TradeWindowDecision = {
@@ -550,7 +453,6 @@ export async function runTradeWindow(
       model: liveState.models[entrant]!,
       swaps: parsed.swaps,
       reasoning: parsed.reasoning,
-      fallback,
     };
     commitEvent({ kind: "free_agency", ...decision });
     commitRosterState(liveState, nextState);

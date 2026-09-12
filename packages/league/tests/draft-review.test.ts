@@ -9,20 +9,15 @@ import { runDraftLeague } from "../src/draftleague.js";
 import { readFranchiseCheckpoints, readFranchiseRosterVersion } from "../src/league-journal.js";
 import { defaultPsDir } from "../src/paths.js";
 import { loadRosterPreset, presetRosters } from "../src/roster-preset.js";
-import { readRunArtifacts } from "../src/run-artifact-store.js";
-import {
-  parseSeasonReview,
-  runSeasonReview,
-  type SeasonReviewState,
-} from "../src/season-review.js";
+import { commitRunArtifact, readRunArtifacts } from "../src/run-artifact-store.js";
+import { runSeasonReview, type SeasonReviewState } from "../src/season-review.js";
 import {
   describeTransactionHistory,
   readTradeWindowArtifact,
   renderFreeAgencyPrompt,
   renderTradeOfferPrompt,
 } from "../src/trade-window.js";
-import type { Completion, ProviderMessage } from "../src/types.js";
-import { accepted, rejection } from "./asserts.js";
+import { agentReply, scriptedAgent } from "./agent-test-helpers.js";
 import {
   assertFormatAuthority,
   BOARD,
@@ -76,14 +71,8 @@ test("season reviews are written once per coach and replayed on resume", async (
     board: BOARD,
     models,
     picks: [
-      {
-        pick: 0,
-        entrant: 0,
-        mon: mon("charizard-mega-y").id,
-        rationale: "Sun opener.",
-        fallback: false,
-      },
-      { pick: 1, entrant: 1, mon: mon("tyranitar").id, rationale: "Sand anchor.", fallback: false },
+      { pick: 0, entrant: 0, mon: mon("charizard-mega-y").id, rationale: "Sun opener." },
+      { pick: 1, entrant: 1, mon: mon("tyranitar").id, rationale: "Sand anchor." },
     ],
     rosters: [[mon("charizard-mega-y")], [mon("tyranitar")]],
     windows: [
@@ -93,13 +82,12 @@ test("season reviews are written once per coach and replayed on resume", async (
         swaps_used: [1, 0],
         offers: [],
         decisions: [
-          { entrant: 1, model: models[1]!, swaps: [], reasoning: "Kept it.", fallback: false },
+          { entrant: 1, model: models[1]!, swaps: [], reasoning: "Kept it." },
           {
             entrant: 0,
             model: models[0]!,
             swaps: [{ drop: mon("venusaur").id, add: mon("absol").id }],
             reasoning: "Traded up.",
-            fallback: false,
           },
         ],
         rosters: [],
@@ -115,46 +103,36 @@ test("season reviews are written once per coach and replayed on resume", async (
     ],
     notebooks: ["champion plan", "eliminated plan"],
   };
-  const prompts = new Map<string, string>();
-  const reply = JSON.stringify({
+  const reply = {
     summary: "It went as the record says.",
     did_well: "The draft covered rain.",
     did_poorly: "The mega slot was idle.",
     would_change: "Buy the backup mega.",
-  });
-  const reviewOptions = {
-    runDir: directory,
-    psDir: defaultPsDir(),
-    makeReviewProvider: (spec: string) => ({
-      complete(system: string, messages: ProviderMessage[]): Promise<Completion> {
-        prompts.set(spec, `${system}\n${messages[0]?.content ?? ""}`);
-        return Promise.resolve({ text: reply, usage: {}, toolCalls: [] });
-      },
-    }),
   };
-  const initial = await runSeasonReview(
-    [{ entrant: 1, outcome: "You missed the playoffs." }],
-    state,
-    reviewOptions,
-  );
+  const scripted = scriptedAgent([
+    { summary: "a", did_well: "b", did_poorly: "c", would_change: "  " },
+    { summary: "a", did_well: "b", did_poorly: "c" },
+    { ...reply, extra: 1 },
+    reply,
+  ]);
+  const reviewOptions = { runDir: directory, psDir: defaultPsDir(), runAgent: scripted.run };
+  const eliminated = { entrant: 1, outcome: "You missed the playoffs." };
+  const champion = { entrant: 0, outcome: "You won the final." };
+  const initial = await runSeasonReview([eliminated], state, reviewOptions);
   assert.deepEqual(
     initial.map((review) => review.entrant),
     [1],
   );
-  const reviews = await runSeasonReview(
-    [
-      { entrant: 1, outcome: "You missed the playoffs." },
-      { entrant: 0, outcome: "You won the final." },
-    ],
-    state,
-    reviewOptions,
-  );
-
+  assert.equal(scripted.rejections.length, 2, "blank and missing fields are rejected");
+  const reviews = await runSeasonReview([eliminated, champion], state, reviewOptions);
   assert.deepEqual(
     reviews.map((review) => review.entrant),
     [1, 0],
   );
-  assert.ok(reviews.every((review) => !review.fallback));
+  assert.deepEqual(reviews[1], { ...champion, model: models[0], ...reply });
+  const prompts = new Map(
+    scripted.calls.map((task) => [task.model, `${task.system}\n${task.prompt}`] as const),
+  );
   assert.match(prompts.get(models[0]!) ?? "", /Traded up\./);
   assertFormatAuthority(prompts.get(models[0]!) ?? "");
   assertFormatAuthority(prompts.get(models[1]!) ?? "");
@@ -164,17 +142,27 @@ test("season reviews are written once per coach and replayed on resume", async (
   assert.match(prompts.get(models[1]!) ?? "", /Sand anchor\./);
   assert.equal(readRunArtifacts(directory, "season-review").length, 2);
 
-  const replayed = await runSeasonReview([{ entrant: 0, outcome: "You won the final." }], state, {
-    runDir: directory,
-    psDir: defaultPsDir(),
-    makeReviewProvider: () => ({
-      complete(): Promise<Completion> {
-        throw new Error("a replayed season review must not call a provider");
-      },
-    }),
-  });
+  const replayOptions = { ...reviewOptions, runAgent: scriptedAgent([]).run };
+  const replayed = await runSeasonReview([champion], state, replayOptions);
   const byEntrant = (rows: typeof reviews) => [...rows].sort((a, b) => a.entrant - b.entrant);
   assert.deepEqual(byEntrant(replayed), byEntrant(reviews));
+  await assert.rejects(
+    runSeasonReview([{ ...champion, outcome: "You lost the final." }], state, replayOptions),
+    /expected test:champion \(You lost the final\.\)/,
+  );
+  await assert.rejects(
+    runSeasonReview([champion], { ...state, models: ["test:other", models[1]!] }, replayOptions),
+    /expected test:other/,
+  );
+  commitRunArtifact(directory, "season-review", "000002", {
+    ...reviews[1],
+    entrant: 2,
+    timestamp: "2026-01-01T00:00:00.000Z",
+  });
+  await assert.rejects(
+    runSeasonReview([champion], state, replayOptions),
+    /entrant 2, who is not in this league/,
+  );
 
   const started: number[] = [];
   let releaseFirst: (() => void) | undefined;
@@ -194,15 +182,13 @@ test("season reviews are written once per coach and replayed on resume", async (
     {
       runDir: fs.mkdtempSync(path.join(os.tmpdir(), "vgc-season-review-parallel-")),
       psDir: defaultPsDir(),
-      makeReviewProvider: (spec) => ({
-        async complete(): Promise<Completion> {
-          const entrant = models.indexOf(spec);
-          started.push(entrant);
-          if (started.length === 1) await bothStarted;
-          else releaseFirst?.();
-          return { text: reply, usage: {}, toolCalls: [] };
-        },
-      }),
+      runAgent: async (task) => {
+        const entrant = models.indexOf(task.model);
+        started.push(entrant);
+        if (started.length === 1) await bothStarted;
+        else releaseFirst?.();
+        return agentReply(task, reply);
+      },
     },
   );
   assert.deepEqual(
@@ -210,24 +196,7 @@ test("season reviews are written once per coach and replayed on resume", async (
     [0, 1],
     "reviews return in the order the seats finished their seasons, whatever order they answer in",
   );
-  assert.ok(
-    concurrent.every((review) => !review.fallback),
-    "both seats were in flight at once",
-  );
-});
-
-test("a season review must fill every field", () => {
-  rejection(parseSeasonReview("no json here"));
-  rejection(
-    parseSeasonReview(
-      JSON.stringify({ summary: "a", did_well: "b", did_poorly: "c", would_change: "  " }),
-    ),
-  );
-  accepted(
-    parseSeasonReview(
-      JSON.stringify({ summary: "a", did_well: "b", did_poorly: "c", would_change: "d", extra: 1 }),
-    ),
-  );
+  assert.equal(started.length, 2, "both seats were in flight at once");
 });
 
 test("search_board filters the board by price, type, ability, and legal movepool", () => {
@@ -259,6 +228,7 @@ test("search_board filters the board by price, type, ability, and legal movepool
 
   const dual = ids(search.run({ types: ["Fire", "Flying"], limit: 100 }));
   assert.ok(dual.includes("charizard-mega-y"), "both listed types must match");
+  assert.ok(dual.includes("charizard-mega-x"), "the base form's typing also matches");
   assert.ok(!dual.includes("incineroar"), "a Fire/Dark entry does not match Fire/Flying");
 
   assert.match(search.run({ learns: "Nonexistent Move" }), /No move data/);
@@ -322,8 +292,6 @@ test("window prompts name their place in the schedule and the public moves of ea
                 get: "b",
                 message: "swap?",
                 accepted: true,
-                proposerFallback: false,
-                responderFallback: false,
                 offerReasoning: "",
                 responseReasoning: "",
               },
@@ -334,7 +302,6 @@ test("window prompts name their place in the schedule and the public moves of ea
                 model: "random",
                 swaps: [{ drop: "c", add: "d" }],
                 reasoning: "",
-                fallback: false,
               },
             ],
             rosters: [],
@@ -506,12 +473,50 @@ test("a roster preset is refused when it breaks the board rules", () => {
   assert.throws(() => presetRosters(unknown, board, 4), /does not hold/);
 });
 
-test("Mega board rows carry the base forme price and base rows do not", () => {
+test("Mega board rows expose both forms, the locked stone, and the separate base price", () => {
   const search = createBoardSearch(BOARD, defaultPsDir());
-  const rows = search.run({ limit: 1000 }).split("\n").slice(1);
+  const rows = search.run({ ability: "Prankster", max_cost: 11 }).split("\n").slice(1);
   const row = (id: string) => rows.find((line) => line.startsWith(`- ${id} |`))!;
-  const base = mon("charizard");
-  assert.match(row("charizard-mega-y"), new RegExp(`\\| base Charizard costs ${base.cost}$`));
-  assert.ok(!/\| base /.test(row("charizard")), "a base row names no base price");
-  assert.ok(draftBoardTable(BOARD, defaultPsDir()).includes(`| base Charizard costs ${base.cost}`));
+  const sableye = row("sableye-mega");
+  assert.match(sableye, /sableye-mega \| 9 \|/);
+  assert.match(
+    sableye,
+    /base Sableye: Dark\/Ghost \| 50\/75\/75\/65\/65\/50 \| Keen Eye\/Stall\/Prankster/,
+  );
+  assert.match(
+    sableye,
+    /Mega Sableye-Mega: Dark\/Ghost \| 50\/85\/125\/85\/115\/20 \| Magic Bounce/,
+  );
+  assert.match(sableye, /locked item: Sablenite \| base Sableye costs 11 \| matches: Sableye$/);
+  assert.doesNotMatch(row("sableye"), /\| base |locked item/);
+  const board = draftBoardTable(BOARD, defaultPsDir());
+  assert.ok(board.includes(sableye.split(" | matches:")[0]!));
+  assert.match(
+    search.run({ ability: "Flower Veil" }),
+    /^- floette-mega .*base Floette-Eternal:.*Flower Veil.*Fairy Aura.*matches: Floette-Eternal$/m,
+  );
+  assert.match(
+    search.run({ ability: "Prankster" }),
+    /^- meowstic-m-mega .*Prankster.*Trace.*matches: Meowstic$/m,
+  );
+});
+
+test("Mega search filters and BST sorting use a single matching form", () => {
+  const search = createBoardSearch(BOARD, defaultPsDir());
+  assert.match(
+    search.run({ ability: "Intimidate", types: ["Flying"], learns: "Waterfall" }),
+    /^- gyarados-mega .*matches: Gyarados$/m,
+  );
+  assert.doesNotMatch(search.run({ ability: "Intimidate", types: ["Dark"] }), /^- gyarados-mega /m);
+  assert.doesNotMatch(search.run({ ability: "Intimidate", min_bst: 600 }), /^- gyarados-mega /m);
+  assert.match(
+    search.run({ ability: "Mold Breaker", min_bst: 600 }),
+    /^- gyarados-mega .*matches: Gyarados-Mega$/m,
+  );
+  const pair = createBoardSearch(
+    { ...BOARD, mons: [mon("gyarados-mega"), mon("dragonite")] },
+    defaultPsDir(),
+  );
+  assert.match(pair.run({ types: ["Flying"], sort: "bst" }), /:\n- dragonite \|/);
+  assert.match(pair.run({ sort: "bst" }), /:\n- gyarados-mega \|/);
 });

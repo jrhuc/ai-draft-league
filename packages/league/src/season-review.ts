@@ -3,23 +3,18 @@ import path from "node:path";
 
 import { z } from "zod";
 
-import { completeWithDexTools } from "./dex-lookups.js";
+import type { AgentRunner } from "./agent-runtime.js";
+import { referenceTools, runStage, submissionTool } from "./stage-agent.js";
 import type { DraftBoard, DraftBoardMon } from "./draft.js";
 import type { DraftPickView, DraftTableRow } from "./views.js";
 import { commitRunArtifact, readRunArtifacts } from "./run-artifact-store.js";
 import { FORMAT_AUTHORITY_NOTICE, MANAGER_CHARGE, renderPromptTemplate } from "./prompts.js";
-import type { ModelReasoningConfig, ReasoningLevel } from "./providers.js";
-import {
-  classifyProviderFailure,
-  makeProvider,
-  parseSpec,
-  reasoningForModel,
-} from "./providers.js";
+import { reasoningForModel, type ModelReasoningConfig } from "./providers.js";
 import { ShowdownReference } from "./reference.js";
 import { mapLimit } from "./series.js";
 import type { TradeWindowArtifact } from "./trade-window.js";
-import type { JsonObject, Provider, ProviderMessage } from "./types.js";
-import { clip, fileSlug, isText, replyJsonObject } from "./value.js";
+import type { JsonObject } from "./types.js";
+import { fileSlug } from "./value.js";
 
 const SEASON_REVIEW_PROMPT_POLICY = {
   systemTemplate: [
@@ -45,15 +40,9 @@ const SEASON_REVIEW_PROMPT_POLICY = {
   seasonHeading: "YOUR SERIES, IN ORDER:",
   wordsHeading: "YOUR PRIVATE WORDS:",
   replyTemplate: [
-    'Reply with one JSON object {"summary":"<1-2 sentences on how the season went>","did_well":"<2-4 sentences>","did_poorly":"<2-4 sentences>","would_change":"<2-4 sentences, each one concrete>"}.',
+    'Call submit_review with {"summary":"<1-2 sentences on how the season went>","did_well":"<2-4 sentences>","did_poorly":"<2-4 sentences>","would_change":"<2-4 sentences, each one concrete>"}.',
   ],
-  rejectionTemplate: "That review was rejected: {{error}} Reply again with only the JSON object.",
-  truncatedTemplate:
-    "Your previous reply used the whole {{budget}}-token budget before completing the JSON object. Reply now with only the JSON object.",
   fieldLimit: 2_000,
-  maxTokens: 32_768,
-  attempts: 3,
-  toolRounds: 6,
 } as const;
 
 export interface SeasonReview {
@@ -64,7 +53,6 @@ export interface SeasonReview {
   did_well: string;
   did_poorly: string;
   would_change: string;
-  fallback: boolean;
 }
 
 export interface SeasonReviewState {
@@ -83,59 +71,38 @@ export interface RunSeasonReviewOptions extends ModelReasoningConfig {
   psDir: string;
   concurrency?: number;
   signal?: AbortSignal;
-  apiKeys?: Readonly<Record<string, string>>;
-  makeReviewProvider?: (
-    spec: string,
-    apiKey: string | undefined,
-    reasoning: ReasoningLevel | undefined,
-  ) => Provider;
+  runAgent: AgentRunner;
   onReview?: (review: SeasonReview) => void;
 }
 
-interface ParsedSeasonReview {
-  summary: string;
-  did_well: string;
-  did_poorly: string;
-  would_change: string;
-}
+const reviewField = (description: string) =>
+  z
+    .string()
+    .trim()
+    .min(1, "every review field must be non-empty")
+    .max(
+      SEASON_REVIEW_PROMPT_POLICY.fieldLimit,
+      `a review field exceeds ${SEASON_REVIEW_PROMPT_POLICY.fieldLimit} characters`,
+    )
+    .describe(description);
 
-type ParsedSeasonReviewResult = { value: ParsedSeasonReview } | { error: string };
-
-interface SeasonSeatLog {
-  attempt: number;
-  system?: string;
-  user: string;
-  response: string;
-  reasoning?: string;
-  usage?: Record<string, number>;
-  tool_lookups?: { name: string; arguments: JsonObject; result: string }[];
-  error?: string;
-}
-
-const reviewField = z
-  .string()
-  .trim()
-  .min(1)
-  .transform((value) => clip(value, SEASON_REVIEW_PROMPT_POLICY.fieldLimit));
-const seasonReviewReplySchema = z.looseObject({
-  summary: reviewField,
-  did_well: reviewField,
-  did_poorly: reviewField,
-  would_change: reviewField,
+export const seasonReviewReplySchema = z.object({
+  summary: reviewField("One or two sentences on how the season went."),
+  did_well: reviewField(
+    "Two to four sentences on what you got right, naming specific picks, moves, and games.",
+  ),
+  did_poorly: reviewField(
+    "Two to four sentences on what went wrong, naming specific picks, moves, and games.",
+  ),
+  would_change: reviewField("Two to four sentences, each a concrete change you would make."),
 });
 
-function parseSeasonReviewResult(response: string): ParsedSeasonReviewResult {
-  const json = replyJsonObject(response);
-  if (isText(json)) return { error: json };
-  const parsed = seasonReviewReplySchema.safeParse(json);
-  if (!parsed.success)
-    return { error: `"${String(parsed.error.issues[0]?.path[0])}" must be a non-empty string` };
-  return { value: parsed.data };
-}
+type ParsedSeasonReview = z.infer<typeof seasonReviewReplySchema>;
 
-export function parseSeasonReview(response: string): ParsedSeasonReview | string {
-  const result = parseSeasonReviewResult(response);
-  return "error" in result ? result.error : result.value;
+export function parseSeasonReview(input: JsonObject): ParsedSeasonReview {
+  const reply = seasonReviewReplySchema.safeParse(input);
+  if (!reply.success) throw new Error(z.prettifyError(reply.error));
+  return reply.data;
 }
 
 function systemPrompt(state: SeasonReviewState, entrant: number): string {
@@ -168,7 +135,7 @@ function userPrompt(state: SeasonReviewState, entrant: number, outcome: string):
   for (const pick of own) {
     const mon = byId.get(pick.mon);
     lines.push(
-      `- Pick ${pick.pick}: ${mon?.name ?? pick.mon} (${mon?.cost ?? "?"} pts)${pick.fallback ? " [fallback pick]" : ""} — ${pick.rationale || "(no stored reasoning)"}`,
+      `- Pick ${pick.pick}: ${mon?.name ?? pick.mon} (${mon?.cost ?? "?"} pts) — ${pick.rationale || "(no stored reasoning)"}`,
     );
   }
 
@@ -246,27 +213,42 @@ function userPrompt(state: SeasonReviewState, entrant: number, outcome: string):
   return lines.join("\n");
 }
 
-/** Reviews already written are replayed rather than re-bought, so a resumed league never pays twice for a
- * retrospective whose season is already closed. */
-const seasonReviewRowSchema = z
-  .object({
-    timestamp: z.string().optional(),
-    entrant: z.number().int().nonnegative(),
-    model: z.string(),
-    outcome: z.string(),
-    summary: z.string(),
-    did_well: z.string(),
-    did_poorly: z.string(),
-    would_change: z.string(),
-    fallback: z.boolean(),
-  })
-  .passthrough();
+const seasonReviewRowSchema = z.strictObject({
+  timestamp: z.string(),
+  entrant: z.number().int().nonnegative(),
+  model: z.string(),
+  outcome: z.string(),
+  summary: z.string(),
+  did_well: z.string(),
+  did_poorly: z.string(),
+  would_change: z.string(),
+});
 
-function replayReviews(runDir: string): SeasonReview[] {
+/** Reviews already written are replayed rather than re-bought, so a resumed league never pays twice for a
+ * retrospective whose season is already closed. Seasons close in waves, so a stored row may belong to an
+ * entrant outside this wave; a row for an entrant in it must record the same outcome. */
+function replayReviews(
+  runDir: string,
+  finished: ReadonlyArray<{ entrant: number; outcome: string }>,
+  models: readonly string[],
+): SeasonReview[] {
   return readRunArtifacts(runDir, "season-review").map(({ key, value }) => {
     const parsed = seasonReviewRowSchema.safeParse(value);
-    if (!parsed.success) throw new Error(`invalid season review artifact ${key}`);
+    if (!parsed.success)
+      throw new Error(`invalid season review artifact ${key}: ${z.prettifyError(parsed.error)}`);
     const { timestamp: _timestamp, ...review } = parsed.data;
+    const model = models[review.entrant];
+    if (model === undefined) {
+      throw new Error(
+        `season review artifact ${key} names entrant ${review.entrant}, who is not in this league`,
+      );
+    }
+    const expected = finished.find((entry) => entry.entrant === review.entrant)?.outcome;
+    if (review.model !== model || (expected !== undefined && review.outcome !== expected)) {
+      throw new Error(
+        `season review artifact ${key} records ${review.model} (${review.outcome}), expected ${model} (${expected ?? review.outcome})`,
+      );
+    }
     return review;
   });
 }
@@ -277,7 +259,7 @@ export async function runSeasonReview(
   options: RunSeasonReviewOptions,
 ): Promise<SeasonReview[]> {
   const logDir = path.join(options.runDir, "season");
-  const reviews = replayReviews(options.runDir);
+  const reviews = replayReviews(options.runDir, finished, state.models);
   const pending = finished.filter(
     (entry) => !reviews.some((review) => review.entrant === entry.entrant),
   );
@@ -293,106 +275,31 @@ export async function runSeasonReview(
       const { entrant, outcome } = entry;
       signal.throwIfAborted();
       const model = state.models[entrant]!;
-      const make =
-        options.makeReviewProvider ??
-        ((spec: string, apiKey: string | undefined, reasoning: ReasoningLevel | undefined) =>
-          makeProvider(parseSpec(spec), { apiKey, reasoning }));
-      const provider =
-        model === "random"
-          ? undefined
-          : make(model, options.apiKeys?.[model], reasoningForModel(model, options));
       let parsed: ParsedSeasonReview | undefined;
-      let fallback = false;
-      let lastError = "";
       const system = systemPrompt(state, entrant);
-      if (provider) {
-        const messages: ProviderMessage[] = [
-          { role: "user", content: userPrompt(state, entrant, outcome) },
-        ];
+      if (model !== "random") {
         const seatLog = path.join(logDir, `seat-${entrant}-${fileSlug(model)}.jsonl`);
-        for (
-          let attempt = 1;
-          attempt <= SEASON_REVIEW_PROMPT_POLICY.attempts && !parsed;
-          attempt += 1
-        ) {
-          const promptForAttempt = messages[messages.length - 1]!.content ?? "";
-          let response = "";
-          let usage: Record<string, number> | undefined;
-          let reasoningTrace: string | undefined;
-          let error: string | undefined;
-          let terminalError: Error | undefined;
-          const lookups: { name: string; arguments: JsonObject; result: string }[] = [];
-          try {
-            const completion = await completeWithDexTools({
-              provider,
-              system,
-              messages,
-              spec: model,
-              reference,
-              policy: SEASON_REVIEW_PROMPT_POLICY,
-              signal,
-              onLookup: (call) => lookups.push(call),
-            });
-            response = completion.text;
-            usage = completion.usage;
-            reasoningTrace = completion.reasoning;
-            const candidate = parseSeasonReviewResult(response || completion.reasoning || "");
-            if ("error" in candidate) {
-              error =
-                completion.finishReason === "length"
-                  ? "the reply was cut off before completing the review"
-                  : candidate.error;
-              lastError = error;
-              messages.push({
-                role: "assistant",
-                content: response || "[the reply contained no visible text]",
-              });
-              messages.push({
-                role: "user",
-                content:
-                  completion.finishReason === "length"
-                    ? SEASON_REVIEW_PROMPT_POLICY.truncatedTemplate.replace(
-                        "{{budget}}",
-                        String(SEASON_REVIEW_PROMPT_POLICY.maxTokens),
-                      )
-                    : SEASON_REVIEW_PROMPT_POLICY.rejectionTemplate.replace(
-                        "{{error}}",
-                        candidate.error,
-                      ),
-              });
-            } else {
-              parsed = candidate.value;
-            }
-          } catch (cause) {
-            const failure = classifyProviderFailure(cause, model);
-            error = failure.summary;
-            lastError = error;
-            terminalError = new Error(`${failure.summary} The season review cannot continue.`, {
-              cause,
-            });
-          }
-          const completeLogRow = {
-            attempt,
-            system: attempt === 1 ? system : undefined,
-            user: promptForAttempt,
-            response,
-            usage,
-            reasoning: reasoningTrace,
-            tool_lookups: lookups.length ? lookups : undefined,
-            error: error || undefined,
-          } satisfies SeasonSeatLog;
-          fs.appendFileSync(seatLog, `${JSON.stringify(completeLogRow)}\n`, "utf8");
-          if (terminalError) throw terminalError;
-        }
+        const result = await runStage({
+          session: `season-review-${entrant}`,
+          task: `season-review-${entrant}`,
+          model,
+          reasoning: reasoningForModel(model, options),
+          system,
+          prompt: userPrompt(state, entrant, outcome),
+          tools: referenceTools(reference),
+          submission: submissionTool("submit_review", seasonReviewReplySchema),
+          validate: parseSeasonReview,
+          runner: options.runAgent,
+          logFile: seatLog,
+          signal,
+        });
+        parsed = result.value;
       }
       if (!parsed) {
-        const reason = provider
-          ? `no review was recorded after ${SEASON_REVIEW_PROMPT_POLICY.attempts} rejected replies (${lastError})`
-          : "the random baseline files no review";
+        const reason = "the random baseline files no review";
         parsed = { summary: reason, did_well: reason, did_poorly: reason, would_change: reason };
-        fallback = Boolean(provider);
       }
-      const review: SeasonReview = { entrant, model, outcome, ...parsed, fallback };
+      const review: SeasonReview = { entrant, model, outcome, ...parsed };
       const row = { ...review, timestamp: new Date().toISOString() };
       commitRunArtifact(options.runDir, "season-review", String(entrant).padStart(6, "0"), row);
       options.onReview?.(review);

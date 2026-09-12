@@ -4,22 +4,24 @@ Run these commands from `packages/league` after completing the [local setup](../
 
 ## Configure a provider
 
-Use one of these model specification prefixes:
+Use `<OpenCode-provider-id>:<model-id>`, or `random` for the baseline. Common providers are:
 
-| Prefix          | Environment variable |
-| --------------- | -------------------- |
-| `openrouter:`   | `OPENROUTER_API_KEY` |
-| `prime:`        | `PRIME_API_KEY`      |
-| `gateway:`      | `AI_GATEWAY_API_KEY` |
-| `opencode-go:`  | `OPENCODE_API_KEY`   |
-| `opencode-zen:` | `OPENCODE_API_KEY`   |
-| `random`        | None                 |
+| Prefix         | Provider             | Environment variable |
+| -------------- | -------------------- | -------------------- |
+| `opencode:`    | OpenCode Zen         | `OPENCODE_API_KEY`   |
+| `opencode-go:` | OpenCode Go          | `OPENCODE_API_KEY`   |
+| `openrouter:`  | OpenRouter           | `OPENROUTER_API_KEY` |
+| `random`       | Seeded random engine | None                 |
 
-Model specifications never accept a base URL.
+Any other provider in the OpenCode catalog works with its own environment key; the catalog only lists providers whose key is present.
 
-For OpenRouter, `--nitro` changes the requested model specification. `VGC_OPENROUTER_PIN=provider_name` supplies upstream routing metadata without changing persisted run identity.
+OpenCode owns the provider catalog, credentials, and routing. Additional provider configuration belongs in `<run-dir>/agents/opencode.json`, using the [OpenCode V2 provider schema](https://opencode.ai/v2/docs/providers). The embedded host excludes project configuration and uses only league tools. Its native databases stay in the private run directory.
 
-Reasoning levels support `minimal`, `low`, `medium`, `high`, or `xhigh` where the provider accepts them. Provider adapters own infrastructure retries and error classification. Draft, review, transaction, and build stages retry only answers that fail their response contract.
+The SDK and plugin use matching, exactly pinned `dev` builds. OpenCode packages are exempt from pnpm's release-age delay so upgrades can use newly published model APIs.
+
+Use OpenCode provider settings for custom endpoints. OpenRouter requests set `allow_fallbacks: false`. Set `VGC_OPENROUTER_PIN` to one upstream provider name to restore an explicit pin, for example `VGC_OPENROUTER_PIN=Anthropic`. Comma-separated pins are rejected. Keep the same routing policy when resuming a session. Claude system prompts carry an ephemeral cache hint through the native protocol.
+
+`--reasoning` selects a variant from the chosen OpenCode model. Omitting it uses the model's default. Unavailable models or variants fail before model dispatch. OpenCode owns infrastructure retries and native tool correction. A reply that ends without an accepted submission gets two reminders to call its submission tool; the stage fails only after those.
 
 ## Choose a run mode
 
@@ -27,7 +29,7 @@ Reasoning levels support `minimal`, `low`, `medium`, `high`, or `xhigh` where th
 pnpm run vgcleague selfcheck
 pnpm run vgcleague rotation --models model_spec_a model_spec_b --pool regmb-202607 --series-per-pair 4
 pnpm run vgcleague tournament --models model_spec_a model_spec_b model_spec_c model_spec_d --pool regmb-202607
-pnpm run vgcleague draft --models model_spec_a model_spec_b model_spec_c model_spec_d --board regmb-202607
+pnpm run vgcleague draft --models model_spec_a model_spec_b model_spec_c model_spec_d --board regmc-202609
 pnpm run vgcleague exhibition --opponent model_spec
 ```
 
@@ -40,6 +42,12 @@ pnpm run vgcleague exhibition --opponent model_spec
 
 All experiment modes accept `--seed`. Rotation, tournament, and draft accept `--concurrency` and `--timer-scale value`. Battles are untimed by default. Use `--timer-scale 1` for the standard VGC clock or a value from 0.5 through 4 to scale it.
 
+Add `--progress` to any run command to print one JSON line per agent update on stderr: the private session and task, the model, its current activity (`starting`, `generating`, `reasoning`, `tool` with the tool name, `retry`, `compacting`, `ended`), and the session's cost and token usage once known. Updates omit prompt, reasoning, and tool-input text. Programmatic runs receive the same updates through `onAgentProgress`. The optional Showdown clock disables infrastructure retries during decisions; untimed stages retain OpenCode's retry policy.
+
+For a live spectator screen, run `pnpm dev` from the repository root, open `/live`, and choose **Watch live**. The screen shows active agent tasks, reasoning/tool/retry/compaction activity, conversation usage, and an animated Showdown battle. Switch between concurrent series, or uncheck **Follow live** to pause and rewind. Public battle updates arrive over SSE; reconnecting restores the current state. Live snapshots are written automatically, including without `--progress`.
+
+The **Season pages** link opens the same run's draft, standings, and completed replays. These refresh on league transitions. `vgcleague monitor` remains the completed-evidence audit for decision integrity and mechanics.
+
 ## Resume a tournament
 
 ```sh
@@ -48,11 +56,13 @@ pnpm run vgcleague tournament --resume run_directory
 
 A seeded event pool preserves bracket positions while shuffling models across teams. `--provenance disclosed` names the event without exposing finishing order to competitive prompts; `blind` removes event context. Competitive prompts omit player names.
 
-Resume validates entrants, teams, seed, provenance, reasoning, timer, draw, and completed evidence. It replays eligible decisions without provider calls, then continues or restarts the unfinished game. Stop the previous owner before resuming, and never resume one run concurrently.
+Resume validates entrants, teams, seed, provenance, reasoning, timer, draw, and completed evidence. Untimed games replay accepted native submissions from the seed without inference, validating the original inputs, then continue the unfinished conversation. Timed games restart the unresolved game with a new conversation because the elapsed clock and timer substitutions are not checkpointed. Resolved games and their completed reviews are retained. Stop the previous owner before resuming, and never resume one run concurrently.
+
+Native conversations share `<run-dir>/agents/opencode.sqlite`.
 
 ## Run or resume a draft league
 
-A draft assigns 10 roster entries within 100 points to each franchise, then builds 6 complete sets for every matchup. Each week is completed and reviewed before the next week's builds begin.
+A draft defaults to the `regmc-202609` [Regulation M-C board](regulation-mc.md), assigns 10 roster entries within 100 points to each franchise, then builds 6 complete sets for every matchup. Each week is completed and reviewed before the next week's builds begin.
 
 ```sh
 pnpm run vgcleague draft --models model_spec_a model_spec_b --draft-only
@@ -84,7 +94,7 @@ pnpm run build-event-pool -- teams/pool_name/sources.json
 pnpm run build-board
 ```
 
-The pinned simulator validates imported teams. The current board builder uses its fixed Regulation MB cost source.
+The pinned simulator validates imported teams. The board builder writes `regmc-202609`: prior costs and M-B usage adjustments carry forward, with explicitly provisional prices for the M-C additions. Historical event pools retain their original regulation and provenance.
 
 ## Inspect evidence
 
@@ -105,7 +115,7 @@ pnpm run vgcleague monitor run_id
 pnpm run vgcleague monitor run_id --json
 ```
 
-The monitor reads `league.sqlite` and the decision, trace, and game files of every completed series. It reports per-seat decision integrity (fallback, substitution, and parse-failure rates, tool queries, latency, tokens), a mechanics audit that replays every `estimate_damage` and `compare_action_order` result against what the simulator then did (wrong KO calls, damage outside the predicted range, inverted action order, with forme changes in the same turn marked), the share of draft reasons that name another coach or the season ahead, per-entry roster usage by week and opponent, entries never registered while owned, and how many board Pokémon each memory barrier names, carries, or drops. Findings are evidence to inspect, not verdicts.
+The monitor reads `league.sqlite` and the decision, trace, and game files of every completed series. It reports per-seat decision integrity (substitution and parse-failure rates, tool queries, latency, tokens), a mechanics audit that replays every `estimate_damage` and `compare_action_order` result against what the simulator then did (wrong KO calls, damage outside the predicted range, inverted action order, with forme changes in the same turn marked), the share of draft reasons that name another coach or the season ahead, per-entry roster usage by week and opponent, entries never registered while owned, and how many board Pokémon each memory barrier names, carries, or drops. Findings are evidence to inspect, not verdicts.
 
 ## Archive and publish
 

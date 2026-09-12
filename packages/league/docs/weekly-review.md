@@ -47,7 +47,7 @@ Every reply field is optional. Omitted memory fields stay unchanged; omitted rea
 
 ## Persist private and public evidence
 
-Weekly reviews and reconciliations commit to `league.sqlite` as franchise memory checkpoints. Per-seat transcripts under `reviews/week-{week_number}/` and `reviews/week-{week_number}-transactions/` retain response attempts and tool calls.
+Weekly reviews and reconciliations commit to `league.sqlite` as franchise memory checkpoints. Per-seat stage logs under `reviews/week-{week_number}/` and `reviews/week-{week_number}-transactions/` hold one JSONL row per stage: attempt count, prompts and response, usage, tool lookups, and the OpenCode session and message ids.
 
 Completed rows replay without provider calls. Resume rejects mismatched identity, roster versions, or barrier order.
 

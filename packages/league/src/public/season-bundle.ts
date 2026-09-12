@@ -65,7 +65,6 @@ function replayReleasedRosters(
         acquired: "draft" as const,
         overallPick: slot.pick,
         rationale: slot.rationale,
-        fallback: slot.fallback,
       })),
     ]),
   );
@@ -91,13 +90,11 @@ function replayReleasedRosters(
         ...received,
         acquired: "trade",
         rationale: offer.offerReasoning,
-        fallback: false,
       };
       to[getIndex] = {
         ...given,
         acquired: "trade",
         rationale: offer.responseReasoning,
-        fallback: false,
       };
     }
     for (const decision of window.decisions) {
@@ -122,7 +119,6 @@ function replayReleasedRosters(
           acquired: "free-agency",
           overallPick: null,
           rationale: decision.reasoning,
-          fallback: decision.fallback,
         };
       }
     }
@@ -256,7 +252,6 @@ export function buildPublicSeasonBundle(
             action: decision.action,
             selection: [...decision.selection],
             rationale: decision.rationale,
-            fallback: decision.fallback,
             automatic: decision.automatic,
             latencyMs: decision.latencyMs,
             reasoningTokens: decision.reasoningTokens,
@@ -267,7 +262,6 @@ export function buildPublicSeasonBundle(
             result: reflection.result,
             summary: reflection.summary,
             adjustment: reflection.adjustment,
-            fallback: reflection.fallback,
           })),
         };
       }),
@@ -413,14 +407,13 @@ export function buildPublicSeasonBundle(
       swaps: decision.swaps.map(({ drop, add }) => ({ drop, add })),
       swapsRemaining: decision.swapsRemaining,
       reasoning: decision.reasoning,
-      fallback: decision.fallback,
     })),
   }));
   const weeklyReviews: PublicSeasonBundle["weeklyReviews"] = league.weeklyReviews
     .filter(
       (review) =>
         review.week <= releasedThroughWeek &&
-        (review.reasoning.trim().length > 0 || review.memoryCharacters > 0 || review.fallback),
+        (review.reasoning.trim().length > 0 || review.memoryCharacters > 0),
     )
     .map((review) => ({
       week: review.week,
@@ -430,7 +423,6 @@ export function buildPublicSeasonBundle(
       reasoning: review.reasoning,
       memoryPages: review.memoryPages,
       memoryCharacters: review.memoryCharacters,
-      fallback: review.fallback,
     }));
   const releasedRosters = replayReleasedRosters(league.franchises, releasedWindows, options.board);
 
@@ -466,7 +458,6 @@ export function buildPublicSeasonBundle(
           franchiseId: franchiseId(franchise.entrant),
           pokemon: { id: slot.id, name: slot.name, spriteId: slot.spriteId, cost: slot.cost },
           rationale: slot.rationale,
-          fallback: slot.fallback,
         })),
     )
     .sort((a, b) => a.overall - b.overall);
@@ -543,7 +534,6 @@ export function buildPublicSeasonBundle(
           didWell: review.didWell,
           didPoorly: review.didPoorly,
           wouldChange: review.wouldChange,
-          fallback: review.fallback,
         }))
       : [],
   });

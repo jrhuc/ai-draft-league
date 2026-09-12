@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { test } from "vite-plus/test";
+import { readSubmissionTraces } from "../src/decision-traces.js";
+import { readCompletedSeriesDecisionRows } from "../src/recorded-series.js";
 import { auditGame, observeGame, readPredictions } from "../src/monitor-mechanics.js";
 import type { JsonObject } from "../src/types.js";
+import { text } from "../src/value.js";
+import { storeCompletedSeriesFixture } from "./series-store-fixture.js";
 
 const LOG = [
   "|switch|p1a: Garchomp|Garchomp, L50, M|185/185",
@@ -220,4 +227,57 @@ test("auditGame reports falsified KO calls, out-of-range hits, and inverted orde
     /Moonblast/,
     "a KO on a target chipped below the range is not a finding",
   );
+});
+
+test("mechanics counts only canonical submissions after native decision recovery", (t) => {
+  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "league-mechanics-"));
+  t.onTestFinished(() => fs.rmSync(runDir, { recursive: true, force: true }));
+  const seriesDir = path.join(runDir, "series", "recovered");
+  fs.mkdirSync(seriesDir, { recursive: true });
+  const logPath = path.join(seriesDir, "game-1.log");
+  fs.writeFileSync(logPath, LOG.join("\n"));
+  storeCompletedSeriesFixture(runDir, "recovered", [
+    { number: 1, logPath, winner: "fixture:p1", winnerSide: "p1" },
+  ]);
+  const calls = [
+    damage(
+      "Garchomp",
+      "Pikachu",
+      "Earthquake",
+      "120-180%",
+      "OHKO at both evaluated endpoints.",
+      "spread (0.75x)",
+    ),
+    order("Garchomp", "Pikachu", ["Earthquake", "Fake Out"]),
+  ];
+  const submissions = ["interrupted", "canonical"].map((attempt) => ({
+    ...trace("p1", 1, calls),
+    attempt_id: attempt,
+    submission_id: `${attempt}:1`,
+    session_id: "native-session",
+    message_id: "native-message",
+    prompt: "Choose",
+    raw_response: "{}",
+    reasoning: "",
+    latency_ms: 104490,
+    usage: {},
+  }));
+  fs.writeFileSync(
+    path.join(seriesDir, "p1-trace.jsonl"),
+    submissions.map((row) => JSON.stringify(row)).join("\n"),
+  );
+  fs.writeFileSync(
+    path.join(seriesDir, "p1-decisions.jsonl"),
+    submissions.map((row) => JSON.stringify({ ...row, kind: "decision" })).join("\n"),
+  );
+  const rows = readCompletedSeriesDecisionRows(runDir, "recovered", "p1");
+  const traces = readSubmissionTraces(
+    seriesDir,
+    "p1",
+    new Set(rows.map((row) => text(row.submission_id))),
+  );
+  const audit = auditGame(1, LOG, { p1: [...traces.values()], p2: [] });
+  assert.equal(audit.damagePredictions, 1);
+  assert.equal(audit.orderPredictions, 1);
+  assert.equal(traces.get("canonical:1")?.latency_ms, 104490);
 });

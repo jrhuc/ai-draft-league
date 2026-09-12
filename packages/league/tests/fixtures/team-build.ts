@@ -56,8 +56,8 @@ const LEGAL_TEAM_SETS = [
   },
 ];
 
-export function legalTeamResponse(teamPlan: string): string {
-  return JSON.stringify({ team_plan: teamPlan, sets: LEGAL_TEAM_SETS });
+export function legalTeamReply(teamPlan: string) {
+  return structuredClone({ team_plan: teamPlan, sets: LEGAL_TEAM_SETS });
 }
 
 export const LEGAL_TEAM_IDS = [
@@ -68,7 +68,7 @@ export const LEGAL_TEAM_IDS = [
   "whimsicott",
   "charizard-mega-y",
 ];
-const BOARD = loadBoard("regmb-202607");
+const BOARD = loadBoard("regmc-202609");
 const CANDIDATES = LEGAL_TEAM_IDS.map((id) => {
   const candidate = BOARD.mons.find((entry) => entry.id === id);
   if (!candidate) throw new Error(`board is missing ${id}`);
@@ -90,7 +90,6 @@ export function leagueTeamBuildJournalRow(options: {
       model: "openai:alpha",
       format: BOARD.format,
       sheetPolicy: options.sheetPolicy ?? "open",
-      executionPolicy: "strict",
       constraint: { kind: "draft-picks", id: "alpha-roster", teamSize: 6, candidates: CANDIDATES },
       objective: {
         kind: "matchup",
@@ -101,14 +100,10 @@ export function leagueTeamBuildJournalRow(options: {
       notebook: options.notebook,
       provenance: { source: "draft-league", seriesIndex: 0, entrant: 0, opponent: 1 },
     };
-    const result = validateTeamBuildSubmission(task, legalTeamResponse(options.teamPlan), {
+    artifact = validateTeamBuildSubmission(task, legalTeamReply(options.teamPlan), {
       attempts: options.attempts,
       createdAt: "2026-07-20T09:00:00.000Z",
     });
-    if (result.status !== "accepted") {
-      throw new Error(`league team-build fixture was rejected: ${result.problems.join("; ")}`);
-    }
-    artifact = result.artifact;
     artifactCache.set(cacheKey, artifact);
   }
   return { artifact: structuredClone(artifact) };

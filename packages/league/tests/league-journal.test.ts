@@ -49,7 +49,6 @@ function checkpoint(
     rosterVersion,
     memory: { notebook },
     reasoning: "",
-    fallback: false,
   });
 }
 
@@ -139,7 +138,6 @@ test("franchise memory checkpoints are queryable barriers and cannot be rewritte
     rosterVersion: 1,
     memory: { notebook: "week two", rain: "speed notes" },
     reasoning: "retained the useful matchup facts",
-    fallback: false,
   };
   storeFranchiseCheckpoint(runDir, stored);
   storeFranchiseCheckpoint(runDir, stored);

@@ -1,59 +1,46 @@
 import type { AgentContextEvent, AgentContextQuery } from "./agent-context.js";
-import type {
-  ChoiceSubstitution,
-  DecisionLog,
-  GameAdaptationTask,
-  GameEnd,
-  GameStart,
+import type { AgentRunner, AgentResult, AgentTask } from "./agent-runtime.js";
+import {
+  BaseEngine,
+  type ChoiceSubstitution,
+  type DecisionLog,
+  type GameAdaptationTask,
+  type GameEnd,
+  type GameStart,
 } from "./battle-agent.js";
-import { BaseEngine } from "./battle-agent.js";
 import {
   createBattleMemory,
   type BattleMemory,
   memoryTelemetry,
   memoryUpdateTelemetry,
   nextOpponentMemory,
-  rememberVerifiedReference,
   renderNotebook,
   serializeBattleMemory,
 } from "./battle-memory.js";
+import { summarizeBattleEvents } from "./battle-transcript.js";
 import type { MenuHints, SlotMenu } from "./choices.js";
-import { buildMenus } from "./choices.js";
-import { DecisionSession, type DecisionSessionResult } from "./decision-session.js";
 import { LLMEngineContext } from "./llm-engine-context.js";
 import { battleMenuHints } from "./llm-engine-menu.js";
-import { reflectionPrompt, requestReflection } from "./llm-engine-reflection.js";
+import { reflectionPrompt } from "./llm-engine-reflection.js";
 import { LLMEngineStats } from "./llm-engine-stats.js";
 import {
   ACTION_ORDER_TOOL,
-  ASSUMED_TOKENS_PER_SECOND,
-  BANK_HEALTHY_SECONDS,
-  BANK_LOW_SECONDS,
-  DECISION_MAX_TOOL_ROUNDS,
-  DECISION_PARSE_ATTEMPTS,
-  DECISION_PREFILL,
+  BATTLE_HISTORY_TOOL,
   decisionPhase,
-  decisionRequestDigest,
-  decisionTokenBudget,
+  decisionSchema,
   decisionTools,
-  extractChoices,
-  FORCE_COMMIT_MS,
-  FORCE_COMMIT_TURN_FRACTION,
+  parseDecision,
+  parseReflection,
+  parseTournamentRetrospective,
   noDecisionEvidence,
   type ParsedDecision,
-  type PendingDecision,
   reasoningField,
+  reflectionSchema,
   reflectionTools,
-  REFLECTION_MAX_TOKENS,
-  replayDecisionSchema,
+  retrospectiveSchema,
   totalTokens,
-  type DecisionPhase,
-  UNTIMED_DECISION_PARSE_ATTEMPTS,
-  UNTIMED_EMPTY_RESPONSE_RETRIES,
-  UNTIMED_MAX_TOOL_ROUNDS,
-  updatedPace,
+  type Reflection,
 } from "./llm-engine-support.js";
-import { BattleTranscript } from "./llm-engine-transcript.js";
 import {
   battleSystemPrompt,
   CLOSED_SERIES_REFLECTION_SYSTEM,
@@ -62,42 +49,26 @@ import {
   renderDecision,
   SERIES_REFLECTION_SYSTEM,
   type SheetPolicy,
-  SYSTEM,
   TOURNAMENT_REFLECTION_SYSTEM,
   TOURNAMENT_RETROSPECTIVE_SYSTEM,
 } from "./prompts.js";
 import type { ReasoningLevel } from "./providers.js";
-import { classifyProviderFailure, makeProvider, parseSpec } from "./providers.js";
 import { ShowdownReference } from "./reference.js";
 import { PerspectiveState } from "./perspective-state.js";
-import { ToolRound, type ToolQueryResult } from "./tool-batch.js";
-import { cachedToolLookup } from "./tool-cache.js";
+import { submissionTool } from "./stage-agent.js";
 import type {
   ActionSubmission,
   AgentContext,
   BattleRequest,
-  CompleteOptions,
-  Completion,
   JsonObject,
   Pid,
-  Provider,
-  ProviderMessage,
   SubmissionSource,
   ToolDefinition,
 } from "./types.js";
 import { text } from "./value.js";
 
-/** Thrown when a decision was superseded or yielded to the battle timer; the stale act() must not commit. */
-class DecisionAbandonedError extends Error {
-  constructor() {
-    super("decision abandoned");
-    this.name = "DecisionAbandonedError";
-  }
-}
-
 interface LLMEngineOptions {
-  provider?: Provider;
-  apiKey?: string;
+  runAgent: AgentRunner;
   decisionLog?: DecisionLog;
   traceLog?: DecisionLog;
   contextLog?: DecisionLog;
@@ -113,59 +84,49 @@ interface LLMEngineOptions {
   closedSheets?: boolean;
 }
 
-export { DECISION_MAX_TOKENS_CEILING, REFLECTION_MAX_TOKENS } from "./llm-engine-support.js";
+interface PendingDecision {
+  generation: number;
+  prompt?: string;
+  result?: AgentResult<ParsedDecision>;
+}
 
 export class LLMEngine extends BaseEngine {
-  provider: Provider;
   readonly reference: ShowdownReference;
   private state: PerspectiveState;
   private readonly context: LLMEngineContext;
-  private readonly transcript: BattleTranscript;
   private readonly stats = new LLMEngineStats();
-  private readonly referenceLookup = cachedToolLookup((name, args) =>
-    this.reference.lookup(name, args),
-  );
   private memory: BattleMemory;
   private gameId: string;
   private seriesId?: string;
   private gameNumber = 1;
   private seriesScore = { p1: 0, p2: 0 };
-  private observedTokensPerSecond: number | undefined;
   private loggedMemoryState = "";
   private pending: PendingDecision | undefined;
-  private replayQueue: JsonObject[] = [];
   private generation = 0;
   private decisionController: AbortController | undefined;
   private activeToolRequest: BattleRequest | undefined;
   private readonly sheets: SheetPolicy;
-  private readonly decisionTools: ToolDefinition[];
-  private readonly reflectionTools: ToolDefinition[];
+  private readonly tools: ToolDefinition[];
+  private observations: string[] = [];
+  private firstDecision = true;
+  private decisionSequence = 0;
+  private abandonedTask: string | undefined;
+  private activeRun: Promise<unknown> | undefined;
 
   constructor(
     pid: Pid,
     readonly spec: string,
-    private readonly options: LLMEngineOptions = {},
+    private readonly options: LLMEngineOptions,
   ) {
     super(pid, options.decisionLog);
-    this.transcript = new BattleTranscript(pid);
     this.sheets = options.closedSheets === true ? "closed" : "open";
-    this.decisionTools = decisionTools(this.sheets);
-    this.reflectionTools = reflectionTools();
-    if (options.provider) this.provider = options.provider;
-    else {
-      this.provider = makeProvider(parseSpec(spec), {
-        apiKey: options.apiKey,
-        reasoning: options.reasoning,
-      });
-    }
+    this.tools = decisionTools(this.sheets);
     this.reference =
       options.reference ??
-      new ShowdownReference(options.format ?? "gen9championsvgc2026regmbbo3", options.psDir);
-    this.memory = createBattleMemory(
-      options.initialNotebook,
-      `${this.reference.format}@${this.reference.revision}`,
-    );
+      new ShowdownReference(options.format ?? "gen9championsvgc2026regmcbo3", options.psDir);
+    this.memory = createBattleMemory(options.initialNotebook);
     this.state = new PerspectiveState(pid);
+    this.gameId = spec;
     this.context = new LLMEngineContext(
       pid,
       options.initialContext,
@@ -177,23 +138,20 @@ export class LLMEngine extends BaseEngine {
       }),
       (row) => this.writeLog(this.options.contextLog, row),
     );
-    this.gameId = spec;
   }
 
   override beginGame(context: GameStart): void {
     super.beginGame(context);
-    this.decisionController?.abort(new Error("game changed"));
-    this.decisionController = undefined;
+    this.abandonDecision();
     this.gameId = context.gameId;
     this.gameNumber = context.gameNumber;
     this.seriesId = context.seriesId;
     this.seriesScore = { ...(context.seriesScore ?? this.seriesScore) };
     this.state = new PerspectiveState(this.pid);
-    this.pending = undefined;
-    this.transcript.reset();
-    this.transcript.remember(
-      `[Game ${context.gameNumber} begins; series score ${this.scoreText()}]`,
-    );
+    this.observations = [];
+    this.firstDecision = true;
+    this.decisionSequence = 0;
+    this.abandonedTask = undefined;
     this.context.append("episode", {
       event: "game_begin",
       game_id: this.gameId,
@@ -206,7 +164,6 @@ export class LLMEngine extends BaseEngine {
   override coachingNote(): string {
     return renderNotebook(this.memory);
   }
-
   override coachingState(): string {
     return serializeBattleMemory(this.memory);
   }
@@ -214,11 +171,7 @@ export class LLMEngine extends BaseEngine {
   override prepareGameEnd(context: GameEnd): GameAdaptationTask {
     this.seriesScore = { ...(context.seriesScore ?? this.seriesScore) };
     const winner = text(context.outcome.winner, "tie") || "tie";
-    const won = context.outcome.won === true;
-    const result = winner === "tie" ? "tied" : won ? "won" : "lost";
-    this.transcript.remember(
-      `[Game ${context.gameNumber} ended; you ${result}; series score ${this.scoreText()}]`,
-    );
+    const result = winner === "tie" ? "tied" : context.outcome.won === true ? "won" : "lost";
     this.context.append("episode", {
       event: "game_end",
       game_id: this.gameId,
@@ -227,12 +180,137 @@ export class LLMEngine extends BaseEngine {
       result,
       series_score: this.seriesScore,
     });
-    return this.prepareReflection(context, result);
+    const mine = this.seriesScore[this.pid];
+    const theirs = this.seriesScore[this.pid === "p1" ? "p2" : "p1"];
+    const retrospective =
+      context.tournamentStatus === "eliminated" || context.tournamentStatus === "champion";
+    const system =
+      this.options.draftRoster !== undefined
+        ? context.seriesOver
+          ? DRAFT_SERIES_REFLECTION_SYSTEM
+          : REFLECTION_SYSTEM
+        : retrospective
+          ? TOURNAMENT_RETROSPECTIVE_SYSTEM
+          : context.tournamentStatus === "advancing"
+            ? SERIES_REFLECTION_SYSTEM
+            : context.tournamentStatus === "active"
+              ? TOURNAMENT_REFLECTION_SYSTEM
+              : context.seriesOver
+                ? CLOSED_SERIES_REFLECTION_SYSTEM
+                : REFLECTION_SYSTEM;
+    return {
+      kind: "reflection",
+      supersedes: this.abandonedTask ?? null,
+      game_id: this.gameId,
+      series_id: this.seriesId ?? null,
+      game_number: context.gameNumber,
+      result,
+      series_over: context.seriesOver,
+      retrospective,
+      opponent_scope_reset: context.tournamentStatus === "advancing",
+      system: this.briefed(system),
+      memory_state: this.coachingState(),
+      prompt: reflectionPrompt({
+        seriesId: this.seriesId,
+        gameNumber: context.gameNumber,
+        result,
+        scoreText: this.scoreText(),
+        seriesOver: context.seriesOver,
+        seriesResult: mine > theirs ? "won" : mine < theirs ? "lost" : "drew",
+        score: { mine, theirs },
+        pid: this.pid,
+        draftRoster: context.seriesOver ? this.options.draftRoster : undefined,
+        outcome: context.outcome,
+        finalState: this.state.renderReview(),
+        gameLog: Array.isArray(context.outcome.pov_lines)
+          ? context.outcome.pov_lines.filter((line): line is string => typeof line === "string")
+          : [],
+        memory: this.memory,
+        tournamentStatus: context.tournamentStatus,
+        retrospective,
+      }),
+    };
   }
 
   override async completeGameEnd(task: GameAdaptationTask): Promise<string> {
-    await this.reflect(task);
-    return this.coachingState();
+    if (task.kind !== "reflection") throw new Error(`unknown adaptation ${task.kind}`);
+    const gameId = text(task.game_id);
+    const gameNumber = Number(task.game_number);
+    const prompt = text(task.prompt);
+    const system = text(task.system);
+    if (!gameId || !Number.isInteger(gameNumber) || gameNumber < 1 || !prompt || !system)
+      throw new Error("invalid stored game adaptation task");
+    this.memory = createBattleMemory(task.memory_state);
+    const retrospective = task.retrospective === true;
+    const result = await this.run<Reflection>({
+      session: this.sessionKey(gameId),
+      task: "reflection",
+      supersedes: task.supersedes === null ? undefined : text(task.supersedes),
+      system,
+      prompt,
+      tools: reflectionTools().map((definition) => ({
+        definition,
+        run: (input: JsonObject) => this.lookupReferenceTool(definition.name, input),
+      })),
+      submission: submissionTool(
+        "submit_review",
+        retrospective ? retrospectiveSchema : reflectionSchema,
+      ),
+      validate: (input) =>
+        retrospective
+          ? parseTournamentRetrospective(input, this.memory)
+          : parseReflection(input, this.memory),
+    });
+    const review = result.value;
+    this.stats.reflection(result.usage);
+    this.memory =
+      task.opponent_scope_reset === true ? nextOpponentMemory(review.memory) : review.memory;
+    const memoryState = this.coachingState();
+    this.loggedMemoryState = memoryState;
+    const fieldsRecorded = review.retrospective
+      ? {
+          did_well: review.retrospective.didWell,
+          did_poorly: review.retrospective.didPoorly,
+          would_change: review.retrospective.wouldChange,
+        }
+      : {};
+    const evidence = {
+      game_id: gameId,
+      series_id: task.series_id ?? null,
+      game_number: gameNumber,
+      pid: this.pid,
+      result: task.result,
+      series_over: task.series_over,
+      summary: review.summary,
+      adjustment: review.adjustment,
+      ...fieldsRecorded,
+      notebook: renderNotebook(this.memory),
+      memory: memoryTelemetry(this.memory),
+      memory_update: memoryUpdateTelemetry(review.memoryUpdate),
+      memory_repair_attempts: result.attempts - 1,
+      opponent_scope_reset: task.opponent_scope_reset,
+      session_id: result.sessionID,
+      message_id: result.messageID,
+    };
+    this.context.append("reflection", evidence);
+    this.writeLog(this.options.decisionLog, {
+      kind: "game_reflection",
+      ...evidence,
+      memory_state: memoryState,
+      total_tokens: totalTokens(result.usage),
+      ...reasoningField(result.usage),
+      cost: result.usage.cost,
+    });
+    this.writeLog(this.options.traceLog, {
+      kind: "reflection_trace",
+      ...evidence,
+      prompt,
+      raw_response: result.response,
+      reasoning: result.reasoning,
+      usage: result.usage,
+      tool_calls: result.tools,
+    });
+    return memoryState;
   }
 
   override async endGame(context: GameEnd): Promise<void> {
@@ -240,145 +318,61 @@ export class LLMEngine extends BaseEngine {
   }
 
   override observe(lines: string[]): void {
-    if (!lines.length) return;
     this.state.feed(lines);
-    this.transcript.rememberEvents(lines);
+    this.observations.push(...lines);
     this.context.observe(lines);
   }
 
   override abandonDecision(): void {
+    super.abandonDecision();
+    if (this.decisionController && this.decisionSequence)
+      this.abandonedTask = `decision-${this.decisionSequence}`;
     this.decisionController?.abort(new Error("decision abandoned"));
     this.decisionController = undefined;
     this.generation += 1;
     this.pending = undefined;
   }
 
-  /** Recorded decisions from an interrupted game, replayed against the re-simulated battle so a
-   * resumed run fast-forwards to where it stopped at zero provider cost. Rows must be this
-   * engine's in-flight-game decision rows in file order. */
-  primeReplay(rows: JsonObject[]): void {
-    this.replayQueue = [...rows];
-  }
-
-  private requestDigest(request: BattleRequest, menus: SlotMenu[], phase: DecisionPhase): string {
-    return decisionRequestDigest({
-      pid: this.pid,
-      seriesId: this.seriesId,
-      gameId: this.gameId,
-      gameNumber: this.gameNumber,
-      turn: this.state.turn,
-      phase,
-      request,
-      menus,
-    });
-  }
-
-  private replayAction(request: BattleRequest): string | undefined {
-    const rawRow = this.replayQueue.shift();
-    if (!rawRow) return undefined;
-    const parsedRow = replayDecisionSchema.safeParse(rawRow);
-    const phase = decisionPhase(request);
-    const menus = buildMenus(request, this.menuHints(request));
-    const requestDigest = this.requestDigest(request, menus, phase);
-    if (!parsedRow.success) {
-      this.replayQueue = [];
-      return undefined;
-    }
-    const row = parsedRow.data;
-    if (
-      row.request_digest !== requestDigest ||
-      row.pid !== this.pid ||
-      row.series_id !== (this.seriesId ?? null) ||
-      row.game_id !== this.gameId ||
-      row.game_number !== this.gameNumber ||
-      row.turn !== this.state.turn ||
-      row.phase !== phase
-    ) {
-      /** The live battle diverged from the recording, so the recording is no longer the truth;
-       * the rest of the game is decided live. */
-      this.replayQueue = [];
-      return undefined;
-    }
-    if (row.memory_state !== undefined) {
-      this.memory = createBattleMemory(row.memory_state, this.memory.authority);
-      this.loggedMemoryState = serializeBattleMemory(this.memory);
-    }
-    this.transcript.rememberTurnDetail(`Decision: ${row.action}`);
-    this.context.append("decision", {
-      game_id: this.gameId,
-      series_id: this.seriesId ?? null,
-      game_number: this.gameNumber,
-      turn: this.state.turn,
-      phase,
-      action: row.action,
-      rationale: row.rationale ?? "",
-      notebook: renderNotebook(this.memory),
-      memory: memoryTelemetry(this.memory),
-      menus: this.context.menus(menus),
-      replayed: true,
-    });
-    this.restoreSubmission({
-      submissionId: row.submission_id,
-      choice: row.action,
-      source: row.submission_source,
-    });
-    return row.action;
-  }
-
   readContext(query: AgentContextQuery = {}) {
     return this.context.read(query);
   }
-
   decisionToolDefinitions(): ToolDefinition[] {
-    return structuredClone(this.decisionTools);
+    return structuredClone(this.tools);
   }
 
-  lookupDecisionTool(name: string, args: JsonObject): string {
+  lookupDecisionTool(name: string, input: JsonObject): string {
     if (!this.activeToolRequest)
       throw new Error("battle tools are available only during an active decision");
-    return new ToolRound(
-      this.decisionTools,
-      (tool, input) => this.lookupDecisionQuery(tool, input),
-      () => {},
-      this.options.signal,
-    ).run(name, args);
+    if (!this.tools.some((tool) => tool.name === name))
+      throw new Error(`unknown battle tool ${name}`);
+    if (name === ACTION_ORDER_TOOL.name)
+      return this.state.compareActionOrder(input, this.reference);
+    if (name === "estimate_damage")
+      return this.state.estimateDamage(input, this.activeToolRequest, this.reference);
+    return this.lookupReferenceTool(name, input);
   }
 
-  private lookupDecisionQuery(name: string, args: JsonObject): string {
-    const request = this.activeToolRequest;
-    if (!request) throw new Error("battle tools are available only during an active decision");
-    if (name === ACTION_ORDER_TOOL.name) return this.state.compareActionOrder(args, this.reference);
-    if (name === "estimate_damage") return this.state.estimateDamage(args, request, this.reference);
-    return this.lookupReferenceTool(name, args);
-  }
-
-  private lookupReferenceTool(name: string, args: JsonObject): string {
-    const result = this.referenceLookup(name, args);
-    this.memory = rememberVerifiedReference(this.memory, name, args, result);
-    return result;
+  private lookupReferenceTool(name: string, input: JsonObject): string {
+    return name === BATTLE_HISTORY_TOOL.name
+      ? this.context.readHistory(input)
+      : this.reference.lookup(name, input);
   }
 
   override async act(request: BattleRequest, context: AgentContext): Promise<string> {
-    const events = context.povLines;
-    this.state.feed(events);
-    this.transcript.rememberEvents(events);
-    this.context.observe(events);
+    this.observe(context.povLines);
     this.context.request(request);
-    const replayed = this.replayAction(request);
-    if (replayed !== undefined) return replayed;
     this.activeToolRequest = request;
     const generation = this.generation;
     const controller = new AbortController();
     this.decisionController?.abort(new Error("new decision started"));
     this.decisionController = controller;
-    this.pending = { rawResponse: "", generation };
-    if (request.timer) this.pending.timer = request.timer;
+    this.pending = { generation };
     try {
       const choice = await super.act(request, context);
       return generation === this.generation ? choice : "";
-    } catch (caught) {
-      if (caught instanceof DecisionAbandonedError) return "";
-      throw caught;
+    } catch (error) {
+      if (generation !== this.generation) return "";
+      throw error;
     } finally {
       if (this.decisionController === controller) this.decisionController = undefined;
       if (this.activeToolRequest === request) this.activeToolRequest = undefined;
@@ -390,346 +384,91 @@ export class LLMEngine extends BaseEngine {
     request: BattleRequest,
     context: AgentContext,
   ): Promise<number[]> {
-    const started = performance.now();
-    const turnSeconds = request.timer?.turnSeconds;
-    const deadline = turnSeconds === undefined ? undefined : started + 1000 * turnSeconds;
-    const forceCommitMs =
-      turnSeconds === undefined
-        ? FORCE_COMMIT_MS
-        : Math.max(FORCE_COMMIT_MS, turnSeconds * 1000 * FORCE_COMMIT_TURN_FRACTION);
-    const remainingMs = () =>
-      deadline === undefined ? Number.POSITIVE_INFINITY : deadline - performance.now();
-    const tokenFloor =
-      this.options.reasoning === "high" ? 8192 : this.options.reasoning === "xhigh" ? 16_384 : 0;
-    const pace = () => this.observedTokensPerSecond ?? ASSUMED_TOKENS_PER_SECOND;
-    let maxTokens = Math.max(tokenFloor, decisionTokenBudget(remainingMs(), pace()));
-    let truncatedBudget = 0;
-    let earlyLengthStop: { outputTokens: number; requestedMaxTokens: number } | undefined;
     const generation = this.generation;
-    const decisionSignal = this.decisionController?.signal;
-    const renderedState = this.state.render(request, (mon) => this.reference.describeCompact(mon));
+    const rendered = this.state.render(request, (mon) => this.reference.describeCompact(mon));
     const speed = request.teamPreview ? "" : this.state.renderEffectiveSpeeds(this.reference);
-    const state = speed ? `${renderedState}\n${speed}` : renderedState;
     const sides = this.state.activeMatchupSides(this.reference);
-    const matchups = this.reference.renderActiveMatchups(
-      [...sides.allies, ...sides.foes],
-      [...sides.foes, ...sides.allies],
-      this.state.weather?.name ?? "",
-    );
-    let prompt = renderDecision({
-      state,
-      slotNames: menus.map((_, slot) => this.state.slotName(slot, request)),
-      menus,
-      transcript: this.transcript.lines,
-      memory: this.memory,
-      seriesContext: `Series ${this.seriesId ?? "?"}; game ${this.gameNumber}; score ${this.scoreText()}`,
-      matchups,
-    });
-    if (turnSeconds !== undefined) {
-      const bank = request.timer?.seconds ?? turnSeconds;
-      const bankAdvice =
-        bank <= BANK_LOW_SECONDS
-          ? "The bank is low: commit quickly and rebuild time on easy turns."
-          : bank >= BANK_HEALTHY_SECONDS && maxTokens >= 8192
-            ? "The bank is healthy: think as deeply as this decision warrants before committing."
-            : "Spend time only where it changes the choice.";
-      const paceNote =
-        tokenFloor > decisionTokenBudget(remainingMs(), pace())
-          ? ""
-          : " — what your generation speed fits into the turn";
-      prompt += `\n\nShowdown timer: ${Math.round(turnSeconds)} seconds of wall clock this turn; ${Math.round(bank)} seconds remain in the clock bank. Your whole reply, reasoning included, is capped at ${maxTokens} tokens${paceNote}. A reply cut off at the cap submits nothing, so settle on a choice early and answer well inside it. ${bankAdvice}`;
-    }
-    if (context.error)
-      prompt += `\n\nThe simulator rejected the previous joint action: ${context.error}`;
-
-    let rawResponse = "";
-    const usage: Record<string, number> = {};
-    let parsed: ParsedDecision | undefined;
-    let error = "no choices found";
-    let parseFailures = 0;
-    let toolRounds = 0;
-    const toolCalls: ToolQueryResult[] = [];
-    const lookup = cachedToolLookup((name, args) => this.lookupDecisionQuery(name, args));
-    const failedAttempts: { response: string; error: string }[] = [];
-    const reasoningParts: string[] = [];
-    const upstreamProviders = new Set<string>();
-    const messages: ProviderMessage[] = [{ role: "user", content: prompt }];
-    const session = new DecisionSession({
-      messages,
-      tools: this.decisionTools,
-      lookup,
-      signal: decisionSignal,
-    });
-    const failDecision = (cause: unknown): Promise<number[]> => {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      const failure = classifyProviderFailure(cause, this.spec);
-      const failed = this.stats.abandonedFailure();
-      const repeated = failed.repeated;
-      const stop = failure.terminal || repeated;
-      if (this.pending?.generation === generation) this.pending = undefined;
-      this.transcript.rememberTurnDetail(
-        `No choice submitted: ${failure.summary} ${stop ? "The run cannot continue." : "The battle timer acts when time expires."}`,
-      );
-      const phase = decisionPhase(request);
-      const timer = request.timer
-        ? {
-            turn_seconds: request.timer.turnSeconds ?? null,
-            bank_seconds: request.timer.seconds ?? null,
-          }
-        : null;
-      const base = {
-        game_id: this.gameId,
-        series_id: this.seriesId ?? null,
-        game_number: this.gameNumber,
-        turn: this.state.turn,
-        pid: this.pid,
-        phase,
-      };
-      const trace = {
-        kind: "decision_trace",
-        ...base,
-        prompt,
-        menus: menus.map((menu) => menu.map((item) => item.label)),
-        choices: [],
-        parts: [],
-        raw_response: rawResponse,
-        reasoning: reasoningParts.join("\n\n").trim() || null,
-        usage,
-        latency_ms: performance.now() - started,
-        timer,
-        parse_failures: parseFailures,
-        tool_rounds: toolRounds,
-        max_tokens: maxTokens,
-        tokens_per_second: this.observedTokensPerSecond
-          ? Math.round(this.observedTokensPerSecond)
-          : null,
-        tool_calls: toolCalls,
-        fallback: true,
-        failure_kind: failure.kind,
-        error_summary: failure.summary,
-        error: message,
-        upstream_providers: upstreamProviders.size ? [...upstreamProviders] : undefined,
-        failed_attempts: failedAttempts.length ? failedAttempts : undefined,
-      };
-      this.writeLog(this.options.traceLog, trace);
-      if (stop) {
-        const reason = repeated
-          ? `${this.spec} failed to submit ${failed.count} consecutive decisions. ${failure.summary}`
-          : `${failure.summary} The run cannot continue.`;
-        throw new Error(reason, { cause });
-      }
-      return new Promise<number[]>((_resolve, reject) => {
-        const abort = () => reject(new DecisionAbandonedError());
-        if (decisionSignal?.aborted) abort();
-        else decisionSignal?.addEventListener("abort", abort, { once: true });
-      });
-    };
-    const parseAttempts = request.timer ? DECISION_PARSE_ATTEMPTS : UNTIMED_DECISION_PARSE_ATTEMPTS;
-    let emptyRetries = 0;
-    while (!parsed && parseFailures < parseAttempts) {
-      if (generation !== this.generation) throw new DecisionAbandonedError();
-      if (parseFailures && (rawResponse || truncatedBudget || earlyLengthStop)) {
-        /** Replaying a cut-off ramble verbatim spends the retry's input budget on reasoning that cannot
-         * contain the missing ending. Summarise it instead and ask for the answer first. */
-        messages.push({
-          role: "assistant",
-          content:
-            truncatedBudget || earlyLengthStop
-              ? "[response cut off before a choice was submitted]"
-              : rawResponse,
-        });
-        messages.push({
-          role: "user",
-          content: truncatedBudget
-            ? `Your previous response ran past its ${truncatedBudget}-token budget before submitting a choice. Reply with the required JSON immediately, keeping reasoning brief enough to finish inside the budget.`
-            : earlyLengthStop
-              ? `The provider stopped your previous response for length after ${earlyLengthStop.outputTokens} output tokens, below the requested ${earlyLengthStop.requestedMaxTokens}-token cap. Reply with the required JSON immediately.`
-              : `Your previous response was invalid. Error: ${error}. Reply again following the required JSON format.`,
-        });
-      }
-      rawResponse = "";
-      truncatedBudget = 0;
-      earlyLengthStop = undefined;
-      const maxToolRounds =
-        deadline === undefined ? UNTIMED_MAX_TOOL_ROUNDS : DECISION_MAX_TOOL_ROUNDS;
-      let completion: DecisionSessionResult;
-      try {
-        if (generation !== this.generation) throw new DecisionAbandonedError();
-        if (request.timer && remainingMs() < 2000)
-          return failDecision(new Error("turn time exhausted"));
-        completion = await session.completeToolLoop({
-          maxToolRounds,
-          finalNotice:
-            "Tool budget for this decision is exhausted; further tool calls will not be executed. Submit your choice now in the required JSON format.",
-          forceFinal: () => remainingMs() < forceCommitMs,
-          complete: async (currentMessages, finalRound, remainingOutputTokens) => {
-            maxTokens = Math.min(
-              remainingOutputTokens,
-              Math.max(tokenFloor, decisionTokenBudget(remainingMs(), pace())),
-            );
-            if (request.timer && remainingMs() < 2000) throw new Error("turn time exhausted");
-            const attemptOptions: CompleteOptions = {
-              maxTokens,
-              tools: this.decisionTools,
-              toolChoice: finalRound ? "none" : "auto",
-            };
-            if (finalRound) attemptOptions.prefillResponse = DECISION_PREFILL;
-            if (request.timer) attemptOptions.failFast = true;
-            return this.completeOnce(
-              currentMessages,
-              attemptOptions,
-              this.briefed(
-                battleSystemPrompt({ sheets: this.sheets, timed: Boolean(request.timer) }),
-              ),
-              decisionSignal,
-            );
-          },
-          afterToolRound: (currentMessages) => {
-            if (deadline === undefined) return;
-            const seconds = Math.max(0, Math.round(remainingMs() / 1000));
-            const last = currentMessages.at(-1);
-            if (last) last.content = `${last.content}\n[Timer: ${seconds}s left this turn]`;
-          },
-        });
-      } catch (caught) {
-        if (generation !== this.generation) throw new DecisionAbandonedError();
-        if (request.timer && !this.options.signal?.aborted) return failDecision(caught);
-        throw caught;
-      }
-      for (const [key, value] of Object.entries(completion.usage)) {
-        usage[key] = (usage[key] ?? 0) + (key === "cost" ? value : Math.trunc(value));
-      }
-      toolRounds = completion.toolRounds;
-      toolCalls.splice(0, toolCalls.length, ...completion.toolQueries);
-      if (completion.provider) upstreamProviders.add(completion.provider);
-      if (completion.reasoning) reasoningParts.push(completion.reasoning);
-      /** Reported output reaching this call's requested cap is budget exhaustion even when a provider
-       * omits finishReason. A length stop below that cap is still truncation, but not budget exhaustion. */
-      const outputTokens = Math.trunc(completion.usage.output_tokens ?? 0);
-      if (outputTokens >= maxTokens) truncatedBudget = maxTokens;
-      else if (completion.finishReason === "length")
-        earlyLengthStop = { outputTokens, requestedMaxTokens: maxTokens };
-      rawResponse = completion.text;
-      /** Some reasoning models via gateways finish with every token in the reasoning channel and an
-       * empty text field; the decision they wrote is salvaged rather than bought again on a retry. */
-      if (!rawResponse && !completion.toolCalls.length && completion.reasoning) {
-        try {
-          extractChoices(completion.reasoning, menus, this.memory);
-          rawResponse = completion.reasoning;
-        } catch {}
-      }
-      if (!rawResponse) {
-        error = truncatedBudget
-          ? `reasoning exhausted the ${truncatedBudget}-token response budget`
-          : earlyLengthStop
-            ? `provider stopped the response for length after ${earlyLengthStop.outputTokens} output tokens, below the requested ${earlyLengthStop.requestedMaxTokens}-token cap`
-            : "empty response";
-        failedAttempts.push({ response: "", error });
-        if (request.timer) return failDecision(new Error(error));
-        if (truncatedBudget) {
-          parseFailures += 1;
-          continue;
-        }
-        if (emptyRetries < UNTIMED_EMPTY_RESPONSE_RETRIES) {
-          emptyRetries += 1;
-          continue;
-        }
-        break;
-      }
-      try {
-        parsed = extractChoices(rawResponse, menus, this.memory);
+    const prompt =
+      renderDecision({
+        state: speed ? `${rendered}\n${speed}` : rendered,
+        slotNames: menus.map((_, slot) => this.state.slotName(slot, request)),
+        menus,
+        transcript: summarizeBattleEvents(this.observations, this.pid),
+        memory: this.memory,
+        initial: this.firstDecision,
+        seriesContext: `Series ${this.seriesId ?? "?"}; game ${this.gameNumber}; score ${this.scoreText()}`,
+        matchups: this.reference.renderActiveMatchups(
+          [...sides.allies, ...sides.foes],
+          [...sides.foes, ...sides.allies],
+          this.state.weather?.name ?? "",
+        ),
+      }) +
+      (context.error ? `\nThe simulator rejected the previous action: ${context.error}` : "") +
+      (request.timer
+        ? `\nShowdown clock: ${request.timer.turnSeconds} seconds this turn; ${request.timer.seconds} seconds in the bank.`
+        : "");
+    const result = await this.run({
+      session: this.sessionKey(this.gameId),
+      task: `decision-${++this.decisionSequence}`,
+      supersedes: this.abandonedTask,
+      timed: Boolean(request.timer),
+      system: this.briefed(
+        battleSystemPrompt({ sheets: this.sheets, timed: Boolean(request.timer) }),
+      ),
+      prompt,
+      tools: this.tools.map((definition) => ({
+        definition,
+        run: (input: JsonObject) => this.lookupDecisionTool(definition.name, input),
+      })),
+      submission: submissionTool("submit_action", decisionSchema(menus.length)),
+      validate: (input) => {
+        const parsed = parseDecision(input, menus, this.memory);
         BaseEngine.parts(menus, parsed.choices);
-      } catch (caught) {
-        parsed = undefined;
-        error = truncatedBudget
-          ? `reasoning exhausted the ${truncatedBudget}-token response budget before a choice was submitted`
-          : earlyLengthStop
-            ? `provider stopped the response for length after ${earlyLengthStop.outputTokens} output tokens, below the requested ${earlyLengthStop.requestedMaxTokens}-token cap before a choice was submitted`
-            : caught instanceof Error
-              ? caught.message
-              : String(caught);
-        if (!truncatedBudget && /[|｜]\s*DSML\s*[|｜]/.test(rawResponse)) {
-          error =
-            "the response wrote tool-call markup as plain text, which nothing executes. Call tools through the API tool interface or reply with the required JSON object";
-        }
-        failedAttempts.push({ response: rawResponse, error });
-        parseFailures += 1;
-      }
-    }
-    const fallback = !parsed;
-    const decision =
-      parsed ??
-      ({
-        choices: BaseEngine.defaults(menus)[0],
-        evidence: {
-          ...noDecisionEvidence(this.memory),
-          rationale: `No valid decision (${error}); defaulted to the first legal option for each slot.`,
-        },
-      } satisfies ParsedDecision);
-    if (generation === this.generation && this.pending) {
-      const update: PendingDecision = {
-        prompt,
-        rawResponse,
-        evidence: decision.evidence,
-        usage,
-        fallback,
-        latencyMs: performance.now() - started,
-        toolCalls,
-        parseFailures,
-        toolRounds,
-        maxTokens,
-        generation,
-      };
-      const reasoning = reasoningParts.join("\n\n").trim();
-      if (reasoning) update.reasoning = reasoning;
-      if (fallback) update.error = error;
-      if (fallback && (truncatedBudget || earlyLengthStop))
-        update.errorSummary = classifyProviderFailure(new Error(error), this.spec).summary;
-      if (upstreamProviders.size) update.upstreamProviders = [...upstreamProviders];
-      if (failedAttempts.length) update.failedAttempts = failedAttempts;
-      Object.assign(this.pending, update);
-    }
-    return decision.choices;
+        return parsed;
+      },
+      signal: this.decisionController?.signal,
+    });
+    if (generation !== this.generation) return [];
+    this.firstDecision = false;
+    this.observations = [];
+    this.pending = { generation, prompt, result };
+    return result.value.choices;
   }
 
+  private async run<T>(
+    task: Omit<AgentTask<T>, "model" | "reasoning">,
+  ): Promise<AgentResult<T>> {
+    const signal =
+      this.options.signal && task.signal
+        ? AbortSignal.any([this.options.signal, task.signal])
+        : (this.options.signal ?? task.signal);
+    if (this.activeRun) await this.activeRun;
+    signal?.throwIfAborted();
+    const pending = this.options.runAgent({
+      ...task,
+      model: this.spec,
+      reasoning: this.options.reasoning,
+      signal,
+    });
+    this.activeRun = pending.then(
+      () => undefined,
+      () => undefined,
+    );
+    return pending;
+  }
+
+  private sessionKey(gameId: string): string {
+    return `battle-${gameId}-${this.pid}`;
+  }
   private briefed(system: string): string {
     return this.options.briefing ? `${system}\n${this.options.briefing}` : system;
-  }
-
-  private async completeOnce(
-    messages: ProviderMessage[],
-    options: CompleteOptions,
-    system = SYSTEM,
-    operationSignal?: AbortSignal,
-  ): Promise<Completion> {
-    const runSignal = this.options.signal;
-    const signal =
-      runSignal && operationSignal
-        ? AbortSignal.any([runSignal, operationSignal])
-        : (runSignal ?? operationSignal);
-    const startedAt = performance.now();
-    const completion = await this.provider.complete(
-      system,
-      messages,
-      signal ? { ...options, signal } : options,
-    );
-    this.observedTokensPerSecond = updatedPace(
-      this.observedTokensPerSecond,
-      completion.usage.output_tokens ?? 0,
-      performance.now() - startedAt,
-    );
-    return completion;
   }
 
   protected override submissionSource(
     automatic: boolean,
     substitution?: ChoiceSubstitution,
   ): SubmissionSource {
-    return substitution || this.pending?.fallback
-      ? "model-default"
-      : automatic
-        ? "automatic"
-        : "model";
+    return substitution ? "model-default" : automatic ? "automatic" : "model";
   }
 
   protected override actionSubmitted(
@@ -745,32 +484,22 @@ export class LLMEngine extends BaseEngine {
     const pending = this.pending;
     this.pending = undefined;
     if (!pending || pending.generation !== this.generation) return;
-    const evidence = automatic
-      ? noDecisionEvidence(this.memory)
-      : (pending.evidence ?? noDecisionEvidence(this.memory));
+    const result = pending.result;
+    const evidence = result?.value.evidence ?? noDecisionEvidence(this.memory);
     const rationale = automatic
       ? "Automatic: only one legal joint action."
       : evidence.rationale || "No rationale supplied.";
-    const evidenceSupplied = {
-      rationale: evidence.supplied.rationale,
-      notebook_update: evidence.supplied.notebookUpdate,
-    };
     if (!automatic) {
       this.memory = evidence.memory;
       this.stats.decision({
-        fallback: pending.fallback ?? false,
-        parseFailures: pending.parseFailures ?? 0,
-        usage: pending.usage,
+        parseFailures: (result?.attempts ?? 1) - 1,
+        usage: result?.usage,
         substituted: Boolean(substitution),
       });
     }
-    const action = request.teamPreview ? `team ${parts.join("")}` : parts.join(", ");
-    this.transcript.rememberTurnDetail(`Decision: ${action}`);
     const phase = decisionPhase(request);
-    const requestDigest = this.requestDigest(request, menus, phase);
-    const selection = choices.map(
-      (choice, slot) => menus[slot]?.[choice]?.label ?? parts[slot] ?? "pass",
-    );
+    const action = submission.choice;
+    if (automatic) this.observations.push(`|message|Automatic action: ${action}`);
     if (!automatic)
       this.stats.tendencies({
         phase,
@@ -778,112 +507,80 @@ export class LLMEngine extends BaseEngine {
         choices,
         parts,
         action,
-        toolLookups: pending.toolCalls?.length ?? 0,
+        toolLookups: result?.tools.length ?? 0,
         state: this.state,
         pid: this.pid,
         gameId: this.gameId,
       });
-    const timer = pending.timer
-      ? {
-          turn_seconds: pending.timer.turnSeconds ?? null,
-          bank_seconds: pending.timer.seconds ?? null,
-        }
-      : null;
-    const substituted = substitution
-      ? { requested_choices: substitution.requested, substitution_reason: substitution.reason }
-      : {};
+    const evidenceSupplied = {
+      rationale: evidence.supplied.rationale,
+      notebook_update: evidence.supplied.notebookUpdate,
+    };
     const memoryUpdate = memoryUpdateTelemetry(evidence.memoryUpdate);
-    const memory = memoryTelemetry(this.memory);
-    const notebook = renderNotebook(this.memory);
+    const base = {
+      game_id: this.gameId,
+      series_id: this.seriesId ?? null,
+      game_number: this.gameNumber,
+      turn: this.state.turn,
+      pid: this.pid,
+      phase,
+      action,
+      rationale,
+      automatic,
+      evidence_supplied: evidenceSupplied,
+      memory_update: memoryUpdate,
+      ...(result && {
+        session_id: result.sessionID,
+        message_id: result.messageID,
+        task_id: `decision-${this.decisionSequence}`,
+        ...(result.recoveryMs !== undefined && { recovery_ms: result.recoveryMs }),
+      }),
+    };
     this.context.append("decision", {
-      game_id: this.gameId,
-      series_id: this.seriesId ?? null,
-      game_number: this.gameNumber,
-      turn: this.state.turn,
-      phase,
-      action,
-      rationale,
-      notebook,
-      memory,
-      memory_update: memoryUpdate,
+      ...base,
+      notebook: renderNotebook(this.memory),
+      memory: memoryTelemetry(this.memory),
       menus: this.context.menus(menus),
-      evidence_supplied: evidenceSupplied,
-      automatic,
-      fallback: pending.fallback ?? false,
     });
-    const submissionEvidence = {
+    this.holdSubmissionEvidence(submission, {
       kind: "decision",
-      game_id: this.gameId,
-      series_id: this.seriesId ?? null,
-      game_number: this.gameNumber,
-      turn: this.state.turn,
-      pid: this.pid,
-      phase,
-      request_digest: requestDigest,
-      selection,
-      action,
-      rationale,
-      evidence_supplied: evidenceSupplied,
-      memory_update: memoryUpdate,
+      ...base,
+      selection: choices.map(
+        (choice, slot) => menus[slot]?.[choice]?.label ?? parts[slot] ?? "pass",
+      ),
       ...this.memoryStateUpdate(),
-      automatic,
-      fallback: pending.fallback ?? false,
-      error: pending.error ?? null,
-      ...substituted,
-      parse_failures: pending.parseFailures ?? 0,
-      latency_ms: Math.round(pending.latencyMs ?? 0),
-      total_tokens: totalTokens(pending.usage),
-      ...reasoningField(pending.usage),
-      timer,
-      tool_lookups: (pending.toolCalls ?? []).map((call) => call.name),
-      error_summary: pending.errorSummary || undefined,
-      cost: pending.usage?.cost,
-      upstream_providers: pending.upstreamProviders?.length ? pending.upstreamProviders : undefined,
-    };
-    this.holdSubmissionEvidence(submission, submissionEvidence);
-    if (automatic) return;
-    const trace = {
-      kind: "decision_trace",
-      game_id: this.gameId,
-      series_id: this.seriesId ?? null,
-      game_number: this.gameNumber,
-      turn: this.state.turn,
-      pid: this.pid,
-      phase,
-      submission_id: submission.submissionId,
-      prompt: pending.prompt ?? "",
-      menus: menus.map((menu) => menu.map((item) => item.label)),
-      choices,
-      parts,
-      ...substituted,
-      raw_response: pending.rawResponse ?? "",
-      reasoning: pending.reasoning ?? null,
-      usage: pending.usage ?? {},
-      latency_ms: pending.latencyMs ?? 0,
-      timer,
-      parse_failures: pending.parseFailures ?? 0,
-      tool_rounds: pending.toolRounds ?? 0,
-      max_tokens: pending.maxTokens ?? null,
-      tokens_per_second: this.observedTokensPerSecond
-        ? Math.round(this.observedTokensPerSecond)
-        : null,
-      tool_calls: pending.toolCalls ?? [],
-      memory_update: memoryUpdate,
-      fallback: pending.fallback ?? false,
-      error: pending.error ?? null,
-      upstream_providers: pending.upstreamProviders?.length ? pending.upstreamProviders : undefined,
-      failed_attempts: pending.failedAttempts?.length ? pending.failedAttempts : undefined,
-      error_summary: pending.errorSummary || undefined,
-    };
-    this.writeLog(this.options.traceLog, trace);
+      requested_choices: substitution?.requested,
+      substitution_reason: substitution?.reason,
+      parse_failures: (result?.attempts ?? 1) - 1,
+      latency_ms: Math.round(result?.latencyMs ?? 0),
+      total_tokens: totalTokens(result?.usage),
+      ...reasoningField(result?.usage),
+      cost: result?.usage.cost,
+      tool_lookups: (result?.tools ?? []).map((tool) => tool.name),
+    });
+    if (!automatic)
+      this.writeLog(this.options.traceLog, {
+        kind: "decision_trace",
+        ...base,
+        submission_id: submission.submissionId,
+        prompt: pending.prompt ?? "",
+        menus: menus.map((menu) => menu.map((item) => item.label)),
+        choices,
+        parts,
+        raw_response: result?.response ?? "",
+        reasoning: result?.reasoning ?? null,
+        usage: result?.usage ?? {},
+        latency_ms: result?.latencyMs ?? 0,
+        tool_calls: result?.tools ?? [],
+        parse_failures: (result?.attempts ?? 1) - 1,
+      });
   }
 
   override decisionStats() {
     return this.stats.snapshot();
   }
-
   private memoryStateUpdate(): JsonObject {
-    const state = serializeBattleMemory(this.memory);
+    const state = this.coachingState();
     if (state === this.loggedMemoryState) return {};
     this.loggedMemoryState = state;
     return {
@@ -892,206 +589,10 @@ export class LLMEngine extends BaseEngine {
       memory: memoryTelemetry(this.memory),
     };
   }
-
   protected override menuHints(request: BattleRequest): MenuHints | undefined {
     return battleMenuHints(this.state, this.pid, request);
   }
-
-  private prepareReflection(context: GameEnd, result: string): GameAdaptationTask {
-    const seriesOver = context.seriesOver;
-    const mine = this.seriesScore[this.pid];
-    const theirs = this.seriesScore[this.pid === "p1" ? "p2" : "p1"];
-    const seriesResult = mine > theirs ? "won" : mine < theirs ? "lost" : "drew";
-    const draftRoster = seriesOver ? this.options.draftRoster : undefined;
-    const draft = this.options.draftRoster !== undefined;
-    const retrospective =
-      context.tournamentStatus === "eliminated" || context.tournamentStatus === "champion";
-    const prompt = reflectionPrompt({
-      seriesId: this.seriesId,
-      gameNumber: context.gameNumber,
-      result,
-      scoreText: this.scoreText(),
-      seriesOver,
-      seriesResult,
-      score: { mine, theirs },
-      pid: this.pid,
-      draftRoster,
-      outcome: context.outcome,
-      finalState: this.state.renderReview(),
-      timeline: this.transcript.lines,
-      gameLog: Array.isArray(context.outcome.pov_lines)
-        ? context.outcome.pov_lines.filter((line): line is string => typeof line === "string")
-        : [],
-      memory: this.memory,
-      tournamentStatus: context.tournamentStatus,
-      retrospective,
-    });
-    const system = this.briefed(
-      draft
-        ? seriesOver
-          ? DRAFT_SERIES_REFLECTION_SYSTEM
-          : REFLECTION_SYSTEM
-        : retrospective
-          ? TOURNAMENT_RETROSPECTIVE_SYSTEM
-          : context.tournamentStatus === "advancing"
-            ? SERIES_REFLECTION_SYSTEM
-            : context.tournamentStatus === "active"
-              ? TOURNAMENT_REFLECTION_SYSTEM
-              : seriesOver
-                ? CLOSED_SERIES_REFLECTION_SYSTEM
-                : REFLECTION_SYSTEM,
-    );
-    return {
-      kind: "llm-reflection-v1",
-      game_id: this.gameId,
-      series_id: this.seriesId ?? null,
-      game_number: context.gameNumber,
-      result,
-      series_over: seriesOver,
-      retrospective,
-      opponent_scope_reset: context.tournamentStatus === "advancing",
-      prompt,
-      system,
-      memory_state: serializeBattleMemory(this.memory),
-    };
-  }
-
-  private async reflect(task: GameAdaptationTask): Promise<void> {
-    if (task.kind !== "llm-reflection-v1") throw new Error(`unknown adaptation ${task.kind}`);
-    const gameId = text(task.game_id);
-    const seriesId = text(task.series_id);
-    const gameNumber = Number(task.game_number);
-    const result = text(task.result);
-    const seriesOver = task.series_over === true;
-    const retrospective = task.retrospective === true;
-    const opponentScopeReset = task.opponent_scope_reset === true;
-    const prompt = text(task.prompt);
-    const system = text(task.system);
-    if (!gameId || !Number.isInteger(gameNumber) || gameNumber < 1 || !result || !prompt || !system)
-      throw new Error("invalid stored game adaptation task");
-    this.memory = createBattleMemory(task.memory_state, this.memory.authority);
-    const {
-      usage,
-      rawResponse,
-      reasoning,
-      error,
-      failureSummary,
-      failureKind,
-      fallback,
-      review,
-      toolRounds,
-      toolCalls,
-      memoryRepairAttempts,
-      rejectedMemoryUpdate,
-    } = await requestReflection({
-      prompt,
-      currentMemory: () => this.memory,
-      fallbackMemory: () => (opponentScopeReset ? nextOpponentMemory(this.memory) : this.memory),
-      result,
-      spec: this.spec,
-      tools: this.reflectionTools,
-      signal: this.options.signal,
-      retrospective,
-      complete: (messages, finalRound) =>
-        this.completeOnce(
-          messages,
-          {
-            maxTokens: REFLECTION_MAX_TOKENS,
-            tools: this.reflectionTools,
-            toolChoice: finalRound ? "none" : "auto",
-          },
-          system,
-        ),
-      lookupTool: (name, args) => this.lookupReferenceTool(name, args),
-    });
-    this.stats.reflection(fallback, usage);
-    this.memory = opponentScopeReset ? nextOpponentMemory(review.memory) : review.memory;
-    const memoryState = serializeBattleMemory(this.memory);
-    const memory = memoryTelemetry(this.memory);
-    const memoryUpdate = memoryUpdateTelemetry(review.memoryUpdate);
-    const notebook = renderNotebook(this.memory);
-    this.loggedMemoryState = memoryState;
-    this.transcript.remember(
-      review.retrospective
-        ? `Tournament retrospective: ${review.summary}`
-        : `Game review: ${review.summary} Next-game adjustment: ${review.adjustment}`,
-    );
-    const retrospectiveFields = review.retrospective
-      ? {
-          did_well: review.retrospective.didWell,
-          did_poorly: review.retrospective.didPoorly,
-          would_change: review.retrospective.wouldChange,
-        }
-      : {};
-    this.context.append("reflection", {
-      game_id: gameId,
-      series_id: seriesId || null,
-      game_number: gameNumber,
-      result,
-      series_over: seriesOver,
-      summary: review.summary,
-      adjustment: review.adjustment,
-      ...retrospectiveFields,
-      notebook,
-      memory,
-      memory_update: memoryUpdate,
-      memory_repair_attempts: memoryRepairAttempts,
-      opponent_scope_reset: opponentScopeReset,
-      fallback,
-    });
-    const reflectionLog = {
-      kind: "game_reflection",
-      game_id: gameId,
-      series_id: seriesId || null,
-      game_number: gameNumber,
-      pid: this.pid,
-      result,
-      series_over: seriesOver,
-      summary: review.summary,
-      adjustment: review.adjustment,
-      ...retrospectiveFields,
-      notebook,
-      memory_state: memoryState,
-      memory,
-      memory_update: memoryUpdate,
-      memory_repair_attempts: memoryRepairAttempts,
-      rejected_memory_update: rejectedMemoryUpdate,
-      opponent_scope_reset: opponentScopeReset,
-      total_tokens: totalTokens(usage),
-      ...reasoningField(usage),
-      fallback,
-      error: error ?? null,
-      error_summary: failureSummary || undefined,
-      failure_kind: failureKind || undefined,
-    };
-    const reflectionTrace = {
-      kind: "reflection_trace",
-      game_id: gameId,
-      series_id: seriesId || null,
-      game_number: gameNumber,
-      pid: this.pid,
-      series_over: seriesOver,
-      prompt,
-      raw_response: rawResponse,
-      reasoning,
-      usage,
-      tool_rounds: toolRounds,
-      tool_calls: toolCalls,
-      memory_update: memoryUpdate,
-      memory_repair_attempts: memoryRepairAttempts,
-      rejected_memory_update: rejectedMemoryUpdate,
-      opponent_scope_reset: opponentScopeReset,
-      fallback,
-      error: error ?? null,
-      error_summary: failureSummary || undefined,
-      failure_kind: failureKind || undefined,
-    };
-    this.writeLog(this.options.decisionLog, reflectionLog);
-    this.writeLog(this.options.traceLog, reflectionTrace);
-  }
-
   private scoreText(): string {
-    const foe: Pid = this.pid === "p1" ? "p2" : "p1";
-    return `you ${this.seriesScore[this.pid]}, opponent ${this.seriesScore[foe]}`;
+    return `you ${this.seriesScore[this.pid]}, opponent ${this.seriesScore[this.pid === "p1" ? "p2" : "p1"]}`;
   }
 }

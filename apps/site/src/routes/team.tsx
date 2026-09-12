@@ -69,7 +69,6 @@ function TeamPageBody({ id }: { id: string }) {
                   </span>
                   {slot.overallPick !== null ? ` · pick ${slot.overallPick}` : ""} · {slot.cost} pts
                 </span>
-                {slot.fallback ? <span className="chip chip-warn">AUTO</span> : null}
                 <span className="why" aria-hidden="true">
                   stated reason
                 </span>
@@ -129,10 +128,7 @@ function TeamPageBody({ id }: { id: string }) {
         <section className="section">
           <div className="section-head">
             <h2>Season review</h2>
-            <p>
-              Written by the model after its last game.
-              {review.fallback ? " Auto-generated after the model failed to answer." : ""}
-            </p>
+            <p>Written by the model after its last game.</p>
           </div>
           <div className="card card-pad review">
             <p className="prose">{review.summary}</p>

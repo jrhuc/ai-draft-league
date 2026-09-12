@@ -11,7 +11,7 @@ import { SHOWDOWN_LOCK, showdownCommit } from "../src/showdown.js";
 import { asRecord, isRecord, text } from "../src/value.js";
 
 test("reference reads exact data from the configured Showdown checkout", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const rendered = reference
     .render({
       speciesSets: [
@@ -49,7 +49,7 @@ test("reference reads exact data from the configured Showdown checkout", () => {
 });
 
 test("Champions stat ranges and exact spreads use Stat Points with fixed maximum IVs", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   assert.match(
     reference.lookup("calculate_stats", {
       species: "Garchomp",
@@ -65,16 +65,26 @@ test("Champions stat ranges and exact spreads use Stat Points with fixed maximum
   );
 });
 
-test("Mega formes require the visible matching stone", () => {
-  const rendered = new ShowdownReference("gen9championsvgc2026regmb")
+test("Mega references follow the stone's species mapping, including alternate base formes", () => {
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
+  const rendered = reference
     .render({ speciesSets: [["Charizard", "Choice Specs"]], items: ["Choice Specs"] })
     .join("\n");
   assert.match(rendered, /Species Charizard: Fire\/Flying; base stats .* Speed 100/);
   assert.doesNotMatch(rendered, /Charizard-Mega/);
+  for (const [species, item, mega] of [
+    ["Floette-Eternal", "Floettite", "Floette-Mega"],
+    ["Meowstic", "Meowsticite", "Meowstic-M-Mega"],
+    ["Meowstic-F", "Meowsticite", "Meowstic-F-Mega"],
+  ] as const) {
+    assert.match(reference.lookup("lookup_species", { name: species, item }), new RegExp(mega));
+    assert.match(reference.describeCompact({ species, item })?.mega ?? "", new RegExp(mega));
+    assert.equal(reference.describeCompact({ species, item: "Gengarite" })?.mega, undefined);
+  }
 });
 
 test("active matchup chart resolves Weather Ball under the live weather", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const attackers = [{ species: "Politoed", moves: ["Weather Ball"], ally: true }];
   const defenders = [{ species: "Incineroar", moves: [], ally: false }];
   const clear = reference.renderActiveMatchups(attackers, defenders).join("\n");
@@ -102,7 +112,7 @@ test("active matchup chart resolves Weather Ball under the live weather", () => 
 });
 
 test("active matchups exclude same-side targets and handle primal weather", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const attackers = [
     { species: "Politoed", moves: ["Weather Ball"], ally: true },
     { species: "Incineroar", moves: ["Flare Blitz"], ally: false },
@@ -131,7 +141,7 @@ test("active matchups exclude same-side targets and handle primal weather", () =
 });
 
 test("learnset lookup lists format-legal moves and excludes folklore", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const pikachu = reference.lookup("lookup_learnset", { name: "pikachu" });
   assert.match(pikachu, /^- Learnset Pikachu \(\d+ legal moves\): /);
   assert.match(pikachu, /Fake Out/);
@@ -145,14 +155,14 @@ test("learnset lookup lists format-legal moves and excludes folklore", () => {
 });
 
 test("lookup tools return one entry and reject missing data", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   assert.match(reference.lookup("lookup_move", { name: "Earthquake" }), /Earthquake/);
   assert.match(reference.lookup("lookup_move", { name: "Protect" }), /triples each time/);
   assert.match(reference.lookup("lookup_move", { name: "NotAMove" }), /No move data/);
   assert.match(reference.lookup("lookup_move", { name: "Final Gambit" }), /Final Gambit/);
   assert.equal(
     reference.lookup("lookup_item", { name: "Eviolite" }),
-    "Eviolite is not legal in gen9championsvgc2026regmb.",
+    "Eviolite is not legal in gen9championsvgc2026regmc.",
   );
   assert.equal(reference.lookup("lookup_species", { name: "" }), "Species name is required.");
   assert.equal(reference.lookup("unknown"), "Unknown tool: unknown");
@@ -199,7 +209,7 @@ test("missing Showdown checkout fails immediately", () => {
 });
 
 test("matchup and damage tools stay within open information", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   assert.match(
     reference.lookup("lookup_matchup", { move: "Earthquake", defender: "Decidueye-Hisui" }),
     /0\.5x|not very effective/,
@@ -228,7 +238,7 @@ test("matchup and damage tools stay within open information", () => {
 });
 
 test("offline damage defaults to a single hit and honors an explicit spread flag", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const args = {
     attacker: "Garchomp",
     defender: "Incineroar",
@@ -255,7 +265,7 @@ test("offline damage defaults to a single hit and honors an explicit spread flag
 });
 
 test("effectiveness shows the per-type factors behind the combined multiplier", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   assert.match(
     reference.lookup("lookup_matchup", { move: "High Horsepower", defender: "Venusaur" }),
     /neutral \(1x\) = Ground vs Grass 0\.5x × vs Poison 2x/,
@@ -283,7 +293,7 @@ test("effectiveness shows the per-type factors behind the combined multiplier", 
 });
 
 test("exact defender stats collapse the legal range", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const args = {
     attacker: "Gengar",
     defender: "Farigiraf",
@@ -312,7 +322,7 @@ test("exact defender stats collapse the legal range", () => {
 });
 
 test("damage tools reject items removed from the Champions format", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const args = { attacker: "Gengar", defender: "Farigiraf", move: "Sludge Bomb" };
   assert.match(
     reference.lookup("estimate_damage", args),
@@ -320,11 +330,11 @@ test("damage tools reject items removed from the Champions format", () => {
   );
   assert.equal(
     reference.lookup("estimate_damage", { ...args, defender_item: "Assault Vest" }),
-    "Assault Vest is not legal in gen9championsvgc2026regmb.",
+    "Assault Vest is not legal in gen9championsvgc2026regmc.",
   );
   assert.equal(
     reference.lookup("estimate_damage", { ...args, defender_item: "Eviolite" }),
-    "Eviolite is not legal in gen9championsvgc2026regmb.",
+    "Eviolite is not legal in gen9championsvgc2026regmc.",
   );
   assert.match(
     reference.lookup("estimate_damage", { ...args, defender_item: "Leftovers" }),
@@ -333,7 +343,7 @@ test("damage tools reject items removed from the Champions format", () => {
 });
 
 test("damage estimates accept percentages only, reject zero exact stats, and label evaluated KO outcomes", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const possible = reference.lookup("estimate_damage", {
     attacker: "Tauros-Paldea-Aqua",
     defender: "Incineroar",
@@ -375,7 +385,7 @@ test("damage estimates accept percentages only, reject zero exact stats, and lab
 });
 
 test("species lookups resolve board display names the dex does not alias", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   assert.match(
     reference.lookup("lookup_species", { name: "Basculegion-Male" }),
     /Species Basculegion:/,
@@ -416,7 +426,7 @@ test("species lookups resolve board display names the dex does not alias", () =>
 });
 
 test("damage estimates fall back to legal ranges for implausible stats but keep stage-boosted values", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const args = { attacker: "Basculegion", defender: "Gengar-Mega", move: "Last Respects" };
   const implausibleDef = reference.lookup("estimate_damage", {
     ...args,
@@ -442,7 +452,7 @@ test("damage estimates fall back to legal ranges for implausible stats but keep 
 });
 
 test("damage estimates apply abilities, stages, burn, screens, and terrain through the engine", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const args = {
     attacker: "Garchomp",
     defender: "Incineroar",
@@ -535,7 +545,7 @@ test("damage estimates apply abilities, stages, burn, screens, and terrain throu
 });
 
 test("compact reference omits ability essays and full move text", () => {
-  const compact = new ShowdownReference("gen9championsvgc2026regmb")
+  const compact = new ShowdownReference("gen9championsvgc2026regmc")
     .renderCompact([
       {
         species: "Swampert",
@@ -554,7 +564,7 @@ test("compact reference omits ability essays and full move text", () => {
 });
 
 test("compact reference tags non-single-target moves", () => {
-  const compact = new ShowdownReference("gen9championsvgc2026regmb")
+  const compact = new ShowdownReference("gen9championsvgc2026regmc")
     .renderCompact([
       {
         species: "Sylveon",
@@ -576,7 +586,7 @@ test("compact reference tags non-single-target moves", () => {
 });
 
 test("compact and matchup references resolve Raging Bull from the Tauros forme", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const compact = reference
     .renderCompact([
       { species: "Tauros-Paldea-Combat", moves: ["Raging Bull"] },
@@ -602,7 +612,7 @@ test("compact and matchup references resolve Raging Bull from the Tauros forme",
 });
 
 test("move lookups surface powder and sound interactions missing from descriptions", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   assert.match(
     reference.lookup("lookup_move", { name: "Rage Powder" }),
     /powder move: no effect on Grass types, Overcoat, or Safety Goggles holders \(including redirection\)/,
@@ -618,7 +628,7 @@ test("move lookups surface powder and sound interactions missing from descriptio
 });
 
 test("compact reference shows the mega outcome for stone holders only", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const holder = reference
     .renderCompact([
       { species: "Swampert", item: "Swampertite", nature: "Adamant", moves: [], active: false },
@@ -635,7 +645,7 @@ test("compact reference shows the mega outcome for stone holders only", () => {
 });
 
 test("speed profiles apply visible battle modifiers without collapsing hidden ranges", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   assert.deepEqual(
     reference.speedProfile({
       species: "Tauros-Paldea-Aqua",
@@ -669,7 +679,7 @@ test("speed profiles apply visible battle modifiers without collapsing hidden ra
 });
 
 test("type-changing abilities convert Normal moves in the chart and matchup tool", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const chart = reference
     .renderActiveMatchups(
       [{ species: "Gardevoir-Mega", moves: ["Hyper Voice"], ally: true, ability: "Pixilate" }],
@@ -692,7 +702,7 @@ test("type-changing abilities convert Normal moves in the chart and matchup tool
 });
 
 test("active matchup references apply visible defensive immunities", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const chart = reference
     .renderActiveMatchups(
       [{ species: "Swampert", moves: ["Earthquake"], ally: true, ability: "Damp" }],
@@ -711,7 +721,7 @@ test("active matchup references apply visible defensive immunities", () => {
 });
 
 test("Unaware ignores attacker boosts in the damage estimate", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const range = (result: string) =>
     /(\d+(?:\.\d+)?-\d+(?:\.\d+)?)% of maximum HP/.exec(result)?.[1];
   const base = {
@@ -734,7 +744,7 @@ test("Unaware ignores attacker boosts in the damage estimate", () => {
 });
 
 test("Last Respects scales with the attacker side fainted count", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const base = { attacker: "Basculegion", defender: "Kingambit", move: "Last Respects" };
   const power = (fainted: number): number => {
     const text = reference.lookup("estimate_damage", { ...base, attacker_fainted_allies: fainted });
@@ -749,7 +759,7 @@ test("Last Respects scales with the attacker side fainted count", () => {
 });
 
 test("active allies apply their abilities without leaking their field effects", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const range = (text: string): string => /: ([\d.]+-[\d.]+)%/.exec(text)?.[1] ?? "";
   const quake = { attacker: "Garchomp", defender: "Incineroar", move: "Earthquake" };
   const alone = range(reference.lookup("estimate_damage", quake));
@@ -810,7 +820,7 @@ test("active allies apply their abilities without leaking their field effects", 
 });
 
 test("damage estimates carry no repeated standing caveats", () => {
-  const reference = new ShowdownReference("gen9championsvgc2026regmb");
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
   const text = reference.lookup("estimate_damage", {
     attacker: "Garchomp",
     defender: "Incineroar",

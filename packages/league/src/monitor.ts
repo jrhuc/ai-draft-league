@@ -5,7 +5,7 @@ import { readArchivedTeambuilds } from "./archive-teambuilds.js";
 import { type DraftBoard, loadBoard } from "./draft-protocol.js";
 import { buildDraftLeagueSchedule } from "./draftleague-protocol.js";
 import { type GameSummary, seriesGameSummaries } from "./game-usage.js";
-import { readJsonlObjects } from "./jsonl.js";
+import { readSubmissionTraces } from "./decision-traces.js";
 import {
   latestRosterVersion,
   readFranchiseCheckpoints,
@@ -36,7 +36,7 @@ import { id } from "./reference-mechanics.js";
 import { listStoredSeries, readStoredSeries } from "./series-store.js";
 import { readTradeWindowArtifacts } from "./trade-window-artifacts.js";
 import type { JsonObject } from "./types.js";
-import { asRecord } from "./value.js";
+import { asRecord, text } from "./value.js";
 import type { TeamBuildView } from "./views.js";
 
 export interface MonitorReport {
@@ -104,10 +104,14 @@ export function monitorRun(runDir: string, psDir = defaultPsDir()): MonitorRepor
         buildFor(plan.index, entrantsOf[1]),
       ]),
     );
-    const traces = {
-      p1: readJsonlObjects(path.join(seriesDirectory(runDir, summary.seriesId), "p1-trace.jsonl")),
-      p2: readJsonlObjects(path.join(seriesDirectory(runDir, summary.seriesId), "p2-trace.jsonl")),
-    };
+    const tracesFor = (pid: "p1" | "p2") => [
+      ...readSubmissionTraces(
+        seriesDirectory(runDir, summary.seriesId),
+        pid,
+        new Set(rows[pid].map((row) => text(row.submission_id))),
+      ).values(),
+    ];
+    const traces = { p1: tracesFor("p1"), p2: tracesFor("p2") };
     for (const [index, log] of readCompletedSeriesGameLogs(runDir, summary.seriesId).entries()) {
       const game = index + 1;
       const audit: GameMechanicsAudit = auditGame(game, log, {
@@ -235,12 +239,12 @@ export function renderMonitorReport(report: MonitorReport): string {
     const model = seat.decisions - seat.automatic;
     lines.push(
       `- ${seat.label}: ${seat.decisions} decisions (${seat.automatic} automatic); ` +
-        `fallbacks ${rate(seat.fallbacks, model)}; substitutions ${seat.substitutions}; ` +
+        `substitutions ${seat.substitutions}; ` +
         `parse failures ${rate(seat.parseFailureDecisions, model)}; notebook edits ${rate(seat.notebookUpdates, model)}; ` +
         `tool queries median ${seat.toolQueries.median}, p90 ${seat.toolQueries.p90}, max ${seat.toolQueries.max}; ` +
         `latency s median ${seat.latencySeconds.median}, p90 ${seat.latencySeconds.p90}; ` +
         `tokens median ${seat.totalTokens.median}, p90 ${seat.totalTokens.p90}; ` +
-        `reflections ${seat.reflections} (${seat.reflectionFallbacks} fell back)`,
+        `reflections ${seat.reflections}`,
     );
   }
 
@@ -270,7 +274,7 @@ export function renderMonitorReport(report: MonitorReport): string {
   lines.push("", "## Draft horizon (stated reasons per pick)", "");
   for (const row of report.draft)
     lines.push(
-      `- ${label(row.entrant)}: ${row.picks} picks, ${row.fallbackPicks} fallback, ${row.withoutReason} without a reason; ` +
+      `- ${label(row.entrant)}: ${row.picks} picks, ${row.withoutReason} without a reason; ` +
         `${row.namingAnotherCoach} name another coach, ${row.namingTheSeason} speak about the season beyond this pick`,
     );
 
@@ -291,7 +295,7 @@ export function renderMonitorReport(report: MonitorReport): string {
   lines.push("", "## Memory continuity per barrier (board Pokémon named in memory)", "");
   for (const row of report.memory)
     lines.push(
-      `- ${label(row.entrant)} ${row.stage} ${row.week}${row.fallback ? " (fallback)" : ""}: notebook ${row.notebookChars} chars, ${row.pages} pages, ${row.totalChars} chars total; ` +
+      `- ${label(row.entrant)} ${row.stage} ${row.week}: notebook ${row.notebookChars} chars, ${row.pages} pages, ${row.totalChars} chars total; ` +
         `names ${row.monsNamed} Pokémon, carried ${row.monsCarried}, dropped ${row.monsDropped}`,
     );
   return lines.join("\n");

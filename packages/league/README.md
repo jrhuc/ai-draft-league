@@ -4,25 +4,22 @@ The `league` package runs model-managed competitive Pokémon draft leagues and r
 
 The pinned [Pokémon Showdown](https://pokemonshowdown.com/) simulator decides legality, randomness, battle transitions, and results. The harness records every decision and can replay a season, matchday, battle, or counterfactual fork from saved evidence.
 
+New drafts use [Champions Regulation M-C](docs/regulation-mc.md) and the `regmc-202609` board, including the six newly available Mega Evolutions and the expanded item roster.
+
 The sibling [`apps/site`](../../apps/site) spectator app consumes validated public season bundles.
 
 ## Run locally
 
-Install Node.js 24.18.1 or newer in the 24.x line and pnpm 11.22.0. Model specifications use one of these forms:
+Install Node.js 24.21.0 or newer in the 24.x line and pnpm 12.3.4. Model execution uses the pinned embedded OpenCode V2 SDK. Specifications are `<OpenCode-provider-id>:<model-id>` or `random`, for example:
 
+- `opencode:model_id` (OpenCode Zen)
+- `opencode-go:model_id` (OpenCode Go)
 - `openrouter:model_id`
-- `prime:model_id`
-- `gateway:model_id`
-- `opencode-go:model_id`
-- `opencode-zen:model_id`
 - `random`
 
-Set the matching provider key when required:
+Set `OPENCODE_API_KEY` for Zen and Go, and `OPENROUTER_API_KEY` for OpenRouter. Any other provider in the OpenCode catalog works the same way with its own environment key.
 
-- `OPENROUTER_API_KEY`
-- `PRIME_API_KEY`
-- `AI_GATEWAY_API_KEY`
-- `OPENCODE_API_KEY`
+OpenCode supplies the catalog, provider routing, reasoning variants, retries, native tools, and conversation compaction. League tools validate submissions against the current task and Pokémon Showdown. Native session databases live under each run's `agents/` directory.
 
 From `packages/league`:
 

@@ -17,7 +17,6 @@ export type ReplayDecision = {
   selection: string[];
   rationale: string;
   notebook?: string;
-  fallback: boolean;
   automatic: boolean;
   latencyMs: number | null;
   reasoningTokens: number | null;
@@ -53,15 +52,7 @@ function escapeLog(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;");
 }
 
-/**
- * The "downloaded replay" document the official client publishes for offline
- * viewing: replay-embed.js reads .battle-log-data and renders the animated
- * battle. Only the log travels; every script and sprite stays on Showdown's
- * own server. The frame script must run first (see that file), and stays an
- * external script because the site CSP bars inline scripts, which the srcdoc
- * inherits.
- */
-function replayDoc(raw: string, teams: [Team, Team], title: string): string {
+function replayLog(raw: string, teams: [Team, Team]): string {
   let log = raw;
   const names = [...raw.matchAll(/^\|player\|(p[12])\|([^|]+)\|/gm)];
   const collide = teams[0].name === teams[1].name;
@@ -70,6 +61,10 @@ function replayDoc(raw: string, teams: [Team, Team], title: string): string {
     const label = collide ? `${team.name} (${pid?.toUpperCase()})` : team.name;
     log = log.replaceAll(recorded!, label);
   }
+  return log;
+}
+
+function replayDoc(raw: string, teams: [Team, Team], title: string): string {
   const replayId = title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
   return `<!DOCTYPE html>
 <meta charset="utf-8" />
@@ -79,7 +74,7 @@ function replayDoc(raw: string, teams: [Team, Team], title: string): string {
 <div class="wrapper replay-wrapper" style="max-width:1180px;margin:0 auto">
 <input type="hidden" name="replayid" value="${replayId}" />
 <div class="battle"></div><div class="battle-log"></div><div class="replay-controls"></div><div class="replay-controls-2"></div>
-<script type="text/plain" class="battle-log-data">${escapeLog(log)}</script>
+<script type="text/plain" class="battle-log-data">${escapeLog(replayLog(raw, teams))}</script>
 </div>
 <script src="${frameScript}"></script>
 <script src="https://play.pokemonshowdown.com/js/replay-embed.js"></script>
@@ -88,17 +83,44 @@ function replayDoc(raw: string, teams: [Team, Team], title: string): string {
 
 const heightReport = z.object({ type: z.literal("ps-height"), height: z.number().finite() });
 
-function ShowdownPlayer({ game, teams }: { game: ReplayGameView; teams: [Team, Team] }) {
+export function ShowdownPlayer({
+  game,
+  teams,
+  live = false,
+}: {
+  game: Pick<ReplayGameView, "raw" | "number">;
+  teams: [Team, Team];
+  live?: boolean;
+}) {
   const title = `${teams[0].name} vs ${teams[1].name} — Game ${game.number}`;
-  const doc = useMemo(() => replayDoc(game.raw, teams, title), [game.raw, teams, title]);
+  const raw = live ? "" : game.raw;
+  const doc = useMemo(() => replayDoc(raw, teams, title), [raw, teams, title]);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(0);
-  /* The sandbox denies same-origin access, so the frame posts its rendered
-     height; until the first report the CSS estimate holds. */
+  const [follow, setFollow] = useState(true);
+  const update = useRef<() => void>(() => {});
+  useEffect(() => {
+    update.current = () => {
+      if (live)
+        frameRef.current?.contentWindow?.postMessage(
+          {
+            type: "ps-live",
+            raw: replayLog(game.raw, teams),
+            follow,
+          },
+          "*",
+        );
+    };
+    update.current();
+  }, [game.raw, teams, live, follow]);
   useEffect(() => {
     function onHeight(event: MessageEvent) {
       const frame = frameRef.current;
       if (!frame?.contentWindow || event.source !== frame.contentWindow) return;
+      if (z.object({ type: z.literal("ps-ready") }).safeParse(event.data).success) {
+        update.current();
+        return;
+      }
       const report = heightReport.safeParse(event.data);
       if (!report.success) return;
       setHeight(Math.min(Math.max(Math.ceil(report.data.height), 240), 960));
@@ -108,6 +130,16 @@ function ShowdownPlayer({ game, teams }: { game: ReplayGameView; teams: [Team, T
   }, []);
   return (
     <div className="player-loaded">
+      {live ? (
+        <label className="live-follow">
+          <input
+            type="checkbox"
+            checked={follow}
+            onChange={(event) => setFollow(event.target.checked)}
+          />
+          Follow live
+        </label>
+      ) : null}
       <iframe
         ref={frameRef}
         className="ps-frame"
@@ -118,8 +150,9 @@ function ShowdownPlayer({ game, teams }: { game: ReplayGameView; teams: [Team, T
         style={height ? { height } : undefined}
       />
       <p className="player-note">
-        If the animation is unavailable, each turn's stated reason and the full text log remain
-        below.
+        {live
+          ? "Uncheck Follow live to pause or rewind. The public log keeps updating below."
+          : "If the animation is unavailable, each turn's stated reason and the full text log remain below."}
       </p>
     </div>
   );
@@ -129,7 +162,7 @@ function narrate(text: string, teams: [Team, Team]): string {
   return text
     .replace(/\bP([12])\b/g, (_, n: string) => teams[Number(n) - 1]!.name)
     .replace(
-      /\b([A-Z][a-z]+(?:-[A-Za-z]+)*)-Mega(?:-([XY]))?\b/g,
+      /\b([A-Z][a-z]+(?:-[A-Za-z]+)*)-Mega(?:-([XYZ]))?\b/g,
       (_, base: string, form?: string) => `Mega ${base}${form ? ` ${form}` : ""}`,
     );
 }
@@ -168,9 +201,6 @@ function DecisionRow({
       </span>
       <span className="meta">
         {decision.automatic ? <span className="chip chip-solid">AUTO</span> : null}
-        {decision.fallback && !decision.automatic ? (
-          <span className="chip chip-warn">fallback</span>
-        ) : null}
         {seconds(decision.latencyMs)}
         {decision.reasoningTokens !== null
           ? ` · ${tokens(decision.reasoningTokens)} reasoning`

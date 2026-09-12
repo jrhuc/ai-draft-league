@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { z } from "zod";
 import { appendJsonlObject, readJsonlObjects } from "./jsonl.js";
+import { reasoningLevelSchema } from "./providers.js";
 import { acquireLease, LeaseBusyError } from "./run-status.js";
 import type { ExperimentMode, JsonObject, JsonValue, Pid, TimerScale } from "./types.js";
 
@@ -46,7 +47,6 @@ const gameSchema = z
 const decisionStatSchema = z
   .object({
     decisions: z.number().finite().optional(),
-    fallbacks: z.number().finite().optional(),
     parse_failures: z.number().finite().optional(),
     tool_lookups: z.number().finite().optional(),
     move_selections: z.number().finite().optional(),
@@ -83,13 +83,10 @@ const seriesRecordSchema = z.object({
   engine_seeds: z.partialRecord(z.enum(["p1", "p2"]), z.number().int()),
   timer_scale: z.union([z.literal("off"), z.number().positive()]).optional(),
   closed_sheets: z.literal(true).optional(),
-  reasoning: z.enum(["minimal", "low", "medium", "high", "xhigh"]).nullable(),
+  reasoning: reasoningLevelSchema.nullable(),
   sampling: z.literal("provider-default").optional(),
   reasoning_by_player: z
-    .strictObject({
-      p1: z.enum(["minimal", "low", "medium", "high", "xhigh"]).nullable(),
-      p2: z.enum(["minimal", "low", "medium", "high", "xhigh"]).nullable(),
-    })
+    .strictObject({ p1: reasoningLevelSchema.nullable(), p2: reasoningLevelSchema.nullable() })
     .optional(),
   decision_stats: decisionStatsSchema,
   contributor: z

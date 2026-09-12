@@ -31,7 +31,7 @@ A manager can make up to `trades_allowed` offers. Each offer names the receiving
 
 The recipient accepts or rejects that exact offer. The protocol has no counteroffers, negotiation rounds, multi-Pokémon deals, or fees. A manager may receive any number of offers.
 
-Both resulting rosters must remain legal. A rejection and a decision not to offer are complete decisions, not fallbacks.
+Both resulting rosters must remain legal. A rejection and a decision not to offer are complete decisions in their own right.
 
 ## Sign a free agent
 

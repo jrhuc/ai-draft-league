@@ -9,7 +9,7 @@ import { seriesGameSummaries, teamPreviewPicks } from "../src/game-usage.js";
 import type { TeamBuildView } from "../src/views.js";
 import { storeCompletedSeriesFixture } from "./series-store-fixture.js";
 
-const BOARD = loadBoard("regmb-202607");
+const BOARD = loadBoard("regmc-202609");
 const byId = new Map(BOARD.mons.map((mon) => [mon.id, mon]));
 
 function mon(id: string) {

@@ -21,7 +21,6 @@ const SCHEMA = `
     roster_version INTEGER NOT NULL,
     memory_json TEXT NOT NULL CHECK (json_valid(memory_json)),
     reasoning TEXT NOT NULL,
-    fallback INTEGER NOT NULL CHECK (fallback IN (0, 1)),
     PRIMARY KEY (stage, week, entrant)
   ) STRICT;
   CREATE TABLE IF NOT EXISTS franchise_rosters (
@@ -94,6 +93,17 @@ function open(runDir: string): DatabaseSync {
   database.exec("PRAGMA foreign_keys = ON");
   database.exec("PRAGMA synchronous = FULL");
   if (!existed || !prepared.has(file)) {
+    if (
+      existed &&
+      database
+        .prepare("SELECT 1 FROM pragma_table_info('franchise_checkpoints') WHERE name = 'fallback'")
+        .get()
+    ) {
+      database.close();
+      throw new Error(
+        `Run database uses the retired fallback checkpoint schema: ${file}. Start a new run.`,
+      );
+    }
     database.exec(SCHEMA);
     prepared.add(file);
   }

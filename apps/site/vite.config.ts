@@ -7,12 +7,6 @@ import { defineConfig } from "vite-plus";
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
-/**
- * Dev-only live watch: lists local league runs and serves freshly built season
- * bundles for them, so the regular spectator pages can render a run as it
- * plays. `apply: "serve"` keeps every trace of this out of production builds —
- * the deployed site consumes only the exported season-bundle.json.
- */
 function liveWatch(): Plugin {
   return {
     name: "live-watch",
@@ -52,7 +46,7 @@ function liveWatch(): Plugin {
             return;
           }
           const match =
-            /^\/runs\/([A-Za-z0-9._-]+)\/(bundle|traces\/manifest|traces\/([A-Za-z0-9._-]+)\/game-(\d+))$/.exec(
+            /^\/runs\/((?!\.{1,2}\/)[A-Za-z0-9._-]+)\/(events|bundle|traces\/manifest|traces\/([A-Za-z0-9._-]+)\/game-(\d+))$/.exec(
               url,
             );
           if (!match?.[1]) {
@@ -60,6 +54,10 @@ function liveWatch(): Plugin {
             return;
           }
           try {
+            if (match[2] === "events") {
+              league.streamLiveRun(league.RUNS_DIR, match[1], res);
+              return;
+            }
             const exported = league.buildSeasonExport({
               recordsPath: league.RESULTS_PATH,
               runsDir: league.RUNS_DIR,
@@ -97,5 +95,8 @@ export default defineConfig({
   },
   test: {
     include: ["tests/**/*.test.ts?(x)"],
+    environmentOptions: {
+      happyDOM: { settings: { handleDisabledFileLoadingAsSuccess: true } },
+    },
   },
 });

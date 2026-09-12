@@ -1,5 +1,3 @@
-import type { ModelMessage, ToolCallPart } from "ai";
-
 export type Pid = "p1" | "p2";
 type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | readonly JsonValue[];
@@ -120,70 +118,4 @@ export interface ToolDefinition {
   name: string;
   description: string;
   parameters: JsonObject;
-}
-
-export interface ToolCall {
-  id: string;
-  name: string;
-  arguments: JsonObject;
-  inputError?: string;
-  /** Provider metadata that must be replayed with the call. */
-  providerMetadata?: NonNullable<ToolCallPart["providerOptions"]>;
-}
-
-export interface Completion {
-  text: string;
-  usage: Record<string, number>;
-  toolCalls: ToolCall[];
-  finishReason?: string;
-  reasoning?: string;
-  provider?: string;
-  /** AI SDK response messages; replay normalization preserves non-tool content and provider metadata. */
-  responseMessages?: ModelMessage[];
-}
-
-export interface ProviderMessage {
-  role: "user" | "assistant" | "tool";
-  content?: string | null;
-  toolCallId?: string;
-  name?: string;
-  toolCalls?: ToolCall[];
-  /** Raw AI SDK messages sent in place of this message when present. */
-  raw?: ModelMessage[];
-}
-
-export interface CompleteOptions {
-  maxTokens?: number;
-  /** Reply prefix seeded as a trailing assistant turn on APIs that support prefill; ignored elsewhere. */
-  prefillResponse?: string;
-  /** Explicit reasoning-token budget below maxTokens, guaranteeing visible-text headroom. */
-  reasoningMaxTokens?: number;
-  tools?: ToolDefinition[];
-  toolChoice?: "auto" | "none" | "required";
-  /** Throw on the first infra-class failure instead of retrying, so timed battles keep their clock. */
-  failFast?: boolean;
-  signal?: AbortSignal;
-}
-
-export interface Provider {
-  complete(
-    system: string,
-    messages: ProviderMessage[],
-    options?: CompleteOptions,
-  ): Promise<Completion>;
-}
-
-export type ProviderFailureKind =
-  | "quota"
-  | "rate_limit"
-  | "timeout"
-  | "truncation"
-  | "upstream"
-  | "network"
-  | "request";
-
-export interface ProviderFailure {
-  kind: ProviderFailureKind;
-  summary: string;
-  terminal: boolean;
 }

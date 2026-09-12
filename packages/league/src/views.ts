@@ -1,4 +1,3 @@
-import type { Pid } from "./types.js";
 import type { BattleLogEntry } from "./battlelog.js";
 
 export interface BoardInfo {
@@ -26,7 +25,6 @@ export interface DraftPickView {
   entrant: number;
   mon: string;
   rationale: string;
-  fallback: boolean;
 }
 
 export interface DraftTableRow {
@@ -40,8 +38,6 @@ export interface DraftTableRow {
 export interface TeamBuildSetView extends PublicTeamSheetSetView {
   evs: Record<string, number>;
   note?: string;
-  repaired: boolean;
-  repairs: string[];
 }
 
 export interface TeamBuildView {
@@ -102,65 +98,7 @@ export interface PublicTeamSheetSetView {
   moves: string[];
 }
 
-export interface MonView {
-  species: string;
-  spriteId: string;
-  slot: string;
-  hp: string;
-  status: string;
-  fainted: boolean;
-  boosts: string;
-  volatiles: string;
-  lastMove: string;
-}
-
-export interface SideView {
-  player: string;
-  conditions: string[];
-  mons: MonView[];
-}
-
 export type BattleLogEntryView = BattleLogEntry;
-
-export interface SideTimerView {
-  /** Remaining time bank in seconds as of snapshot generation; null in untimed play. */
-  seconds: number | null;
-  turnSeconds: number | null;
-  /** Seconds spent on the decision in progress; null when idle. Clients count up from the snapshot time. */
-  elapsedSeconds: number | null;
-  /** True while the player is deciding; clients may count down from the snapshot time. */
-  running: boolean;
-}
-
-/** Cumulative series spend for one side: decision wall-clock plus all model tokens, reflections included. */
-export interface SpendView {
-  seconds: number;
-  tokens: number;
-}
-
-export interface DecisionView {
-  game: number;
-  turn: number;
-  pid: Pid;
-  phase: string;
-  selection: string[];
-  rationale: string;
-  error: string;
-  automatic: boolean;
-  fallback: boolean;
-  substituted: boolean;
-}
-
-export interface BattleSnapshot {
-  turn: number;
-  weather: string;
-  fields: string[];
-  sides: Record<Pid, SideView>;
-  timers: Record<Pid, SideTimerView | null>;
-  spend: Record<Pid, SpendView>;
-  log: BattleLogEntryView[];
-  decisions: DecisionView[];
-}
 
 export interface TournamentSummary {
   tournaments: number;
@@ -187,16 +125,6 @@ export interface TournamentEventView {
   reconstructedSpreads: boolean;
 }
 
-export interface TournamentLiveSeriesView {
-  seriesId: string;
-  seriesIndex: number | null;
-  round: number | null;
-  slots: [number | null, number | null];
-  game: number;
-  turn: number;
-  decisions: number;
-}
-
 export interface TournamentArchiveView {
   runId: string;
   when: string;
@@ -206,7 +134,6 @@ export interface TournamentArchiveView {
   champion: number | null;
   complete: boolean;
   live: boolean;
-  liveSeries: TournamentLiveSeriesView[];
   event: TournamentEventView | null;
   provenance: "disclosed" | "blind" | null;
 }
@@ -240,7 +167,6 @@ export interface LeagueRosterSlotView {
   cost: number;
   pick: number | null;
   rationale: string;
-  fallback: boolean;
   acquired: "draft" | "window";
 }
 
@@ -258,7 +184,6 @@ export interface LeagueFranchiseStatsView {
   cost: number | null;
   toolLookups: number;
   parseFailures: number;
-  fallbacks: number;
   moveSelections: number;
   switchSelections: number;
   protectSelections: number;
@@ -360,7 +285,6 @@ export interface LeagueGameDecisionView {
   action: string;
   rationale: string;
   notebook: string;
-  fallback: boolean;
   automatic: boolean;
   latencyMs: number | null;
   totalTokens: number | null;
@@ -378,7 +302,6 @@ export interface LeagueGameReflectionView {
     didPoorly: string;
     wouldChange: string;
   };
-  fallback: boolean;
   seriesOver: boolean;
 }
 
@@ -389,32 +312,15 @@ export interface LeagueGameResponse {
   stage: "roundrobin" | "playoff";
   round: number;
   game: number;
-  /** Game numbers with a stored log or logged decisions for this series, ascending. */
   games: number[];
-  /** Winning entrant per entry of `games`, null while that game is unresolved. */
   gameWinners: Array<number | null>;
   sides: [number, number];
   teamNames: [string, string];
   winner: number | null;
-  live: boolean;
-  /** Battlefield state for a game still in progress; null once the game has a result. */
-  snapshot: BattleSnapshot | null;
-  /** The verbatim Showdown protocol log, exactly as the sim emitted it. */
   raw: string;
   log: BattleLogEntryView[];
   decisions: LeagueGameDecisionView[];
   reflections: LeagueGameReflectionView[];
-}
-
-export interface LeagueLiveSeriesView {
-  seriesId: string;
-  seriesIndex: number | null;
-  stage: "roundrobin" | "playoff" | null;
-  round: number | null;
-  game: number;
-  turn: number;
-  decisions: number;
-  sides: [number, number] | null;
 }
 
 export interface LeagueTradeWindowDecisionView {
@@ -423,7 +329,6 @@ export interface LeagueTradeWindowDecisionView {
   /** Season swaps the franchise still held after this decision; null for windows that predate the allowance. */
   swapsRemaining: number | null;
   reasoning: string;
-  fallback: boolean;
 }
 
 export interface LeagueTradeOfferView {
@@ -453,7 +358,6 @@ export interface LeagueWeeklyReviewView {
   reasoning: string;
   memoryPages: number;
   memoryCharacters: number;
-  fallback: boolean;
 }
 
 export interface LeagueSeasonReviewView {
@@ -463,7 +367,6 @@ export interface LeagueSeasonReviewView {
   didWell: string;
   didPoorly: string;
   wouldChange: string;
-  fallback: boolean;
 }
 
 export interface LeagueResponse {
@@ -481,7 +384,6 @@ export interface LeagueResponse {
   champion: LeagueChampionView | null;
   draftOnly: boolean;
   lifecycle: LeagueLifecycle;
-  liveSeries: LeagueLiveSeriesView[];
   transactions: LeagueTradeWindowView[];
   swapsAllowed: number | null;
   weeklyReviews: LeagueWeeklyReviewView[];

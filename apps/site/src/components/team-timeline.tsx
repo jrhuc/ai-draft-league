@@ -10,10 +10,7 @@ type Review = ReturnType<typeof weeklyReviewsForFranchise>[number];
 function ReviewNote({ review }: { review: Review }) {
   return (
     <details className="timeline-review">
-      <summary>
-        {review.stageLabel}
-        {review.fallbackLabel ? ` · ${review.fallbackLabel}` : ""}
-      </summary>
+      <summary>{review.stageLabel}</summary>
       <p className="prose">{review.reasoningText}</p>
       <p className="hint">
         Roster version {review.rosterVersion} · Memory: {review.memoryPages} pages,{" "}

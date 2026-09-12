@@ -1,3 +1,4 @@
+export { liveRunSchema, type LiveRunSnapshot, type LiveGame } from "./live-protocol.js";
 export {
   type PublicBattleEvent,
   type PublicBuild,

@@ -26,9 +26,11 @@ export function normalizeStageEvidence(
 ): StageEvidence {
   const hasRationale = isText(rationale);
   const hasNotebook = isText(notebook);
+  if (hasNotebook && notebook.trim().length > options.notebookLimit)
+    throw new Error(`notebook exceeds ${options.notebookLimit} characters`);
   return {
     rationale: hasRationale ? clip(rationale.trim(), options.rationaleLimit) : "",
-    notebook: hasNotebook ? clip(notebook.trim(), options.notebookLimit) : options.currentNotebook,
+    notebook: hasNotebook ? notebook.trim() : options.currentNotebook,
     supplied: { rationale: hasRationale, notebookUpdate: hasNotebook },
   };
 }

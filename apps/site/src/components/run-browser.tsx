@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { liveRunId, startWatching, stopWatching } from "@/lib/live";
 import type { ExternalRunSummary } from "@/lib/runs";
 
@@ -71,9 +72,15 @@ export function RunBrowser({
                   <td>{run.mode}</td>
                   <td className="mono">{run.startTime ?? "—"}</td>
                   <td>
-                    <button type="button" className="chip" onClick={() => open(run.runId)}>
-                      {verb}
-                    </button>
+                    {verb === "watch" ? (
+                      <Link className="chip" to={`/live/${run.runId}`}>
+                        Watch live
+                      </Link>
+                    ) : (
+                      <button type="button" className="chip" onClick={() => open(run.runId)}>
+                        {verb}
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

@@ -13,7 +13,6 @@ import type {
   LeagueFranchiseView,
   LeagueGameResponse,
   LeagueLifecycle,
-  LeagueLiveSeriesView,
   LeagueRecordView,
   LeagueResponse,
   LeagueRosterSlotView,
@@ -29,10 +28,11 @@ import {
   latestRosterVersion,
   readFranchiseCheckpoints,
   readFranchiseRosterVersion,
+  readLeagueTransitions,
 } from "./league-journal.js";
 import { draftLeagueConfigSchema } from "./league-store.js";
 import { SAFE_SEGMENT } from "./path-safety.js";
-import { modelKey, type ParsedSeriesRecord } from "./records.js";
+import type { ParsedSeriesRecord } from "./records.js";
 import { readRunArtifacts } from "./run-artifact-store.js";
 import {
   buildSeriesGame,
@@ -44,7 +44,6 @@ import {
   readDecisionLog,
   readRunJson,
   type SeriesSlot,
-  scanUnfinishedSeries,
   spriteIdFor,
 } from "./run-artifacts.js";
 import { runStatusSchema, type StoredRunStatus } from "./run-status.js";
@@ -88,39 +87,6 @@ function draftRuns(allRows: ParsedSeriesRecord[]): Map<string, ParsedSeriesRecor
   return runs;
 }
 
-function liveSeriesViews(
-  runsDir: string,
-  runId: string,
-  rows: ParsedSeriesRecord[],
-  identity: LeagueIdentity,
-): LeagueLiveSeriesView[] {
-  const views: LeagueLiveSeriesView[] = [];
-  for (const entry of scanUnfinishedSeries(runsDir, runId, rows)) {
-    let sides: [number, number] | null = null;
-    if (entry.players) {
-      const a = entrantForSpec(identity, entry.players.p1);
-      const b = entrantForSpec(identity, entry.players.p2);
-      if (a >= 0 && b >= 0) sides = [a, b];
-    }
-    if (entry.decisions === 0 && !sides) continue;
-    const slot =
-      entry.seriesIndex === null
-        ? null
-        : leagueSeriesSlot(entry.seriesIndex, identity.models.length);
-    views.push({
-      seriesId: entry.seriesId,
-      seriesIndex: entry.seriesIndex,
-      stage: slot?.stage ?? null,
-      round: slot?.round ?? null,
-      game: entry.game,
-      turn: entry.turn,
-      decisions: entry.decisions,
-      sides,
-    });
-  }
-  return views;
-}
-
 interface LeagueIdentity {
   models: string[];
   teamNames: string[];
@@ -150,14 +116,6 @@ function leagueIdentity(
   for (const { value } of readRunArtifacts(runDir, "draft-franchise-name")) {
     const parsed = storedNameSchema.safeParse(value);
     if (parsed.success) namesByEntrant.set(parsed.data.entrant, parsed.data.team_name);
-  }
-  for (const row of rows) {
-    if (!row.entrants) continue;
-    for (const pid of PIDS) {
-      const entrant = row.entrants[pid === "p1" ? 0 : 1];
-      const name = String(row.teams?.[pid] ?? "").replace(/\s+wk\d+$/u, "");
-      if (entrant !== undefined && name) namesByEntrant.set(entrant, name);
-    }
   }
   if (config && entrants && entrants.length >= 2) {
     return {
@@ -193,38 +151,12 @@ function leagueIdentity(
   };
 }
 
-/** A seat rewired to another provider mid-run keeps its entrant: match the exact spec first,
- * then fall back to the bare model name when it identifies a single entrant. */
-function entrantForSpec(identity: LeagueIdentity, spec: string): number {
-  const exact = identity.models.flatMap((model, entrant) => (model === spec ? [entrant] : []));
-  if (exact.length === 1) return exact[0]!;
-  if (exact.length > 1) return -1;
-  const matches = identity.models.flatMap((model, entrant) =>
-    modelKey(model) === modelKey(spec) ? [entrant] : [],
-  );
-  return matches.length === 1 ? matches[0]! : -1;
-}
-
 interface LeagueProgress {
   phase: "roundrobin" | "playoffs" | "complete";
   week: number;
   champion: LeagueChampionView | null;
   finalists: [number, number] | null;
   eliminatedRound: Map<number, number>;
-}
-
-function leagueSeriesSlot(
-  seriesIndex: number,
-  entrants: number,
-): { stage: "roundrobin" | "playoff"; round: number } | null {
-  if (!Number.isSafeInteger(seriesIndex) || seriesIndex < 0 || entrants < 2) return null;
-  const topology = draftLeagueTopology(entrants);
-  if (seriesIndex < topology.roundRobinSeries) {
-    return { stage: "roundrobin", round: Math.floor(seriesIndex / Math.floor(entrants / 2)) + 1 };
-  }
-  const playoffIndex = seriesIndex - topology.roundRobinSeries;
-  if (playoffIndex >= topology.playoffSeries) return null;
-  return { stage: "playoff", round: topology.playoffRounds === 1 || playoffIndex < 2 ? 1 : 2 };
 }
 
 function leagueProgress(rows: ParsedSeriesRecord[], identity: LeagueIdentity): LeagueProgress {
@@ -236,8 +168,6 @@ function leagueProgress(rows: ParsedSeriesRecord[], identity: LeagueIdentity): L
   const eliminatedRound = new Map<number, number>();
   let champion: LeagueChampionView | null = null;
   let finalists: [number, number] | null = null;
-  /** Mirrors the bracket in draftleague.ts: the final is the last round, so a lone finished
-   * semifinal must not be mistaken for it while the other semifinal is still playing. */
   const finalRound = draftLeagueTopology(identity.models.length).playoffRounds;
   for (const row of playoffRows) {
     const winnerPid = row.winner_side ?? null;
@@ -289,12 +219,11 @@ function leaguePhase(
   runId: string,
   rows: ParsedSeriesRecord[],
   progress: LeagueProgress,
-  liveSeries: LeagueLiveSeriesView[],
 ): "drafting" | "building" | "roundrobin" | "window" | "playoffs" | "complete" {
   const runDir = path.join(runsDir, runId);
   if (transactionWeeks(runsDir, runId).some((week) => windowInProgress(runDir, week)))
     return "window";
-  if (liveSeries.some((series) => series.stage === "playoff")) return "playoffs";
+  if (readLeagueTransitions(runDir).at(-1)?.phase === "playoffs") return "playoffs";
   if (rows.length > 0) return progress.phase;
   if (completedDraftOnlyRun(runsDir, runId)) return "complete";
   return preSeasonPhase(runsDir, runId);
@@ -347,14 +276,10 @@ function weeklyReviewViews(runsDir: string, runId: string): LeagueWeeklyReviewVi
                 (total, page) => total + page.length,
                 0,
               ),
-              fallback: checkpoint.fallback,
             },
           ],
     )
-    .filter(
-      (review) =>
-        review.reasoning.trim().length > 0 || review.memoryCharacters > 0 || review.fallback,
-    )
+    .filter((review) => review.reasoning.trim().length > 0 || review.memoryCharacters > 0)
     .sort((a, b) => a.week - b.week || a.stage.localeCompare(b.stage) || a.entrant - b.entrant);
 }
 
@@ -368,7 +293,6 @@ function seasonReviewViews(runsDir: string, runId: string): LeagueSeasonReviewVi
       didWell: text(row.did_well),
       didPoorly: text(row.did_poorly),
       wouldChange: text(row.would_change),
-      fallback: row.fallback === true,
     };
   });
 }
@@ -409,7 +333,6 @@ function transactionViews(runsDir: string, runId: string): LeagueTradeWindowView
             ? Math.max(0, swapsAllowed - count(artifact.swaps_used[decision.entrant]))
             : null,
         reasoning: decision.reasoning,
-        fallback: decision.fallback,
       })),
     };
   });
@@ -473,7 +396,6 @@ function readRosters(
         cost: mon.cost,
         pick: pick?.pick ?? null,
         rationale: pick?.rationale ?? "",
-        fallback: pick?.fallback === true,
         acquired: viaWindow ? "window" : "draft",
       };
     });
@@ -490,7 +412,6 @@ function readRosters(
         cost: pick.cost ?? 0,
         pick: pick.pick,
         rationale: pick.rationale ?? "",
-        fallback: pick.fallback === true,
         acquired: "draft",
       }));
       spent = own.reduce((total, pick) => total + (pick.cost ?? 0), 0);
@@ -584,7 +505,6 @@ export function buildLeague(
       boardBudget = board.budget;
     } catch {}
   }
-  const liveSeries = live ? liveSeriesViews(runsDir, runId, rows, identity) : [];
   const rosters = readRosters(runsDir, runId, identity);
   const draftRosters = readRosters(runsDir, runId, identity, false);
   const teambuilds = readArchivedTeambuilds(path.join(runsDir, runId));
@@ -609,7 +529,6 @@ export function buildLeague(
     cost: null,
     toolLookups: 0,
     parseFailures: 0,
-    fallbacks: 0,
     moveSelections: 0,
     switchSelections: 0,
     protectSelections: 0,
@@ -640,7 +559,6 @@ export function buildLeague(
       const agg = statsAgg[entrant]!;
       if (d) {
         agg.decisions += count(d.decisions);
-        agg.fallbacks += count(d.fallbacks);
         agg.parseFailures += count(d.parse_failures);
         agg.toolLookups += count(d.tool_lookups);
         agg.moveSelections += count(d.move_selections);
@@ -869,12 +787,11 @@ export function buildLeague(
       boardPicks ?? rosters.find((entry) => entry.roster.length > 0)?.roster.length ?? null,
     weeks: identity.weeks,
     playoffRounds: draftLeagueTopology(identity.models.length).playoffRounds,
-    phase: leaguePhase(runsDir, runId, rows, progress, liveSeries),
+    phase: leaguePhase(runsDir, runId, rows, progress),
     week: progress.week,
     champion: progress.champion,
     draftOnly: isDraftOnly(runsDir, runId) && rows.length === 0,
     lifecycle: leagueLifecycle(runsDir, runId, progress.champion),
-    liveSeries,
     transactions: transactionViews(runsDir, runId),
     swapsAllowed: leagueSwapsAllowed(runsDir, runId),
     weeklyReviews: weeklyReviewViews(runsDir, runId),
@@ -904,27 +821,6 @@ function summary(values: number[]): QuartileView | null {
   };
 }
 
-function liveSeriesByIndex(
-  runsDir: string,
-  runId: string,
-  seriesIndex: number,
-  identity: LeagueIdentity,
-): {
-  seriesId: string;
-  sides: [number, number];
-  stage: "roundrobin" | "playoff";
-  round: number;
-} | null {
-  for (const series of listStoredSeries(path.join(runsDir, runId))) {
-    if (!SAFE_SEGMENT.test(series.seriesId) || series.seriesIndex !== seriesIndex) continue;
-    const a = entrantForSpec(identity, series.players.p1);
-    const b = entrantForSpec(identity, series.players.p2);
-    const slot = leagueSeriesSlot(seriesIndex, identity.models.length);
-    if (a >= 0 && b >= 0 && slot) return { seriesId: series.seriesId, sides: [a, b], ...slot };
-  }
-  return null;
-}
-
 export function buildLeagueGame(
   allRows: ParsedSeriesRecord[],
   runsDir: string,
@@ -936,22 +832,16 @@ export function buildLeagueGame(
   const rows = draftRuns(allRows).get(runId) ?? [];
   const identity = leagueIdentity(runsDir, runId, rows);
   const row = rows.find((entry) => count(entry.series_index) === seriesIndex);
-  let slot: SeriesSlot;
-  if (row) {
-    const [a, b] = recordedSides(row, identity.models.length);
-    if (a < 0 || b < 0) return null;
-    slot = {
-      seriesId: String(row.series_id ?? ""),
-      sides: [a, b],
-      stage: row.stage === "playoff" ? "playoff" : "roundrobin",
-      round: count(row.round),
-      models: identity.models,
-      labels: identity.teamNames,
-    };
-  } else {
-    const found = liveSeriesByIndex(runsDir, runId, seriesIndex, identity);
-    if (!found) return null;
-    slot = { ...found, models: identity.models, labels: identity.teamNames };
-  }
+  if (!row) return null;
+  const [a, b] = recordedSides(row, identity.models.length);
+  if (a < 0 || b < 0) return null;
+  const slot: SeriesSlot = {
+    seriesId: String(row.series_id ?? ""),
+    sides: [a, b],
+    stage: row.stage === "playoff" ? "playoff" : "roundrobin",
+    round: count(row.round),
+    models: identity.models,
+    labels: identity.teamNames,
+  };
   return buildSeriesGame(runsDir, runId, seriesIndex, game, slot, row);
 }

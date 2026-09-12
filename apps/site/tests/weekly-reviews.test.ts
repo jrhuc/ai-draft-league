@@ -11,7 +11,6 @@ function review(overrides: Partial<WeeklyReview> = {}): WeeklyReview {
     reasoning: "Reviewed the week.",
     memoryPages: 2,
     memoryCharacters: 120,
-    fallback: false,
     ...overrides,
   };
 }
@@ -34,14 +33,13 @@ test("filters one franchise and orders each week before its reconciliation", () 
   ]);
 });
 
-test("presents weekly, reconciliation, and fallback states", () => {
+test("presents weekly and reconciliation states", () => {
   const [weekly, reconciliation] = weeklyReviewsForFranchise(
-    [review(), review({ week: 2, stage: "transactions", reasoning: "  ", fallback: true })],
+    [review(), review({ week: 2, stage: "transactions", reasoning: "  " })],
     "alpha",
   );
 
   expect(weekly?.stageLabel).toBe("Weekly review");
   expect(reconciliation?.stageLabel).toBe("Post-transaction reconciliation");
-  expect(reconciliation?.fallbackLabel).toBe("Fallback review");
   expect(reconciliation?.reasoningText).toBe("No stated reason recorded.");
 });

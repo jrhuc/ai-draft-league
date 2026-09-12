@@ -4,7 +4,8 @@ import path from "node:path";
 import { z } from "zod";
 
 import { createBoardSearch } from "./board-search.js";
-import { completeWithDexTools, type ExtraTool } from "./dex-lookups.js";
+import type { AgentRunner, AgentTool } from "./agent-runtime.js";
+import { referenceTools, runStage, submissionTool } from "./stage-agent.js";
 import type { DraftBoard, DraftBoardMon } from "./draft.js";
 import {
   cloneMemory,
@@ -21,26 +22,20 @@ import type { DraftTableRow, TeamBuildView } from "./views.js";
 import { BattleLog } from "./battlelog.js";
 import { readFranchiseCheckpoints, storeFranchiseCheckpoint } from "./league-journal.js";
 import { FORMAT_AUTHORITY_NOTICE, MANAGER_CHARGE, renderPromptTemplate } from "./prompts.js";
-import type { ModelReasoningConfig, ReasoningLevel } from "./providers.js";
-import {
-  classifyProviderFailure,
-  makeProvider,
-  parseSpec,
-  reasoningForModel,
-} from "./providers.js";
+import { reasoningForModel, type ModelReasoningConfig } from "./providers.js";
 import { ShowdownReference } from "./reference.js";
 import {
   mapLimit,
   readCompletedSeriesDecisionRows,
   readCompletedSeriesGameLogs,
 } from "./series.js";
-import type { JsonObject, Provider, ProviderMessage } from "./types.js";
-import { clip, count, fileSlug, isText, replyJsonObject, text } from "./value.js";
+import type { JsonObject } from "./types.js";
+import { count, fileSlug, text } from "./value.js";
 
-const MEMORY_NOTICE = `- Your memory is yours to organise: a notebook page that every later prompt of yours shows in full, plus up to ${MEMORY_LIMITS.pages - 1} named pages that later prompts list by name and that you or your later selves fetch with read_memory_page. Each page holds at most ${MEMORY_LIMITS.pageChars} characters, ${MEMORY_LIMITS.totalChars} in all. It is the only state that carries from week to week; nothing else you write here is kept.`;
+const MEMORY_NOTICE = `- Your memory is yours to organise: a notebook page shown to later managers and team builders, plus up to ${MEMORY_LIMITS.pages - 1} named pages they can fetch with read_memory_page. Each page holds at most ${MEMORY_LIMITS.pageChars} characters, ${MEMORY_LIMITS.totalChars} in all. The builder passes its team plan and set notes to the battle pilot. Completed series and earlier memory checkpoints remain available through the league tools; your review reasoning is recorded as evidence, but is not included in later prompts.`;
 
 const LEAGUE_TOOLS_NOTICE =
-  "You have the Showdown dex tools and five league tools: read_public_series returns the spectator log of any completed series, read_own_series returns your own turn-by-turn choices with their stated reasons and your end-of-game notes, read_own_build returns the six you registered for a series, your plan, and what you brought and Mega Evolved in each game, read_memory_page returns one of your pages in full, and read_memory_history returns your memory as it stood after an earlier review or reconciliation.";
+  "You have the Showdown dex tools and five league tools: read_public_series returns the spectator log of any completed series, read_own_series returns your own turn-by-turn choices with their stated reasons and your end-of-game notes, read_own_build returns the six you registered for a series, your plan, and what you brought, Mega Evolved, and lost in each game, read_memory_page returns one of your pages in full, and read_memory_history returns your memory as it stood after an earlier review or reconciliation.";
 
 const WEEKLY_REVIEW_PROMPT_POLICY = {
   systemTemplate: [
@@ -54,7 +49,7 @@ const WEEKLY_REVIEW_PROMPT_POLICY = {
     "- Every coach builds a new six from its roster for every matchup. Sets, items, moves and spreads you saw this week were built for that one series and may not return.",
     "- Rosters change only in transaction windows. {{windowNotice}}",
     "",
-    `${LEAGUE_TOOLS_NOTICE} Use them to check anything you intend to write down.`,
+    LEAGUE_TOOLS_NOTICE,
   ],
   reconcileSystemTemplate: [
     "You are {{model}}, manager of a franchise in a Pokémon VGC draft league played in the format {{format}}.",
@@ -77,17 +72,11 @@ const WEEKLY_REVIEW_PROMPT_POLICY = {
   previousRosterHeading: "YOUR ROSTER BEFORE THE WINDOW:",
   currentRosterHeading: "YOUR ROSTER NOW:",
   replyTemplate: [
-    'Reply with one JSON object {"notebook":"<complete replacement notebook>","set_pages":{"<name>":"<complete page text>",...},"delete_pages":["<name>",...]}. Every field is optional and every omission keeps what exists: "set_pages" writes only the pages it names and leaves the rest as they are; only "delete_pages" removes a page. An optional "reasoning":"<concise note on what changed and why>" field is recorded as evidence.',
+    'Call submit_review with {"notebook":"<complete replacement notebook>","set_pages":{"<name>":"<complete page text>",...},"delete_pages":["<name>",...]}. Every field is optional and every omission keeps what exists: "set_pages" writes only the pages it names and leaves the rest as they are; only "delete_pages" removes a page. An optional "reasoning":"<concise note on what changed and why>" field is recorded as evidence.',
     "An empty object {} keeps the current memory unchanged and is a complete answer.",
   ],
-  rejectionTemplate: "That review was rejected: {{error}} Reply again with only the JSON object.",
-  truncatedTemplate:
-    "Your previous reply used the whole {{budget}}-token budget before completing the JSON object. Reply now with only the JSON object.",
   rationaleLimit: 2_000,
   toolOutputLimit: 24_000,
-  maxTokens: 32_768,
-  attempts: 3,
-  toolRounds: 8,
 } as const;
 
 export interface WeeklyReviewSeries {
@@ -133,12 +122,7 @@ export interface RunWeeklyReviewOptions extends ModelReasoningConfig {
   psDir: string;
   concurrency?: number;
   signal?: AbortSignal;
-  apiKeys?: Readonly<Record<string, string>>;
-  makeReviewProvider?: (
-    spec: string,
-    apiKey: string | undefined,
-    reasoning: ReasoningLevel | undefined,
-  ) => Provider;
+  runAgent: AgentRunner;
   onReview?: (review: WeeklyReview) => void;
 }
 
@@ -150,7 +134,6 @@ export interface WeeklyReview {
   roster_version: number;
   memory: FranchiseMemory;
   reasoning: string;
-  fallback: boolean;
 }
 
 function storeReviewCheckpoint(runDir: string, review: WeeklyReview): void {
@@ -162,19 +145,7 @@ function storeReviewCheckpoint(runDir: string, review: WeeklyReview): void {
     rosterVersion: review.roster_version,
     memory: review.memory,
     reasoning: review.reasoning,
-    fallback: review.fallback,
   });
-}
-
-interface ReviewSeatLog {
-  attempt: number;
-  system?: string;
-  user: string;
-  response: string;
-  reasoning?: string;
-  usage?: Record<string, number>;
-  tool_lookups?: { name: string; arguments: JsonObject; result: string }[];
-  error?: string;
 }
 
 function reviewLogDir(runDir: string, week: number, stage: ReviewStage): string {
@@ -190,24 +161,41 @@ export interface ParsedWeeklyReview {
   reasoning: string;
 }
 
-type ParsedWeeklyReviewResult = { value: ParsedWeeklyReview } | { error: string };
+const memoryPage = z
+  .string()
+  .max(MEMORY_LIMITS.pageChars, `a page exceeds ${MEMORY_LIMITS.pageChars} characters`);
 
-function parseWeeklyReviewResult(
-  response: string,
+export const weeklyReviewReplySchema = z.object({
+  notebook: memoryPage
+    .optional()
+    .describe(
+      "Complete replacement text for your notebook page; omit it to keep the current notebook.",
+    ),
+  set_pages: z
+    .record(z.string(), memoryPage)
+    .optional()
+    .describe(
+      "Named pages to write, each with its complete text. Pages not named are kept as they are.",
+    ),
+  delete_pages: z.array(z.string()).optional().describe("Names of pages to remove."),
+  reasoning: z
+    .string()
+    .max(WEEKLY_REVIEW_PROMPT_POLICY.rationaleLimit)
+    .optional()
+    .describe("Why you changed what you changed; recorded, never shown to you again."),
+});
+
+export function parseWeeklyReviewResult(
+  input: JsonObject,
   current: FranchiseMemory,
-): ParsedWeeklyReviewResult {
-  const object = replyJsonObject(response);
-  if (isText(object)) return { error: object };
-  const reasoning = object.reasoning;
-  if (reasoning !== undefined && !isText(reasoning))
-    return { error: '"reasoning" must be a string' };
-  const reply = parseMemoryReply(object, current);
-  if (!(reply instanceof Object)) return { error: reply };
+): ParsedWeeklyReview {
+  const reply = weeklyReviewReplySchema.safeParse(input);
+  if (!reply.success) throw new Error(z.prettifyError(reply.error));
+  const { reasoning = "", ...memoryReply } = reply.data;
+  const parsed = parseMemoryReply(memoryReply, current);
   return {
-    value: {
-      memory: reply.memory,
-      reasoning: clip((reasoning ?? "").trim(), WEEKLY_REVIEW_PROMPT_POLICY.rationaleLimit),
-    },
+    memory: parsed.memory,
+    reasoning: reasoning.trim(),
   };
 }
 
@@ -319,15 +307,20 @@ export function renderWeeklyReviewPrompt(state: WeeklyReviewState, entrant: numb
   return [systemPrompt(state, entrant), "", userPrompt(state, entrant)].join("\n");
 }
 
-function boundedToolOutput(text: string): string {
+function boundedToolOutput(text: string, offset = 0): string {
   const limit = WEEKLY_REVIEW_PROMPT_POLICY.toolOutputLimit;
-  return text.length > limit ? `${text.slice(0, limit)}\n[truncated at ${limit} characters]` : text;
+  const end = offset + limit;
+  const page = text.slice(offset, end);
+  return text.length > end
+    ? `${page}\n[More available: repeat this query with offset ${end}.]`
+    : page;
 }
 
 export function narratePublicSeries(
   runDir: string,
   series: WeeklyReviewSeries,
   models: readonly string[],
+  offset = 0,
 ): string {
   const [a, b] = series.entrants;
   const names = { P1: models[a]!, P2: models[b]! } satisfies Record<"P1" | "P2", string>;
@@ -338,7 +331,7 @@ export function narratePublicSeries(
     runDir,
     series.seriesId,
   ).entries()) {
-    const log = new BattleLog(1_000);
+    const log = new BattleLog(Number.POSITIVE_INFINITY);
     log.feed(gameLines);
     lines.push("", `Game ${gameIndex + 1}:`);
     for (const entry of log.entries) {
@@ -350,13 +343,14 @@ export function narratePublicSeries(
       );
     }
   }
-  return boundedToolOutput(lines.join("\n"));
+  return boundedToolOutput(lines.join("\n"), offset);
 }
 
 export function narrateOwnSeries(
   runDir: string,
   series: WeeklyReviewSeries,
   entrant: number,
+  offset = 0,
 ): string {
   const pid = series.entrants[0] === entrant ? "p1" : "p2";
   const rows = readCompletedSeriesDecisionRows(runDir, series.seriesId, pid);
@@ -383,13 +377,14 @@ export function narrateOwnSeries(
     }
   }
   if (series.context[entrant]) lines.push("", `Series note: ${series.context[entrant]}`);
-  return boundedToolOutput(lines.join("\n"));
+  return boundedToolOutput(lines.join("\n"), offset);
 }
 
 export function describeOwnBuild(
   series: WeeklyReviewSeries,
   entrant: number,
   usage: readonly GameSummary[] = [],
+  offset = 0,
 ): string {
   const build = series.builds[entrant];
   if (!build) return `No stored build for series ${series.index}.`;
@@ -413,62 +408,77 @@ export function describeOwnBuild(
   );
   if (left.length) lines.push(`Left behind: ${left.map((mon) => mon.name).join(", ")}`);
   const side = series.entrants[0] === entrant ? 0 : 1;
+  const name = (id: string) => displayName.get(id) ?? id;
   for (const [index, game] of usage.entries()) {
-    const brought =
-      game.brought[side].map((id) => displayName.get(id) ?? id).join(", ") || "(none)";
+    const brought = game.brought[side].map(name).join(", ") || "(none)";
     const megaId = game.megaEvolved[side];
-    const mega = megaId ? (displayName.get(megaId) ?? megaId) : "none";
-    lines.push(`Game ${index + 1}: brought ${brought}; Mega Evolved ${mega}`);
+    const fainted = Object.keys(game.faints[side]).map(name).join(", ") || "none";
+    lines.push(
+      `Game ${index + 1}: brought ${brought}; Mega Evolved ${megaId ? name(megaId) : "none"}; fainted ${fainted}`,
+    );
   }
-  return boundedToolOutput(lines.join("\n"));
+  return boundedToolOutput(lines.join("\n"), offset);
 }
 
 function reviewTools(
   state: WeeklyReviewState,
   entrant: number,
   options: RunWeeklyReviewOptions,
-): ExtraTool[] {
+): AgentTool[] {
   const completed = new Map(state.series.map((series) => [series.index, series] as const));
-  const seriesIndex = z.object({ series_index: z.number().int().nonnegative() });
+  const seriesIndex = z.object({
+    series_index: z.number().int().nonnegative(),
+    offset: z.number().int().nonnegative().default(0),
+  });
   const seriesParameters: JsonObject = {
     type: "object",
-    properties: { series_index: { type: "integer", minimum: 0 } },
+    properties: {
+      series_index: { type: "integer", minimum: 0 },
+      offset: {
+        type: "integer",
+        minimum: 0,
+        description: "Character offset for a continuation page; defaults to 0.",
+      },
+    },
     required: ["series_index"],
     additionalProperties: false,
   };
   const seriesTool = (
     name: string,
     description: string,
-    run: (seriesIndex: number) => string,
-  ): ExtraTool => ({
+    run: (seriesIndex: number, offset: number) => string,
+  ): AgentTool => ({
     definition: { name, description, parameters: seriesParameters },
-    run: (args) => run(seriesIndex.parse(args).series_index),
+    run: (args) => {
+      const query = seriesIndex.parse(args);
+      return run(query.series_index, query.offset);
+    },
   });
   return [
     seriesTool(
       "read_public_series",
       "The spectator log of one completed series this season: registrations, leads, every turn, and the result.",
-      (index) => {
+      (index, offset) => {
         const series = completed.get(index);
         return series
-          ? narratePublicSeries(options.runDir, series, state.models)
+          ? narratePublicSeries(options.runDir, series, state.models, offset)
           : `Series ${index} has not been completed yet or does not exist.`;
       },
     ),
     seriesTool(
       "read_own_series",
       "Your own choices in one of your completed series, with the reasons you gave at the time and your end-of-game notes.",
-      (index) => {
+      (index, offset) => {
         const series = completed.get(index);
         return series?.entrants.includes(entrant)
-          ? narrateOwnSeries(options.runDir, series, entrant)
+          ? narrateOwnSeries(options.runDir, series, entrant, offset)
           : `Series ${index} is not one of your completed series.`;
       },
     ),
     seriesTool(
       "read_own_build",
-      "The six you registered for one of your completed series and the plan you wrote for it.",
-      (index) => {
+      "The six you registered for one of your completed series, the plan you wrote for it, and what you brought, Mega Evolved, and lost in each game.",
+      (index, offset) => {
         const series = completed.get(index);
         if (!series?.entrants.includes(entrant)) {
           return `Series ${index} is not one of your completed series.`;
@@ -479,6 +489,7 @@ function reviewTools(
           series,
           entrant,
           seriesGameSummaries(options.runDir, series.seriesId, state.board.mons, [first, second]),
+          offset,
         );
       },
     ),
@@ -568,7 +579,6 @@ export function readWeeklyReviews(
     roster_version: checkpoint.rosterVersion,
     memory: checkpoint.memory,
     reasoning: checkpoint.reasoning,
-    fallback: checkpoint.fallback,
   }));
 }
 
@@ -605,97 +615,26 @@ export async function runWeeklyReview(
       signal.throwIfAborted();
       const model = state.models[entrant]!;
       const current = cloneMemory(state.memories[entrant]!);
-      const make =
-        options.makeReviewProvider ??
-        ((spec: string, apiKey: string | undefined, reasoning: ReasoningLevel | undefined) =>
-          makeProvider(parseSpec(spec), { apiKey, reasoning }));
-      const provider =
-        model === "random"
-          ? undefined
-          : make(model, options.apiKeys?.[model], reasoningForModel(model, options));
       let parsedReview: ParsedWeeklyReview | undefined;
-      let fallback = false;
-      if (provider) {
-        const system = systemPrompt(state, entrant);
-        const messages: ProviderMessage[] = [{ role: "user", content: userPrompt(state, entrant) }];
+      if (model !== "random") {
         const seatLog = path.join(logDir, `seat-${entrant}-${fileSlug(model)}.jsonl`);
         const reference = new ShowdownReference(state.board.format, options.psDir);
         const boardSearch = createBoardSearch(state.board, options.psDir);
-        const extraTools = reviewTools(state, entrant, options);
-        for (
-          let attempt = 1;
-          attempt <= WEEKLY_REVIEW_PROMPT_POLICY.attempts && !parsedReview;
-          attempt += 1
-        ) {
-          const promptForAttempt = messages[messages.length - 1]!.content ?? "";
-          let response = "";
-          let usage: Record<string, number> | undefined;
-          let reasoningTrace: string | undefined;
-          let error: string | undefined;
-          let terminalError: Error | undefined;
-          const lookups: { name: string; arguments: JsonObject; result: string }[] = [];
-          try {
-            const completion = await completeWithDexTools({
-              provider,
-              system,
-              messages,
-              spec: model,
-              reference,
-              boardSearch,
-              extraTools,
-              policy: WEEKLY_REVIEW_PROMPT_POLICY,
-              signal,
-              onLookup: (call) => lookups.push(call),
-            });
-            response = completion.text;
-            usage = completion.usage;
-            reasoningTrace = completion.reasoning;
-            const truncated = completion.outputLimitReached || completion.finishReason === "length";
-            const candidate = truncated
-              ? { error: "the reply was cut off before completing the JSON object" }
-              : parseWeeklyReviewResult(response, current);
-            if ("error" in candidate) {
-              error = candidate.error;
-              messages.push({
-                role: "assistant",
-                content: response || "[the reply contained no visible text]",
-              });
-              messages.push({
-                role: "user",
-                content: truncated
-                  ? WEEKLY_REVIEW_PROMPT_POLICY.truncatedTemplate.replace(
-                      "{{budget}}",
-                      String(WEEKLY_REVIEW_PROMPT_POLICY.maxTokens),
-                    )
-                  : WEEKLY_REVIEW_PROMPT_POLICY.rejectionTemplate.replace(
-                      "{{error}}",
-                      candidate.error,
-                    ),
-              });
-            } else {
-              parsedReview = candidate.value;
-            }
-          } catch (cause) {
-            const failure = classifyProviderFailure(cause, model);
-            error = failure.summary;
-            terminalError = new Error(`${failure.summary} The weekly review cannot continue.`, {
-              cause,
-            });
-          }
-          const completeLogRow = {
-            attempt,
-            system: attempt === 1 ? system : undefined,
-            user: promptForAttempt,
-            response,
-            usage,
-            reasoning: reasoningTrace,
-            tool_lookups: lookups.length ? lookups : undefined,
-            error: error || undefined,
-          } satisfies ReviewSeatLog;
-          fs.appendFileSync(seatLog, `${JSON.stringify(completeLogRow)}\n`, "utf8");
-          if (terminalError) throw terminalError;
-        }
-        fallback = parsedReview === undefined;
+        const result = await runStage({
+          session: `review-${state.stage}-${state.week}-${entrant}`,
+          task: `review-${state.stage}-${state.week}-${entrant}`,
+          model,
+          reasoning: reasoningForModel(model, options),
+          system: systemPrompt(state, entrant),
+          prompt: userPrompt(state, entrant),
+          tools: referenceTools(reference, boardSearch, reviewTools(state, entrant, options)),
+          submission: submissionTool("submit_review", weeklyReviewReplySchema),
+          validate: (input) => parseWeeklyReviewResult(input, current),
+          runner: options.runAgent,
+          logFile: seatLog,
+          signal,
+        });
+        parsedReview = result.value;
       }
       parsedReview ??= { memory: current, reasoning: "" };
       const review: WeeklyReview = {
@@ -706,7 +645,6 @@ export async function runWeeklyReview(
         roster_version: state.rosterVersion,
         memory: parsedReview.memory,
         reasoning: parsedReview.reasoning,
-        fallback,
       };
       storeReviewCheckpoint(options.runDir, review);
       state.memories[entrant] = cloneMemory(review.memory);

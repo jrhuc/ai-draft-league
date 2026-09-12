@@ -4,56 +4,26 @@ import { createServer } from "node:http";
 import { z } from "zod";
 
 import type { AgentContextQuery } from "./agent-context.js";
-import {
-  CLOSED_SERIES_REFLECTION_SYSTEM,
-  DRAFT_SERIES_REFLECTION_SYSTEM,
-  REFLECTION_SYSTEM,
-  SERIES_REFLECTION_SYSTEM,
-  TOURNAMENT_REFLECTION_SYSTEM,
-  TOURNAMENT_RETROSPECTIVE_SYSTEM,
-} from "./prompts.js";
-import { DEX_TOOLS } from "./reference.js";
-import type {
-  Completion,
-  JsonObject,
-  JsonValue,
-  Provider,
-  ProviderMessage,
-  ToolDefinition,
-} from "./types.js";
+import type { AgentRunner, AgentTask } from "./agent-runtime.js";
+import type { JsonObject, JsonValue, ToolDefinition } from "./types.js";
 import { isRecord, text } from "./value.js";
-
-type SeatPhase = "decision" | "reflection";
-
-const REFLECTION_SYSTEMS = [
-  REFLECTION_SYSTEM,
-  SERIES_REFLECTION_SYSTEM,
-  DRAFT_SERIES_REFLECTION_SYSTEM,
-  CLOSED_SERIES_REFLECTION_SYSTEM,
-  TOURNAMENT_REFLECTION_SYSTEM,
-  TOURNAMENT_RETROSPECTIVE_SYSTEM,
-];
 
 interface SeatExchangeView extends JsonObject {
   id: number;
-  phase: SeatPhase;
+  task: string;
   system: string;
   prompt: string;
-  messageCount: number;
+  submission: { name: string; parameters: JsonObject };
 }
 
 interface PendingExchange {
   id: number;
-  phase: SeatPhase;
-  system: string;
-  messages: ProviderMessage[];
-  resolve: (completion: Completion) => void;
+  task: AgentTask<unknown>;
+  submit: (input: JsonObject) => void;
   reject: (error: Error) => void;
 }
 
 interface SeatBridgeOptions {
-  lookup: (name: string, args: JsonObject) => string;
-  tools?: () => readonly ToolDefinition[];
   context?: (query: AgentContextQuery) => JsonObject;
   onExchange?: (view: SeatExchangeView) => void;
   onTool?: (name: string, args: JsonObject, result: string) => void;
@@ -97,9 +67,34 @@ export class SeatBridge {
     });
   }
 
-  provider(): Provider {
-    return { complete: (system, messages) => this.complete(system, messages) };
-  }
+  readonly runAgent: AgentRunner = async <T>(task: AgentTask<T>) => {
+    const started = performance.now();
+    task.signal?.throwIfAborted();
+    const pending = this.complete(task);
+    const exchange = this.exchange;
+    const abort = () => {
+      if (this.exchange === exchange) this.exchange = undefined;
+      exchange?.reject(new Error("seat exchange aborted"));
+      this.wakePollers();
+    };
+    task.signal?.addEventListener("abort", abort, { once: true });
+    try {
+      const { input, value } = await pending;
+      return {
+        value,
+        sessionID: `external-${task.session}`,
+        messageID: `exchange-${exchange?.id}`,
+        response: JSON.stringify(input),
+        reasoning: "",
+        usage: {},
+        tools: [],
+        attempts: 1,
+        latencyMs: performance.now() - started,
+      };
+    } finally {
+      task.signal?.removeEventListener("abort", abort);
+    }
+  };
 
   close(): void {
     this.closed = true;
@@ -110,21 +105,14 @@ export class SeatBridge {
     this.server.closeAllConnections();
   }
 
-  private complete(system: string, messages: ProviderMessage[]): Promise<Completion> {
+  private complete<T>(task: AgentTask<T>): Promise<{ input: JsonObject; value: T }> {
     if (this.closed) return Promise.reject(new Error("seat bridge closed"));
     if (this.exchange) return Promise.reject(new Error("a seat exchange is already pending"));
-    const { promise, resolve, reject } = Promise.withResolvers<Completion>();
+    const { promise, resolve, reject } = Promise.withResolvers<{ input: JsonObject; value: T }>();
     this.exchange = {
       id: ++this.sequence,
-      phase: REFLECTION_SYSTEMS.some(
-        (reflectionSystem) =>
-          system === reflectionSystem || system.startsWith(`${reflectionSystem}\n`),
-      )
-        ? "reflection"
-        : "decision",
-      system,
-      messages,
-      resolve,
+      task,
+      submit: (input) => resolve({ input, value: task.validate(input) }),
       reject,
     };
     const view = this.view();
@@ -135,13 +123,13 @@ export class SeatBridge {
 
   private view(): SeatExchangeView | null {
     if (!this.exchange) return null;
-    const last = this.exchange.messages.at(-1);
+    const { task } = this.exchange;
     return {
       id: this.exchange.id,
-      phase: this.exchange.phase,
-      system: this.exchange.system,
-      prompt: text(last?.content),
-      messageCount: this.exchange.messages.length,
+      task: task.task,
+      system: task.system,
+      prompt: task.prompt,
+      submission: { name: task.submission.name, parameters: task.submission.parameters },
     };
   }
 
@@ -173,7 +161,7 @@ export class SeatBridge {
   }
 
   private availableTools(): readonly ToolDefinition[] {
-    return this.exchange?.phase === "decision" ? (this.options.tools?.() ?? DEX_TOOLS) : [];
+    return this.exchange?.task.tools?.map((tool) => tool.definition) ?? [];
   }
 
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -214,10 +202,6 @@ export class SeatBridge {
       if (!this.exchange && waitMs && !this.closed) await this.waitForExchange(waitMs);
       return send(200, { exchange: this.view(), status: this.status });
     }
-    if (route === "/messages") {
-      if (!this.exchange) return send(404, { error: "no pending exchange" });
-      return send(200, { id: this.exchange.id, messages: this.exchange.messages });
-    }
     if (route === "/context") {
       if (!this.options.context) return send(404, { error: "context stream is not available" });
       try {
@@ -254,7 +238,9 @@ export class SeatBridge {
       if (!this.availableTools().some((tool) => tool.name === name))
         return send(400, { error: `unknown tool ${name}` });
       const args = isRecord(body.arguments) ? body.arguments : {};
-      const result = this.options.lookup(name, args);
+      const tool = this.exchange?.task.tools?.find((tool) => tool.definition.name === name);
+      if (!tool) return send(400, { error: `unknown tool ${name}` });
+      const result = tool.run(args);
       this.options.onTool?.(name, args, result);
       return send(200, { result });
     }
@@ -268,8 +254,12 @@ export class SeatBridge {
       const submitted = z.string().safeParse(body.text);
       if (!submitted.success || !submitted.data.trim())
         return send(400, { error: "text must be a non-empty string" });
+      try {
+        exchange.submit(z.record(z.string(), z.json()).parse(JSON.parse(submitted.data)));
+      } catch (error) {
+        return send(400, { error: error instanceof Error ? error.message : String(error) });
+      }
       this.exchange = undefined;
-      exchange.resolve({ text: submitted.data, usage: {}, toolCalls: [] });
       return send(200, { ok: true, id: exchange.id });
     }
     send(404, { error: "unknown route" });

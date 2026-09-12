@@ -1,6 +1,6 @@
 {
   "id": "noise-octet",
-  "board": "regmb-202607",
+  "board": "regmc-202609",
   "description": "Eight original rosters for a four- or eight-coach league: sound controls, functional-but-flawed teams, and deliberately incoherent ones. The flaw field is tester-facing; coaches never see it.",
   "teams": [
     {
@@ -92,7 +92,7 @@
         "metagross",
         "steelix-mega",
         "gholdengo",
-        "klefki",
+        "orthworm",
         "tinkaton",
         "goodra-hisui",
         "skarmory",

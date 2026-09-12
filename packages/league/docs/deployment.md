@@ -1,6 +1,6 @@
 # Publish a season bundle
 
-Export one validated artifact for an explicit release boundary, commit it to the spectator app, then deploy the static site. The development-only `/watch` surface is never deployed.
+Export one validated artifact for an explicit release boundary, commit it to the spectator app, then deploy the static site. The development-only `/api/watch` surface is never deployed.
 
 From `packages/league`:
 

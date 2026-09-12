@@ -1,19 +1,6 @@
-import { type MechanicsToolAvailability, mechanicsToolNotice } from "./prompt-capabilities.js";
 import { FORMAT_AUTHORITY_NOTICE, renderPromptTemplate } from "./prompts.js";
 import { type TeamBuildSheetPolicy, type TeamBuildTask } from "./teambuild-protocol.js";
 import { type DexLike, legalItems, legalMoves } from "./teambuild-validation.js";
-
-const MATCHUP_AVAILABLE_MECHANICS_TOOLS = [
-  "You have the Showdown dex tools. Use them while you build: check what an item or ability actually does here,",
-  "what a spread outruns, and how hard an attack lands. They compute from the",
-  "simulator this league runs on. Trust the mechanics and factors each result explicitly says it applied;",
-  "a hypothetical damage result does not imply omitted abilities or field effects.",
-].join("\n");
-
-const GENERAL_AVAILABLE_MECHANICS_TOOLS = [
-  "You have the Showdown dex tools. Use them while you build: check legal moves, items, abilities, speed benchmarks,",
-  "and damage against representative threats. The tools compute from the simulator this task validates against.",
-].join("\n");
 
 export const TEAMBUILD_PROMPT_POLICY = {
   systemTemplate: [
@@ -28,7 +15,7 @@ export const TEAMBUILD_PROMPT_POLICY = {
     "- Every Pokémon is set to level 50.",
     "- EVs: {{evLimit}} points total across the team member, at most {{evMax}} in any one stat. IVs are fixed at maximum.",
     "  This is the Champions EV system, not the older 508/252 one. Points are whole numbers.",
-    "- Each move has at most 20 PP.",
+    "- Base PP is capped at 20; battle PP is boosted by the Champions simulator.",
     "- Item Clause: no two of your six may hold the same item. Species Clause: no two may share a species.",
     "- This game has its own item list, which is shorter than the one you may expect. Many Gen 9 staples do not",
     "  exist here. Use only these items:",
@@ -43,7 +30,7 @@ export const TEAMBUILD_PROMPT_POLICY = {
     "simulator this league runs on. Trust the mechanics and factors each result explicitly says it applied;",
     "a hypothetical damage result does not imply omitted abilities or field effects.",
     "",
-    "Choose the 6 for this specific opponent and build their sets. Reply with JSON only, in this shape:",
+    "Choose the 6 for this specific opponent and build their sets. Call submit_team with:",
     '{"team_plan": "<2-5 sentences on the matchup and how these six answer it>",',
     ' "sets": [{"id": "<board-id>", "item": "<item>", "ability": "<ability>", "nature": "<nature>",',
     '           "moves": ["<up to 4 moves>"], "evs": {"hp": 0, "atk": 0, "def": 0, "spa": 0, "spd": 0, "spe": 0},',
@@ -58,12 +45,6 @@ export const TEAMBUILD_PROMPT_POLICY = {
     "Every coach builds a new six for every matchup; sets, items, moves and spreads seen earlier were built for that series and may not return.",
   lockedItem: "MUST hold {{item}}",
   noMega: "cannot hold a Mega Stone",
-  rejectionTemplate: "That team was rejected:\n{{error}}\nReply again with only the JSON object.",
-  truncatedTemplate:
-    "Your previous reply used the whole {{budget}}-token budget before finishing the team. Reply now with only the JSON object, keeping your reasoning short enough to finish inside the budget.",
-  maxTokens: 65_536,
-  attempts: 5,
-  toolRounds: 16,
 } as const;
 
 const GENERAL_TEAMBUILD_PROMPT_POLICY = {
@@ -80,7 +61,7 @@ const GENERAL_TEAMBUILD_PROMPT_POLICY = {
     "- Every Pokémon is set to level 50.",
     "- EVs: {{evLimit}} points total across the team member, at most {{evMax}} in any one stat. IVs are fixed at maximum.",
     "  This is the Champions EV system, not the older 508/252 one. Points are whole numbers.",
-    "- Each move has at most 20 PP.",
+    "- Base PP is capped at 20; battle PP is boosted by the Champions simulator.",
     "- Item Clause: no two team members may hold the same item. Species Clause: no two may share a species.",
     "- Use only these items:",
     "{{items}}",
@@ -89,7 +70,7 @@ const GENERAL_TEAMBUILD_PROMPT_POLICY = {
     "You have the Showdown dex tools. Use them while you build: check legal moves, items, abilities, speed benchmarks,",
     "and damage against representative threats. The tools compute from the simulator this task validates against.",
     "",
-    "Reply with JSON only, in this shape:",
+    "Call submit_team with:",
     '{"team_plan": "<2-5 sentences on the team and its modes>",',
     ' "sets": [{"id": "<candidate-id>", "item": "<item>", "ability": "<ability>", "nature": "<nature>",',
     '           "moves": ["<up to 4 moves>"], "evs": {"hp": 0, "atk": 0, "def": 0, "spa": 0, "spd": 0, "spe": 0},',
@@ -101,26 +82,13 @@ const GENERAL_TEAMBUILD_PROMPT_POLICY = {
   briefHeading: "TASK BRIEF:",
 } as const;
 
-const TEAMBUILD_RESPONSE_PROTOCOL_FIELD = "responseShape";
-
-const TEAMBUILD_RENDERER_PROTOCOL = {
-  version: 2,
-  [TEAMBUILD_RESPONSE_PROTOCOL_FIELD]: "strict-json-v1",
-  candidateIdentity: "frozen-id",
-  setPacking: "showdown-teams-pack",
-  setNotes: true,
-  promptRenderer: "ordered-template-replace-all-v1",
-  candidateRenderer: "dex-roster-block-v1",
-  sheetRules: {
-    open:
-      "- Doubles. Both coaches register 6 and bring 4 to each game; team sheets are open, so your opponent reads your\n" +
-      "  moves, items, abilities, and natures — but not your exact EV spreads.",
-    closed:
-      "- Doubles. Both coaches register 6 and bring 4 to each game; team sheets are closed, so neither coach receives " +
-      "the opposing moves, items, abilities, natures, or EV spreads before play.",
-  },
-  sheetPolicy: "task-bound",
-  evidencePolicy: "stage-evidence-v1",
+const SHEET_RULES = {
+  open:
+    "- Doubles. Both coaches register 6 and bring 4 to each game; team sheets are open, so your opponent reads your\n" +
+    "  moves, items, abilities, and natures — but not your exact EV spreads.",
+  closed:
+    "- Doubles. Both coaches register 6 and bring 4 to each game; team sheets are closed, so neither coach receives " +
+    "the opposing moves, items, abilities, natures, or EV spreads before play.",
 } as const;
 
 function rosterBlock(
@@ -160,7 +128,7 @@ function rosterBlock(
 }
 
 function teamSheetRule(policy: TeamBuildSheetPolicy): string {
-  return TEAMBUILD_RENDERER_PROTOCOL.sheetRules[policy];
+  return SHEET_RULES[policy];
 }
 
 export function teamBuildSystemPrompt(
@@ -168,7 +136,6 @@ export function teamBuildSystemPrompt(
   dex: DexLike,
   evLimit: number,
   evMax: number,
-  mechanicsTools: MechanicsToolAvailability = "available",
 ): string {
   const values = [
     ["model", task.model],
@@ -180,17 +147,12 @@ export function teamBuildSystemPrompt(
     ["items", `  ${legalItems(dex).join(", ")}`],
     ["teamSheetRule", teamSheetRule(task.sheetPolicy)],
   ] as const;
-  const rendered = renderPromptTemplate(
+  return renderPromptTemplate(
     task.objective.kind === "matchup"
       ? TEAMBUILD_PROMPT_POLICY.systemTemplate
       : GENERAL_TEAMBUILD_PROMPT_POLICY.systemTemplate,
     values,
   );
-  const availableNotice =
-    task.objective.kind === "matchup"
-      ? MATCHUP_AVAILABLE_MECHANICS_TOOLS
-      : GENERAL_AVAILABLE_MECHANICS_TOOLS;
-  return rendered.replace(availableNotice, mechanicsToolNotice(mechanicsTools, availableNotice));
 }
 
 export function teamBuildUserPrompt(task: TeamBuildTask, dex: DexLike): string {

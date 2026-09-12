@@ -2,13 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { z } from "zod";
-import { baseCostsBySpecies, boardRow } from "./board-search.js";
+import { baseCostsBySpecies, BOARD_COLUMNS, boardRow } from "./board-search.js";
 import { BOARDS_DIR, defaultPsDir } from "./paths.js";
-import { type MechanicsToolAvailability, mechanicsToolNotice } from "./prompt-capabilities.js";
 import { FORMAT_AUTHORITY_NOTICE, MANAGER_CHARGE, renderPromptTemplate } from "./prompts.js";
 import { loadShowdown } from "./showdown.js";
 import { normalizeStageEvidence, type StageEvidence } from "./stage-evidence.js";
-import { fileSlug, isRecord, isText, replyJsonObject } from "./value.js";
+import type { JsonObject } from "./types.js";
+import { fileSlug } from "./value.js";
 import type { BoardInfo, DraftBoardMonView } from "./views.js";
 
 const BOARD_SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -22,7 +22,7 @@ export const draftBoardMonSchema = z.object({
   base: z.string().min(1),
   types: z.array(z.string()),
   cost: z.number().int().min(1),
-  origin: z.enum(["base", "regmb"]),
+  origin: z.enum(["base", "regmb", "regmc"]),
   anchor: z.string().optional(),
   usage: z.string().optional(),
   listed: z.number().optional(),
@@ -40,51 +40,35 @@ export const draftBoardSchema = z.object({
 export type DraftBoardMon = z.infer<typeof draftBoardMonSchema>;
 export type DraftBoard = z.infer<typeof draftBoardSchema>;
 
-const pickResponseSchema = z.object({
-  pick: z.string().catch(""),
-  reasoning: z.string().optional().catch(undefined),
-  notebook: z.string().optional().catch(undefined),
-});
-
-const franchiseNameResponseSchema = z.object({ team_name: z.string() });
-
-export const draftTranscriptRowSchema = z.object({
+export const draftTranscriptRowSchema = z.strictObject({
   pick: z.number().int(),
-  entrant: z.number().int().optional(),
+  entrant: z.number().int(),
   model: z.string(),
   mon: z.string(),
   name: z.string(),
   cost: z.number(),
   budget_left: z.number(),
-  action: z.object({ pick: z.string() }).optional(),
   rationale: z.string(),
-  evidence_supplied: z.object({ rationale: z.boolean(), notebook_update: z.boolean() }).optional(),
+  evidence_supplied: z.object({ rationale: z.boolean(), notebook_update: z.boolean() }),
   notebook: z.string().optional(),
-  team_name: z.string().optional(),
-  fallback: z.boolean(),
   timestamp: z.string(),
 });
 
 export type DraftTranscriptRow = z.infer<typeof draftTranscriptRowSchema>;
 
-export const franchiseNameTranscriptRowSchema = z.object({
+export const franchiseNameTranscriptRowSchema = z.strictObject({
   entrant: z.number().int(),
   model: z.string(),
   team_name: z.string(),
-  fallback: z.boolean(),
   timestamp: z.string(),
 });
 
-export function isRejection<T extends object>(result: T | string): result is string {
-  return !(result instanceof Object);
-}
-
 const DRAFT_AVAILABLE_MECHANICS_TOOLS = [
-  "You have the Showdown dex tools. Use them to check anything the board summary does not answer: what a Mega",
-  "becomes, how a type matchup reads, what a spread outruns, or roughly how hard an attack hits. They compute",
+  "You have the Showdown dex tools. Use them to check mechanics the board does not answer: type matchups,",
+  "what a spread outruns, or roughly how hard an attack hits. They compute",
   "from the simulator this league runs on. Trust the mechanics and factors each result explicitly says it applied;",
   "a hypothetical damage result does not imply omitted abilities or field effects. search_board filters and re-sorts the",
-  "board itself by type, price, ability, base stat total, or which entries legally learn a given move.",
+  "board by type, price, ability, base stat total, or legal move. It defaults to your legal picks and shows both forms of Mega entries.",
 ].join("\n");
 
 export const DRAFT_PROMPT_POLICY = {
@@ -108,11 +92,7 @@ export const DRAFT_PROMPT_POLICY = {
     "  Nothing about a set is fixed by the draft.",
     "- Games are 4-of-6 doubles. You will see your opponent’s full roster before you build, and they will see yours.",
     "",
-    "You have the Showdown dex tools. Use them to check anything the board summary does not answer: what a Mega",
-    "becomes, how a type matchup reads, what a spread outruns, or roughly how hard an attack hits. They compute",
-    "from the simulator this league runs on. Trust the mechanics and factors each result explicitly says it applied;",
-    "a hypothetical damage result does not imply omitted abilities or field effects. search_board filters and re-sorts the",
-    "board itself by type, price, ability, base stat total, or which entries legally learn a given move.",
+    DRAFT_AVAILABLE_MECHANICS_TOOLS,
     "",
     "Your roster is judged matchup by matchup: over the season it needs a winning 6 against each of the other",
     "rosters taking shape around you.",
@@ -120,27 +100,18 @@ export const DRAFT_PROMPT_POLICY = {
     "{{board}}",
   ],
   turnInstruction:
-    'Reply with one JSON object containing {"pick":"<board-id>"}. Optional evidence fields are "reasoning":"<concise reason>" and, only when your durable plan changed, "notebook":"<complete replacement notes for later picks>".',
+    'Call submit_pick with {"pick":"<board-id>"}. Optional evidence fields are "reasoning":"<concise reason>" and, only when your durable plan changed, "notebook":"<complete replacement notes for later picks>". The notebook limit is 4000 characters; oversized updates are rejected.',
   turnTemplate:
     "Overall pick {{pick}} of {{total}}; {{remaining}} left for you, {{budget}} points to fill them from what is still on the board.",
-  boardHeading: "DRAFT BOARD (id | cost | name | types | base stats | abilities):",
+  boardHeading: `DRAFT BOARD (${BOARD_COLUMNS}):`,
   boardOrder: "cost-descending",
   takenHeading: "ALREADY DRAFTED:",
   nothingTaken: "- (nothing yet; you have the first pick)",
   rosterHeading: "YOUR ROSTER:",
   notebookHeading: "YOUR PRIVATE DRAFT NOTE FROM YOUR PREVIOUS PICK:",
   emptyRoster: "- (empty)",
-  rejectionTemplate: "That pick was rejected: {{error}}. Reply again with only the JSON object.",
-  fallbackNote:
-    "Harness note: every reply for pick {{pick}} was rejected (last reason: {{error}}), so a random legal pick was " +
-    "made for you — {{mon}} is now on your roster. Your note above predates that pick.",
-  truncatedTemplate:
-    "Your previous reply used the whole {{budget}}-token budget before naming a pick. Reply now with only the JSON object, keeping your reasoning short enough to finish inside the budget.",
   notebookLimit: 4_000,
   rationaleLimit: 2_000,
-  maxTokens: 65_536,
-  attempts: 3,
-  toolRounds: 8,
 } as const;
 
 export const FRANCHISE_NAME_PROMPT_POLICY = {
@@ -150,12 +121,9 @@ export const FRANCHISE_NAME_PROMPT_POLICY = {
     "Choose a concise, playful franchise name for the spectator-facing league display based on your finished roster.",
     "Wordplay and personality are welcome. Trick Room Service, Prankster's Paradise, and Drought Dodgers are examples of the tone, not names to copy.",
     "The name is presentation only: coaches never see franchise names during competitive decisions.",
-    'Reply with exactly one JSON object {"team_name":"<your franchise name>"} and nothing else.',
+    'Call submit_name with {"team_name":"<your franchise name>"}.',
   ],
   rosterHeading: "YOUR COMPLETED ROSTER:",
-  rejectionTemplate: "That name was rejected: {{error}} Reply again with only the JSON object.",
-  maxTokens: 4_096,
-  attempts: 3,
   nameLimit: 60,
 } as const;
 
@@ -218,8 +186,8 @@ export function loadBoard(
     }
     if (mon.item) {
       const item = dex.items.get(mon.item);
-      const target = isRecord(item.megaStone) ? item.megaStone[species.name] : item.megaStone;
-      if (!item.exists || target !== mon.forme) {
+      const target = item.megaStone?.[species.name];
+      if (!item.exists || item.isNonstandard || target !== mon.forme) {
         throw new Error(
           `board entry ${JSON.stringify(mon.id)} in ${file} has an invalid Mega forme or stone`,
         );
@@ -228,6 +196,7 @@ export function loadBoard(
     const battleForme = dex.species.get(mon.forme ?? mon.species);
     if (
       !battleForme.exists ||
+      battleForme.isNonstandard ||
       mon.types.length !== battleForme.types.length ||
       mon.types.some((type, index) => type !== battleForme.types[index])
     ) {
@@ -399,7 +368,6 @@ export function draftSystemPrompt(
   drafter: number,
   psDir: string,
   rosterPolicy: string,
-  mechanicsTools: MechanicsToolAvailability = "available",
 ): string {
   const values = [
     ["model", models[drafter]!],
@@ -410,11 +378,7 @@ export function draftSystemPrompt(
     ["board", draftBoardTable(board, psDir)],
     ["rosterPolicy", rosterPolicy],
   ] as const;
-  const rendered = renderPromptTemplate(DRAFT_PROMPT_POLICY.systemTemplate, values);
-  return rendered.replace(
-    DRAFT_AVAILABLE_MECHANICS_TOOLS,
-    mechanicsToolNotice(mechanicsTools, DRAFT_AVAILABLE_MECHANICS_TOOLS),
-  );
+  return renderPromptTemplate(DRAFT_PROMPT_POLICY.systemTemplate, values);
 }
 
 export function draftUserPrompt(
@@ -496,24 +460,40 @@ function rejection(
   );
 }
 
+export const pickReplySchema = z.object({
+  pick: z
+    .string()
+    .min(1, '"pick" must name a board id')
+    .describe("The board id of the Pokémon you draft, copied exactly from the board list."),
+  reasoning: z.string().optional().describe("A concise reason for this pick."),
+  notebook: z
+    .string()
+    .max(
+      DRAFT_PROMPT_POLICY.notebookLimit,
+      `notebook exceeds ${DRAFT_PROMPT_POLICY.notebookLimit} characters`,
+    )
+    .optional()
+    .describe(
+      "Complete replacement for your private draft notes, shown to you at later picks. Omit it unless your durable plan changed.",
+    ),
+});
+
 export function parsePick(
-  response: string,
+  input: JsonObject,
   legal: DraftBoardMon[],
   state: DraftState,
   drafter: number,
   models?: readonly string[],
   currentNotebook = "",
-): ParsedPick | string {
-  const json = replyJsonObject(response);
-  if (isText(json)) return json;
-  const record = pickResponseSchema.safeParse(json);
-  if (!record.success) return "the reply must be one JSON object";
-  const pickId = fileSlug(record.data.pick);
+): ParsedPick {
+  const reply = pickReplySchema.safeParse(input);
+  if (!reply.success) throw new Error(z.prettifyError(reply.error));
+  const pickId = fileSlug(reply.data.pick);
   const mon = legal.find(
     (candidate) => candidate.id === pickId || fileSlug(candidate.name) === pickId,
   );
-  if (!mon) return rejection(pickId, legal, state, drafter, models);
-  const evidence = normalizeStageEvidence(record.data.reasoning, record.data.notebook, {
+  if (!mon) throw new Error(rejection(pickId, legal, state, drafter, models));
+  const evidence = normalizeStageEvidence(reply.data.reasoning, reply.data.notebook, {
     currentNotebook,
     rationaleLimit: DRAFT_PROMPT_POLICY.rationaleLimit,
     notebookLimit: DRAFT_PROMPT_POLICY.notebookLimit,
@@ -530,16 +510,22 @@ interface ParsedFranchiseName {
   teamName: string;
 }
 
-export function parseFranchiseName(response: string): ParsedFranchiseName | string {
-  const json = replyJsonObject(response);
-  if (isText(json)) return json;
-  const record = franchiseNameResponseSchema.safeParse(json);
-  if (!record.success) return '"team_name" must be a non-empty string';
-  const teamName = record.data.team_name
+export const franchiseNameReplySchema = z.object({
+  team_name: z
+    .string()
     .trim()
-    .replace(/\s+/g, " ")
-    .slice(0, FRANCHISE_NAME_PROMPT_POLICY.nameLimit);
-  return teamName ? { teamName } : '"team_name" must be a non-empty string';
+    .min(1, '"team_name" must be a non-empty string')
+    .max(
+      FRANCHISE_NAME_PROMPT_POLICY.nameLimit,
+      `"team_name" must be at most ${FRANCHISE_NAME_PROMPT_POLICY.nameLimit} characters`,
+    )
+    .describe("Your franchise name for the spectator-facing league display."),
+});
+
+export function parseFranchiseName(input: JsonObject): ParsedFranchiseName {
+  const reply = franchiseNameReplySchema.safeParse(input);
+  if (!reply.success) throw new Error(z.prettifyError(reply.error));
+  return { teamName: reply.data.team_name.replace(/\s+/g, " ") };
 }
 
 export function franchiseNameSystemPrompt(model: string): string {

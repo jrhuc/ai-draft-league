@@ -1,6 +1,6 @@
 import { publicSeasonBundleSchema } from "league/protocol";
 import { createBundle } from "ui/lib/bundle";
-import { liveRunId, stopWatching } from "./live";
+import { liveRunId } from "./live";
 import type { Season, SeasonBundle } from "./season";
 import { loadTraceManifest } from "./traces";
 
@@ -15,15 +15,11 @@ async function fetchBundle(): Promise<Season> {
   if (import.meta.env.DEV) {
     const live = liveRunId();
     if (live) {
-      try {
-        const [bundle, traces] = await Promise.all([
-          fetchParsed(`/api/watch/runs/${live}/bundle`),
-          loadTraceManifest(),
-        ]);
-        return { ...bundle, traces };
-      } catch {
-        stopWatching();
-      }
+      const [bundle, traces] = await Promise.all([
+        fetchParsed(`/api/watch/runs/${live}/bundle`),
+        loadTraceManifest(),
+      ]);
+      return { ...bundle, traces };
     }
   }
   const [bundle, traces] = await Promise.all([
@@ -37,7 +33,13 @@ const bundle = createBundle(
   fetchBundle,
   (season) => season.season.title,
   "Could not load the season",
-  () => (import.meta.env.DEV && liveRunId() ? 10_000 : null),
+  (refresh) => {
+    const live = liveRunId();
+    if (!live) return;
+    const events = new EventSource(`/api/watch/runs/${live}/events`);
+    events.addEventListener("refresh", refresh);
+    return () => events.close();
+  },
 );
 
 export const SeasonProvider = bundle.Provider;

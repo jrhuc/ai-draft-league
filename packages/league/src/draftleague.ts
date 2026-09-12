@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { type AgentRuntime, withAgentHost } from "./agent-runtime.js";
 import path from "node:path";
 
 import { loadBoard } from "./draft.js";
@@ -31,19 +32,37 @@ import {
 
 export { draftLeaguePlayoffReview } from "./draftleague-series.js";
 
-/** Runs or resumes a season. Every stage adopts what `league.sqlite` already holds, so resuming
- * is re-running the season from the draft with no provider calls until the first unfinished stage. */
 export async function runDraftLeague(
   models: string[],
   runDir: string,
   options: DraftLeagueOptions = {},
+): Promise<SeriesRecord[]> {
+  return withAgentHost(
+    runDir,
+    (agents) =>
+      executeDraftLeague(models, runDir, agents, {
+        ...options,
+        onEvent: (event) => {
+          if (event.type === "draft" || event.type === "series-end") agents.live.invalidate();
+          options.onEvent?.(event);
+        },
+      }),
+    options.onAgentProgress,
+  );
+}
+
+async function executeDraftLeague(
+  models: string[],
+  runDir: string,
+  agents: AgentRuntime,
+  options: DraftLeagueOptions,
 ): Promise<SeriesRecord[]> {
   if (models.length < 2) throw new Error("a draft league needs at least two models");
   validateModelExecution(models, options);
 
   fs.mkdirSync(runDir, { recursive: true });
   const psDir = options.psDir ?? defaultPsDir();
-  const board = loadBoard(options.board ?? "regmb-202607", options.boardsDir ?? BOARDS_DIR, psDir);
+  const board = loadBoard(options.board ?? "regmc-202609", options.boardsDir ?? BOARDS_DIR, psDir);
   const distinctBases = new Set(board.mons.map((mon) => mon.base)).size;
   if (models.length * board.picks > distinctBases) {
     throw new Error(
@@ -116,6 +135,7 @@ export async function runDraftLeague(
   const context: DraftLeagueContext = {
     models,
     runDir,
+    agents,
     runId,
     recordsPath: options.recordsPath ?? RESULTS_PATH,
     options,
@@ -138,10 +158,10 @@ export async function runDraftLeague(
     draftOnly,
     reviewOptions: {
       runDir,
+      runAgent: agents.run,
       psDir,
       reasoning: options.reasoning,
       reasoningByModel: options.reasoningByModel,
-      apiKeys: options.apiKeys,
       signal: options.signal,
     },
   };

@@ -20,6 +20,7 @@ import {
   type TradeWindowState,
 } from "../src/trade-window.js";
 import { asRecord, asStrings } from "../src/value.js";
+import { scriptedAgent } from "./agent-test-helpers.js";
 import { BOARD } from "./draft-test-helpers.js";
 
 test("a full draft league drafts, plays weekly rounds, and crowns a champion", async (t) => {
@@ -49,7 +50,7 @@ test("a full draft league drafts, plays weekly rounds, and crowns a champion", a
   );
   for (const row of rows) {
     assert.equal(row.mode, "draft");
-    assert.equal(row.board, "regmb-202607");
+    assert.equal(row.board, "regmc-202609");
     assert.deepEqual(row.transactions, [
       { after_week: 1, trades_allowed: 2 },
       { after_week: 2, trades_allowed: 2 },
@@ -102,12 +103,7 @@ test("a full draft league drafts, plays weekly rounds, and crowns a champion", a
   assert.equal(window.after_week, 3);
   assert.equal(window.decisions.length, 4);
   assert.equal(window.offers.length, 4);
-  assert.ok(
-    window.offers.every(
-      (offer) =>
-        offer.to === null && offer.proposerFallback === false && offer.responderFallback === null,
-    ),
-  );
+  assert.ok(window.offers.every((offer) => offer.to === null));
   assert.ok(window.decisions.every((decision) => decision.swaps.length === 0));
   assert.deepEqual(
     window.rosters.map((roster) => roster.entrant),
@@ -118,9 +114,7 @@ test("a full draft league drafts, plays weekly rounds, and crowns a champion", a
   const teambuilds = readRunArtifacts(directory, "teambuild").map(({ value }) => asRecord(value));
   assert.equal(teambuilds.length, rows.length * 2, "both coaches build before every series");
   for (const build of teambuilds) {
-    const artifact = asRecord(build.artifact);
-    const action = asRecord(artifact.action);
-    assert.equal(artifact.status, "valid");
+    const action = asRecord(asRecord(build.artifact).action);
     assert.equal(asStrings(action.selected).length, 6);
     assert.deepEqual(Object.keys(build), ["artifact"]);
   }
@@ -300,13 +294,12 @@ test("a resumed league keeps roster version 0 and plays on from a changed roster
   for (const drop of rosters[first]!) {
     for (const add of BOARD.mons) {
       if (owned.has(add.id)) continue;
-      const parsed = parseTradeDecision(
-        JSON.stringify({ swaps: [{ drop: drop.id, add: add.id }] }),
-        state,
-        first,
-      );
-      if (!(parsed instanceof Object)) continue;
-      replayed = parsed.swaps[0]!;
+      try {
+        replayed = parseTradeDecision({ swaps: [{ drop: drop.id, add: add.id }] }, state, first)
+          .swaps[0]!;
+      } catch {
+        continue;
+      }
       break;
     }
     if (replayed) break;
@@ -324,7 +317,6 @@ test("a resumed league keeps roster version 0 and plays on from a changed roster
     model: config.entrants[first]!,
     swaps: [replayed],
     reasoning: "replayed roster plan",
-    fallback: false,
     timestamp: new Date(0).toISOString(),
   });
   const artifact = await runTradeWindow(state, {
@@ -332,6 +324,7 @@ test("a resumed league keeps roster version 0 and plays on from a changed roster
     psDir: defaultPsDir(),
     position: { afterWeek: 1, index: 0, count: 1 },
     tradesAllowed: 0,
+    runAgent: scriptedAgent([]).run,
   });
   assert.ok(artifact.rosters[first]!.roster.some((mon) => mon.id === replayed.add));
   assert.deepEqual(

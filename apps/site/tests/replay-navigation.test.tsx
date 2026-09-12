@@ -25,7 +25,6 @@ const games: ReplayGameView[] = [1, 2].map((number) => ({
       action: "move 1",
       selection: ["Protect"],
       rationale: `Reason ${team.name}`,
-      fallback: false,
       automatic: false,
       latencyMs: 100,
       reasoningTokens: 0,

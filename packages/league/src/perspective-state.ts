@@ -712,6 +712,7 @@ export class PerspectiveState {
       this.sides[this.pid].active[String.fromCharCode("a".charCodeAt(0) + slot)] =
         this.monKey(ident);
       const active = request.active?.[slot];
+      mon.canMegaEvo = Boolean(active?.canMegaEvo);
       if (!active) continue;
       for (const move of asRecords(active.moves)) {
         const name = text(move.move) || text(move.id);

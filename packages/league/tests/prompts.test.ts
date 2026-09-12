@@ -9,9 +9,10 @@ import {
   REFLECTION_SYSTEM,
   renderDecision,
   SERIES_REFLECTION_SYSTEM,
-  SYSTEM,
-  TIMED_SYSTEM,
 } from "../src/prompts.js";
+
+const SYSTEM = battleSystemPrompt({ sheets: "open", timed: false });
+const TIMED_SYSTEM = battleSystemPrompt({ sheets: "open", timed: true });
 
 function assertFormatAuthority(prompt: string): void {
   assert.equal(prompt.split(FORMAT_AUTHORITY_NOTICE).length - 1, 1);
@@ -27,8 +28,8 @@ test("system prompt names the tools and reserves timer policy for timed play", (
   assert.match(SYSTEM, /compare_action_order/);
   assert.doesNotMatch(SYSTEM, /battle timer/);
   assert.match(TIMED_SYSTEM, /battle timer/);
-  assert.match(SYSTEM, /batch_tools/);
-  assert.match(TIMED_SYSTEM, /batch_tools/);
+  assert.match(SYSTEM, /submit_action/);
+  assert.match(TIMED_SYSTEM, /submit_action/);
   for (const prompt of [
     SYSTEM,
     TIMED_SYSTEM,
@@ -46,8 +47,6 @@ test("closed-sheet system prompt never claims open team sheets", () => {
   assert.doesNotMatch(closed, /open team sheets/i);
   assert.match(closed, /estimate_damage/);
   assertFormatAuthority(closed);
-  assert.equal(battleSystemPrompt({ sheets: "open", timed: false }), SYSTEM);
-  assert.equal(battleSystemPrompt({ sheets: "open", timed: true }), TIMED_SYSTEM);
   assert.match(battleSystemPrompt({ sheets: "closed", timed: true }), /battle timer/);
 });
 
@@ -57,7 +56,7 @@ test("decision prompt leads with merged state and keeps mechanics compact", () =
     state: "Turn: 1\n- Swampert; types Water/Ground; moves Earthquake [Ground/Physical/100/spread]",
     matchups: ["- Swampert Earthquake: Farigiraf neutral (1x)"],
     transcript: ["Turn 1 begins."],
-    memory: applyMemoryUpdate(emptyBattleMemory("format@rev"), notebook("notes")).memory,
+    memory: applyMemoryUpdate(emptyBattleMemory(), notebook("notes")).memory,
     slotNames: ["Swampert"],
     menus: [[{ label: "Protect", part: "move 1", kind: "move" }]],
   });
@@ -80,7 +79,7 @@ test("team preview renders one shared ordered menu", () => {
   ];
   const prompt = renderDecision({
     state: "Turn: 0",
-    memory: emptyBattleMemory("format@rev"),
+    memory: emptyBattleMemory(),
     slotNames: ["pick 1", "pick 2", "pick 3", "pick 4"],
     menus: [menu, menu, menu, menu],
   });
