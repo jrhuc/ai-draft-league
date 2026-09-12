@@ -74,7 +74,7 @@ export const TRADE_OFFER_PROMPT_POLICY = {
     "You have the same Showdown dex tools as during the draft, and read_memory_page returns one of your memory pages in full. Use them only where the supplied evidence and rosters do not answer the question.",
   ],
   offerReplyTemplate: [
-    'Call submit_offer with {"offer":{"to":<entrant-index>,"give":"<board-id>","get":"<board-id>","message":"<what the counterparty is shown>"}}, where "offer" may be null or omitted to make no offer.',
+    'Call submit_offer with {"offer":{"to":<entrant-index>,"give":"<board-id>","get":"<board-id>","message":"<what the counterparty is shown>"}}, where "offer" may be null.',
     'An optional "reasoning":"<concise private reason>" field is recorded as evidence. If your roster changes, you revise your memory in a reconciliation after the window closes.',
   ],
   responseSystemTemplate: [
