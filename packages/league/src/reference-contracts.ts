@@ -268,6 +268,8 @@ export interface CompactMonReference {
   speed: string;
   moves: Readonly<Record<string, string>>;
   mega?: string;
+  /** Known or learnable move scales with hits taken (Rage Fist). */
+  hitCounter?: boolean;
 }
 
 export interface SpeedProfileInput {

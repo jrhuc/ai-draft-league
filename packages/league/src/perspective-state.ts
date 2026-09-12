@@ -631,7 +631,8 @@ export class PerspectiveState {
         attrs.push(
           `boosts ${boosts.map(([stat, value]) => `${STAT_LABELS.get(stat) ?? stat} ${value >= 0 ? "+" : ""}${value}`).join(", ")}`,
         );
-      if (mon.timesAttacked > 0) attrs.push(`hits taken ${mon.timesAttacked}`);
+      if (mon.timesAttacked > 0 && reference?.hitCounter)
+        attrs.push(`hits taken ${mon.timesAttacked}`);
       if (mon.volatiles.size) attrs.push(`volatile ${[...mon.volatiles].sort().join(", ")}`);
       if (mon.moves.size)
         attrs.push(

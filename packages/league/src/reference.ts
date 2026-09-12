@@ -62,6 +62,8 @@ const REFERENCE_RENDER_DIGEST_PROTOCOL = "showdown-reference-render-v1";
 
 type FormatDataKind = "move" | "item";
 
+const HIT_COUNT_MOVES = new Set(["ragefist"]);
+
 export class ShowdownReference {
   private readonly dex;
   private readonly battle: Battle;
@@ -203,6 +205,12 @@ export class ShowdownReference {
       const [megaLow, megaHigh] = statRange(this.battle, mega.baseStats, knownNature, "spe");
       reference.mega = `if Mega Evolved -> ${mega.name}: ${mega.types.join("/")}, ability ${uniqueNames(Object.values(mega.abilities)).join("/")}, ${baseStats(mega.baseStats)}, raw Speed ${megaLow}-${megaHigh}`;
     }
+    const knownMoves = uniqueNames(mon.moves ?? []).map((moveName) => id(moveName));
+    const pool =
+      knownMoves.length >= 4
+        ? knownMoves
+        : [...knownMoves, ...this.dex.species.getMovePool(species.id)];
+    if (pool.some((moveId) => HIT_COUNT_MOVES.has(moveId))) reference.hitCounter = true;
     return reference;
   }
 
