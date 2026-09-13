@@ -1,5 +1,5 @@
 import type { AgentContextEvent, AgentContextQuery } from "./agent-context.js";
-import type { AgentRunner, AgentResult, AgentTask } from "./agent-runtime.js";
+import type { AgentRunner, AgentResult, AgentTask, AgentTool } from "./agent-runtime.js";
 import {
   BaseEngine,
   type ChoiceSubstitution,
@@ -36,21 +36,20 @@ import {
   type ParsedDecision,
   reasoningField,
   reflectionSchema,
-  reflectionTools,
   retrospectiveSchema,
   totalTokens,
   type Reflection,
 } from "./llm-engine-support.js";
 import {
   battleSystemPrompt,
-  CLOSED_SERIES_REFLECTION_SYSTEM,
-  DRAFT_SERIES_REFLECTION_SYSTEM,
-  REFLECTION_SYSTEM,
+  CLOSED_SERIES_REFLECTION_TASK,
+  DRAFT_SERIES_REFLECTION_TASK,
+  REFLECTION_TASK,
   renderDecision,
-  SERIES_REFLECTION_SYSTEM,
+  SERIES_REFLECTION_TASK,
   type SheetPolicy,
-  TOURNAMENT_REFLECTION_SYSTEM,
-  TOURNAMENT_RETROSPECTIVE_SYSTEM,
+  TOURNAMENT_REFLECTION_TASK,
+  TOURNAMENT_RETROSPECTIVE_TASK,
 } from "./prompts.js";
 import type { ReasoningLevel } from "./providers.js";
 import { ShowdownReference } from "./reference.js";
@@ -90,6 +89,10 @@ interface PendingDecision {
   result?: AgentResult<ParsedDecision>;
 }
 
+const SUBMIT_ACTION = submissionTool("submit_action", decisionSchema);
+const SUBMIT_REVIEW = submissionTool("submit_review", reflectionSchema);
+const BATTLE_SUBMISSIONS = [SUBMIT_ACTION, SUBMIT_REVIEW];
+
 export class LLMEngine extends BaseEngine {
   readonly reference: ShowdownReference;
   private state: PerspectiveState;
@@ -107,6 +110,7 @@ export class LLMEngine extends BaseEngine {
   private activeToolRequest: BattleRequest | undefined;
   private readonly sheets: SheetPolicy;
   private readonly tools: ToolDefinition[];
+  private timed = false;
   private observations: string[] = [];
   private firstDecision = true;
   private decisionSequence = 0;
@@ -184,20 +188,20 @@ export class LLMEngine extends BaseEngine {
     const theirs = this.seriesScore[this.pid === "p1" ? "p2" : "p1"];
     const retrospective =
       context.tournamentStatus === "eliminated" || context.tournamentStatus === "champion";
-    const system =
+    const instructions =
       this.options.draftRoster !== undefined
         ? context.seriesOver
-          ? DRAFT_SERIES_REFLECTION_SYSTEM
-          : REFLECTION_SYSTEM
+          ? DRAFT_SERIES_REFLECTION_TASK
+          : REFLECTION_TASK
         : retrospective
-          ? TOURNAMENT_RETROSPECTIVE_SYSTEM
+          ? TOURNAMENT_RETROSPECTIVE_TASK
           : context.tournamentStatus === "advancing"
-            ? SERIES_REFLECTION_SYSTEM
+            ? SERIES_REFLECTION_TASK
             : context.tournamentStatus === "active"
-              ? TOURNAMENT_REFLECTION_SYSTEM
+              ? TOURNAMENT_REFLECTION_TASK
               : context.seriesOver
-                ? CLOSED_SERIES_REFLECTION_SYSTEM
-                : REFLECTION_SYSTEM;
+                ? CLOSED_SERIES_REFLECTION_TASK
+                : REFLECTION_TASK;
     return {
       kind: "reflection",
       supersedes: this.abandonedTask ?? null,
@@ -208,9 +212,9 @@ export class LLMEngine extends BaseEngine {
       series_over: context.seriesOver,
       retrospective,
       opponent_scope_reset: context.tournamentStatus === "advancing",
-      system: this.briefed(system),
+      system: this.battleSystem(),
       memory_state: this.coachingState(),
-      prompt: reflectionPrompt({
+      prompt: `${instructions}\n\n${reflectionPrompt({
         seriesId: this.seriesId,
         gameNumber: context.gameNumber,
         result,
@@ -228,7 +232,7 @@ export class LLMEngine extends BaseEngine {
         memory: this.memory,
         tournamentStatus: context.tournamentStatus,
         retrospective,
-      }),
+      })}`,
     };
   }
 
@@ -248,14 +252,11 @@ export class LLMEngine extends BaseEngine {
       supersedes: task.supersedes === null ? undefined : text(task.supersedes),
       system,
       prompt,
-      tools: reflectionTools().map((definition) => ({
-        definition,
-        run: (input: JsonObject) => this.lookupReferenceTool(definition.name, input),
-      })),
-      submission: submissionTool(
-        "submit_review",
-        retrospective ? retrospectiveSchema : reflectionSchema,
-      ),
+      tools: this.battleTools(),
+      submission: retrospective
+        ? submissionTool(SUBMIT_REVIEW.name, retrospectiveSchema)
+        : SUBMIT_REVIEW,
+      submissions: BATTLE_SUBMISSIONS,
       validate: (input) =>
         retrospective
           ? parseTournamentRetrospective(input, this.memory)
@@ -340,16 +341,27 @@ export class LLMEngine extends BaseEngine {
     return structuredClone(this.tools);
   }
 
+  private battleSystem(): string {
+    return this.briefed(battleSystemPrompt({ sheets: this.sheets, timed: this.timed }));
+  }
+
+  private battleTools(): AgentTool[] {
+    return this.tools.map((definition) => ({
+      definition,
+      run: (input: JsonObject) => this.lookupDecisionTool(definition.name, input),
+    }));
+  }
+
   lookupDecisionTool(name: string, input: JsonObject): string {
-    if (!this.activeToolRequest)
-      throw new Error("battle tools are available only during an active decision");
     if (!this.tools.some((tool) => tool.name === name))
       throw new Error(`unknown battle tool ${name}`);
-    if (name === ACTION_ORDER_TOOL.name)
-      return this.state.compareActionOrder(input, this.reference);
-    if (name === "estimate_damage")
-      return this.state.estimateDamage(input, this.activeToolRequest, this.reference);
-    return this.lookupReferenceTool(name, input);
+    if (name !== ACTION_ORDER_TOOL.name && name !== "estimate_damage")
+      return this.lookupReferenceTool(name, input);
+    if (!this.activeToolRequest)
+      throw new Error("battle state tools need a battle request first");
+    return name === ACTION_ORDER_TOOL.name
+      ? this.state.compareActionOrder(input, this.reference)
+      : this.state.estimateDamage(input, this.activeToolRequest, this.reference);
   }
 
   private lookupReferenceTool(name: string, input: JsonObject): string {
@@ -362,6 +374,7 @@ export class LLMEngine extends BaseEngine {
     this.observe(context.povLines);
     this.context.request(request);
     this.activeToolRequest = request;
+    this.timed = Boolean(request.timer);
     const generation = this.generation;
     const controller = new AbortController();
     this.decisionController?.abort(new Error("new decision started"));
@@ -411,16 +424,12 @@ export class LLMEngine extends BaseEngine {
       session: this.sessionKey(this.gameId),
       task: `decision-${++this.decisionSequence}`,
       supersedes: this.abandonedTask,
-      timed: Boolean(request.timer),
-      system: this.briefed(
-        battleSystemPrompt({ sheets: this.sheets, timed: Boolean(request.timer) }),
-      ),
+      timed: this.timed,
+      system: this.battleSystem(),
       prompt,
-      tools: this.tools.map((definition) => ({
-        definition,
-        run: (input: JsonObject) => this.lookupDecisionTool(definition.name, input),
-      })),
-      submission: submissionTool("submit_action", decisionSchema(menus.length)),
+      tools: this.battleTools(),
+      submission: SUBMIT_ACTION,
+      submissions: BATTLE_SUBMISSIONS,
       validate: (input) => {
         const parsed = parseDecision(input, menus, this.memory);
         BaseEngine.parts(menus, parsed.choices);

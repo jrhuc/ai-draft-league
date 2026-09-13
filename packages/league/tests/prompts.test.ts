@@ -1,15 +1,15 @@
-import { decisionTools } from "../src/llm-engine-support.js";
+import { decisionTools, parseDecision } from "../src/llm-engine-support.js";
 import { applyMemoryUpdate, emptyBattleMemory } from "../src/battle-memory.js";
 import { notebook } from "./engine-test-helpers.js";
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
 import {
   battleSystemPrompt,
-  DRAFT_SERIES_REFLECTION_SYSTEM,
+  DRAFT_SERIES_REFLECTION_TASK,
   FORMAT_AUTHORITY_NOTICE,
-  REFLECTION_SYSTEM,
+  REFLECTION_TASK,
   renderDecision,
-  SERIES_REFLECTION_SYSTEM,
+  SERIES_REFLECTION_TASK,
 } from "../src/prompts.js";
 
 const SYSTEM = battleSystemPrompt({ sheets: "open", timed: false });
@@ -32,15 +32,25 @@ test("system prompt names the tools and reserves timer policy for timed play", (
   assert.match(TIMED_SYSTEM, /battle timer/);
   assert.match(SYSTEM, /submit_action/);
   assert.match(TIMED_SYSTEM, /submit_action/);
-  for (const prompt of [
-    SYSTEM,
-    TIMED_SYSTEM,
-    REFLECTION_SYSTEM,
-    SERIES_REFLECTION_SYSTEM,
-    DRAFT_SERIES_REFLECTION_SYSTEM,
-  ]) {
-    assertFormatAuthority(prompt);
+  for (const prompt of [SYSTEM, TIMED_SYSTEM]) assertFormatAuthority(prompt);
+});
+
+test("reflection instructions ride on the battle system prompt instead of replacing it", () => {
+  for (const task of [REFLECTION_TASK, SERIES_REFLECTION_TASK, DRAFT_SERIES_REFLECTION_TASK]) {
+    assert.ok(!task.includes(FORMAT_AUTHORITY_NOTICE));
+    assert.match(task, /submit_review/);
   }
+});
+
+test("decision submissions hold one choice per displayed slot", () => {
+  const menu = [{ label: "Protect", part: "move 1", kind: "move" as const }];
+  assert.throws(
+    () => parseDecision({ choices: [0] }, [menu, menu], emptyBattleMemory()),
+    /exactly 2 entries/,
+  );
+  assert.deepEqual(parseDecision({ choices: [0, 0] }, [menu, menu], emptyBattleMemory()).choices, [
+    0, 0,
+  ]);
 });
 
 test("closed-sheet system prompt never claims open team sheets", () => {

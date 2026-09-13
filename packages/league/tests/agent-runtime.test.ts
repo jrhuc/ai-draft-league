@@ -401,6 +401,44 @@ it.each([{ pick: 42 }, { pick: "illegal" }])(
   60000,
 );
 
+it("registers every session submission tool and rejects calls to the inactive one", async () => {
+  const { requests, task, host } = await fixture((_body, index) =>
+    index === 1
+      ? { tool: "submit_review", input: { summary: "too early" } }
+      : { tool: "submit_pick", input: { pick: "Pikachu" } },
+  );
+  const review = {
+    name: "submit_review",
+    description: "Submit a review.",
+    parameters: {
+      type: "object",
+      properties: { summary: { type: "string" } },
+      required: ["summary"],
+      additionalProperties: false,
+    },
+  };
+  await host(async (agents) => {
+    const result = await agents.run({ ...task, submissions: [task.submission, review] });
+    expect(result.value).toBe("Pikachu");
+    expect(result.attempts).toBe(1);
+    expect(result.tools.map((tool) => tool.name)).toEqual(["submit_review", "submit_pick"]);
+    expect(result.tools[0]?.result).toContain("not this task's submission tool");
+    const offered = z
+      .array(z.object({ function: z.object({ name: z.string() }) }))
+      .parse(requests[0]?.tools)
+      .map((tool) => tool.function.name)
+      .sort();
+    expect(offered).toEqual(["submit_pick", "submit_review"]);
+    expect(JSON.stringify(requests[0])).toContain(
+      "Submit each task with the submission tool its instructions name",
+    );
+    expect(JSON.stringify(requests[1])).toContain("not this task's submission tool");
+    await expect(
+      agents.run({ ...task, task: "pick-2", prompt: "NEXT", submissions: [review] }),
+    ).rejects.toThrow("not one of the session's submission tools");
+  });
+}, 60000);
+
 it("preserves nullable object submissions through the SDK and rejects string null", async () => {
   const { task, requests, host } = await fixture((_body, index) => ({
     input: { offer: index === 1 ? "null" : null },

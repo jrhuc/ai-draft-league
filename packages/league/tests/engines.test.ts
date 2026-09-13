@@ -6,7 +6,7 @@ import { test } from "vite-plus/test";
 import { z } from "zod";
 import { serializeBattleMemory } from "../src/battle-memory.js";
 import { LLMEngine } from "../src/llm-engine.js";
-import { REFLECTION_SYSTEM, DRAFT_SERIES_REFLECTION_SYSTEM } from "../src/prompts.js";
+import { REFLECTION_TASK, DRAFT_SERIES_REFLECTION_TASK } from "../src/prompts.js";
 import { commitRunArtifact, readRunArtifacts } from "../src/run-artifact-store.js";
 import type { JsonObject } from "../src/types.js";
 import { agentReply, scriptedAgent } from "./agent-test-helpers.js";
@@ -84,7 +84,18 @@ test("game conversations persist private observations and preserve cross-game hi
   assert.doesNotMatch(script.calls[1]!.prompt, /Protect/);
   assert.match(script.calls[3]!.prompt, /Expect Protect/);
   assert.ok(script.calls.every((task) => task.system.includes("Private build plan")));
-  assert.ok(script.calls[2]!.system.startsWith(REFLECTION_SYSTEM));
+  assert.equal(script.calls[2]!.system, script.calls[1]!.system);
+  assert.ok(script.calls[2]!.prompt.startsWith(REFLECTION_TASK));
+  assert.equal(script.calls[2]!.submission.name, "submit_review");
+  assert.deepEqual(
+    script.calls.slice(0, 3).map((task) => task.submissions?.map((tool) => tool.name)),
+    Array(3).fill(["submit_action", "submit_review"]),
+  );
+  assert.deepEqual(
+    script.calls[2]!.tools?.map((tool) => tool.definition.name),
+    script.calls[1]!.tools?.map((tool) => tool.definition.name),
+  );
+  assert.equal(script.calls[1]!.submission.parameters, script.calls[0]!.submission.parameters);
   assert.match(JSON.stringify(engine.readContext()), /Won by conserving resources/);
   const persisted = JSON.stringify(readRunArtifacts(directory, "context"));
   assert.match(persisted, /Won by conserving resources/);
@@ -181,7 +192,7 @@ test("draft-final reflection keeps preparation context and next-opponent memory 
     outcome: { winner: "me", won: true },
     tournamentStatus: "advancing",
   });
-  assert.ok(script.calls[0]!.system.startsWith(DRAFT_SERIES_REFLECTION_SYSTEM));
+  assert.ok(script.calls[0]!.prompt.startsWith(DRAFT_SERIES_REFLECTION_TASK));
   assert.match(script.calls[0]!.prompt, /Entire private roster/);
   const reset = serializeBattleMemory({
     teamPlaybook: "Transferable",

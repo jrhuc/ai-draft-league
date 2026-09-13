@@ -75,22 +75,21 @@ export function battleSystemPrompt(options: { sheets: SheetPolicy; timed: boolea
   ].join("\n");
 }
 
-const REFLECTION_EVIDENCE = `Use the supplied private battle evidence and authoritative outcome. read_battle_history retrieves earlier games and your stated reasons for submitted choices in this series. Do not invent hidden information. ${PARALLEL_TOOLS_RULE}`;
+const REFLECTION_EVIDENCE =
+  "Use the supplied private battle evidence and authoritative outcome. read_battle_history retrieves earlier games and your stated reasons for submitted choices in this series. Do not invent hidden information.";
 const REFLECTION_MEMORY_RULE = `${NOTEBOOK_RULE} Update your notebook where useful: team_playbook carries own-team context, series_memory carries current-opponent context, and next_game_plan carries your immediate plan. An empty notebook object keeps all three fields. Decide what is worth retaining.`;
 const REFLECTION_RESPONSE = `Call submit_review with {"summary":"your assessment of the game","adjustment":"what, if anything, to keep or change next game","notebook":${NOTEBOOK_OBJECT}}.`;
 
-export const REFLECTION_SYSTEM = [
+export const REFLECTION_TASK = [
   "You are reviewing one completed game in a best-of-three VGC series.",
-  FORMAT_AUTHORITY_NOTICE,
   REFLECTION_EVIDENCE,
   "Assess the game and what, if anything, to keep or change for the next game.",
   REFLECTION_MEMORY_RULE,
   REFLECTION_RESPONSE,
 ].join("\n");
 
-export const TOURNAMENT_REFLECTION_SYSTEM = [
+export const TOURNAMENT_REFLECTION_TASK = [
   "You are reviewing one completed game in a best-of-three fixed-team VGC tournament series. If the series continues, the next game is against the same opponent with the same six Pokémon.",
-  FORMAT_AUTHORITY_NOTICE,
   REFLECTION_EVIDENCE,
   "Identify the main reasons for the result and what, if anything, to keep or change for the next game.",
   REFLECTION_MEMORY_RULE,
@@ -103,9 +102,8 @@ const SERIES_REFLECTION_RESULT =
   "Identify the main reasons for the game and series result, including whether your between-game adaptations helped or backfired.";
 const SERIES_REFLECTION_RESPONSE = `Call submit_review with {"summary":"why the game and series were won or lost","adjustment":"what to keep or change with this team in the next match","notebook":${NOTEBOOK_OBJECT}}.`;
 
-export const SERIES_REFLECTION_SYSTEM = [
+export const SERIES_REFLECTION_TASK = [
   SERIES_REFLECTION_OVER,
-  FORMAT_AUTHORITY_NOTICE,
   REFLECTION_EVIDENCE,
   SERIES_REFLECTION_RESULT,
   NOTEBOOK_RULE,
@@ -113,9 +111,8 @@ export const SERIES_REFLECTION_SYSTEM = [
   SERIES_REFLECTION_RESPONSE,
 ].join("\n");
 
-export const TOURNAMENT_RETROSPECTIVE_SYSTEM = [
+export const TOURNAMENT_RETROSPECTIVE_TASK = [
   "You are reviewing the final game of the match that ended your fixed-team VGC tournament run. The supplied outcome says whether you were eliminated or won the tournament final.",
-  FORMAT_AUTHORITY_NOTICE,
   REFLECTION_EVIDENCE,
   "This is a retrospective, not a decision. Nothing you write changes the result, and there is no next round to prepare for.",
   "Judge only the supplied final game, including what you did well and poorly with the fixed team. Do not claim evidence from earlier games or rounds. Do not assume an interaction or damage result against this opponent generalizes to a different team.",
@@ -123,9 +120,8 @@ export const TOURNAMENT_RETROSPECTIVE_SYSTEM = [
   'Call submit_review with {"summary":"<1-2 sentences on how the final game ended>","did_well":"<2-4 sentences>","did_poorly":"<2-4 sentences>","would_change":"<2-4 sentences, each one concrete>"}.',
 ].join("\n");
 
-export const CLOSED_SERIES_REFLECTION_SYSTEM = [
+export const CLOSED_SERIES_REFLECTION_TASK = [
   SERIES_REFLECTION_OVER,
-  FORMAT_AUTHORITY_NOTICE,
   REFLECTION_EVIDENCE,
   "Identify the main reason for the game and series result, including whether your between-game adjustments helped or backfired.",
   REFLECTION_MEMORY_RULE,
@@ -134,9 +130,8 @@ export const CLOSED_SERIES_REFLECTION_SYSTEM = [
   `Call submit_review with {"summary":"why the game and series were won or lost","adjustment":"what you would change against this opponent in a future series","notebook":${NOTEBOOK_OBJECT}}.`,
 ].join("\n");
 
-export const DRAFT_SERIES_REFLECTION_SYSTEM = [
+export const DRAFT_SERIES_REFLECTION_TASK = [
   SERIES_REFLECTION_OVER,
-  FORMAT_AUTHORITY_NOTICE,
   REFLECTION_EVIDENCE,
   "Identify the main reason for the game and series result, including whether your between-game adjustments helped or backfired.",
   "Your review may include the preparation and play of this series. It will be available to your franchise manager.",

@@ -32,6 +32,8 @@ export interface AgentTask<T> {
   prompt: string;
   tools?: AgentTool[];
   submission: ToolDefinition;
+  /** Every submission tool the session registers; the active one replaces its namesake so the tool surface, and with it the provider cache prefix, stays identical across the session's tasks. */
+  submissions?: ToolDefinition[];
   validate: (input: JsonObject) => T;
   signal?: AbortSignal;
   timed?: boolean;
@@ -120,6 +122,7 @@ class ActiveTask {
   readonly stopped = Promise.withResolvers<void>();
   readonly routing: OpenRouterRouting | undefined;
   readonly system: string;
+  readonly submissions: ToolDefinition[];
   readonly toolNames: string[];
 
   constructor(
@@ -128,9 +131,10 @@ class ActiveTask {
   ) {
     this.routing =
       parseSpec(task.model).provider === "openrouter" ? openRouterRouting() : undefined;
+    this.submissions = sessionSubmissions(task);
     this.system = [
       task.system,
-      `Submit using ${task.submission.name}. Rejected submissions return validation errors; correct them and submit again.`,
+      `${this.submissions.length === 1 ? `Submit using ${task.submission.name}.` : "Submit each task with the submission tool its instructions name."} Rejected submissions return validation errors; correct them and submit again.`,
       catalog,
       COMPACTION_SYSTEM,
     ]
@@ -139,7 +143,7 @@ class ActiveTask {
     this.toolNames = [
       ...(task.tools?.length ? ["execute"] : []),
       ...(task.tools ?? []).map((tool) => tool.definition.name),
-      task.submission.name,
+      ...this.submissions.map((tool) => tool.name),
     ];
   }
 
@@ -434,6 +438,13 @@ function planTask<T>(
 }
 
 /** Rendered with the runtime's own signature generator; OpenCode's inline listing truncates descriptions. */
+function sessionSubmissions(task: AgentTask<unknown>): ToolDefinition[] {
+  const declared = task.submissions ?? [task.submission];
+  if (!declared.some((tool) => tool.name === task.submission.name))
+    throw new Error(`${task.submission.name} is not one of the session's submission tools`);
+  return declared.map((tool) => (tool.name === task.submission.name ? task.submission : tool));
+}
+
 async function codeModeCatalog(tools: readonly AgentTool[]): Promise<string> {
   if (tools.length === 0) return "";
   const { CodeMode, Tool } = await import("@opencode/codemode");
@@ -540,31 +551,41 @@ async function leaguePlugin(slot: AgentSlot) {
               return { content };
             },
           });
-        editor.add({
-          name: task.submission.name,
-          description: task.submission.description,
-          input: task.submission.parameters,
-          options: { codemode: false },
-          execute: async (input) => {
-            await admitted.promise;
-            task.signal?.throwIfAborted();
-            const args = object.parse(input);
-            if (active.submitted)
-              return {
-                content: record(
-                  task.submission.name,
-                  args,
-                  () => "This task already has an accepted submission. End your reply.",
-                ),
-              };
-            const content = record(task.submission.name, args, () => {
-              task.validate(args);
-              return "Submission accepted. End your reply; await the next observation.";
-            });
-            active.submitted = true;
-            return { content, metadata: { accepted: true } };
-          },
-        });
+        for (const submission of active.submissions)
+          editor.add({
+            name: submission.name,
+            description: submission.description,
+            input: submission.parameters,
+            options: { codemode: false },
+            execute: async (input) => {
+              await admitted.promise;
+              task.signal?.throwIfAborted();
+              const args = object.parse(input);
+              if (submission.name !== task.submission.name)
+                return {
+                  content: record(
+                    submission.name,
+                    args,
+                    () =>
+                      `Error: ${submission.name} is not this task's submission tool; submit with ${task.submission.name}.`,
+                  ),
+                };
+              if (active.submitted)
+                return {
+                  content: record(
+                    submission.name,
+                    args,
+                    () => "This task already has an accepted submission. End your reply.",
+                  ),
+                };
+              const content = record(submission.name, args, () => {
+                task.validate(args);
+                return "Submission accepted. End your reply; await the next observation.";
+              });
+              active.submitted = true;
+              return { content, metadata: { accepted: true } };
+            },
+          });
       });
       await ctx.session.hook("context", async (event) => {
         const active = await slot.ready.promise;

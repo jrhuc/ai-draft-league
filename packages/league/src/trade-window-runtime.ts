@@ -286,7 +286,7 @@ async function completeTradePhase<T>(request: {
 }): Promise<T> {
   const model = request.state.models[request.entrant]!;
   const result = await runStage({
-    session: `window-${request.state.afterWeek}-${request.entrant}`,
+    session: `window-${request.state.afterWeek}-${request.entrant}-${request.task}`,
     task: request.task,
     model,
     reasoning: reasoningForModel(model, request.options),

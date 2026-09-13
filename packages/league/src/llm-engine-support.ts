@@ -46,18 +46,14 @@ const decisionToolParametersSchema = z
 
 const reviewText = z.string().max(2000);
 
-export function decisionSchema(slots: number) {
-  return z.object({
-    choices: z
-      .array(z.int().min(0))
-      .length(slots)
-      .describe(`The menu index chosen for each of your ${slots} slot(s), in slot order.`),
-    rationale: reviewText
-      .optional()
-      .describe("Why this joint action; kept in your private history."),
-    notebook: notebookSchema.optional(),
-  });
-}
+export const decisionSchema = z.object({
+  choices: z
+    .array(z.int().min(0))
+    .min(1)
+    .describe("The menu index chosen for each displayed slot, in slot order."),
+  rationale: reviewText.optional().describe("Why this joint action; kept in your private history."),
+  notebook: notebookSchema.optional(),
+});
 export const reflectionSchema = z.object({
   summary: reviewText.describe("Your assessment of the game."),
   adjustment: reviewText.optional().describe("What, if anything, to keep or change next game."),
@@ -180,20 +176,6 @@ export function decisionTools(sheets: SheetPolicy): ToolDefinition[] {
   ];
 }
 
-const REFLECTION_LOOKUPS = {
-  lookup_species: true,
-  lookup_move: true,
-  lookup_item: true,
-  lookup_ability: true,
-};
-
-export function reflectionTools(): ToolDefinition[] {
-  return [
-    ...DEX_TOOLS.filter((tool) => Object.hasOwn(REFLECTION_LOOKUPS, tool.name)),
-    BATTLE_HISTORY_TOOL,
-  ];
-}
-
 export function totalTokens(usage: Record<string, number> | undefined): number {
   return Math.trunc((usage?.input_tokens ?? 0) + (usage?.output_tokens ?? 0));
 }
@@ -214,8 +196,12 @@ export function parseDecision(
   menus: SlotMenu[],
   currentMemory: BattleMemory,
 ): ParsedDecision {
-  const reply = decisionSchema(menus.length).safeParse(object);
+  const reply = decisionSchema.safeParse(object);
   if (!reply.success) throw new Error(z.prettifyError(reply.error));
+  if (reply.data.choices.length !== menus.length)
+    throw new Error(
+      `choices must hold exactly ${menus.length} ${menus.length === 1 ? "entry" : "entries"}, one per displayed slot in slot order`,
+    );
   for (const [slot, index] of reply.data.choices.entries())
     if (index >= menus[slot]!.length)
       throw new Error(
