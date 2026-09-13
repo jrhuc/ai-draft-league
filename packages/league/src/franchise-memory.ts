@@ -61,9 +61,36 @@ interface MemoryReply {
   memory: FranchiseMemory;
 }
 
+/** Carries the memory with every page that fit already applied, so a retry only has to resend the rest. */
+export class MemoryRejection extends Error {
+  constructor(
+    message: string,
+    readonly memory: FranchiseMemory,
+  ) {
+    super(message);
+  }
+}
+
+interface PageWrite {
+  name: string;
+  label: string;
+  text: string;
+}
+
+function label(name: string, notebookField: string): string {
+  return name === NOTEBOOK_PAGE ? notebookField : `page ${JSON.stringify(name)}`;
+}
+
 /** Every field is optional and every omission keeps what exists: `notebook` replaces the notebook page,
- * `set_pages` writes the named pages and leaves the rest alone, and only `delete_pages` removes a page. */
-export function parseMemoryReply(record: JsonObject, current: FranchiseMemory): MemoryReply {
+ * `set_pages` writes the named pages and leaves the rest alone, and only `delete_pages` removes a page.
+ * A page that breaks a size limit is the only thing not saved; the rejection names it and carries the
+ * memory as saved so far. */
+export function parseMemoryReply(
+  record: JsonObject,
+  current: FranchiseMemory,
+  options: { notebookField?: string } = {},
+): MemoryReply {
+  const notebookField = options.notebookField ?? "notebook";
   if (record.pages !== undefined) {
     throw new Error(
       '"pages" is not a field; write pages with "set_pages" and remove them with "delete_pages"',
@@ -71,10 +98,12 @@ export function parseMemoryReply(record: JsonObject, current: FranchiseMemory): 
   }
   const notebook = z.string().safeParse(record.notebook);
   if (record.notebook !== undefined && !notebook.success) {
-    throw new Error('"notebook" must be a string holding the complete replacement notebook');
+    throw new Error(`"${notebookField}" must be a string holding the complete replacement text`);
   }
   const next = { ...current };
-  if (notebook.success) next[NOTEBOOK_PAGE] = notebook.data.trim();
+  const writes: PageWrite[] = [];
+  if (notebook.success)
+    writes.push({ name: NOTEBOOK_PAGE, label: notebookField, text: notebook.data.trim() });
   const deleted = new Set<string>();
   if (record.delete_pages !== undefined) {
     const deletePages = z.array(z.string()).safeParse(record.delete_pages);
@@ -82,7 +111,7 @@ export function parseMemoryReply(record: JsonObject, current: FranchiseMemory): 
     for (const name of deletePages.data) {
       if (name === NOTEBOOK_PAGE)
         throw new Error(
-          `the "${NOTEBOOK_PAGE}" page cannot be deleted; replace it with "notebook"`,
+          `the "${NOTEBOOK_PAGE}" page cannot be deleted; replace it with "${notebookField}"`,
         );
       deleted.add(name);
       delete next[name];
@@ -95,18 +124,69 @@ export function parseMemoryReply(record: JsonObject, current: FranchiseMemory): 
     for (const [name, candidate] of Object.entries(setPages.data)) {
       if (name === NOTEBOOK_PAGE)
         throw new Error(
-          `"set_pages" may not contain "${NOTEBOOK_PAGE}"; that page is the "notebook" field`,
+          `"set_pages" may not contain "${NOTEBOOK_PAGE}"; that page is the "${notebookField}" field`,
         );
       const text = z.string().safeParse(candidate);
       if (!text.success) throw new Error(`page ${JSON.stringify(name)} must be a string`);
       if (deleted.has(name))
         throw new Error(`page ${JSON.stringify(name)} is both set and deleted`);
-      next[name] = text.data.trim();
+      if (name.length > MEMORY_LIMITS.nameChars || !PAGE_NAME.test(name))
+        throw new Error(
+          `page name ${JSON.stringify(name)} must be 1-${MEMORY_LIMITS.nameChars} lowercase letters, digits, ".", "_" or "-"`,
+        );
+      writes.push({ name, label: label(name, notebookField), text: text.data.trim() });
     }
+  }
+  const rejected: string[] = [];
+  const saved: string[] = [];
+  const size = (name: string) => next[name]?.length ?? 0;
+  let total = Object.values(next).reduce((sum, text) => sum + text.length, 0);
+  const growth = (write: PageWrite) => write.text.length - size(write.name);
+  const ordered = [
+    ...writes.filter((write) => growth(write) <= 0),
+    ...writes.filter((write) => growth(write) > 0),
+  ];
+  for (const write of ordered) {
+    if (write.text.length > MEMORY_LIMITS.pageChars) {
+      rejected.push(
+        `${write.label} is ${write.text.length} characters; the limit is ${MEMORY_LIMITS.pageChars}, so cut at least ${write.text.length - MEMORY_LIMITS.pageChars}`,
+      );
+      continue;
+    }
+    if (!(write.name in next) && Object.keys(next).length >= MEMORY_LIMITS.pages) {
+      rejected.push(
+        `${write.label} would be page ${MEMORY_LIMITS.pages + 1}; the limit is ${MEMORY_LIMITS.pages}, so delete a page first`,
+      );
+      continue;
+    }
+    const after = total + growth(write);
+    if (after > MEMORY_LIMITS.totalChars) {
+      rejected.push(
+        `${write.label} would take the memory to ${after} characters; the limit is ${MEMORY_LIMITS.totalChars}, so it needs to be at least ${after - MEMORY_LIMITS.totalChars} characters shorter`,
+      );
+      continue;
+    }
+    next[write.name] = write.text;
+    total = after;
+    saved.push(write.label);
   }
   const problem = validateMemory(next);
   if (problem) throw new Error(problem);
-  return { memory: canonicalMemory(next) };
+  const memory = canonicalMemory(next);
+  if (rejected.length) {
+    const sizes = Object.entries(memory)
+      .map(([name, text]) => `${label(name, notebookField)} ${text.length}`)
+      .join(", ");
+    throw new MemoryRejection(
+      [
+        `Not saved: ${rejected.join("; ")}.`,
+        `Saved: ${saved.length ? saved.join(", ") : "nothing new"}; every other page is kept. Resubmit only what was not saved.`,
+        `Memory now: ${sizes} (${total} of ${MEMORY_LIMITS.totalChars} characters).`,
+      ].join(" "),
+      memory,
+    );
+  }
+  return { memory };
 }
 
 function firstLine(text: string): string {

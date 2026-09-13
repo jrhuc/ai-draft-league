@@ -12,6 +12,7 @@ import {
   type FranchiseMemory,
   MEMORY_LIMITS,
   MEMORY_TOOL_NOTICE,
+  MemoryRejection,
   parseMemoryReply,
   READ_MEMORY_PAGE,
   readMemoryPage,
@@ -35,9 +36,9 @@ import {
   readCompletedSeriesGameLogs,
 } from "./series.js";
 import type { JsonObject } from "./types.js";
-import { count, fileSlug, text } from "./value.js";
+import { clip, count, fileSlug, text } from "./value.js";
 
-const MEMORY_NOTICE = `- Your memory is yours to organise: a plan page shown to later managers and team builders, plus up to ${MEMORY_LIMITS.pages - 1} named pages they can fetch with read_memory_page. Each page holds at most ${MEMORY_LIMITS.pageChars} characters, ${MEMORY_LIMITS.totalChars} in all. The builder passes its team plan and set notes to the battle pilot. Completed series and earlier memory checkpoints remain available through the league tools; your review reasoning is recorded as evidence, but is not included in later prompts.`;
+const MEMORY_NOTICE = `- Your memory is yours to organise: a plan page shown to later managers and team builders, plus up to ${MEMORY_LIMITS.pages - 1} named pages they can fetch with read_memory_page. Keep a page to about 1,000 words and the whole memory under about 7,000 words, unchanged pages included: the hard limits are ${MEMORY_LIMITS.pageChars} characters a page and ${MEMORY_LIMITS.totalChars} in all, and a page over a limit is the only thing not saved and is asked for again on its own. The builder passes its team plan and set notes to the battle pilot. Completed series and earlier memory checkpoints remain available through the league tools; your review reasoning is recorded as evidence, but is not included in later prompts.`;
 
 const LEAGUE_TOOLS_NOTICE =
   `You have the Showdown dex tools and five league tools: read_public_series returns the spectator log of any completed series, read_own_series returns your own turn-by-turn choices with their stated reasons and your end-of-game notes, read_own_build returns the six you registered for a series, your plan, and what you brought, Mega Evolved, and lost in each game, read_memory_page returns one of your pages in full, and read_memory_history returns your memory as it stood after an earlier review or reconciliation. ${PARALLEL_TOOLS_RULE}`;
@@ -166,24 +167,22 @@ export interface ParsedWeeklyReview {
   reasoning: string;
 }
 
-const memoryPage = z
-  .string()
-  .max(MEMORY_LIMITS.pageChars, `a page exceeds ${MEMORY_LIMITS.pageChars} characters`);
-
 export const weeklyReviewReplySchema = z.object({
-  plan: memoryPage
-    .optional()
-    .describe("Complete replacement text for your plan page; omit it to keep the current plan."),
-  set_pages: z
-    .record(z.string(), memoryPage)
+  plan: z
+    .string()
     .optional()
     .describe(
-      "Named pages to write, each with its complete text. Pages not named are kept as they are.",
+      "Complete replacement text for your plan page, about 1,000 words at most; omit it to keep the current plan.",
+    ),
+  set_pages: z
+    .record(z.string(), z.string())
+    .optional()
+    .describe(
+      "Named pages to write, each with its complete text of about 1,000 words at most. Pages not named are kept as they are.",
     ),
   delete_pages: z.array(z.string()).optional().describe("Names of pages to remove."),
   reasoning: z
     .string()
-    .max(WEEKLY_REVIEW_PROMPT_POLICY.rationaleLimit)
     .optional()
     .describe("Why you changed what you changed; recorded, never shown to you again."),
 });
@@ -196,10 +195,10 @@ export function parseWeeklyReviewResult(
   if (!reply.success) throw new Error(z.prettifyError(reply.error));
   const { reasoning = "", plan, ...pages } = reply.data;
   const memoryReply = plan === undefined ? pages : { ...pages, notebook: plan };
-  const parsed = parseMemoryReply(memoryReply, current);
+  const parsed = parseMemoryReply(memoryReply, current, { notebookField: "plan" });
   return {
     memory: parsed.memory,
-    reasoning: reasoning.trim(),
+    reasoning: clip(reasoning.trim(), WEEKLY_REVIEW_PROMPT_POLICY.rationaleLimit),
   };
 }
 
@@ -619,6 +618,7 @@ export async function runWeeklyReview(
       signal.throwIfAborted();
       const model = state.models[entrant]!;
       const current = cloneMemory(state.memories[entrant]!);
+      let staged = current;
       let parsedReview: ParsedWeeklyReview | undefined;
       if (model !== "random") {
         const seatLog = path.join(logDir, `seat-${entrant}-${fileSlug(model)}.jsonl`);
@@ -633,7 +633,14 @@ export async function runWeeklyReview(
           prompt: userPrompt(state, entrant),
           tools: reviewReferenceTools(reference, boardSearch, reviewTools(state, entrant, options)),
           submission: submissionTool("submit_review", weeklyReviewReplySchema),
-          validate: (input) => parseWeeklyReviewResult(input, current),
+          validate: (input) => {
+            try {
+              return parseWeeklyReviewResult(input, staged);
+            } catch (error) {
+              if (error instanceof MemoryRejection) staged = error.memory;
+              throw error;
+            }
+          },
           runner: options.runAgent,
           logFile: seatLog,
           signal,

@@ -8,7 +8,7 @@ Memory is the only seat-private state that lasts through the season. The draft w
 
 The `notebook` page appears in full in later prompts. Other pages appear as an index with name, size, and first line; authorized stages can fetch them with `read_memory_page`.
 
-A manager can hold 16 pages, with 8,000 characters per page and 48,000 characters total. The harness rejects invalid updates instead of clipping them.
+A manager can hold 16 pages, with 8,000 characters per page and 48,000 characters total; prompts ask for about 1,000 words a page and 7,000 in all so an estimate lands under the limit. A page over a limit is the only thing not saved: the rejection names it with its size and the exact excess, lists what was saved and every page's size, and the retry resends only that page. Structural mistakes, such as a bad page name, are rejected whole. Nothing is clipped.
 
 ## Schedule reviews
 

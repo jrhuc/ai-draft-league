@@ -259,6 +259,24 @@ test("a weekly review reply keeps unmentioned pages and rejects invalid memory e
     /page name "Bad Name"/,
   );
   assert.throws(() => parseWeeklyReviewResult({ plan: 5 }, current), /plan/);
+  assert.equal(
+    parseWeeklyReviewResult({ reasoning: "r".repeat(2500) }, current).reasoning,
+    `${"r".repeat(2000)} [clipped]`,
+  );
+});
+
+test("a retry after an oversized page resends only that page and keeps what was saved", async () => {
+  const { state, options } = fixture();
+  const script = scriptedAgent([
+    { plan: "p".repeat(8001), set_pages: { scouting: "Public tells" } },
+    { plan: "Short plan" },
+  ]);
+  await runWeeklyReview(state, { ...options, runAgent: script.run });
+  assert.equal(script.rejections.length, 1);
+  assert.match(script.rejections[0]!, /Not saved: plan is 8001 characters/);
+  assert.match(script.rejections[0]!, /Saved: page "scouting"/);
+  assert.equal(state.memories[0]!.notebook, "Short plan");
+  assert.equal(state.memories[0]!.scouting, "Public tells");
 });
 
 test("reconciliation updates only changed seats and later reviews retrieve the exact memory snapshot", async () => {

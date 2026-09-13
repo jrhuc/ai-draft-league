@@ -4,6 +4,7 @@ import { test } from "vite-plus/test";
 import {
   emptyMemory,
   MEMORY_LIMITS,
+  MemoryRejection,
   parseMemoryReply,
   readMemoryPage,
   renderMemory,
@@ -31,6 +32,50 @@ test("memory limits reject with the reason instead of clipping", () => {
     ...Array.from({ length: 7 }, (_, index) => [`p${index}`, "x".repeat(MEMORY_LIMITS.pageChars)]),
   ]);
   assert.match(rejection(validateMemory(heavy)), /totals 56000 characters/);
+});
+
+test("an oversized page is the only thing not saved and the rejection carries the rest", () => {
+  const current = { notebook: "old", keep: "k" };
+  const attempt = () =>
+    parseMemoryReply(
+      {
+        notebook: "x".repeat(MEMORY_LIMITS.pageChars + 1),
+        set_pages: { fine: "ok", big: "y".repeat(MEMORY_LIMITS.pageChars + 40) },
+      },
+      current,
+      { notebookField: "plan" },
+    );
+  assert.throws(attempt, (error: unknown) => {
+    assert.ok(error instanceof MemoryRejection);
+    assert.deepEqual(error.memory, { notebook: "old", keep: "k", fine: "ok" });
+    assert.match(error.message, /Not saved: plan is 8001 characters; the limit is 8000, so cut at least 1/);
+    assert.match(error.message, /page "big" is 8040 characters/);
+    assert.match(error.message, /Saved: page "fine"; every other page is kept/);
+    assert.match(error.message, /Memory now: plan 3, page "fine" 2, page "keep" 1 \(6 of 48000 characters\)/);
+    return true;
+  });
+  const full = Object.fromEntries([
+    ["notebook", "n".repeat(7000)],
+    ...Array.from({ length: 5 }, (_, index) => [`p${index}`, "x".repeat(MEMORY_LIMITS.pageChars)]),
+  ]);
+  assert.throws(
+    () => parseMemoryReply({ set_pages: { p6: "z".repeat(2000) } }, full),
+    (error: unknown) => {
+      assert.ok(error instanceof MemoryRejection);
+      assert.match(
+        error.message,
+        /page "p6" would take the memory to 49000 characters; the limit is 48000, so it needs to be at least 1000 characters shorter/,
+      );
+      assert.deepEqual(error.memory, full);
+      return true;
+    },
+  );
+  const rescued = parseMemoryReply(
+    { set_pages: { p6: "z".repeat(2000), p0: "x".repeat(1000) } },
+    full,
+  );
+  assert.equal(rescued.memory.p6?.length, 2000);
+  assert.equal(rescued.memory.p0?.length, 1000);
 });
 
 test("a reply changes only what it names: set_pages merges, delete_pages removes, omissions keep", () => {
