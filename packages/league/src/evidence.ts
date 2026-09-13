@@ -5,7 +5,6 @@ import { z } from "zod";
 import type {
   ArchivedMatchView,
   BracketEntrantView,
-  LeagueGameResponse,
   TournamentArchiveView,
   TournamentEventView,
   TournamentSummary,
@@ -13,7 +12,7 @@ import type {
 } from "./views.js";
 import { SAFE_SEGMENT } from "./path-safety.js";
 import { type ParsedSeriesRecord, TEST_POOL } from "./records.js";
-import { buildSeriesGame, isRunLive, viewTeamSheet } from "./run-artifacts.js";
+import { isRunLive, viewTeamSheet } from "./run-artifacts.js";
 import { runStatusSchema } from "./run-status.js";
 import { loadPool } from "./teams.js";
 import { buildBracket, tournamentConfigSchema } from "./tournament.js";
@@ -34,7 +33,6 @@ const runConfigSchema = tournamentConfigSchema.partial().extend({
 
 type RunConfig = z.output<typeof runConfigSchema>;
 
-type SeriesIndexArtifact = number | null | undefined;
 
 interface PoolProvenance {
   event: TournamentEventView | null;
@@ -282,13 +280,6 @@ function foldTournament(
   };
 }
 
-function tournamentSeriesLocation(
-  fold: TournamentFold,
-  seriesIndex: SeriesIndexArtifact,
-): TournamentSeriesLocation | null {
-  const parsed = safeIntegerSchema.safeParse(seriesIndex);
-  return parsed.success ? (fold.locations.get(parsed.data) ?? null) : null;
-}
 
 function archiveTournament(
   runId: string,
@@ -326,42 +317,6 @@ function archiveTournament(
   };
 }
 
-export function buildTournamentGame(
-  allRows: ParsedSeriesRecord[],
-  runsDir: string,
-  runId: string,
-  seriesIndex: number,
-  game: number,
-  teamsDir?: string,
-): LeagueGameResponse | null {
-  if (!SAFE_SEGMENT.test(runId)) return null;
-  const rows = allRows.filter(
-    (row) => row.mode === "tournament" && String(row.run_id ?? "") === runId,
-  );
-  const projection = archiveTournament(runId, rows, runsDir, teamsDir);
-  if (!projection) return null;
-  const location = tournamentSeriesLocation(projection.fold, seriesIndex);
-  if (!location || location.slots[0] === null || location.slots[1] === null) return null;
-  const row = projection.fold.rowsBySeries.get(seriesIndex);
-  if (!row) return null;
-  const seriesId = String(row.series_id ?? "");
-  if (!seriesId) return null;
-  return buildSeriesGame(
-    runsDir,
-    runId,
-    seriesIndex,
-    game,
-    {
-      seriesId,
-      sides: [location.slots[0], location.slots[1]],
-      stage: "playoff",
-      round: location.round + 1,
-      models: projection.view.entrants.map((entrant) => entrant.model),
-      labels: projection.view.entrants.map((entrant) => entrant.team || entrant.model),
-    },
-    row,
-  );
-}
 
 export function buildTournaments(
   allRows: ParsedSeriesRecord[],

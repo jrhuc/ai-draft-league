@@ -39,10 +39,10 @@
     "capture-requests": "node dist/tools/capture-requests.js"
   },
   "dependencies": {
-    "@opencode/client": "2.0.0",
-    "@opencode/codemode": "2.0.0",
-    "@opencode/plugin": "2.0.0",
-    "@opencode/sdk": "2.0.0",
+    "@opencode/client": "2.0.3",
+    "@opencode/codemode": "2.0.3",
+    "@opencode/plugin": "2.0.3",
+    "@opencode/sdk": "2.0.3",
     "zod": "4.6.1"
   },
   "devDependencies": {

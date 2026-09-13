@@ -24,8 +24,6 @@ export const MAX_TRADE_OFFERS = 3;
 export const DEFAULT_SWAPS_ALLOWED = 6;
 export const MAX_SWAPS_ALLOWED = 20;
 
-export const FREE_AGENCY_AVAILABLE_MECHANICS_TOOLS = `You have the same Showdown dex tools as during the draft. Use them only where the supplied evidence and board do not answer the question. ${PARALLEL_TOOLS_RULE}`;
-export const TRADE_OFFER_AVAILABLE_MECHANICS_TOOLS = `You have the same Showdown dex tools as during the draft. Use them only where the supplied evidence and rosters do not answer the question. ${PARALLEL_TOOLS_RULE}`;
 
 export const TRADE_WINDOW_PROMPT_POLICY = {
   systemTemplate: [
@@ -42,7 +40,7 @@ export const TRADE_WINDOW_PROMPT_POLICY = {
     "- Coaches act in inverse standings order. Pokémon dropped by an earlier coach are available now.",
     `- ${NEW_BUILD_EVERY_MATCHUP}`,
     "",
-    "You have the same Showdown dex tools as during the draft, and read_memory_page returns one of your memory pages in full. Use them only where the supplied evidence and board do not answer the question.",
+    `You have the same Showdown dex tools as during the draft, and read_memory_page returns one of your memory pages in full. Use them only where the supplied evidence and board do not answer the question. ${PARALLEL_TOOLS_RULE}`,
   ],
   standingsHeading: "LEAGUE STANDINGS (rank | coach | W-L | games):",
   resultsHeading: "YOUR ROUND-ROBIN RESULTS:",
@@ -71,7 +69,7 @@ export const TRADE_OFFER_PROMPT_POLICY = {
     "- If the offer is illegal, it is not shown to the counterparty and you reply again.",
     `- ${NEW_BUILD_EVERY_MATCHUP}`,
     "",
-    "You have the same Showdown dex tools as during the draft, and read_memory_page returns one of your memory pages in full. Use them only where the supplied evidence and rosters do not answer the question.",
+    `You have the same Showdown dex tools as during the draft, and read_memory_page returns one of your memory pages in full. Use them only where the supplied evidence and rosters do not answer the question. ${PARALLEL_TOOLS_RULE}`,
   ],
   offerReplyTemplate: [
     'Call submit_offer with {"offer":{"to":<entrant-index>,"give":"<board-id>","get":"<board-id>","message":"<what the counterparty is shown>"}}, where "offer" may be null.',

@@ -35,10 +35,3 @@ export function normalizeStageEvidence(
   };
 }
 
-export function noStageEvidence(currentNotebook: string): StageEvidence {
-  return {
-    rationale: "",
-    notebook: currentNotebook,
-    supplied: { rationale: false, notebookUpdate: false },
-  };
-}
