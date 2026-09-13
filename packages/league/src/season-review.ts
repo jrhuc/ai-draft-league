@@ -4,7 +4,7 @@ import path from "node:path";
 import { z } from "zod";
 
 import type { AgentRunner } from "./agent-runtime.js";
-import { referenceTools, runStage, submissionTool } from "./stage-agent.js";
+import { reviewReferenceTools, runStage, submissionTool } from "./stage-agent.js";
 import type { DraftBoard, DraftBoardMon } from "./draft.js";
 import type { DraftPickView, DraftTableRow } from "./views.js";
 import { commitRunArtifact, readRunArtifacts } from "./run-artifact-store.js";
@@ -291,7 +291,7 @@ export async function runSeasonReview(
           reasoning: reasoningForModel(model, options),
           system,
           prompt: userPrompt(state, entrant, outcome),
-          tools: referenceTools(reference),
+          tools: reviewReferenceTools(reference),
           submission: submissionTool("submit_review", seasonReviewReplySchema),
           validate: parseSeasonReview,
           runner: options.runAgent,

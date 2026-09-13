@@ -31,6 +31,19 @@ export function referenceTools(
   ];
 }
 
+/** Reviews read logs and rewrite memory; damage and stat math belongs to the build with the real six. */
+export const REVIEW_EXCLUDED_TOOLS = new Set(["estimate_damage", "calculate_stats"]);
+
+export function reviewReferenceTools(
+  reference: ShowdownReference,
+  boardSearch?: BoardSearch,
+  extra: AgentTool[] = [],
+): AgentTool[] {
+  return referenceTools(reference, boardSearch, extra).filter(
+    (tool) => !REVIEW_EXCLUDED_TOOLS.has(tool.definition.name),
+  );
+}
+
 export async function runStage<T>(task: AgentTask<T> & { runner: AgentRunner; logFile: string }) {
   const result = await task.runner(task);
   fs.appendFileSync(

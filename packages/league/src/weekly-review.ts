@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { createBoardSearch } from "./board-search.js";
 import type { AgentRunner, AgentTool } from "./agent-runtime.js";
-import { referenceTools, runStage, submissionTool } from "./stage-agent.js";
+import { reviewReferenceTools, runStage, submissionTool } from "./stage-agent.js";
 import type { DraftBoard, DraftBoardMon } from "./draft.js";
 import {
   cloneMemory,
@@ -631,7 +631,7 @@ export async function runWeeklyReview(
           reasoning: reasoningForModel(model, options),
           system: systemPrompt(state, entrant),
           prompt: userPrompt(state, entrant),
-          tools: referenceTools(reference, boardSearch, reviewTools(state, entrant, options)),
+          tools: reviewReferenceTools(reference, boardSearch, reviewTools(state, entrant, options)),
           submission: submissionTool("submit_review", weeklyReviewReplySchema),
           validate: (input) => parseWeeklyReviewResult(input, current),
           runner: options.runAgent,
