@@ -51,7 +51,8 @@ export function validateMemory(memory: FranchiseMemory): string | undefined {
     total += text.length;
   }
   if (total > MEMORY_LIMITS.totalChars) {
-    return `memory totals ${total} characters across its pages; the limit is ${MEMORY_LIMITS.totalChars}`;
+    const sizes = names.map((name) => `${name} ${z.string().parse(memory[name]).length}`).join(", ");
+    return `memory totals ${total} characters across its pages; the limit is ${MEMORY_LIMITS.totalChars}, so remove at least ${total - MEMORY_LIMITS.totalChars} characters. Unchanged pages count too: ${sizes}`;
   }
   return undefined;
 }
