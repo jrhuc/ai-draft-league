@@ -643,7 +643,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   try {
     process.exitCode = await main();
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
+    console.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
     process.exitCode = 1;
   }
 }

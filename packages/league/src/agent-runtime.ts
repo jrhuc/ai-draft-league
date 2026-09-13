@@ -72,8 +72,8 @@ type UserMessage = Extract<Message, { type: "user" }>;
 
 const object = z.record(z.string(), z.json());
 const SUBMISSION_REMINDERS = 2;
-const CATALOG_INTRO =
-  "Code Mode catalog: these are all the tools callable inside `execute` through `tools`, with their exact signatures. Run independent calls concurrently with `Promise.all` and return every result you need to read. A call the harness rejects returns its error message as its result instead of throwing, so the rest of the batch still completes.";
+const REFERENCE_CALL_BUDGET = 400;
+const CATALOG_INTRO = `Code Mode catalog: these are all the tools callable inside \`execute\` through \`tools\`, with their exact signatures. Run independent calls concurrently with \`Promise.all\` and return every result you need to read. A call the harness rejects returns its error message as its result instead of throwing, so the rest of the batch still completes. A task may make at most ${REFERENCE_CALL_BUDGET} reference calls in total; a loop over a whole board or roster spends that budget on rows you will never read.`;
 const SUBMISSION_FAILURES = 5;
 /** Anthropic refusal stops are stochastic on identical input; OpenCode reports them as a normal stop. */
 const CONTENT_FILTER_RETRIES = 3;
@@ -538,6 +538,12 @@ async function leaguePlugin(slot: AgentSlot) {
               await admitted.promise;
               task.signal?.throwIfAborted();
               const args = object.parse(input);
+              if (active.calls.length >= REFERENCE_CALL_BUDGET) {
+                const content = `Error: this task's budget of ${REFERENCE_CALL_BUDGET} reference calls is spent; decide from the results you already have.`;
+                if (active.calls.length === REFERENCE_CALL_BUDGET)
+                  active.calls.push({ name: tool.definition.name, arguments: args, result: content });
+                return { content };
+              }
               let content: string;
               try {
                 content = record(tool.definition.name, args, () => {

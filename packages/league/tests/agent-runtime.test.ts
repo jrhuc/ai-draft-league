@@ -317,6 +317,44 @@ it("keeps concurrent seats' credentials, tools, and observations private within 
   expect(requests).toHaveLength(2);
 }, 60000);
 
+it("stops recording reference calls once a task spends its budget", async () => {
+  const { task, requests, host } = await fixture((_body, index) =>
+    index === 1
+      ? {
+          tool: "execute",
+          input: {
+            code: 'const out = []; for (let i = 0; i < 405; i++) out.push(await tools.lookup_species({ species: "P" + i })); return out.slice(-2);',
+          },
+        }
+      : { input: { pick: "Pikachu" } },
+  );
+  const lookup: AgentTool = {
+    definition: {
+      name: "lookup_species",
+      description: "Look up a species.",
+      parameters: {
+        type: "object",
+        properties: { species: { type: "string" } },
+        required: ["species"],
+        additionalProperties: false,
+      },
+    },
+    run: (input) => `${z.string().parse(input.species)}: row`,
+  };
+  const result = await host((agents) => agents.run({ ...task, tools: [lookup] }));
+  expect(result.value).toBe("Pikachu");
+  expect(result.tools).toHaveLength(402);
+  expect(result.tools[399]).toEqual({
+    name: "lookup_species",
+    arguments: { species: "P399" },
+    result: "P399: row",
+  });
+  expect(result.tools[400]?.result).toContain("budget of 400 reference calls is spent");
+  expect(result.tools[401]?.name).toBe("submit_pick");
+  expect(JSON.stringify(requests[1])).toContain("budget of 400 reference calls is spent");
+  expect(JSON.stringify(requests[0])).toContain("at most 400 reference calls");
+}, 60000);
+
 it("returns lookups and validation errors to the model and logs the stage line", async () => {
   const { runDir, task, requests, host } = await fixture((_body, index) => {
     if (index === 1)
