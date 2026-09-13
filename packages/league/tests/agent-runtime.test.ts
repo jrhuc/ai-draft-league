@@ -352,8 +352,10 @@ it("stops recording reference calls once a task spends its budget", async () => 
   expect(result.tools[400]?.result).toContain("budget of 400 reference calls is spent");
   expect(result.tools[401]?.name).toBe("submit_pick");
   expect(JSON.stringify(requests[1])).toContain("budget of 400 reference calls is spent");
+  expect(JSON.stringify(requests[1])).not.toContain("P399: row");
   expect(JSON.stringify(requests[0])).toContain("at most 400 reference calls");
 }, 60000);
+
 
 it("returns lookups and validation errors to the model and logs the stage line", async () => {
   const { runDir, task, requests, host } = await fixture((_body, index) => {
