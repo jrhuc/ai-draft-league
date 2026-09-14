@@ -89,7 +89,7 @@ export const BATTLE_HISTORY_TOOL: ToolDefinition = {
 export const ACTION_ORDER_TOOL: ToolDefinition = {
   name: "compare_action_order",
   description:
-    'Compare two Pokémon (active or benched) using live Speed state without revealing hidden EVs. Applies visible items, boosts, status, Tailwind, weather abilities, Trick Room, and move priority including ability modifiers (Prankster, Gale Wings, Triage, Grassy Glide, Stall, Mycelium Might) and priority items (Quick Claw, Lagging Tail); also explains Encore timing and redundant locks. Pass "switch" as a move to time a switch-out, which resolves before moves.',
+    'Compare two Pokémon (active, benched, or any two registered at team preview) using live Speed state without revealing hidden EVs. Applies visible items, boosts, status, Tailwind, weather abilities, Trick Room, and move priority including ability modifiers (Prankster, Gale Wings, Triage, Grassy Glide, Stall, Mycelium Might) and priority items (Quick Claw, Lagging Tail); also explains Encore timing and redundant locks. Set weather to project Chlorophyll, Swift Swim, Sand Rush or Slush Rush before the weather is up. Pass "switch" as a move to time a switch-out, which resolves before moves.',
   parameters: {
     type: "object",
     properties: {
@@ -120,6 +120,11 @@ export const ACTION_ORDER_TOOL: ToolDefinition = {
         description:
           "Compare the second Pokémon after a legal Mega Evolution with its known stone.",
       },
+      weather: {
+        type: "string",
+        description:
+          "Hypothetical weather: sun, rain, sand, snow, or none. Defaults to the live weather.",
+      },
     },
     required: ["first", "second"],
     additionalProperties: false,
@@ -139,7 +144,7 @@ export function decisionTools(sheets: SheetPolicy): ToolDefinition[] {
       const parameters = decisionToolParametersSchema.parse(tool.parameters);
       return {
         ...tool,
-        description: `${DAMAGE_TOOL_DESCRIPTIONS[sheets]} A benched Pokémon requires attacker_replaces or defender_replaces naming its outgoing active Pokémon or slot, so the remaining ally is known. Switch-in events are not simulated. Set attacker_mega or defender_mega to evaluate its legal Mega forme with the known stone; the live state is unchanged.`,
+        description: `${DAMAGE_TOOL_DESCRIPTIONS[sheets]} Any two registered Pokémon can be evaluated at team preview. A benched Pokémon fills an empty slot on its side; when the side is full, name the outgoing active Pokémon or slot in attacker_replaces or defender_replaces so the remaining ally is known. Switch-in events are not simulated. Set attacker_mega or defender_mega to evaluate its legal Mega forme with the known stone; weather and terrain default to the live field and can be overridden; the live state is unchanged.`,
         parameters: {
           ...parameters,
           properties: {
@@ -149,6 +154,16 @@ export function decisionTools(sheets: SheetPolicy): ToolDefinition[] {
                 parameters.properties[name] ?? null,
               ]),
             ),
+            weather: {
+              type: "string",
+              description:
+                "Hypothetical weather: sun, rain, sand, snow, or none. Defaults to the live weather; use it to see a Chlorophyll or sun-boosted line before Drought is up.",
+            },
+            terrain: {
+              type: "string",
+              description:
+                "Hypothetical terrain: electric, grassy, misty, psychic, or none. Defaults to the live terrain.",
+            },
             attacker_mega: {
               type: "boolean",
               description: "Evaluate the attacker after Mega Evolving.",

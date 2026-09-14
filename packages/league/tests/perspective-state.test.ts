@@ -586,6 +586,69 @@ test("unseen opponents read as not brought once the whole bring is revealed", ()
   );
 });
 
+test("team preview calculators accept any two registered Pokémon, Mega hypotheticals, and weather", () => {
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
+  const state = new PerspectiveState("p1");
+  state.feed([
+    "|poke|p2|Venusaur, L50|",
+    "|poke|p2|Charizard, L50|",
+    "|showteam|p2|Venusaur||LifeOrb|Chlorophyll|earthpower,sludgebomb|Modest|||||50]Charizard||CharizarditeY|Blaze|heatwave|Modest|||||50",
+  ]);
+  const own = [
+    { species: "Gengar", item: "gengarite", ability: "cursedbody", spe: 178 },
+    { species: "Rotom-Wash", item: "sitrusberry", ability: "levitate", spe: 108 },
+    { species: "Kingambit", item: "chopleberry", ability: "defiant", spe: 70 },
+  ].map(({ species, item, ability, spe }, index) => ({
+    ident: `p1: ${species}`,
+    details: `${species}, L50`,
+    condition: "137/137",
+    active: index < 2,
+    stats: { atk: 76, def: 100, spa: 222, spd: 115, spe },
+    moves: ["shadowball", "protect"],
+    item,
+    ability,
+  }));
+  const preview: BattleRequest = { teamPreview: true, side: { pokemon: own } };
+  assert.doesNotMatch(state.render(preview), /active slot/);
+  const plain = state.estimateDamage(
+    { attacker: "Venusaur", defender: "Gengar", move: "Earth Power" },
+    preview,
+    reference,
+  );
+  assert.match(plain, /Venusaur fields into an empty slot; Gengar fields into an empty slot/);
+  assert.match(plain, /\d+\.\d+-\d+\.\d+%/);
+  const mega = state.estimateDamage(
+    { attacker: "Venusaur", defender: "Gengar", move: "Earth Power", defender_mega: true },
+    preview,
+    reference,
+  );
+  assert.match(mega, /Hypothetical Mega Evolution/);
+  assert.match(mega, /defender Gengar-Mega \(Shadow Tag\)/);
+  const noSun = state.estimateDamage(
+    { attacker: "Charizard", defender: "Kingambit", move: "Heat Wave" },
+    preview,
+    reference,
+  );
+  const sun = state.estimateDamage(
+    { attacker: "Charizard", defender: "Kingambit", move: "Heat Wave", weather: "sun" },
+    preview,
+    reference,
+  );
+  assert.match(sun, /Hypothetical field: weather sun \(live: none\); single-target power/);
+  assert.notEqual(noSun.match(/\d+\.\d+-\d+\.\d+%/)?.[0], sun.match(/\d+\.\d+-\d+\.\d+%/)?.[0]);
+  const order = state.compareActionOrder(
+    { first: "Venusaur", second: "Gengar", weather: "sun" },
+    reference,
+  );
+  assert.match(order, /Hypothetical weather: sun \(live: none\)/);
+  assert.match(order, /effective Speed 200–264 \(Chlorophyll ×2\)/);
+  assert.match(order, /Venusaur is guaranteed to act first/);
+  assert.match(
+    state.compareActionOrder({ first: "Venusaur", second: "Gengar", second_mega: true }, reference),
+    /Gengar-Mega is guaranteed to act first/,
+  );
+});
+
 test("post-preview decisions hide unbrought Pokémon while reviews retain the full team", () => {
   const state = new PerspectiveState("p1");
   const previewPokemon = Array.from({ length: 6 }, (_, index) => ({

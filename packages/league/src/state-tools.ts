@@ -5,7 +5,7 @@ import type {
   SpeedProfileInput,
 } from "./reference.js";
 import { type PerspectiveStateView, MonState, SCREEN_MOVES, stateKey } from "./state-model.js";
-import type { JsonObject, Pid } from "./types.js";
+import type { JsonObject, JsonValue, Pid } from "./types.js";
 import { afterColon, count, text } from "./value.js";
 
 interface MonEntry {
@@ -147,14 +147,25 @@ function findActive(state: PerspectiveStateView, query: string): MonEntry | unde
   return candidates.find((entry) => demega(stateKey(entry.mon.species)) === wantedBase);
 }
 
+const CLEAR_WORDS = new Set(["none", "clear", "off", "no", "nothing"]);
+
+/** `undefined` keeps the live field, `null` clears it, a string names the hypothetical condition. */
+function fieldOverride(raw: JsonValue | undefined): string | null | undefined {
+  const word = text(raw).trim();
+  if (!word) return undefined;
+  return CLEAR_WORDS.has(stateKey(word)) ? null : word;
+}
+
 export function speedProfile(
   state: PerspectiveStateView,
   pid: Pid,
   mon: MonState,
   reference: ShowdownReference,
+  overrides: { weather?: string | null } = {},
 ): SpeedProfile | undefined {
   const conditions = state.sides[pid].conditions;
   const terrain = [...state.fields.values()].find((effect) => /terrain/i.test(effect.name))?.name;
+  const weather = overrides.weather === undefined ? state.weather?.name : overrides.weather;
   const input: SpeedProfileInput = {
     species: mon.species,
     itemConsumed: mon.itemConsumed,
@@ -167,7 +178,7 @@ export function speedProfile(
   if (mon.ability !== undefined) input.ability = mon.ability;
   if (mon.status !== undefined) input.status = mon.status;
   if (mon.boosts.spe !== undefined) input.boost = mon.boosts.spe;
-  if (state.weather) input.weather = state.weather.name;
+  if (weather) input.weather = weather;
   if (terrain !== undefined) input.terrain = terrain;
   return reference.speedProfile(input);
 }
@@ -224,8 +235,9 @@ export function compareActionOrder(
     reference,
   );
 
-  const firstProfile = speedProfile(state, first.pid, first.mon, reference);
-  const secondProfile = speedProfile(state, second.pid, second.mon, reference);
+  const weather = fieldOverride(args.weather);
+  const firstProfile = speedProfile(state, first.pid, first.mon, reference, { weather });
+  const secondProfile = speedProfile(state, second.pid, second.mon, reference, { weather });
   if (!firstProfile || !secondProfile)
     return "Speed data is unavailable for one of the selected Pokémon.";
   const firstMove = text(args.first_move).trim();
@@ -313,6 +325,10 @@ export function compareActionOrder(
     describe(`${second.mon.species}${second.benched ? " (benched)" : ""}`, secondProfile),
     `${orderText} (${reason}).`,
   ];
+  if (weather !== undefined)
+    lines.unshift(
+      `Hypothetical weather: ${weather ?? "none"} (live: ${state.weather?.name ?? "none"}).`,
+    );
   if (args.first_mega === true || args.second_mega === true)
     lines.unshift(
       "Hypothetical Mega Evolution: projected forme, ability, and raw stats; current field and boosts held fixed. Ambiguous stats retain legal ranges.",
@@ -394,13 +410,21 @@ export function estimateDamage(
   ] as const) {
     const replaces = text(args[`${side}_replaces`]).trim();
     if (!entry.benched) {
-      if (replaces) throw new Error(`${entry.mon.species} is already active.`);
+      if (replaces)
+        throw new Error(`${entry.mon.species} is already active; omit ${side}_replaces.`);
+      continue;
+    }
+    const fielded = active.filter((other) => other.pid === entry.pid);
+    if (!replaces && fielded.length < 2) {
+      const slot = fielded.some((other) => other.slot === 1) ? 2 : 1;
+      active.push({ ...entry, slot });
+      switches.push(`${entry.mon.species} fields into an empty slot`);
       continue;
     }
     const outgoing = replaces ? findActive(state, replaces) : undefined;
     if (!outgoing || outgoing.pid !== entry.pid)
       throw new Error(
-        `${entry.mon.species} is benched. Set ${side}_replaces to the same-side active Pokémon or slot it would replace: ${visible.join("; ")}.`,
+        `${entry.mon.species} is benched and its side is full. Set ${side}_replaces to the same-side active Pokémon or slot it would replace: ${visible.join("; ")}.`,
       );
     if (outgoing.mon.ident === attacker.mon.ident || outgoing.mon.ident === defender.mon.ident)
       throw new Error("A switch-in cannot replace the other Pokémon in the damage calculation.");
@@ -499,9 +523,26 @@ export function estimateDamage(
     SCREEN_MOVES.has(condition),
   );
   if (screens.length) authoritative.defender_screens = screens;
-  if (state.weather) authoritative.weather = state.weather.name;
-  const terrain = [...state.fields.values()].find((effect) => /terrain/i.test(effect.name));
-  if (terrain) authoritative.terrain = terrain.name;
+  const liveTerrain = [...state.fields.values()].find((effect) => /terrain/i.test(effect.name));
+  const weatherOverride = fieldOverride(args.weather);
+  const terrainOverride = fieldOverride(args.terrain);
+  const weather = weatherOverride === undefined ? state.weather?.name : weatherOverride;
+  const terrain = terrainOverride === undefined ? liveTerrain?.name : terrainOverride;
+  if (weather) authoritative.weather = weather;
+  if (terrain) authoritative.terrain = terrain;
+  const fieldNotes = [
+    ...(weatherOverride === undefined
+      ? []
+      : [`weather ${weatherOverride ?? "none"} (live: ${state.weather?.name ?? "none"})`]),
+    ...(terrainOverride === undefined
+      ? []
+      : [`terrain ${terrainOverride ?? "none"} (live: ${liveTerrain?.name ?? "none"})`]),
+  ];
+  if (
+    (moveTarget === "allAdjacentFoes" || moveTarget === "allAdjacent") &&
+    !authoritative.is_spread_hit
+  )
+    fieldNotes.push("single-target power: only one foe is fielded for this estimate");
   if (args.helping_hand === true) authoritative.helping_hand = true;
   if (args.is_critical_hit === true) authoritative.is_critical_hit = true;
 
@@ -523,5 +564,6 @@ export function estimateDamage(
   const switchContext = switches.length
     ? `Hypothetical switch-in: ${switches.join("; ")}. Current weather, terrain and boosts held fixed; switch-in events are not simulated.\n`
     : "";
-  return `${switchContext}${context}\n${reference.lookup("estimate_damage", authoritative)}`;
+  const fieldContext = fieldNotes.length ? `Hypothetical field: ${fieldNotes.join("; ")}.\n` : "";
+  return `${switchContext}${fieldContext}${context}\n${reference.lookup("estimate_damage", authoritative)}`;
 }

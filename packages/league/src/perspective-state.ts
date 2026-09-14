@@ -713,7 +713,7 @@ export class PerspectiveState {
         if (Number.isInteger(value)) mon.stats[stat] = Number(value);
       }
       for (const move of asStrings(pokemon.moves)) if (move) mon.recordMove(move);
-      if (!pokemon.active) continue;
+      if (!pokemon.active || request.teamPreview) continue;
       const slot = activeIndex++;
       this.sides[this.pid].active[String.fromCharCode("a".charCodeAt(0) + slot)] =
         this.monKey(ident);

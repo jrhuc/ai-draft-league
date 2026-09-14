@@ -176,7 +176,10 @@ export function renderDecision(input: DecisionPrompt): string {
         menu.every((item, index) => item.label === input.menus[0]?.[index]?.label),
     );
   if (sharedTeamMenu) {
-    lines.push("Team preview. Ordered team menu (choices 1-2 lead; choices 3-4 back):");
+    lines.push(
+      "Team preview: estimate_damage and compare_action_order accept any two registered Pokémon here, Mega hypotheticals included.",
+      "Ordered team menu (choices 1-2 lead; choices 3-4 back):",
+    );
     for (const [index, item] of input.menus[0]!.entries()) lines.push(`  ${index}. ${item.label}`);
   } else {
     lines.push(
