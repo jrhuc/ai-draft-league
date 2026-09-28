@@ -31,6 +31,6 @@ pnpm --filter site run deploy
 pnpm --filter traces run deploy
 ```
 
-The traces Worker's route needs the `aidraftleague.com` zone. Until that zone exists in the Cloudflare account, the site serves from `ai-draft-league.jrhu.workers.dev` and the traces ship inside the site's own assets instead: after `vp build` in `apps/site`, copy `apps/traces/dist/traces` to `apps/site/dist/traces` and run `wrangler deploy` there.
+The site serves on `aidraftleague.com` and `www.aidraftleague.com`. The traces Worker takes `/traces/*` on both hosts, so trace files stay same-origin, and also answers on `traces.aidraftleague.com`. Each app's `wrangler.jsonc` holds its custom domains and routes; `wrangler triggers deploy` applies a change to them without uploading a new build.
 
 The site reads the committed artifact. It does not run Pokémon Showdown or recompute standings. See the [publication boundary](architecture.md#read-and-publish-data) for included and excluded evidence.

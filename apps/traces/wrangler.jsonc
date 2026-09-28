@@ -5,7 +5,11 @@
   "workers_dev": false,
   // Path route on the site's zone: requests under /traces/ reach this Worker
   // before the site's Custom Domain worker, so the files stay same-origin.
-  "routes": [{ "pattern": "aidraftleague.com/traces/*", "zone_name": "aidraftleague.com" }],
+  "routes": [
+    { "pattern": "aidraftleague.com/traces/*", "zone_name": "aidraftleague.com" },
+    { "pattern": "www.aidraftleague.com/traces/*", "zone_name": "aidraftleague.com" },
+    { "pattern": "traces.aidraftleague.com", "custom_domain": true },
+  ],
   // Assets-only Worker fed by `vgcleague export-season --traces-dir dist/traces`;
   // dist/ is never committed, so this deploys from the exporting machine.
   "assets": {
