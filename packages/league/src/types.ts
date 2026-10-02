@@ -1,3 +1,5 @@
+import type { Battle } from "pokemon-showdown";
+
 export type Pid = "p1" | "p2";
 type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | readonly JsonValue[];
@@ -71,6 +73,7 @@ export type SubmissionSource =
   | "model"
   | "automatic"
   | "random"
+  | "policy"
   | "model-default"
   | "simulator-default"
   | "timer-default";
@@ -104,6 +107,8 @@ export interface BattleAgent {
   ): void;
   observe(lines: string[]): Promise<void> | void;
   abandonDecision?(): void;
+  /** A seat that reads the live battle sees both full teams, which no model seat may. */
+  attachSimulator?(battle: () => Battle | null): void;
 }
 
 export interface BattleOutcome {

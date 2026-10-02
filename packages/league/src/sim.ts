@@ -160,6 +160,7 @@ export class SimBattle {
   ): Promise<BattleOutcome> {
     const { BattleStream } = loadShowdown(this.psDir);
     const stream = new BattleStream({ noCatch: true });
+    for (const pid of ["p1", "p2"] as const) agents[pid].attachSimulator?.(() => stream.battle);
     const state: RouteState = {
       pov: { p1: [], p2: [] },
       log: [],

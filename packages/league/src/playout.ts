@@ -56,9 +56,7 @@ function projectedScore(scratch: Battle, attacker: Pokemon, moveId: string): [nu
   return best;
 }
 
-/** The continuation policy every rollout value is conditional on: each active Pokémon uses its
- * highest projected damage, Mega Evolves when it can, and never switches or uses a status move by
- * choice. It reads the true battle, so it knows both full teams. */
+/** Every stored rollout value is conditional on this policy; changing it invalidates them. */
 export function greedyCommand(battle: Battle, pid: Pid, rng: Rng, epsilon = 0): string {
   const side = battle.getSide(pid);
   const request = side.activeRequest;

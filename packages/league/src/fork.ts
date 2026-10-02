@@ -173,6 +173,16 @@ export function cloneBattle(battle: Battle): Battle {
   return clone;
 }
 
+export function forkPoint(battle: Battle): () => Battle {
+  const native = nativeBattleConstructor(battle);
+  const serialized = JSON.stringify(battle.toJSON());
+  return () => {
+    const fork = native.fromJSON(JSON.parse(serialized));
+    fork.restart(() => {});
+    return fork;
+  };
+}
+
 export function battleActionCandidates(battle: Battle, pid: Pid): string[] {
   const request = battle.getSide(pid).activeRequest;
   if (!request || request.wait) return [];

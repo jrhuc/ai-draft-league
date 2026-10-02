@@ -64,9 +64,7 @@ function hiddenOpponents(battle: Battle, focal: Pid): number {
     .length;
 }
 
-/** Win rate of every accepted focal action at a simultaneous turn decision, conditional on the
- * greedy continuation. The simulator sees both full teams, so `hidden_opponents` reports how much
- * of that the focal player could not. Forced switches and team preview are not valued. */
+/** The simulator sees both full teams; `hidden_opponents` counts what the focal player could not. */
 export function valuePosition(
   position: Position,
   focal: Pid,
@@ -176,8 +174,7 @@ const gameSchema = z.object({
     .optional(),
 });
 
-/** One recorded game per input line. A game whose replay does not reproduce its recorded log is
- * reported unverified and none of its positions are valued. */
+/** A game whose replay does not reproduce its recorded log has none of its positions valued. */
 export async function servePositions(
   input: NodeJS.ReadableStream = process.stdin,
   output: NodeJS.WritableStream = process.stdout,
