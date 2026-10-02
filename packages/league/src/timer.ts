@@ -1,5 +1,10 @@
 import type { BattleStream } from "pokemon-showdown";
-import type { RoomBattleBridge, RoomBattleTimer, TimerPlayer } from "./showdown.js";
+import type {
+  RoomBattleBridge,
+  RoomBattleTimer,
+  RoomBattleTimerSettings,
+  TimerPlayer,
+} from "./showdown.js";
 import { loadRoomBattleTimer } from "./showdown.js";
 import type { JsonValue, Pid, TimerScale } from "./types.js";
 
@@ -8,15 +13,6 @@ export type TimerEvent = "autodefault" | "forfeit" | "tie";
 const TIMER_SCALE_MIN = 0.5;
 const TIMER_SCALE_MAX = 4;
 export const DEFAULT_TIMER_SCALE: TimerScale = "off";
-interface TimerRequestStart {
-  seconds?: number;
-  turnSeconds?: number;
-}
-
-interface TimerRequestStarts {
-  p1: TimerRequestStart | undefined;
-  p2: TimerRequestStart | undefined;
-}
 
 interface TimerRequestPayload {
   wait?: boolean;
@@ -42,12 +38,7 @@ export function parseTimerScale(value: JsonValue | undefined): TimerScale | unde
 export class TimerAdapter {
   private readonly players: TimerPlayer[];
   private readonly bySlot: Record<Pid, TimerPlayer>;
-  private readonly timer: RoomBattleTimer;
-  private readonly enabled: boolean;
-  private readonly requestStart: TimerRequestStarts = {
-    p1: undefined,
-    p2: undefined,
-  };
+  private readonly timer: RoomBattleTimer | undefined;
   private readonly battle: RoomBattleBridge;
 
   constructor(
@@ -57,7 +48,6 @@ export class TimerAdapter {
     psDir: string,
     scale: TimerScale,
   ) {
-    this.enabled = scale !== "off";
     this.players = (["p1", "p2"] as const).map((slot) => ({
       slot,
       name: slot,
@@ -100,14 +90,14 @@ export class TimerAdapter {
         return this.stream.write(`>forcelose ${player.slot}`);
       },
     };
+    if (scale === "off") return;
     const Timer = loadRoomBattleTimer(psDir);
     this.timer = new Timer(this.battle);
-    if (scale !== "off" && scale !== 1) this.scaleSettings(scale);
-    if (this.enabled) this.timer.start();
+    if (scale !== 1) this.scaleSettings(this.timer.settings, scale);
+    this.timer.start();
   }
 
-  private scaleSettings(scale: number): void {
-    const settings = this.timer.settings;
+  private scaleSettings(settings: RoomBattleTimerSettings, scale: number): void {
     for (const key of ["starting", "grace", "addPerTurn", "maxPerTurn", "maxFirstTurn"] as const) {
       if (settings[key] && Number.isFinite(settings[key])) {
         settings[key] = Math.max(5, Math.round((settings[key] * scale) / 5) * 5);
@@ -129,19 +119,14 @@ export class TimerAdapter {
         if (line.startsWith("|turn|")) this.battle.turn = Number(line.slice(6));
       }
     } else if (lines[0] === "sideupdate") {
-      const pid = lines[1] === "p1" || lines[1] === "p2" ? lines[1] : undefined;
-      const player = pid === undefined ? undefined : this.bySlot[pid];
+      const player = lines[1] === "p1" || lines[1] === "p2" ? this.bySlot[lines[1]] : undefined;
       const line = lines[2] ?? "";
-      if (player && pid && line.startsWith("|request|")) {
+      if (player && line.startsWith("|request|")) {
         const request: TimerRequestPayload = JSON.parse(line.slice(9));
         player.request = { isWait: request.wait ? "cantUndo" : false };
         this.battle.requestCount += 1;
-        if (this.enabled) {
+        if (this.timer) {
           if (!request.update) this.timer.nextRequest(player);
-          this.requestStart[pid] = {
-            seconds: player.secondsLeft,
-            turnSeconds: player.turnSecondsLeft,
-          };
           if (!request.wait) {
             request.timer = { turnSeconds: player.turnSecondsLeft, seconds: player.secondsLeft };
             lines[2] = `|request|${JSON.stringify(request)}`;
@@ -152,7 +137,7 @@ export class TimerAdapter {
       }
     } else if (lines[0] === "end") {
       this.battle.ended = true;
-      if (this.enabled) this.timer.end();
+      this.timer?.end();
     }
     return lines.join("\n");
   }
@@ -169,6 +154,6 @@ export class TimerAdapter {
 
   end(): void {
     this.battle.ended = true;
-    if (this.enabled) this.timer.end();
+    this.timer?.end();
   }
 }

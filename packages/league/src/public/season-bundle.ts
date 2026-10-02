@@ -466,12 +466,7 @@ export function buildPublicSeasonBundle(
   const status = (() => {
     if (options.releasedThroughWeek === 0) return "draft" as const;
     if (seasonReleased) return "complete" as const;
-    if (
-      releasedPlayoffRounds > 0 ||
-      (releasedThroughWeek === totalWeeks && league.phase !== "roundrobin")
-    )
-      return "playoffs" as const;
-    return "regular-season" as const;
+    return releasedPlayoffRounds > 0 ? ("playoffs" as const) : ("regular-season" as const);
   })();
   const lastReleased = league.series
     .filter((series) => {
