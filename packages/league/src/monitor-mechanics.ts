@@ -36,6 +36,7 @@ export interface DamagePrediction {
   crit: boolean;
   helpingHand: boolean;
   spread: boolean;
+  hypothetical: boolean;
 }
 
 export interface OrderPrediction {
@@ -46,6 +47,7 @@ export interface OrderPrediction {
   firstMove: string | null;
   secondMove: string | null;
   actsFirst: string | null;
+  hypothetical: boolean;
 }
 
 export interface MechanicsFinding {
@@ -59,8 +61,10 @@ export interface MechanicsFinding {
 export interface GameMechanicsAudit {
   damagePredictions: number;
   damageMatched: number;
+  damageHypothetical: number;
   orderPredictions: number;
   orderMatched: number;
+  orderHypothetical: number;
   findings: MechanicsFinding[];
 }
 
@@ -249,6 +253,11 @@ export interface Predictions {
   order: OrderPrediction[];
 }
 
+const APPLIED_PAIR =
+  /state applied: attacker (.+?)(?: \([^)]*\))?; defender (.+?)(?: \([^)]*\))?\./;
+const SPEED_LINE = /^(.+?)(?: \(benched\))?: raw Speed /gm;
+const HYPOTHETICAL = /^Hypothetical|Turn order matters:/m;
+
 export function readPredictions(traceRows: readonly JsonObject[]): Predictions {
   const damage: DamagePrediction[] = [];
   const order: OrderPrediction[] = [];
@@ -259,18 +268,19 @@ export function readPredictions(traceRows: readonly JsonObject[]): Predictions {
     for (const call of asRecords(row.tool_calls)) {
       const args = asRecord(call.arguments);
       const result = text(call.result);
-      /** A what-if (another weather, a Mega, a stat stage, a switch-in, the other turn order) predicts a battle that may not be the one played. */
-      if (/^Hypothetical|Turn order matters:/m.test(result)) continue;
+      const hypothetical = HYPOTHETICAL.test(result);
       if (call.name === "estimate_damage") {
         const range = /(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)% of maximum HP/.exec(result);
         if (!range) continue;
         const shown = /Target HP shown: (\d+)%/.exec(result);
+        const applied = APPLIED_PAIR.exec(result);
         damage.push({
           pid,
           turn,
-          attacker: text(args.attacker),
-          defender: text(args.defender),
+          attacker: applied?.[1] ?? text(args.attacker),
+          defender: applied?.[2] ?? text(args.defender),
           move: text(args.move),
+          hypothetical,
           min: Number(range[1]),
           max: Number(range[2]),
           shownHp: shown ? Number(shown[1]) : 100,
@@ -281,14 +291,16 @@ export function readPredictions(traceRows: readonly JsonObject[]): Predictions {
         });
       } else if (call.name === "compare_action_order") {
         const first = /^(.+?) is guaranteed to act first/m.exec(result);
+        const named = [...result.matchAll(SPEED_LINE)].map((match) => match[1]!.trim());
         order.push({
           pid,
           turn,
-          first: text(args.first),
-          second: text(args.second),
+          first: named.length >= 2 ? named[0]! : text(args.first),
+          second: named.length >= 2 ? named[1]! : text(args.second),
           firstMove: text(args.first_move) || null,
           secondMove: text(args.second_move) || null,
           actsFirst: first ? first[1]!.trim() : null,
+          hypothetical,
         });
       }
     }
@@ -318,8 +330,10 @@ export function auditGame(
   const audit: GameMechanicsAudit = {
     damagePredictions: 0,
     damageMatched: 0,
+    damageHypothetical: 0,
     orderPredictions: 0,
     orderMatched: 0,
+    orderHypothetical: 0,
     findings: [],
   };
   const seen = new Set<string>();
@@ -341,6 +355,10 @@ export function auditGame(
     audit.damagePredictions += predictions.damage.length;
     audit.orderPredictions += predictions.order.length;
     for (const prediction of predictions.damage) {
+      if (prediction.hypothetical) {
+        audit.damageHypothetical += 1;
+        continue;
+      }
       const matched = hits.filter(
         (hit) =>
           hit.turn === prediction.turn &&
@@ -372,6 +390,10 @@ export function auditGame(
       }
     }
     for (const prediction of predictions.order) {
+      if (prediction.hypothetical) {
+        audit.orderHypothetical += 1;
+        continue;
+      }
       if (!prediction.actsFirst || !prediction.firstMove || !prediction.secondMove) continue;
       if (id(prediction.firstMove) === "switch" || id(prediction.secondMove) === "switch") continue;
       const order = orders.find((entry) => entry.turn === prediction.turn);
