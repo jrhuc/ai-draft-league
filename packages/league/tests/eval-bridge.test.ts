@@ -55,7 +55,10 @@ test("an outside seat plays a whole game as the league's coach and its calls are
     assert.match(exchange.prompt, /Authoritative battle state/);
     const tools = exchange.tools.map((tool) => tool.name);
     assert.ok(tools.includes("estimate_damage") && tools.includes("compare_action_order"));
+    assert.equal(event.decision.menus.length, event.decision.slot_names.length);
     if (exchanges === 1) {
+      assert.equal(event.decision.phase, "team_preview");
+      assert.equal(event.decision.menus.length, 4);
       assert.throws(() => runner.submit(exchange.id, { choices: [0] }), /exactly 4 entries/);
       assert.throws(
         () => runner.submit(exchange.id, { choices: [0, 1, 2, 3], reason: "x" }),
@@ -105,8 +108,7 @@ test("a recorded game resumes at a chosen decision with its history", async () =
   let event = await recorded.next();
   while (event.kind !== "end") {
     if (event.kind === "exchange") {
-      const turn = /^Turn: (\d+)/m.exec(event.exchange.prompt);
-      turns[event.pid].push(turn ? Number(turn[1]) : 0);
+      turns[event.pid].push(event.decision.turn);
       recorded.bridge.runner(event.pid).abandon(event.exchange.id, "default");
     }
     event = await recorded.next();
@@ -127,6 +129,7 @@ test("a recorded game resumes at a chosen decision with its history", async () =
   });
   const first = await resumed.next();
   assert.ok(first.kind === "exchange" && first.pid === "p1");
+  assert.deepEqual([first.decision.turn, first.decision.phase], [2, "turn"]);
   assert.match(first.exchange.prompt, /^Turn: 2$/m);
   assert.equal(first.exchange.task, "decision-1");
   resumed.bridge.runner("p1").abandon(first.exchange.id, "default");

@@ -173,11 +173,11 @@ The outside seat is the league's battle coach with its model replaced: it receiv
 | `outcome` |                                                                       | Winner, turns, log, decision rows                    |
 | `audit`   |                                                                       | The mechanics audit of the outside seats' tool calls |
 
-| Event      | Meaning                                                                              |
-| ---------- | ------------------------------------------------------------------------------------ |
-| `exchange` | A task waits for a seat: its `system`, `prompt`, `tools`, and `submission` tool      |
-| `decision` | Showdown accepted or rejected a submitted action; the row is the seat's decision log |
-| `end`      | The game ended; carries the outcome                                                  |
+| Event      | Meaning                                                                                                                                                       |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `exchange` | A decision waits for a seat: the task (`system`, `prompt`, `tools`, `submission`) and the `decision` view (`turn`, `phase`, `slot_names`, `menus`, `request`) |
+| `decision` | Showdown accepted or rejected a submitted action; the row is the seat's decision log                                                                          |
+| `end`      | The game ended; carries the outcome                                                                                                                           |
 
 A `seat` is `external` or a fixed policy. At least one seat must be external.
 

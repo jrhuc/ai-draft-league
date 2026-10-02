@@ -95,7 +95,7 @@ const BATTLE_SUBMISSIONS = [SUBMIT_ACTION, SUBMIT_REVIEW];
 
 export class LLMEngine extends BaseEngine {
   readonly reference: ShowdownReference;
-  private state: PerspectiveState;
+  protected state: PerspectiveState;
   private readonly context: LLMEngineContext;
   private readonly stats = new LLMEngineStats();
   private memory: BattleMemory;

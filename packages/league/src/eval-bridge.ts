@@ -8,6 +8,7 @@ import { BaseEngine, type ChoiceSubstitution } from "./battle-agent.js";
 import type { SlotMenu } from "./choices.js";
 import { ExchangeAbandoned, type ExternalExchange, ExternalRunner } from "./external-runner.js";
 import { LLMEngine } from "./llm-engine.js";
+import { type DecisionPhase, decisionPhase } from "./llm-engine-support.js";
 import { auditGame, type GameMechanicsAudit } from "./monitor-mechanics.js";
 import { defaultPsDir } from "./paths.js";
 import { POLICY_SPECS, policyEngine } from "./policy-engines.js";
@@ -56,12 +57,21 @@ export interface BridgeOutcome {
   error: string | null;
 }
 
+export interface DecisionView {
+  turn: number;
+  phase: DecisionPhase;
+  slot_names: string[];
+  menus: string[][];
+  request: BattleRequest;
+}
+
 export type BridgeEvent =
-  | { kind: "exchange"; pid: Pid; exchange: ExternalExchange }
+  | { kind: "exchange"; pid: Pid; exchange: ExternalExchange; decision: DecisionView }
   | { kind: "decision"; pid: Pid; row: JsonObject }
   | { kind: "end"; outcome: BridgeOutcome };
 
 class ExternalCoach extends LLMEngine {
+  decision: DecisionView | undefined;
   private gaveUp = false;
 
   protected override async decideJoint(
@@ -70,6 +80,13 @@ class ExternalCoach extends LLMEngine {
     context: AgentContext,
   ): Promise<number[]> {
     this.gaveUp = false;
+    this.decision = {
+      turn: this.state.turn,
+      phase: decisionPhase(request),
+      slot_names: menus.map((_, slot) => this.state.slotName(slot, request)),
+      menus: menus.map((menu) => menu.map((item) => item.label)),
+      request,
+    };
     try {
       return await super.decideJoint(menus, request, context);
     } catch (error) {
@@ -229,12 +246,15 @@ export class EvalBridge {
 
   private external(pid: Pid): LLMEngine {
     const seat: ExternalSeat = {
-      runner: new ExternalRunner((exchange) => this.emit({ kind: "exchange", pid, exchange })),
+      runner: new ExternalRunner((exchange) => {
+        if (!coach.decision) throw new Error(`${pid} was asked for something other than an action`);
+        this.emit({ kind: "exchange", pid, exchange, decision: coach.decision });
+      }),
       decisions: [],
       traces: [],
     };
     this.seats.set(pid, seat);
-    return new ExternalCoach(pid, EXTERNAL, {
+    const coach = new ExternalCoach(pid, EXTERNAL, {
       runAgent: seat.runner.run,
       decisionLog: (row) => {
         seat.decisions.push(row);
@@ -245,6 +265,7 @@ export class EvalBridge {
       psDir: this.psDir,
       reference: this.reference,
     });
+    return coach;
   }
 
   private finish(outcome: BattleOutcome, error: string | null): void {
