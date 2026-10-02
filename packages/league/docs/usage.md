@@ -151,3 +151,48 @@ node seat.mjs context '{"after":"ctx-00000010","limit":50}'
 ```
 
 This cannot recover memory from an earlier external process.
+
+## Drive a seat from another program
+
+`bridge` plays one battle where another program holds a seat. It speaks JSON lines on stdio and is what the `league-evals` Inspect tasks run against:
+
+```sh
+node dist/src/cli.js bridge
+```
+
+The outside seat is the league's battle coach with its model replaced: it receives the same system prompt, decision prompt, tools, notebook, and submission validation as a league model. Each request is `{"id", "method", "params"}` and is answered by `{"id", "result"}` or `{"id", "error"}`. Lines without an `id` are `{"event"}`.
+
+| Method    | Parameters                                                            | Result                                               |
+| --------- | --------------------------------------------------------------------- | ---------------------------------------------------- |
+| `open`    | `format`                                                              | Showdown and harness commits, available seats        |
+| `pool`    | `name`                                                                | The pool's packed teams                              |
+| `start`   | `seed`, `p1`, `p2` (`name`, `team`, `seat`), `policy_seed`, `script`  | `started`                                            |
+| `tool`    | `pid`, `exchange`, `name`, `arguments`                                | The tool's text                                      |
+| `submit`  | `pid`, `exchange`, `input`, optional `response`, `reasoning`, `usage` | `accepted`, or the validator's message as an error   |
+| `abandon` | `pid`, `exchange`, `reason`                                           | The harness plays its default for that decision      |
+| `outcome` |                                                                       | Winner, turns, log, decision rows                    |
+| `audit`   |                                                                       | The mechanics audit of the outside seats' tool calls |
+
+| Event      | Meaning                                                                              |
+| ---------- | ------------------------------------------------------------------------------------ |
+| `exchange` | A task waits for a seat: its `system`, `prompt`, `tools`, and `submission` tool      |
+| `decision` | Showdown accepted or rejected a submitted action; the row is the seat's decision log |
+| `end`      | The game ended; carries the outcome                                                  |
+
+A `seat` is `external` or a fixed policy. At least one seat must be external.
+
+| Policy                                 | Plays                                                                          |
+| -------------------------------------- | ------------------------------------------------------------------------------ |
+| `random`                               | A uniformly random legal action                                                |
+| `greedy`                               | The highest projected damage for each active Pokémon; never switches by choice |
+| `search`, `search:fast`, `search:deep` | The equilibrium of a payoff matrix filled by greedy rollouts                   |
+
+`greedy` and `search` read the simulator's battle, so they know the opposing bench and exact stats. They never see the other side's choice for the current decision. `script` holds recorded choices per side; the bridge replays them and hands over at the first decision past each list.
+
+`positions` values recorded turn decisions. It reads one game per line (`id`, `source`, `log`, optional `settings` and `only`) and writes one line per game and per valued decision, with the win rate of every accepted action when both sides continue with the greedy policy:
+
+```sh
+node dist/src/cli.js positions < games.jsonl
+```
+
+A game whose replay does not reproduce its recorded log is reported unverified and is not valued.
