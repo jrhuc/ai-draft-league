@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, test, vi } from "vite-plus/test";
+import { modelLabel } from "ui/lib/format";
 import { App } from "../src/App";
 import { SeasonProvider } from "../src/lib/season-context";
 
@@ -53,8 +54,9 @@ test("home renders standings from the fetched bundle", async () => {
   mount("/");
   await until(() => document.querySelector("table") !== null);
   expect(document.body.textContent).toContain("Standings");
-  expect(document.body.textContent).toContain("muse-spark-1.2");
-  expect(document.body.textContent).not.toContain("muse-spark-1.2-contributor");
+  for (const franchise of season.franchises)
+    expect(document.body.textContent).toContain(modelLabel(franchise.model));
+  expect(document.body.textContent).not.toContain("contributor");
   expect(document.querySelector('[title*="contributor"]')).toBeNull();
 });
 

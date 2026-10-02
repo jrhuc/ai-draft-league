@@ -597,7 +597,8 @@ export function estimateDamage(
   if (weatherId) applied.push(WEATHER_WORDS.get(weatherId) ?? weatherId);
   if (terrainId) applied.push(TERRAIN_WORDS.get(terrainId) ?? terrainId);
   if (helpingHand) applied.push("Helping Hand");
-  if (attackerTimesAttacked) applied.push(`attacker hit ${attackerTimesAttacked} times since entering`);
+  if (attackerTimesAttacked)
+    applied.push(`attacker hit ${attackerTimesAttacked} times since entering`);
   if (crit) applied.push("critical hit");
   if (isSpread) applied.push("spread (0.75x)");
   for (const side of ["attacker", "defender"] as const) {

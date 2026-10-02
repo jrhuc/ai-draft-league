@@ -77,4 +77,5 @@ test("a failed bundle load can retry and show team selections", async () => {
 
 test("model labels omit the contributor routing suffix", () => {
   expect(modelLabel("opencode-go:muse-spark-1.2-contributor")).toBe("muse-spark-1.2");
+  expect(modelLabel("opencode:muse-spark-1.3-contributor-free")).toBe("muse-spark-1.3");
 });

@@ -24,7 +24,6 @@ export const MAX_TRADE_OFFERS = 3;
 export const DEFAULT_SWAPS_ALLOWED = 6;
 export const MAX_SWAPS_ALLOWED = 20;
 
-
 export const TRADE_WINDOW_PROMPT_POLICY = {
   systemTemplate: [
     "You are {{model}}, manager of a franchise in a Pokémon VGC draft league played in the format {{format}}.",

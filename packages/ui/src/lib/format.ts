@@ -26,7 +26,7 @@ export function modelLabel(spec: string): string {
   return spec
     .replace(/^[^:]*:/, "")
     .replace(/^[^/]*\//, "")
-    .replace(/-contributor$/, "");
+    .replace(/-contributor(?:-free)?$/, "");
 }
 
 export function modelProvider(spec: string): string {

@@ -162,7 +162,8 @@ export class PerspectiveState {
     } else if ((kind === "-damage" || kind === "-heal") && args.length >= 2) {
       const mon = this.mon(args[0]!);
       this.setHp(mon, args[1]!);
-      if (kind === "-damage" && !args.some((arg) => arg.startsWith("[from]"))) mon.timesAttacked += 1;
+      if (kind === "-damage" && !args.some((arg) => arg.startsWith("[from]")))
+        mon.timesAttacked += 1;
     } else if (kind === "-sethp") {
       for (let index = 0; index < args.length - 1; index += 2) {
         if (args[index]!.startsWith("p")) this.setHp(this.mon(args[index]!), args[index + 1]!);

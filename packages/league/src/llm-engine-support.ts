@@ -149,10 +149,14 @@ export function decisionTools(sheets: SheetPolicy): ToolDefinition[] {
           ...parameters,
           properties: {
             ...Object.fromEntries(
-              ["attacker", "defender", "move", "helping_hand", "is_critical_hit", "attacker_hits_taken"].map((name) => [
-                name,
-                parameters.properties[name] ?? null,
-              ]),
+              [
+                "attacker",
+                "defender",
+                "move",
+                "helping_hand",
+                "is_critical_hit",
+                "attacker_hits_taken",
+              ].map((name) => [name, parameters.properties[name] ?? null]),
             ),
             weather: {
               type: "string",

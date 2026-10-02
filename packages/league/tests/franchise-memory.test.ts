@@ -12,6 +12,16 @@ import {
 } from "../src/franchise-memory.js";
 import { rejection } from "./asserts.js";
 
+function memoryRejection(attempt: () => void): MemoryRejection {
+  try {
+    attempt();
+  } catch (error) {
+    assert.ok(error instanceof MemoryRejection);
+    return error;
+  }
+  throw new Error("expected a MemoryRejection");
+}
+
 test("memory limits reject with the reason instead of clipping", () => {
   assert.equal(validateMemory(emptyMemory("x".repeat(MEMORY_LIMITS.pageChars))), undefined);
   assert.match(
@@ -45,31 +55,30 @@ test("an oversized page is the only thing not saved and the rejection carries th
       current,
       { notebookField: "plan" },
     );
-  assert.throws(attempt, (error: unknown) => {
-    assert.ok(error instanceof MemoryRejection);
-    assert.deepEqual(error.memory, { notebook: "old", keep: "k", fine: "ok" });
-    assert.match(error.message, /Not saved: plan is 8001 characters; the limit is 8000, so cut at least 1/);
-    assert.match(error.message, /page "big" is 8040 characters/);
-    assert.match(error.message, /Saved: page "fine"; every other page is kept/);
-    assert.match(error.message, /Memory now: plan 3, page "fine" 2, page "keep" 1 \(6 of 48000 characters\)/);
-    return true;
-  });
+  const partial = memoryRejection(attempt);
+  assert.deepEqual(partial.memory, { notebook: "old", keep: "k", fine: "ok" });
+  assert.match(
+    partial.message,
+    /Not saved: plan is 8001 characters; the limit is 8000, so cut at least 1/,
+  );
+  assert.match(partial.message, /page "big" is 8040 characters/);
+  assert.match(partial.message, /Saved: page "fine"; every other page is kept/);
+  assert.match(
+    partial.message,
+    /Memory now: plan 3, page "fine" 2, page "keep" 1 \(6 of 48000 characters\)/,
+  );
   const full = Object.fromEntries([
     ["notebook", "n".repeat(7000)],
     ...Array.from({ length: 5 }, (_, index) => [`p${index}`, "x".repeat(MEMORY_LIMITS.pageChars)]),
   ]);
-  assert.throws(
-    () => parseMemoryReply({ set_pages: { p6: "z".repeat(2000) } }, full),
-    (error: unknown) => {
-      assert.ok(error instanceof MemoryRejection);
-      assert.match(
-        error.message,
-        /page "p6" would take the memory to 49000 characters; the limit is 48000, so it needs to be at least 1000 characters shorter/,
-      );
-      assert.deepEqual(error.memory, full);
-      return true;
-    },
+  const overflow = memoryRejection(() =>
+    parseMemoryReply({ set_pages: { p6: "z".repeat(2000) } }, full),
   );
+  assert.match(
+    overflow.message,
+    /page "p6" would take the memory to 49000 characters; the limit is 48000, so it needs to be at least 1000 characters shorter/,
+  );
+  assert.deepEqual(overflow.memory, full);
   const rescued = parseMemoryReply(
     { set_pages: { p6: "z".repeat(2000), p0: "x".repeat(1000) } },
     full,

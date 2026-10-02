@@ -48,9 +48,10 @@ test("decision submissions hold one choice per displayed slot", () => {
     () => parseDecision({ choices: [0] }, [menu, menu], emptyBattleMemory()),
     /exactly 2 entries/,
   );
-  assert.deepEqual(parseDecision({ choices: [0, 0] }, [menu, menu], emptyBattleMemory()).choices, [
-    0, 0,
-  ]);
+  assert.deepEqual(
+    parseDecision({ choices: [0, 0] }, [menu, menu], emptyBattleMemory()).choices,
+    [0, 0],
+  );
 });
 
 test("closed-sheet system prompt never claims open team sheets", () => {
