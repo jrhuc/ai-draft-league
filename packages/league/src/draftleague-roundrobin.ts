@@ -155,20 +155,18 @@ async function reviewWeek(
   options.onEvent?.({ type: "draft", draft: runtime.draftView(true) });
 }
 
-async function runTransactionWindow(
-  context: DraftLeagueContext,
-  runtime: LeagueCoordinator,
-  index: number,
-): Promise<void> {
-  const { agents, entrants, options, plans, psDir, runDir, schedule, swapsAllowed } = context;
-  const window = schedule[index]!;
-  runtime.transition({ phase: "window", week: window.afterWeek, rosterVersion: index });
-  options.onEvent?.({ type: "draft", draft: runtime.draftView(true) });
-  const results: TradeWindowResult[][] = entrants.map(() => []);
-  for (const plan of plans) {
-    if (plan.stage !== "roundrobin" || plan.round > window.afterWeek || !plan.entrants) continue;
+/** Each result carries the opponent's roster as it stood for that series, not as later windows left it. */
+export function transactionWindowResults(
+  context: Pick<DraftLeagueContext, "entrants" | "plans">,
+  runtime: Pick<LeagueCoordinator, "completed" | "rosterStateFor">,
+  afterWeek: number,
+): TradeWindowResult[][] {
+  const results: TradeWindowResult[][] = context.entrants.map(() => []);
+  for (const plan of context.plans) {
+    if (plan.stage !== "roundrobin" || plan.round > afterWeek || !plan.entrants) continue;
     const completed = runtime.completed.get(plan.index);
     if (!completed) continue;
+    const rosters = runtime.rosterStateFor(plan);
     const [a, b] = plan.entrants;
     for (const [entrant, opponent, side] of [
       [a, b, "p1"],
@@ -186,12 +184,22 @@ async function runTransactionWindow(
             : completed.winnerSide === side
               ? "won"
               : "lost",
-        opponentRoster: runtime.franchises[opponent]!.roster.map(
-          (mon) => `${mon.id} (${mon.cost})`,
-        ).join(", "),
+        opponentRoster: rosters[opponent]!.map((mon) => `${mon.id} (${mon.cost})`).join(", "),
       });
     }
   }
+  return results;
+}
+
+async function runTransactionWindow(
+  context: DraftLeagueContext,
+  runtime: LeagueCoordinator,
+  index: number,
+): Promise<void> {
+  const { agents, entrants, options, psDir, runDir, schedule, swapsAllowed } = context;
+  const window = schedule[index]!;
+  runtime.transition({ phase: "window", week: window.afterWeek, rosterVersion: index });
+  options.onEvent?.({ type: "draft", draft: runtime.draftView(true) });
   const artifact = await runTradeWindow(
     {
       board: context.board,
@@ -201,7 +209,7 @@ async function runTransactionWindow(
       budgets: runtime.budgets,
       memories: runtime.memories,
       standings: runtime.standings(),
-      results,
+      results: transactionWindowResults(context, runtime, window.afterWeek),
       reflections: runtime.franchises.map(({ seriesNotes }) =>
         [...seriesNotes.entries()].sort(([a], [b]) => a - b).map(([, note]) => note),
       ),

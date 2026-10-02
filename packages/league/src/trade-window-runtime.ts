@@ -99,7 +99,7 @@ function seatDossier(
   for (const result of results) {
     lines.push(
       `- Week ${result.week}: ${result.result} ${state.models[result.opponent]} ` +
-        `${result.score[0]}-${result.score[1]}; opposing roster: ${result.opponentRoster}`,
+        `${result.score[0]}-${result.score[1]}; opposing roster that week: ${result.opponentRoster}`,
     );
   }
   lines.push("", TRADE_WINDOW_PROMPT_POLICY.scheduleHeading);

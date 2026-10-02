@@ -46,7 +46,9 @@ export function baseCostsBySpecies(mons: readonly DraftBoardMon[]): Map<string, 
   return new Map(mons.filter((mon) => !mon.item).map((mon) => [mon.species, mon.cost]));
 }
 
-function boardForms(mon: DraftBoardMon, dex: ShowdownApi["Dex"]): Dex.Species[] {
+type BoardForms = Pick<DraftBoardMon, "species" | "forme">;
+
+function boardForms(mon: BoardForms, dex: ShowdownApi["Dex"]): Dex.Species[] {
   return [mon.species, ...(mon.forme ? [mon.forme] : [])].map((name) => dex.species.get(name));
 }
 
@@ -59,22 +61,24 @@ function formSummary(species: Dex.Species): string {
   );
 }
 
-export function boardRow(
-  mon: DraftBoardMon,
-  dex: ShowdownApi["Dex"],
-  baseCosts?: ReadonlyMap<string, number>,
-): string {
-  const baseCost = mon.item ? baseCosts?.get(mon.species) : undefined;
-  const forms = boardForms(mon, dex);
-  const details = forms
+export function formDetails(mon: BoardForms, dex: ShowdownApi["Dex"]): string {
+  return boardForms(mon, dex)
     .map((species, index) =>
       mon.forme
         ? `${index === 0 ? "base" : "Mega"} ${species.name}: ${formSummary(species)}`
         : formSummary(species),
     )
     .join(" -> ");
+}
+
+export function boardRow(
+  mon: DraftBoardMon,
+  dex: ShowdownApi["Dex"],
+  baseCosts?: ReadonlyMap<string, number>,
+): string {
+  const baseCost = mon.item ? baseCosts?.get(mon.species) : undefined;
   return (
-    `- ${mon.id} | ${mon.cost} | ${mon.name} | ${details}` +
+    `- ${mon.id} | ${mon.cost} | ${mon.name} | ${formDetails(mon, dex)}` +
     (mon.item ? ` | locked item: ${mon.item}` : "") +
     (baseCost === undefined ? "" : ` | base ${mon.species} costs ${baseCost}`)
   );

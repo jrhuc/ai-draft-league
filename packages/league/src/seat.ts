@@ -240,7 +240,12 @@ export class SeatBridge {
       const args = isRecord(body.arguments) ? body.arguments : {};
       const tool = this.exchange?.task.tools?.find((tool) => tool.definition.name === name);
       if (!tool) return send(400, { error: `unknown tool ${name}` });
-      const result = tool.run(args);
+      let result: string;
+      try {
+        result = tool.run(args);
+      } catch (error) {
+        return send(400, { error: error instanceof Error ? error.message : String(error) });
+      }
       this.options.onTool?.(name, args, result);
       return send(200, { result });
     }

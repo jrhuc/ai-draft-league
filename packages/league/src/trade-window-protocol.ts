@@ -44,7 +44,6 @@ export const TRADE_WINDOW_PROMPT_POLICY = {
   standingsHeading: "LEAGUE STANDINGS (rank | coach | W-L | games):",
   resultsHeading: "YOUR ROUND-ROBIN RESULTS:",
   wordsHeading: "YOUR PRIVATE WORDS:",
-  rostersHeading: "PUBLIC CURRENT ROSTERS:",
   scheduleHeading: "YOUR REMAINING SCHEDULE (week | opponent | their current roster):",
   historyHeading: "PUBLIC TRANSACTIONS FROM EARLIER WINDOWS:",
   freeAgentsHeading: `UNDRAFTED FREE AGENTS (${BOARD_COLUMNS}):`,

@@ -28,7 +28,7 @@ export function validateTeamBuildSubmission(
     showdownCommit: showdownCommit(psDir),
     action,
     evidence,
-    attempts: options.attempts ?? 0,
+    attempts: 0,
     createdAt: options.createdAt ?? new Date().toISOString(),
   };
 }

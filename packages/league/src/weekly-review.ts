@@ -193,8 +193,9 @@ export function parseWeeklyReviewResult(
   const reply = weeklyReviewReplySchema.safeParse(input);
   if (!reply.success) throw new Error(z.prettifyError(reply.error));
   const { reasoning = "", plan, ...pages } = reply.data;
-  const memoryReply = plan === undefined ? pages : { ...pages, notebook: plan };
-  const parsed = parseMemoryReply(memoryReply, current, { notebookField: "plan" });
+  const parsed = parseMemoryReply({ ...pages, notebook: plan }, current, {
+    notebookField: "plan",
+  });
   return {
     memory: parsed.memory,
     reasoning: clip(reasoning.trim(), WEEKLY_REVIEW_PROMPT_POLICY.rationaleLimit),
@@ -303,10 +304,6 @@ function userPrompt(state: WeeklyReviewState, entrant: number): string {
     ...WEEKLY_REVIEW_PROMPT_POLICY.replyTemplate,
   );
   return lines.join("\n");
-}
-
-export function renderWeeklyReviewPrompt(state: WeeklyReviewState, entrant: number): string {
-  return [systemPrompt(state, entrant), "", userPrompt(state, entrant)].join("\n");
 }
 
 function boundedToolOutput(text: string, offset = 0): string {
@@ -662,6 +659,7 @@ export async function runWeeklyReview(
       return review;
     },
   );
+  options.signal?.throwIfAborted();
   reviews.push(...fresh);
   return reviews.sort(byEntrant);
 }

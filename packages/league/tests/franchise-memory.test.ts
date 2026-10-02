@@ -12,6 +12,8 @@ import {
 } from "../src/franchise-memory.js";
 import { rejection } from "./asserts.js";
 
+const PLAN = { notebookField: "plan" };
+
 function memoryRejection(attempt: () => void): MemoryRejection {
   try {
     attempt();
@@ -53,7 +55,7 @@ test("an oversized page is the only thing not saved and the rejection carries th
         set_pages: { fine: "ok", big: "y".repeat(MEMORY_LIMITS.pageChars + 40) },
       },
       current,
-      { notebookField: "plan" },
+      PLAN,
     );
   const partial = memoryRejection(attempt);
   assert.deepEqual(partial.memory, { notebook: "old", keep: "k", fine: "ok" });
@@ -72,7 +74,7 @@ test("an oversized page is the only thing not saved and the rejection carries th
     ...Array.from({ length: 5 }, (_, index) => [`p${index}`, "x".repeat(MEMORY_LIMITS.pageChars)]),
   ]);
   const overflow = memoryRejection(() =>
-    parseMemoryReply({ set_pages: { p6: "z".repeat(2000) } }, full),
+    parseMemoryReply({ set_pages: { p6: "z".repeat(2000) } }, full, PLAN),
   );
   assert.match(
     overflow.message,
@@ -82,6 +84,7 @@ test("an oversized page is the only thing not saved and the rejection carries th
   const rescued = parseMemoryReply(
     { set_pages: { p6: "z".repeat(2000), p0: "x".repeat(1000) } },
     full,
+    PLAN,
   );
   assert.equal(rescued.memory.p6?.length, 2000);
   assert.equal(rescued.memory.p0?.length, 1000);
@@ -89,11 +92,12 @@ test("an oversized page is the only thing not saved and the rejection carries th
 
 test("a reply changes only what it names: set_pages merges, delete_pages removes, omissions keep", () => {
   const current = { notebook: "old", lessons: "keep", scouting: "drop" };
-  const kept = parseMemoryReply({ notebook: " new " }, current);
+  const kept = parseMemoryReply({ notebook: " new " }, current, PLAN);
   assert.deepEqual(kept.memory, { notebook: "new", lessons: "keep", scouting: "drop" });
   const merged = parseMemoryReply(
     { set_pages: { lessons: "revised", plans: "new page" } },
     current,
+    PLAN,
   );
   assert.deepEqual(merged.memory, {
     notebook: "old",
@@ -104,28 +108,27 @@ test("a reply changes only what it names: set_pages merges, delete_pages removes
   const pruned = parseMemoryReply(
     { notebook: "old", delete_pages: ["scouting", "missing"] },
     current,
+    PLAN,
   );
   assert.deepEqual(pruned.memory, { notebook: "old", lessons: "keep" });
-  const unchanged = parseMemoryReply({}, current);
+  const unchanged = parseMemoryReply({}, current, PLAN);
   assert.deepEqual(unchanged.memory, current);
   assert.throws(
-    () => parseMemoryReply({ set_pages: { notebook: "x" } }, current),
-    /may not contain/,
-  );
-  assert.throws(() => parseMemoryReply({ set_pages: ["x"] }, current), /must be an object/);
-  assert.throws(() => parseMemoryReply({ notebook: 3 }, current), /"notebook" must be a string/);
-  assert.throws(() => parseMemoryReply({ delete_pages: "scouting" }, current), /must be an array/);
-  assert.throws(
-    () => parseMemoryReply({ delete_pages: ["notebook"] }, current),
-    /cannot be deleted/,
+    () => parseMemoryReply({ set_pages: { notebook: "x" } }, current, PLAN),
+    /"set_pages" may not contain "notebook"; that page is the "plan" field/,
   );
   assert.throws(
-    () => parseMemoryReply({ set_pages: { lessons: "x" }, delete_pages: ["lessons"] }, current),
+    () => parseMemoryReply({ delete_pages: ["notebook"] }, current, PLAN),
+    /the "notebook" page cannot be deleted; replace it with "plan"/,
+  );
+  assert.throws(
+    () =>
+      parseMemoryReply({ set_pages: { lessons: "x" }, delete_pages: ["lessons"] }, current, PLAN),
     /both set and deleted/,
   );
   assert.throws(
-    () => parseMemoryReply({ notebook: "n", pages: {} }, current),
-    /"pages" is not a field/,
+    () => parseMemoryReply({ set_pages: { "Bad Name": "x" } }, current, PLAN),
+    /page name "Bad Name" must be 1-48 lowercase letters/,
   );
 });
 

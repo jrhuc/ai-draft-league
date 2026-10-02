@@ -11,7 +11,6 @@ import {
   narratePublicSeries,
   parseWeeklyReviewResult,
   readWeeklyReviews,
-  renderWeeklyReviewPrompt,
   runWeeklyReview,
   type WeeklyReviewState,
 } from "../src/weekly-review.js";
@@ -111,16 +110,28 @@ function fixture(gameLog = GAME_LOG) {
   return { runDir, state, options: { runDir, psDir: defaultPsDir() } };
 }
 
-test("weekly context states the review barrier, schedule, and private notebook", () => {
-  const { state } = fixture();
-  const prompt = renderWeeklyReviewPrompt(state, 0);
+async function reviewPrompt(
+  state: WeeklyReviewState,
+  options: ReturnType<typeof fixture>["options"],
+): Promise<string> {
+  const script = scriptedAgent([{}]);
+  await runWeeklyReview(state, { ...options, runAgent: script.run });
+  const [task] = script.calls;
+  assert.ok(task, "the model seat was asked for its review");
+  return `${task.system}\n\n${task.prompt}`;
+}
+
+test("weekly context states the review barrier, schedule, and private notebook", async () => {
+  const { state, options } = fixture();
+  const prompt = await reviewPrompt(state, options);
   assert.match(prompt, /week 1 of 3 is complete/);
   assert.match(prompt, /A transaction window opens as soon as this review closes/);
   assert.match(prompt, /Series 0, week 1: Round-robin week 1: beat random 2-0/);
   assert.match(prompt, /Week 2 \| random/);
   assert.match(prompt, /Start with Garchomp/);
+  const locked = fixture();
   assert.match(
-    renderWeeklyReviewPrompt({ ...state, nextWindowWeek: null }, 0),
+    await reviewPrompt({ ...locked.state, nextWindowWeek: null }, locked.options),
     /Rosters are now locked/,
   );
 });
@@ -279,6 +290,30 @@ test("a retry after an oversized page resends only that page and keeps what was 
   assert.equal(state.memories[0]!.scouting, "Public tells");
 });
 
+test("a review cancelled mid-barrier rejects instead of returning the seats that finished", async () => {
+  const { state, options } = fixture();
+  state.models = ["test:alpha", "test:beta"];
+  const controller = new AbortController();
+  await assert.rejects(
+    runWeeklyReview(state, {
+      ...options,
+      concurrency: 1,
+      signal: controller.signal,
+      runAgent: async (task) => {
+        if (task.model === "test:beta") controller.abort();
+        task.signal?.throwIfAborted();
+        return agentReply(task, {});
+      },
+    }),
+    { name: "AbortError" },
+  );
+  assert.deepEqual(
+    readWeeklyReviews(options.runDir, 1).map((review) => review.entrant),
+    [0],
+    "the seat that finished stays committed for the resume",
+  );
+});
+
 test("reconciliation updates only changed seats and later reviews retrieve the exact memory snapshot", async () => {
   const { state, options } = fixture();
   state.memories[0] = { notebook: "Start", lessons: "Old lesson", scouting: "Scouted" };
@@ -294,12 +329,10 @@ test("reconciliation updates only changed seats and later reviews retrieve the e
     previousRosters: state.rosters.map((roster) => [...roster]),
     seats: [0],
   };
-  assert.match(renderWeeklyReviewPrompt(reconcile, 0), /YOUR ROSTER BEFORE THE WINDOW/);
-  const reviews = await runWeeklyReview(reconcile, {
-    ...options,
-    runAgent: scriptedAgent([{ plan: "Reconciled" }]).run,
-  });
+  const reconciliation = scriptedAgent([{ plan: "Reconciled" }]);
+  const reviews = await runWeeklyReview(reconcile, { ...options, runAgent: reconciliation.run });
   assert.equal(reviews.length, 1);
+  assert.match(reconciliation.calls[0]!.prompt, /YOUR ROSTER BEFORE THE WINDOW/);
   await runWeeklyReview(
     { ...state, week: 2, period: [], nextWindowWeek: null },
     {

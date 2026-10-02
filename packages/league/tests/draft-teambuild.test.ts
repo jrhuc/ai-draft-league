@@ -141,7 +141,25 @@ test("builders receive private franchise memory, matchup history, and authoritat
           assert.match(prompt, /cannot hold a Mega Stone/);
           assert.doesNotMatch(
             prompt,
-            /Test Tauros|Rival Rotoms|Final Gambit|Assault Vest|Safety Goggles|Booster Energy|Eviolite/,
+            /Final Gambit|Assault Vest|Safety Goggles|Booster Energy|Eviolite/,
+          );
+          assert.match(
+            task.prompt,
+            /^YOUR ROSTER \(board id \| name \| types \| HP\/Atk\/Def\/SpA\/SpD\/Spe \| abilities \| item rule; Mega entries show base -> Mega\):\n/,
+          );
+          assert.equal(
+            task.prompt.split(
+              "- charizard-mega-y | Mega Charizard Y | base Charizard: Fire/Flying | 78/84/78/109/85/100 | Blaze/Solar Power" +
+                " -> Mega Charizard-Mega-Y: Fire/Flying | 78/104/78/159/115/100 | Drought | MUST hold Charizardite Y\n",
+            ).length,
+            3,
+            "own and opposing rosters show the base forme beside the Mega",
+          );
+          assert.equal(
+            task.prompt.split(
+              "- garchomp | Garchomp | Dragon/Ground | 108/130/95/80/85/102 | Sand Veil/Rough Skin | cannot hold a Mega Stone\n",
+            ).length,
+            3,
           );
           assert.doesNotMatch(
             prompt.split("- incineroar |")[1]!.split("- sinistcha |")[0]!,

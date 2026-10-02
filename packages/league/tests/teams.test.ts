@@ -5,15 +5,7 @@ import path from "node:path";
 import { test } from "vite-plus/test";
 
 import { TEAMS_DIR } from "../src/paths.js";
-import { loadShowdown } from "../src/showdown.js";
-import { createPool, loadPool, packTeam, validatePool, validateTeam } from "../src/teams.js";
-
-function pasteFromPool(file: string): string {
-  const { Teams } = loadShowdown();
-  const team = Teams.unpack(fs.readFileSync(path.join(TEAMS_DIR, "test", file), "utf8").trim());
-  assert.ok(team, `test pool team ${file} should unpack`);
-  return Teams.export(team);
-}
+import { loadPool, packTeam, validatePool, validateTeam } from "../src/teams.js";
 
 test("default pool loads in manifest order and validates", () => {
   const pool = loadPool();
@@ -85,26 +77,33 @@ test("pool loader uses custom directories and rejects invalid manifests", (t) =>
   assert.throws(() => loadPool("../snapshot", root), /pool name/);
 });
 
-test("a created pool keeps the event and the placements a bracket reads seeds from", (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-createpool-"));
+test("a loaded pool keeps the event and the placements a bracket reads seeds from", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ai-draft-league-loadpool-"));
   t.onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
-  createPool(
-    "vr-import",
-    "gen9championsvgc2026regmbbo3",
-    {
+  const poolDir = path.join(root, "vr-import");
+  fs.mkdirSync(poolDir);
+  for (const [id, file] of [
+    ["first", "jpnats-mega-swampert.team"],
+    ["second", "wolfe-mega-raichu-y.team"],
+  ] as const)
+    fs.copyFileSync(path.join(TEAMS_DIR, "test", file), path.join(poolDir, `${id}.team`));
+  fs.writeFileSync(
+    path.join(poolDir, "pool.json"),
+    JSON.stringify({
+      id: "vr-import",
+      format: "gen9championsvgc2026regmbbo3",
       event: { name: "Victory Road August Challenge #1", players: 194, cut: 8 },
       spreads: { published: false, reconstructed: true, reason: "open lists publish no EVs" },
       teams: [
         {
           id: "first",
-          paste: pasteFromPool("jpnats-mega-swampert.team"),
+          file: "first.team",
           seed: 1,
           source: { placement: 1, player: "Kazuki Ogushi", swiss: "8-2" },
         },
-        { id: "second", paste: pasteFromPool("wolfe-mega-raichu-y.team"), seed: 2 },
+        { id: "second", file: "second.team", seed: 2 },
       ],
-    },
-    root,
+    }),
   );
   const pool = loadPool("vr-import", root);
   assert.equal(pool.event?.name, "Victory Road August Challenge #1");

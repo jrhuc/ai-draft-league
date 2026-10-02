@@ -180,7 +180,7 @@ test("draft pick transitions reject unavailable, species-clashing, and over-budg
   const beforeBudget = structuredClone(tight);
   assert.throws(
     () => applyDraftPick(tight, { pick: 1, entrant: 0, mon: "garchomp" }),
-    /costs .* but you can spend at most/,
+    /Garchomp costs 18, but you have 1 point left\./,
   );
   assert.deepEqual(tight, beforeBudget);
 });
