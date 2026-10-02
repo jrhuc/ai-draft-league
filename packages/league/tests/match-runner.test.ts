@@ -131,6 +131,29 @@ test("a series interrupted again after a review was finished on resume still res
   assert.deepEqual(finished.fields.score, { p1: 0, p2: 2 });
 });
 
+test("a finished series is adopted as recorded even when its briefing text has since changed", async (t) => {
+  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-match-runner-"));
+  t.onTestFinished(() => fs.rmSync(runDir, { recursive: true, force: true }));
+  const { context, counts } = concedingCoach(runDir, {});
+  const briefed = { ...context, briefings: { p1: "Briefing as first worded", p2: "" } };
+  const finished = await new MatchRunner(briefed).run();
+  const reworded = { ...context, briefings: { p1: "Briefing as later reworded", p2: "" } };
+  assert.deepEqual((await new MatchRunner(reworded).run()).fields.score, finished.fields.score);
+  assert.equal(counts.decisions, 4, "adopting it buys no decision");
+
+  const second = concedingCoach(fs.mkdtempSync(path.join(os.tmpdir(), "vgc-match-runner-")), {
+    decision: 4,
+  });
+  t.onTestFinished(() => fs.rmSync(second.context.runDir, { recursive: true, force: true }));
+  const started = { ...second.context, briefings: { p1: "Briefing as first worded", p2: "" } };
+  await assert.rejects(new MatchRunner(started).run(), /coach disconnected/);
+  await assert.rejects(
+    new MatchRunner({ ...started, briefings: { p1: "Reworded mid-series", p2: "" } }).run(),
+    /recorded series identity mismatch/,
+    "an unfinished series still resumes only under the identity it started with",
+  );
+});
+
 test("a review repeated on resume replaces the one whose commit failed", async (t) => {
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-match-runner-"));
   t.onTestFinished(() => fs.rmSync(runDir, { recursive: true, force: true }));
