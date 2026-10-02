@@ -155,19 +155,28 @@ export function acceptedLegalActionEntries(
   pid: Pid,
   candidates: readonly LegalActionEntry[],
 ): LegalActionEntry[] {
-  const BattleClass = nativeBattleConstructor(battle);
-  const serialized = battle.toJSON();
   const accepted: LegalActionEntry[] = [];
   for (const candidate of candidates) {
     try {
-      const clone = BattleClass.fromJSON(structuredClone(serialized));
-      clone.restart(() => {});
+      const clone = cloneBattle(battle);
       if (clone.getSide(pid).choose(candidate.command) === true) {
         accepted.push({ ...structuredClone(candidate), number: accepted.length });
       }
     } catch {}
   }
   return accepted;
+}
+
+export function cloneBattle(battle: Battle): Battle {
+  const clone = nativeBattleConstructor(battle).fromJSON(structuredClone(battle.toJSON()));
+  clone.restart(() => {});
+  return clone;
+}
+
+export function battleActionCandidates(battle: Battle, pid: Pid): string[] {
+  const request = battle.getSide(pid).activeRequest;
+  if (!request || request.wait) return [];
+  return requestActionCandidateEntries(battleRequest(request)).map((entry) => entry.command);
 }
 
 export function acceptedBattleActionEntries(battle: Battle, pid: Pid): LegalActionEntry[] {
