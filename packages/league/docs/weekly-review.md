@@ -43,7 +43,7 @@ Every reply field is optional. Omitted memory fields stay unchanged; omitted rea
 - **`delete_pages`**: remove named pages
 - **`reasoning`**: record optional stated reasoning as evidence
 
-`{}` leaves memory unchanged. The harness rejects conflicting updates, deletion of `notebook`, or the retired `pages` field.
+`{}` leaves memory unchanged. The harness rejects conflicting updates, deletion of `notebook`, and any field the reply does not declare, naming it so the coach can resubmit; nothing is saved from a rejected reply except the pages it reports as saved.
 
 ## Persist private and public evidence
 
