@@ -528,6 +528,21 @@ test("opposing Mega formes do not duplicate their open-sheet base forme", () => 
   assert.match(rendered, /Gengar-Mega/);
 });
 
+test("an opposing Mega shows its forme's only ability before that ability activates", () => {
+  const reference = new ShowdownReference("gen9championsvgc2026regmcbo3");
+  const state = new PerspectiveState("p1");
+  state.feed([
+    "|poke|p2|Staraptor, L50|",
+    "|showteam|p2|Staraptor||Staraptite|Intimidate|bravebird,protect|Jolly|||||50",
+    "|switch|p2a: Staraptor|Staraptor, L50|100/100",
+    "|detailschange|p2a: Staraptor|Staraptor-Mega, L50",
+    "|-mega|p2a: Staraptor|Staraptor|Staraptite",
+  ]);
+  const rendered = state.render({}, (mon) => reference.describeCompact(mon));
+  assert.match(rendered, /^- Staraptor-Mega;.*; ability Contrary;.*Mega Evolved$/m);
+  assert.doesNotMatch(rendered, /ability Intimidate/);
+});
+
 test("a Mega whose sheet identity differs still merges with its base forme", () => {
   const state = new PerspectiveState("p1");
   state.feed([

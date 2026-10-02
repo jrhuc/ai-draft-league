@@ -200,6 +200,8 @@ export class ShowdownReference {
       speed: `${low}-${high}`,
       moves,
     };
+    const ability = this.speciesAbility(species.name);
+    if (ability) reference.ability = ability;
     const mega = mon.item ? this.megaSpecies(species.name, mon.item) : undefined;
     if (mega) {
       const [megaLow, megaHigh] = statRange(this.battle, mega.baseStats, knownNature, "spe");

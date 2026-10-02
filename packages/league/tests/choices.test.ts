@@ -192,4 +192,10 @@ test("menus use species names and annotate ally-hitting spreads", () => {
     labeled.find((item) => item.part === "move 1")!.label,
     /Earthquake \(all adjacent, including ally Swampert\)/,
   );
+  moves[0]!.move = "Trick Room";
+  moves[0]!.target = "all";
+  assert.equal(
+    buildMenus(request)[0]!.find((item) => item.part === "move 1")!.label,
+    "Trick Room (whole field)",
+  );
 });

@@ -267,6 +267,8 @@ export interface CompactMonReference {
   types: string;
   speed: string;
   moves: Readonly<Record<string, string>>;
+  /** The species' only possible ability, which is public even before it activates. */
+  ability?: string;
   mega?: string;
   /** Known or learnable move scales with hits taken (Rage Fist). */
   hitCounter?: boolean;

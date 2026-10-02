@@ -61,7 +61,8 @@ function spreadLabel(target: string, slot: number, names?: TargetNames): string 
     const species = names?.ally[ally];
     return species ? ` (your side, including ally ${species})` : " (your side)";
   }
-  if (target === "allAdjacent" || target === "all") {
+  if (target === "all") return " (whole field)";
+  if (target === "allAdjacent") {
     const ally = slot === 1 ? 2 : 1;
     const species = names?.ally[ally];
     return species

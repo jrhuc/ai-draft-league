@@ -610,19 +610,20 @@ export class PerspectiveState {
       else attrs.push(`HP ${mon.hpPercent === undefined ? "?" : `${Math.round(mon.hpPercent)}%`}`);
       if (mon.status) attrs.push(mon.status);
       if (mon.fainted) attrs.push("fainted");
+      const ability = mon.abilitySuppressed ? undefined : (mon.ability ?? reference?.ability);
+      const identity = [
+        ...(mon.item ? [`item ${mon.item}${mon.itemConsumed ? " (consumed)" : ""}`] : []),
+        ...(ability ? [`ability ${ability}`] : mon.abilitySuppressed ? ["ability suppressed"] : []),
+        ...(mon.nature ? [`stat alignment ${mon.nature}`] : []),
+        ...(mon.mega ? ["Mega Evolved"] : reference?.mega ? [reference.mega] : []),
+      ];
       if (!expandedRoster && !activeSlots.length) {
         if (mon.moves.size)
           attrs.push(`moves ${[...mon.moves.values()].map((entry) => entry.name).join(", ")}`);
         const speed = own ? mon.stats.spe : undefined;
         if (speed !== undefined) attrs.push(`Speed ${speed}`);
         else if (reference?.speed) attrs.push(`raw Speed range ${reference.speed}`);
-        if (mon.item) attrs.push(`item ${mon.item}${mon.itemConsumed ? " (consumed)" : ""}`);
-        if (mon.ability) attrs.push(`ability ${mon.ability}`);
-        else if (mon.abilitySuppressed) attrs.push("ability suppressed");
-        if (mon.nature) attrs.push(`stat alignment ${mon.nature}`);
-        if (mon.mega) attrs.push("Mega Evolved");
-        if (!mon.mega && reference?.mega) attrs.push(reference.mega);
-        lines.push(`- ${attrs.join("; ")}`);
+        lines.push(`- ${[...attrs, ...identity].join("; ")}`);
         continue;
       }
       const boosts = Object.entries(mon.boosts)
@@ -671,13 +672,7 @@ export class PerspectiveState {
             .join(", ")}`,
         );
       } else if (reference?.speed) attrs.push(`raw Speed range ${reference.speed}`);
-      if (mon.item) attrs.push(`item ${mon.item}${mon.itemConsumed ? " (consumed)" : ""}`);
-      if (mon.ability) attrs.push(`ability ${mon.ability}`);
-      else if (mon.abilitySuppressed) attrs.push("ability suppressed");
-      if (mon.nature) attrs.push(`stat alignment ${mon.nature}`);
-      if (mon.mega) attrs.push("Mega Evolved");
-      if (!mon.mega && reference?.mega) attrs.push(reference.mega);
-      lines.push(`- ${attrs.join("; ")}`);
+      lines.push(`- ${[...attrs, ...identity].join("; ")}`);
     }
     if (lines.length === 1) lines.push("- no Pokémon revealed");
     return lines;
