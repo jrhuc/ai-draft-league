@@ -15,8 +15,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: voidzero-dev/setup-vp@3754dd7dbdb32bd8f6d28b6043de13ad3a75f21f # v1.21.1
         with:
-          node-version: 24.21.0
+          node-version-file: .node-version
           cache: true
+          run-install: false
       - run: vp install --frozen-lockfile
       # Type-aware checks resolve league imports against the pinned Showdown
       # checkout, so restore it before vp check.
@@ -37,7 +38,15 @@ jobs:
       - run: vp run site#build
       - run: vp run worlds#build
       # The live-watch surface is dev-only; fail if any trace ships.
-      - run: "! grep -rl 'api/watch' apps/site/dist/"
+      - run: test -d apps/site/dist && ! grep -rq 'api/watch' apps/site/dist/
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sites
+          path: |
+            apps/site/dist
+            apps/worlds/dist
+          if-no-files-found: error
+          retention-days: 3
 
   deploy:
     # Deploys only land from main after verification. Requires the
@@ -54,20 +63,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: voidzero-dev/setup-vp@3754dd7dbdb32bd8f6d28b6043de13ad3a75f21f # v1.21.1
         with:
-          node-version: 24.21.0
+          node-version-file: .node-version
           cache: true
+          run-install: false
       - run: vp install --frozen-lockfile
-      # The site build resolves league/protocol against dist/, which needs the
-      # pinned Showdown checkout — same prerequisites as verify.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Ship the bytes verify built and inspected rather than a second build.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          path: packages/league/pokemon-showdown
-          key: showdown-${{ hashFiles('packages/league/showdown.lock.json') }}
-      - run: node tools/setup-showdown.mjs
-        working-directory: packages/league
-      - run: vp run league#build
-      - run: vp run site#build
-      - run: vp run worlds#build
+          name: sites
+          path: apps
       # The lockfile-pinned wrangler, same binary as a local deploy — not
       # whatever wrangler-action would fetch.
       - run: ./node_modules/.bin/wrangler deploy
