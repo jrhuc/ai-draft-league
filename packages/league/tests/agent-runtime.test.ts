@@ -299,9 +299,7 @@ it("keeps concurrent seats' credentials, tools, and observations private within 
           const live = readLiveRun(runDir);
           expect(live?.agents).toHaveLength(2);
           expect(live?.agents.map((agent) => agent.session).sort()).toEqual(["seat-0", "seat-1"]);
-          expect(JSON.stringify(live)).not.toMatch(
-            /PRIVATE_FIRST_OBSERVATION|RIVAL_OBSERVATION/,
-          );
+          expect(JSON.stringify(live)).not.toMatch(/PRIVATE_FIRST_OBSERVATION|RIVAL_OBSERVATION/);
         });
       } finally {
         release.resolve();
@@ -355,7 +353,6 @@ it("stops recording reference calls once a task spends its budget", async () => 
   expect(JSON.stringify(requests[1])).not.toContain("P399: row");
   expect(JSON.stringify(requests[0])).toContain("at most 400 reference calls");
 }, 60000);
-
 
 it("returns lookups and validation errors to the model and logs the stage line", async () => {
   const { runDir, task, requests, host } = await fixture((_body, index) => {
@@ -552,18 +549,18 @@ it("recovers Gemini malformed calls through native retries and vetoes them on th
 }, 60000);
 
 it.each([
-  { reason: "MALFORMED_FUNCTION_CALL", attempts: 5 },
-  { reason: "MISSING_THOUGHT_SIGNATURE", attempts: 1 },
+  { reason: "MALFORMED_FUNCTION_CALL", retried: true },
+  { reason: "MISSING_THOUGHT_SIGNATURE", retried: false },
 ])(
-  "bounds native Gemini retries for $reason",
-  async ({ reason, attempts }) => {
+  "leaves the retry bound for a persistent Gemini $reason to OpenCode",
+  async ({ reason, retried }) => {
     const { task, requests, host } = await fixture(
       () => ({ finishReason: reason }),
       "gemini-fixture",
       "google",
     );
     await expect(host((agents) => agents.run(task))).rejects.toThrow(reason);
-    expect(requests).toHaveLength(attempts);
+    expect(requests.length > 1).toBe(retried);
   },
   60000,
 );

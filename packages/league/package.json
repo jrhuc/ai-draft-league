@@ -39,17 +39,17 @@
     "capture-requests": "node dist/tools/capture-requests.js"
   },
   "dependencies": {
-    "@opencode/client": "2.0.3",
-    "@opencode/codemode": "2.0.3",
-    "@opencode/plugin": "2.0.3",
-    "@opencode/sdk": "2.0.3",
-    "zod": "4.6.1"
+    "@opencode/client": "2.0.22",
+    "@opencode/codemode": "2.0.22",
+    "@opencode/plugin": "2.0.22",
+    "@opencode/sdk": "2.0.22",
+    "zod": "catalog:"
   },
   "devDependencies": {
-    "@babel/parser": "8.0.4",
-    "@types/node": "24.13.4",
+    "@babel/parser": "8.0.6",
+    "@types/node": "24.19.1",
     "typescript": "7.0.2",
-    "vite-plus": "0.3.1"
+    "vite-plus": "catalog:"
   },
   "engines": {
     "node": ">=24.21.0 <25"

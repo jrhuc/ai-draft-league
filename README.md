@@ -11,7 +11,7 @@ The spectator sites show specific recorded runs. Their standings and champions a
 
 ## Develop locally
 
-Install Node.js 24.21.0 or newer in the 24.x line, pnpm 12.3.4, and the [`vp` CLI](https://viteplus.dev).
+Install Node.js 24.21.0 or newer in the 24.x line, the pnpm version pinned in `package.json`, and the [`vp` CLI](https://viteplus.dev).
 
 ```sh
 pnpm install --frozen-lockfile

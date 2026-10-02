@@ -10,7 +10,7 @@ The sibling [`apps/site`](../../apps/site) spectator app consumes validated publ
 
 ## Run locally
 
-Install Node.js 24.21.0 or newer in the 24.x line and pnpm 12.3.4. Model execution uses the pinned embedded OpenCode V2 SDK. Specifications are `<OpenCode-provider-id>:<model-id>` or `random`, for example:
+Install Node.js 24.21.0 or newer in the 24.x line and the pnpm version pinned in the root `package.json`. Model execution uses the pinned embedded OpenCode V2 SDK. Specifications are `<OpenCode-provider-id>:<model-id>` or `random`, for example:
 
 - `opencode:model_id` (OpenCode Zen)
 - `opencode-go:model_id` (OpenCode Go)

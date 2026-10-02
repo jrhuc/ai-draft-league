@@ -481,15 +481,15 @@ async function leaguePlugin(slot: AgentSlot) {
     async setup(ctx) {
       const routes = modelUpstreamRoutes();
       if (routes.size)
-        await ctx.catalog.transform((editor) => {
+        await ctx.model.transform((editor) => {
           for (const [from, upstream] of routes) {
             const route = parseSpec(from);
-            const target = editor.model.get(route.provider, upstream);
+            const target = editor.get(route.provider, upstream);
             if (!target)
               throw new Error(
                 `VGC_MODEL_UPSTREAM target ${route.provider}:${upstream} is not in the catalog`,
               );
-            editor.model.update(route.provider, route.model, (model) => {
+            editor.update(route.provider, route.model, (model) => {
               model.modelID = target.modelID;
               model.cost = target.cost;
             });
@@ -603,7 +603,7 @@ async function leaguePlugin(slot: AgentSlot) {
         await active.admitted.promise;
         task.signal?.throwIfAborted();
         if (!validated) {
-          const models = await ctx.catalog.model.list();
+          const models = await ctx.model.list();
           const model = models.data.find(
             (model) => model.providerID === spec.provider && model.id === spec.model,
           );
@@ -683,7 +683,6 @@ async function executeTask<T>(task: AgentTask<T>, owner: AgentHost): Promise<Age
   try {
     host = await owner.open();
     const location = { directory };
-    await host.plugin.awaitActivation({ location });
     const sessions = await host.sessions.list({ directory });
     const session =
       sessions.data[0] ??
@@ -707,7 +706,7 @@ async function executeTask<T>(task: AgentTask<T>, owner: AgentHost): Promise<Age
       !isDeepStrictEqual(session.metadata?.routing, active.routing ?? null)
     )
       throw new Error(`Agent session configuration changed: ${task.session}`);
-    await host.sessions.interrupt({ sessionID: session.id, continue: false });
+    await host.sessions.interrupt({ sessionID: session.id, resume: false });
     await slot.reload?.();
     const plan = planTask(
       task,
@@ -741,13 +740,14 @@ async function executeTask<T>(task: AgentTask<T>, owner: AgentHost): Promise<Age
           finished.promise,
         ]);
       } finally {
-        await host.sessions.interrupt({ sessionID: session.id, continue: false });
+        await host.sessions.interrupt({ sessionID: session.id, resume: false });
       }
       task.signal?.throwIfAborted();
       if (active.failure) throw active.failure;
       const completed = await host.sessions.export({ sessionID: session.id });
       const accepted = acceptedResult(task, session.id, completed.messages, submitted);
-      if (accepted) return active.calls.length ? { ...accepted, tools: [...active.calls] } : accepted;
+      if (accepted)
+        return active.calls.length ? { ...accepted, tools: [...active.calls] } : accepted;
       const last = taskMessages(completed.messages, task.task).findLast(
         (message) => message.type === "assistant",
       );
@@ -775,7 +775,7 @@ async function executeTask<T>(task: AgentTask<T>, owner: AgentHost): Promise<Age
     }
   } finally {
     try {
-      if (host && sessionID) await host.sessions.interrupt({ sessionID, continue: false });
+      if (host && sessionID) await host.sessions.interrupt({ sessionID, resume: false });
     } finally {
       slot.end();
       owner.emit(active.progress("ended"));
