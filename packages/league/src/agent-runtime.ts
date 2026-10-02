@@ -389,11 +389,13 @@ function taskAccepted(messages: readonly Message[], task: string): boolean {
   );
 }
 
+/** `replay` rebuilds a validator's state in a new process: a review that saved some pages and rejected others keeps those saves only in its validator, so the rejected submissions run through it again before the task resumes or its accepted one is read back. */
 function acceptedResult<T>(
   task: AgentTask<T>,
   sessionID: string,
   messages: readonly Message[],
   submitted?: { value: T },
+  replay = false,
 ): AgentResult<T> | undefined {
   const usage: Record<string, number> = {};
   const reasoning: string[] = [];
@@ -433,6 +435,13 @@ function acceptedResult<T>(
       tools.push({ name: part.name, arguments: input, result: content });
       if (part.name !== task.submission.name) continue;
       attempts += 1;
+      if (replay && part.state.status === "error") {
+        try {
+          task.validate(input);
+        } catch {
+          continue;
+        }
+      }
       if (
         part.state.status === "completed" &&
         part.state.metadata?.accepted === true &&
@@ -474,7 +483,7 @@ function planTask<T>(
     throw new Error(`Pending agent task input changed: ${task.task}`);
   if (prior && (prior.text !== prompt || prior.metadata?.system !== task.system))
     throw new Error(`Agent task input changed: ${task.task}`);
-  const recovered = acceptedResult(task, sessionID, messages);
+  const recovered = acceptedResult(task, sessionID, messages, undefined, true);
   if (recovered) return { kind: "recovered", result: recovered };
   const latest = messages.findLast(
     (message) => message.type === "user" && message.metadata?.task !== undefined,

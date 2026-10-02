@@ -706,6 +706,38 @@ it("only advances past an unfinished task when the simulator explicitly supersed
   });
 }, 60000);
 
+it("replays a task's rejected submissions into a new validator when it resumes", async () => {
+  const started = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  cleanup.push(() => release.resolve());
+  const { task, host } = await fixture(async (_body, index) => {
+    if (index === 2) {
+      started.resolve();
+      await release.promise;
+    }
+    return { input: { pick: index === 1 ? "Eevee" : "Pikachu" } };
+  });
+  const staged = (seen: string[]) => (input: JsonObject) => {
+    const pick = z.string().parse(input.pick);
+    seen.push(pick);
+    if (pick !== "Pikachu") throw new Error("Saved: Eevee as an alternate. Now submit Pikachu.");
+    return [...seen];
+  };
+  await host(async (agents) => {
+    const controller = new AbortController();
+    const interrupted = expect(
+      agents.run({ ...task, validate: staged([]), signal: controller.signal }),
+    ).rejects.toThrow();
+    await started.promise;
+    controller.abort(new Error("process stopped"));
+    await interrupted;
+    release.resolve();
+    const resumed = await agents.run({ ...task, validate: staged([]) });
+    expect(resumed.value).toEqual(["Eevee", "Pikachu"]);
+    expect(resumed.attempts).toBe(2);
+  });
+}, 60000);
+
 it("cancels inference and refuses changed or later tasks until the interrupted input resumes", async () => {
   const started = Promise.withResolvers<void>();
   const release = Promise.withResolvers<void>();
