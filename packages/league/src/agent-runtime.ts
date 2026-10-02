@@ -14,7 +14,7 @@ import {
   type ReasoningLevel,
 } from "./providers.js";
 import type { AgentActivity, AgentProgress, LiveGame } from "./public/live-protocol.js";
-import type { JsonObject, ToolDefinition } from "./types.js";
+import type { JsonObject, JsonValue, ToolDefinition } from "./types.js";
 
 export interface AgentTool {
   definition: ToolDefinition;
@@ -70,6 +70,63 @@ type Message = SessionMessageInfo;
 type UserMessage = Extract<Message, { type: "user" }>;
 
 const object = z.record(z.string(), z.json());
+const schemaNode = z.object({
+  properties: object.optional(),
+  additionalProperties: z.json().optional(),
+  items: z.json().optional(),
+});
+
+function undeclaredFields(schema: JsonValue, value: JsonValue, path = ""): string[] {
+  const node = schemaNode.safeParse(schema);
+  if (!node.success) return [];
+  const { properties, additionalProperties, items } = node.data;
+  if (Array.isArray(value))
+    return items === undefined
+      ? []
+      : value.flatMap((item, index) => undeclaredFields(items, item, `${path}[${index}]`));
+  const record = object.safeParse(value);
+  if (!record.success || !properties) return [];
+  return Object.entries(record.data).flatMap(([key, child]) => {
+    const declared = properties[key];
+    const field = path ? `${path}.${key}` : key;
+    if (declared === undefined) return additionalProperties === false ? [field] : [];
+    return undeclaredFields(declared, child, field);
+  });
+}
+
+function rejectUndeclared(tool: ToolDefinition, args: JsonObject): void {
+  const undeclared = undeclaredFields(tool.parameters, args);
+  if (!undeclared.length) return;
+  const declared = Object.keys(schemaNode.parse(tool.parameters).properties ?? {});
+  throw new Error(
+    `${tool.name} has no field ${undeclared.map((field) => JSON.stringify(field)).join(", ")}; nothing was accepted. Its fields are ${declared.join(", ")}.`,
+  );
+}
+
+function withoutClosedObjects(schema: JsonValue): JsonValue {
+  if (Array.isArray(schema)) return schema.map(withoutClosedObjects);
+  const record = object.safeParse(schema);
+  if (!record.success) return schema;
+  return Object.fromEntries(
+    Object.entries(record.data)
+      .filter(([key, value]) => key !== "additionalProperties" || value !== false)
+      .map(([key, value]) => [key, withoutClosedObjects(value)]),
+  );
+}
+
+const anyJson = z.json();
+
+/** OpenCode deletes every field a closed schema does not declare before the league sees the call, so a misnamed field would read as an omitted one. The league advertises the schema open, receives the arguments as sent, and rejects undeclared fields by name. */
+function declaredInput(parameters: JsonObject) {
+  const advertised = withoutClosedObjects(parameters);
+  return {
+    "~standard": {
+      ...anyJson["~standard"],
+      jsonSchema: { input: () => advertised, output: () => advertised },
+    },
+  };
+}
+
 const SUBMISSION_REMINDERS = 2;
 const REFERENCE_CALL_BUDGET = 400;
 const CATALOG_INTRO = `Code Mode catalog: these are all the tools callable inside \`execute\` through \`tools\`, with their exact signatures. Run independent calls concurrently with \`Promise.all\` and return every result you need to read. A call the harness rejects returns its error message as its result instead of throwing, so the rest of the batch still completes. A task may make at most ${REFERENCE_CALL_BUDGET} reference calls in total; the call that exceeds it throws and ends the program, so a loop over a whole board or roster wastes the budget on rows you will never read.`;
@@ -530,7 +587,7 @@ async function leaguePlugin(slot: AgentSlot) {
           editor.add({
             name: tool.definition.name,
             description: tool.definition.description,
-            input: tool.definition.parameters,
+            input: declaredInput(tool.definition.parameters),
             execute: async (input) => {
               await admitted.promise;
               task.signal?.throwIfAborted();
@@ -550,6 +607,7 @@ async function leaguePlugin(slot: AgentSlot) {
                 content = record(tool.definition.name, args, () => {
                   if (active.submitted)
                     throw new Error("This task already has an accepted submission.");
+                  rejectUndeclared(tool.definition, args);
                   return tool.run(args);
                 });
               } catch (error) {
@@ -562,7 +620,7 @@ async function leaguePlugin(slot: AgentSlot) {
           editor.add({
             name: submission.name,
             description: submission.description,
-            input: submission.parameters,
+            input: declaredInput(submission.parameters),
             options: { codemode: false },
             execute: async (input) => {
               await admitted.promise;
@@ -586,6 +644,7 @@ async function leaguePlugin(slot: AgentSlot) {
                   ),
                 };
               const content = record(submission.name, args, () => {
+                rejectUndeclared(submission, args);
                 task.validate(args);
                 return "Submission accepted. End your reply; await the next observation.";
               });

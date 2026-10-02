@@ -476,6 +476,32 @@ it("registers every session submission tool and rejects calls to the inactive on
   });
 }, 60000);
 
+it("rejects a submission field the tool does not declare instead of saving nothing", async () => {
+  const { task, requests, host } = await fixture((_body, index) => ({
+    input:
+      index === 1 ? { pick: "Pikachu", notes: { plan: "lost if dropped" } } : { pick: "Pikachu" },
+  }));
+  const seen: JsonObject[] = [];
+  const result = await host((agents) =>
+    agents.run({
+      ...task,
+      validate: (input) => {
+        seen.push(input);
+        return task.validate(input);
+      },
+    }),
+  );
+  expect(result.attempts).toBe(2);
+  expect(seen).toEqual([{ pick: "Pikachu" }]);
+  expect(result.tools[0]?.arguments).toEqual({
+    pick: "Pikachu",
+    notes: { plan: "lost if dropped" },
+  });
+  expect(result.tools[0]?.result).toContain('submit_pick has no field "notes"');
+  expect(JSON.stringify(requests[1])).toContain("nothing was accepted. Its fields are pick.");
+  expect(requests[1]?.tools).toEqual(requests[0]?.tools);
+}, 60000);
+
 it("preserves nullable object submissions through the SDK and rejects string null", async () => {
   const { task, requests, host } = await fixture((_body, index) => ({
     input: { offer: index === 1 ? "null" : null },
@@ -506,7 +532,8 @@ it("preserves nullable object submissions through the SDK and rejects string nul
   expect(result.value).toEqual({ offer: null });
   expect(result.attempts).toBe(2);
   expect(requests).toHaveLength(2);
-  expect(JSON.stringify(requests[0]?.tools)).toContain(JSON.stringify(schema));
+  const { additionalProperties: _, ...advertised } = schema;
+  expect(JSON.stringify(requests[0]?.tools)).toContain(JSON.stringify(advertised));
 }, 60000);
 
 it("uses upstream retries off-clock and vetoes retries while Showdown's timer is active", async () => {
