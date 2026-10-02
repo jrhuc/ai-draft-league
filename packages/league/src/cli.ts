@@ -7,6 +7,7 @@ import { z } from "zod";
 import type { AgentProgress } from "./agent-runtime.js";
 import type { DraftLeagueOptions } from "./draftleague-protocol.js";
 import type { ExhibitionOptions } from "./exhibition.js";
+import { serveBridge } from "./eval-bridge.js";
 import { exportSeasonBundle } from "./export-season.js";
 import { draftLeagueConfigSchema } from "./league-store.js";
 import { makeRunDirectory, prepareDataDirectories, RESULTS_PATH, RUNS_DIR } from "./paths.js";
@@ -117,6 +118,9 @@ Commands:
       and provenance come from the run's recorded config)
   monitor <run-dir|run-id> [--json]   harness monitors for a league run: decision integrity, tool predictions
       against the simulator, draft horizon, roster usage and retention, memory continuity per barrier
+  bridge                              play one battle with a seat driven from outside over JSON lines on
+      stdio: open, pool, start, tool, submit, abandon, outcome, audit. An outside seat is the league's
+      battle coach; the other seat may be random, greedy, or search[:fast|standard|deep]
   positions                           value recorded turn decisions: one game per JSON line on stdin
       (id, source, log, settings, only), one line out per game and per valued decision with the win
       rate of every accepted action under a damage-greedy continuation
@@ -222,6 +226,10 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   prepareDataDirectories();
   const [command, ...rest] = argv;
   if (command === "selfcheck") return selfcheck();
+  if (command === "bridge") {
+    await serveBridge();
+    return 0;
+  }
   if (command === "positions") {
     await servePositions();
     return 0;

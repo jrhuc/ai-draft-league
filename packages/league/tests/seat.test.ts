@@ -69,11 +69,14 @@ test("seat bridge keeps a pending exchange, tools, and private context behind on
     const poll: { exchange: JsonObject } = await (await post("/poll", { waitMs: 2000 })).json();
     const { id: _id, ...view } = poll.exchange;
     assert.deepEqual(view, {
+      session: "seat",
       task: "decision-1",
       system: "SYSTEM TEXT",
       prompt: "prompt text",
+      tools: [{ name: "lookup_move", description: "Look up move", parameters: {} }],
       submission: {
         name: "submit_action",
+        description: "Submit",
         parameters: { type: "object", required: ["choices"] },
       },
     });
@@ -95,7 +98,16 @@ test("seat bridge keeps a pending exchange, tools, and private context behind on
       (await post("/submit", { id: poll.exchange.id, text: '{"choices":[0]}' })).status,
       200,
     );
-    assert.equal((await completion).response, '{"choices":[0]}');
+    const result = await completion;
+    assert.equal(result.response, '{"choices":[0]}');
+    assert.deepEqual(result.tools, [
+      { name: "lookup_move", arguments: { name: "Protect" }, result: "result for Protect" },
+      {
+        name: "lookup_move",
+        arguments: { move: "Protect" },
+        result: 'Error: lookup_move needs a "name"',
+      },
+    ]);
   } finally {
     bridge.close();
   }
