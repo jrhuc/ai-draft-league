@@ -192,4 +192,24 @@ test("menus use species names and annotate ally-hitting spreads", () => {
     labeled.find((item) => item.part === "move 1")!.label,
     /Earthquake \(all adjacent, including ally Swampert\)/,
   );
+  moves[0]!.move = "Trick Room";
+  moves[0]!.target = "all";
+  assert.equal(
+    buildMenus(request)[0]!.find((item) => item.part === "move 1")!.label,
+    "Trick Room (whole field)",
+  );
+});
+
+test("a switch that an unrevealed ability may block says so", () => {
+  const request = fixture("turn.json");
+  asRecords(request.active)[0]!.maybeTrapped = true;
+  const [first, second] = buildMenus(request);
+  const switches = (menu: typeof first) => menu!.filter((item) => item.kind === "switch");
+  assert.ok(switches(first).length > 0);
+  assert.ok(
+    switches(first).every((item) =>
+      item.label.endsWith(" [rejected if an opposing ability is trapping it]"),
+    ),
+  );
+  assert.ok(switches(second).every((item) => !item.label.includes("trapping")));
 });

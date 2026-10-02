@@ -40,8 +40,7 @@ import { clip, count, fileSlug, text } from "./value.js";
 
 const MEMORY_NOTICE = `- Your memory is yours to organise: a plan page shown to later managers and team builders, plus up to ${MEMORY_LIMITS.pages - 1} named pages they can fetch with read_memory_page. Keep a page to about 1,000 words and the whole memory under about 7,000 words, unchanged pages included: the hard limits are ${MEMORY_LIMITS.pageChars} characters a page and ${MEMORY_LIMITS.totalChars} in all, and a page over a limit is the only thing not saved and is asked for again on its own. The builder passes its team plan and set notes to the battle pilot. Completed series and earlier memory checkpoints remain available through the league tools; your review reasoning is recorded as evidence, but is not included in later prompts.`;
 
-const LEAGUE_TOOLS_NOTICE =
-  `You have the Showdown dex tools and five league tools: read_public_series returns the spectator log of any completed series, read_own_series returns your own turn-by-turn choices with their stated reasons and your end-of-game notes, read_own_build returns the six you registered for a series, your plan, and what you brought, Mega Evolved, and lost in each game, read_memory_page returns one of your pages in full, and read_memory_history returns your memory as it stood after an earlier review or reconciliation. ${PARALLEL_TOOLS_RULE}`;
+const LEAGUE_TOOLS_NOTICE = `You have the Showdown dex tools and five league tools: read_public_series returns the spectator log of any completed series, read_own_series returns your own turn-by-turn choices with their stated reasons and your end-of-game notes, read_own_build returns the six you registered for a series, your plan, and what you brought, Mega Evolved, and lost in each game, read_memory_page returns one of your pages in full, and read_memory_history returns your memory as it stood after an earlier review or reconciliation. ${PARALLEL_TOOLS_RULE}`;
 
 const WEEKLY_REVIEW_PROMPT_POLICY = {
   systemTemplate: [
@@ -194,8 +193,9 @@ export function parseWeeklyReviewResult(
   const reply = weeklyReviewReplySchema.safeParse(input);
   if (!reply.success) throw new Error(z.prettifyError(reply.error));
   const { reasoning = "", plan, ...pages } = reply.data;
-  const memoryReply = plan === undefined ? pages : { ...pages, notebook: plan };
-  const parsed = parseMemoryReply(memoryReply, current, { notebookField: "plan" });
+  const parsed = parseMemoryReply({ ...pages, notebook: plan }, current, {
+    notebookField: "plan",
+  });
   return {
     memory: parsed.memory,
     reasoning: clip(reasoning.trim(), WEEKLY_REVIEW_PROMPT_POLICY.rationaleLimit),
@@ -304,10 +304,6 @@ function userPrompt(state: WeeklyReviewState, entrant: number): string {
     ...WEEKLY_REVIEW_PROMPT_POLICY.replyTemplate,
   );
   return lines.join("\n");
-}
-
-export function renderWeeklyReviewPrompt(state: WeeklyReviewState, entrant: number): string {
-  return [systemPrompt(state, entrant), "", userPrompt(state, entrant)].join("\n");
 }
 
 function boundedToolOutput(text: string, offset = 0): string {
@@ -663,6 +659,7 @@ export async function runWeeklyReview(
       return review;
     },
   );
+  options.signal?.throwIfAborted();
   reviews.push(...fresh);
   return reviews.sort(byEntrant);
 }

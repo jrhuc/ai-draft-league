@@ -100,51 +100,6 @@ export interface PublicTeamSheetSetView {
 
 export type BattleLogEntryView = BattleLogEntry;
 
-export interface TournamentSummary {
-  tournaments: number;
-  matches: number;
-}
-
-export interface ArchivedMatchView {
-  seriesIndex: number | null;
-  slots: [number | null, number | null];
-  winner: number | null;
-  score: [number, number] | null;
-  turns: number | null;
-}
-
-export interface TournamentEventView {
-  name: string;
-  game: string;
-  regulation: string;
-  location: string;
-  dates: string;
-  players: number | null;
-  structure: string;
-  url: string;
-  reconstructedSpreads: boolean;
-}
-
-export interface TournamentArchiveView {
-  runId: string;
-  when: string;
-  pool: string | null;
-  entrants: BracketEntrantView[];
-  rounds: ArchivedMatchView[][];
-  champion: number | null;
-  complete: boolean;
-  live: boolean;
-  event: TournamentEventView | null;
-  provenance: "disclosed" | "blind" | null;
-}
-
-export interface TournamentsResponse {
-  pool: string | null;
-  pools: string[];
-  summary: TournamentSummary;
-  tournaments: TournamentArchiveView[];
-}
-
 export interface LeagueChampionView {
   entrant: number;
   model: string;

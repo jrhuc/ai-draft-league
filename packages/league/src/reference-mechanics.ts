@@ -1,7 +1,5 @@
 import type { Battle, Dex } from "pokemon-showdown";
 
-import type { MatchupMon } from "./reference-contracts.js";
-
 export function id(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
@@ -17,43 +15,6 @@ export function uniqueNames(values: Array<string | null | undefined>): string[] 
     if (clean) names.set(id(clean), names.get(id(clean)) ?? clean);
   }
   return [...names.values()].sort((a, b) => id(a).localeCompare(id(b)));
-}
-
-const TYPE_BLOCKING_ABILITIES = new Map(
-  Object.entries({
-    ground: ["levitate", "eartheater"],
-    fire: ["flashfire", "wellbakedbody"],
-    water: ["waterabsorb", "stormdrain", "dryskin"],
-    electric: ["voltabsorb", "lightningrod", "motordrive"],
-    grass: ["sapsipper"],
-  }),
-);
-
-export function visibleDamageBlock(
-  attacker: MatchupMon,
-  defender: MatchupMon,
-  move: { flags: { sound?: 1; bullet?: 1; wind?: 1 }; ignoreAbility?: boolean | undefined },
-  moveType: string,
-  modifier: number,
-): string | undefined {
-  if (
-    id(defender.item ?? "") === "airballoon" &&
-    !defender.itemConsumed &&
-    id(moveType) === "ground"
-  ) {
-    return defender.item;
-  }
-  const attackerAbility = id(attacker.ability ?? "");
-  const ignoresAbility =
-    move.ignoreAbility || ["moldbreaker", "teravolt", "turboblaze"].includes(attackerAbility);
-  if (ignoresAbility) return undefined;
-  const ability = id(defender.ability ?? "");
-  if ((TYPE_BLOCKING_ABILITIES.get(id(moveType)) ?? []).includes(ability)) return defender.ability;
-  if (ability === "soundproof" && move.flags.sound) return defender.ability;
-  if (ability === "bulletproof" && move.flags.bullet) return defender.ability;
-  if (ability === "windrider" && move.flags.wind) return defender.ability;
-  if (ability === "wonderguard" && modifier <= 1) return defender.ability;
-  return undefined;
 }
 
 export function cleanDescription(value: string): string {
@@ -147,6 +108,42 @@ export function statRange(
   ];
 }
 
+/** Carries exact stats from one forme of a Pokémon to another by recovering the investment that produced them; a stat stays out when more than one result is possible. */
+export function projectStats(
+  battle: BattleStatCalculator,
+  from: Dex.StatsTable,
+  to: Dex.StatsTable,
+  stats: Partial<Record<StatId, number>>,
+  nature?: string,
+) {
+  const limits = investmentLimits(battle);
+  const natures: string[] = nature
+    ? [nature]
+    : battle.dex.natures.all().map((entry: { name: string }) => entry.name);
+  const projected: Partial<Record<StatId, number>> = {};
+  for (const stat of STAT_IDS) {
+    const exact = stats[stat];
+    if (exact === undefined) continue;
+    const values = new Set<number>();
+    for (const alignment of natures) {
+      for (let ev = 0; ev <= limits.perStat; ev += 1) {
+        for (let iv = limits.fixedIvs ? 31 : 0; iv <= 31; iv += 1) {
+          const set = statSet(
+            battle,
+            alignment,
+            { ...filledStats(0), [stat]: ev },
+            filledStats(iv),
+          );
+          if (battle.statModify(from, set, stat) === exact)
+            values.add(battle.statModify(to, set, stat));
+        }
+      }
+    }
+    if (values.size === 1) projected[stat] = [...values][0]!;
+  }
+  return projected;
+}
+
 export function hpRange(battle: BattleStatCalculator, stats: Dex.StatsTable): [number, number] {
   const limits = investmentLimits(battle);
   const lowEvs = filledStats(0);
@@ -192,65 +189,6 @@ export function typeModifier(
 ): number {
   if (!dex.getImmunity(attackType, defenderTypes)) return 0;
   return 2 ** dex.getEffectiveness(attackType, defenderTypes);
-}
-
-const WEATHER_BALL_TYPE = new Map(
-  Object.entries({
-    sun: "Fire",
-    sunnyday: "Fire",
-    desolateland: "Fire",
-    rain: "Water",
-    raindance: "Water",
-    primordialsea: "Water",
-    sand: "Rock",
-    sandstorm: "Rock",
-    snow: "Ice",
-    snowscape: "Ice",
-    hail: "Ice",
-  }),
-);
-
-export function weatherBallOverride(
-  moveId: string,
-  weather: string,
-): { type: string; power: number } | null {
-  const type = WEATHER_BALL_TYPE.get(weather);
-  return moveId === "weatherball" && type ? { type, power: 100 } : null;
-}
-
-const RAGING_BULL_TYPE = new Map(
-  Object.entries({
-    taurospaldeacombat: "Fighting",
-    taurospaldeablaze: "Fire",
-    taurospaldeaaqua: "Water",
-  }),
-);
-
-const ATE_ABILITY_TYPE = new Map(
-  Object.entries({
-    pixilate: "Fairy",
-    aerilate: "Flying",
-    refrigerate: "Ice",
-    galvanize: "Electric",
-  }),
-);
-
-export function speciesMoveType(
-  moveId: string,
-  defaultType: string,
-  speciesName: string,
-  ability = "",
-  soundMove = false,
-): string {
-  if (moveId === "ragingbull") return RAGING_BULL_TYPE.get(id(speciesName)) ?? defaultType;
-  const abilityId = id(ability);
-  if (abilityId === "normalize") return "Normal";
-  if (defaultType === "Normal") {
-    const convertedType = ATE_ABILITY_TYPE.get(abilityId);
-    if (convertedType) return convertedType;
-  }
-  if (abilityId === "liquidvoice" && soundMove) return "Water";
-  return defaultType;
 }
 
 export const SPEED_HALVING_ITEMS = new Set([

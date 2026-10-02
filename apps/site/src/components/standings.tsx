@@ -1,9 +1,7 @@
 import { TeamTag } from "@/components/team";
-import { modelLabel } from "ui/lib/format";
-import { franchise } from "@/lib/load";
 import { useSeason } from "@/lib/season-context";
 
-export function Standings({ compact = false }: { compact?: boolean }) {
+export function Standings() {
   const season = useSeason();
   const cut = season.season.playoffRounds === 2 ? 4 : 2;
   return (
@@ -13,7 +11,6 @@ export function Standings({ compact = false }: { compact?: boolean }) {
           <tr>
             <th className="r">#</th>
             <th>Team</th>
-            {compact ? null : <th>Model</th>}
             <th className="r">W</th>
             <th className="r">L</th>
             <th className="r">Games</th>
@@ -27,11 +24,6 @@ export function Standings({ compact = false }: { compact?: boolean }) {
               <td className="team">
                 <TeamTag id={row.franchiseId} />
               </td>
-              {compact ? null : (
-                <td style={{ color: "var(--t4)" }}>
-                  {modelLabel(franchise(season, row.franchiseId).model)}
-                </td>
-              )}
               <td className="r num">{row.seriesWins}</td>
               <td className="r num">{row.seriesLosses}</td>
               <td className="r num">

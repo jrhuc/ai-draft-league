@@ -71,24 +71,6 @@ export interface TeamPool {
 
 const poolNumberSchema = z.number();
 
-interface PoolManifestTeam {
-  id: string;
-  file: string;
-  seed?: number;
-  source?: JsonObject;
-}
-
-interface PoolManifestHeader extends PoolMetadata {
-  id: string;
-  format: string;
-}
-
-interface PoolManifest extends PoolMetadata {
-  id: string;
-  format: string;
-  teams: PoolManifestTeam[];
-}
-
 function block(value: JsonValue | undefined): JsonObject | undefined {
   return isRecord(value) ? value : undefined;
 }
@@ -272,87 +254,6 @@ export function validateTeam(packed: string, format: string, psDir = defaultPsDi
   }
   const problems = new TeamValidator(format).validateTeam(sets);
   if (problems?.length) throw new Error(problems.join("\n"));
-}
-
-export interface TeamDraft {
-  id: string;
-  paste: string;
-  seed?: number;
-  source?: JsonObject;
-}
-
-export interface PoolContents extends PoolMetadata {
-  teams: TeamDraft[];
-}
-
-export function createPool(
-  name: string,
-  format: string,
-  contents: PoolContents,
-  teamsDir = TEAMS_DIR,
-  psDir = defaultPsDir(),
-): string {
-  const drafts = contents.teams;
-  if (!POOL_SLUG.test(name))
-    throw new Error("pool name must be lowercase letters, digits, and dashes");
-  if (!format.endsWith("bo3"))
-    throw new Error('format must be a Pokémon Showdown BO3 format id (ending in "bo3")');
-  if (drafts.length < 2) throw new Error("a pool needs at least two teams");
-  if (drafts.length > 32) throw new Error("a pool supports at most 32 teams");
-  const poolDir = path.resolve(teamsDir, name);
-  if (fs.existsSync(poolDir))
-    throw new Error(
-      `pool ${JSON.stringify(name)} already exists; pools are immutable snapshots, so pick a new name`,
-    );
-  const seenIds = new Set<string>();
-  const seenTeams = new Map<string, string>();
-  const teams = drafts.map((draft) => {
-    const id = draft.id.trim();
-    if (!POOL_SLUG.test(id))
-      throw new Error(
-        `team id ${JSON.stringify(draft.id)} must be lowercase letters, digits, and dashes`,
-      );
-    if (seenIds.has(id)) throw new Error(`duplicate team id ${JSON.stringify(id)}`);
-    seenIds.add(id);
-    const packed = packTeam(draft.paste, psDir, format);
-    try {
-      validateTeam(packed, format, psDir);
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      throw new Error(`team ${JSON.stringify(id)} is not legal in ${format}:\n${detail}`);
-    }
-    const clash = seenTeams.get(packed);
-    if (clash)
-      throw new Error(
-        `team ${JSON.stringify(id)} is byte-for-byte the same team as ${JSON.stringify(clash)}`,
-      );
-    seenTeams.set(packed, id);
-    return { id, packed, draft };
-  });
-  fs.mkdirSync(poolDir, { recursive: true });
-  for (const team of teams)
-    fs.writeFileSync(path.join(poolDir, `${team.id}.team`), `${team.packed}\n`, "utf8");
-  const header: PoolManifestHeader = { id: name, format };
-  if (contents.event) header.event = contents.event;
-  if (contents.spreads) header.spreads = contents.spreads;
-  const manifest: PoolManifest = {
-    ...header,
-    teams: teams.map((team) => {
-      const entry: PoolManifestTeam = {
-        id: team.id,
-        file: `${team.id}.team`,
-        seed: team.draft.seed,
-      };
-      if (team.draft.source) entry.source = team.draft.source;
-      return entry;
-    }),
-  };
-  fs.writeFileSync(
-    path.join(poolDir, "pool.json"),
-    `${JSON.stringify(manifest, null, 2)}\n`,
-    "utf8",
-  );
-  return poolDir;
 }
 
 export function validatePool(pool: TeamPool, psDir = defaultPsDir()): void {

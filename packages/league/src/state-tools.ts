@@ -6,6 +6,7 @@ import type {
 } from "./reference.js";
 import { type PerspectiveStateView, MonState, SCREEN_MOVES, stateKey } from "./state-model.js";
 import type { JsonObject, JsonValue, Pid } from "./types.js";
+import { z } from "zod";
 import { afterColon, count, text } from "./value.js";
 
 interface MonEntry {
@@ -43,7 +44,7 @@ function megaScenario(
       species: mega.name,
       ability: mega.abilities[0],
       abilitySuppressed: false,
-      stats: reference.megaStats(mon.species, mega, mon.stats, mon.nature),
+      stats: reference.formeStats(mon.species, mega.name, mon.stats, mon.nature),
       mega: true,
     }),
   };
@@ -105,47 +106,66 @@ export function activeEntry(
   return mon && !mon.fainted ? mon : undefined;
 }
 
+/** A bare species name that both sides field is refused rather than resolved to one of them. */
 function findMon(state: PerspectiveStateView, query: string): FoundMon | undefined {
-  const activeMatch = findActive(state, query);
-  if (activeMatch) return { ...activeMatch, benched: false };
-  const normalized = stateKey(query);
-  const prefixed = /^(ally|foe)(.+)$/.exec(normalized);
-  const wanted = prefixed ? prefixed[2]! : normalized;
-  for (const pid of ["p1", "p2"] as const) {
-    if (prefixed && (pid === state.pid) !== (prefixed[1] === "ally")) continue;
-    const side = state.sides[pid];
-    const activeKeys = new Set(Object.values(side.active));
-    for (const [key, mon] of side.mons) {
-      if (activeKeys.has(key) || mon.fainted) continue;
-      const monKey = stateKey(mon.species);
-      if (demega(monKey) === demega(wanted)) return { pid, slot: -1, mon, benched: true };
-    }
-  }
-  return undefined;
-}
-
-function findActive(state: PerspectiveStateView, query: string): MonEntry | undefined {
   const normalized = stateKey(query);
   const slot = /^(ally|foe)([12])$/.exec(normalized);
   if (slot) {
-    const own = slot[1] === "ally";
-    const pid = own ? state.pid : state.pid === "p1" ? "p2" : "p1";
+    const pid = sideOf(state, slot[1] === "ally");
     const mon = activeEntry(state, pid, Number(slot[2]));
-    return mon ? { pid, slot: Number(slot[2]), mon } : undefined;
+    return mon ? { pid, slot: Number(slot[2]), mon, benched: false } : undefined;
   }
   const prefixed = /^(ally|foe)(.+)$/.exec(normalized);
-  const candidates = prefixed
-    ? activeEntries(state).filter((entry) => (entry.pid === state.pid) === (prefixed[1] === "ally"))
-    : activeEntries(state);
   const wanted = prefixed ? prefixed[2]! : normalized;
-  const exact = candidates.find(
-    (entry) =>
-      stateKey(entry.mon.species) === wanted || stateKey(afterColon(entry.mon.ident)) === wanted,
-  );
-  if (exact) return exact;
-  const wantedBase = demega(wanted);
-  return candidates.find((entry) => demega(stateKey(entry.mon.species)) === wantedBase);
+  const sides = prefixed ? [sideOf(state, prefixed[1] === "ally")] : (["p1", "p2"] as const);
+  const fielded = activeEntries(state).filter((entry) => sides.includes(entry.pid));
+  const named = (mon: MonState) =>
+    stateKey(mon.species) === wanted || stateKey(afterColon(mon.ident)) === wanted;
+  const sameBase = (mon: MonState) => demega(stateKey(mon.species)) === demega(wanted);
+  const benched = sides.flatMap((pid) => {
+    const side = state.sides[pid];
+    const activeKeys = new Set(Object.values(side.active));
+    return [...side.mons]
+      .filter(([key, mon]) => !activeKeys.has(key) && !mon.fainted && sameBase(mon))
+      .map(([, mon]): FoundMon => ({ pid, slot: -1, mon, benched: true }));
+  });
+  const groups = [
+    fielded.filter((entry) => named(entry.mon)).map((entry) => ({ ...entry, benched: false })),
+    fielded.filter((entry) => sameBase(entry.mon)).map((entry) => ({ ...entry, benched: false })),
+    benched,
+  ];
+  const match = groups.find((found) => found.length)?.[0];
+  if (match && new Set(groups.flat().map((entry) => entry.pid)).size > 1)
+    throw new Error(`Both sides have ${match.mon.species}; say "ally ${query}" or "foe ${query}".`);
+  return match;
 }
+
+function sideOf(state: PerspectiveStateView, own: boolean): Pid {
+  return own ? state.pid : state.pid === "p1" ? "p2" : "p1";
+}
+
+function findActive(state: PerspectiveStateView, query: string): MonEntry | undefined {
+  const found = findMon(state, query);
+  return found && !found.benched ? found : undefined;
+}
+
+const stageSchema = z.number().int().min(-6).max(6).optional();
+const hypotheticalOrder = z.object({
+  first_speed_stage: stageSchema,
+  second_speed_stage: stageSchema,
+  first_tailwind: z.boolean().optional(),
+  second_tailwind: z.boolean().optional(),
+  trick_room: z.boolean().optional(),
+});
+const hypotheticalStages = z
+  .strictObject({
+    atk: stageSchema,
+    def: stageSchema,
+    spa: stageSchema,
+    spd: stageSchema,
+    spe: stageSchema,
+  })
+  .optional();
 
 const CLEAR_WORDS = new Set(["none", "clear", "off", "no", "nothing"]);
 
@@ -161,7 +181,7 @@ export function speedProfile(
   pid: Pid,
   mon: MonState,
   reference: ShowdownReference,
-  overrides: { weather?: string | null } = {},
+  overrides: { weather?: string | null; stage?: number; tailwind?: boolean } = {},
 ): SpeedProfile | undefined {
   const conditions = state.sides[pid].conditions;
   const terrain = [...state.fields.values()].find((effect) => /terrain/i.test(effect.name))?.name;
@@ -169,7 +189,7 @@ export function speedProfile(
   const input: SpeedProfileInput = {
     species: mon.species,
     itemConsumed: mon.itemConsumed,
-    tailwind: conditions.has("tailwind"),
+    tailwind: overrides.tailwind ?? conditions.has("tailwind"),
   };
   if (mon.nature !== undefined) input.nature = mon.nature;
   const speed = mon.stats.spe;
@@ -177,7 +197,8 @@ export function speedProfile(
   if (mon.item !== undefined) input.item = mon.item;
   if (mon.ability !== undefined) input.ability = mon.ability;
   if (mon.status !== undefined) input.status = mon.status;
-  if (mon.boosts.spe !== undefined) input.boost = mon.boosts.spe;
+  const stage = overrides.stage ?? mon.boosts.spe;
+  if (stage !== undefined) input.boost = stage;
   if (weather) input.weather = weather;
   if (terrain !== undefined) input.terrain = terrain;
   return reference.speedProfile(input);
@@ -236,8 +257,29 @@ export function compareActionOrder(
   );
 
   const weather = fieldOverride(args.weather);
-  const firstProfile = speedProfile(state, first.pid, first.mon, reference, { weather });
-  const secondProfile = speedProfile(state, second.pid, second.mon, reference, { weather });
+  const hypothetical = hypotheticalOrder.parse(args);
+  const speedOverrides = (side: "first" | "second") => {
+    const overrides: Parameters<typeof speedProfile>[4] = { weather };
+    const stage = hypothetical[`${side}_speed_stage`];
+    const tailwind = hypothetical[`${side}_tailwind`];
+    if (stage !== undefined) overrides.stage = stage;
+    if (tailwind !== undefined) overrides.tailwind = tailwind;
+    return overrides;
+  };
+  const firstProfile = speedProfile(
+    state,
+    first.pid,
+    first.mon,
+    reference,
+    speedOverrides("first"),
+  );
+  const secondProfile = speedProfile(
+    state,
+    second.pid,
+    second.mon,
+    reference,
+    speedOverrides("second"),
+  );
   if (!firstProfile || !secondProfile)
     return "Speed data is unavailable for one of the selected Pokémon.";
   const firstMove = text(args.first_move).trim();
@@ -269,7 +311,7 @@ export function compareActionOrder(
   const firstPriority = firstInfo.priority;
   const secondPriority = secondInfo.priority;
 
-  const trickRoom = state.fields.has("trickroom");
+  const trickRoom = hypothetical.trick_room ?? state.fields.has("trickroom");
   const bracketLast = (info: { notes: string[] }) =>
     info.notes.some((note) => note.includes("acts last within its bracket"));
   const signed = (value: number) => `${value >= 0 ? "+" : ""}${value}`;
@@ -325,6 +367,21 @@ export function compareActionOrder(
     describe(`${second.mon.species}${second.benched ? " (benched)" : ""}`, secondProfile),
     `${orderText} (${reason}).`,
   ];
+  const supposed = [
+    ...(["first", "second"] as const).flatMap((side) => {
+      const name = (side === "first" ? first : second).mon.species;
+      const stage = hypothetical[`${side}_speed_stage`];
+      const tailwind = hypothetical[`${side}_tailwind`];
+      return [
+        ...(stage === undefined ? [] : [`${name} at Speed stage ${stage > 0 ? "+" : ""}${stage}`]),
+        ...(tailwind === undefined ? [] : [`Tailwind ${tailwind ? "up" : "down"} for ${name}`]),
+      ];
+    }),
+    ...(hypothetical.trick_room === undefined
+      ? []
+      : [`Trick Room ${hypothetical.trick_room ? "up" : "down"}`]),
+  ];
+  if (supposed.length) lines.unshift(`Hypothetical: ${supposed.join("; ")}.`);
   if (weather !== undefined)
     lines.unshift(
       `Hypothetical weather: ${weather ?? "none"} (live: ${state.weather?.name ?? "none"}).`,
@@ -371,6 +428,27 @@ export function compareActionOrder(
   return lines.join("\n");
 }
 
+function definedStages(stages: z.infer<typeof hypotheticalStages>): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(stages ?? {}).flatMap(([stat, stage]) =>
+      stage === undefined ? [] : [[stat, stage]],
+    ),
+  );
+}
+
+const ENTRY_WEATHER = new Map([
+  ["drought", "sun"],
+  ["drizzle", "rain"],
+  ["sandstream", "sand"],
+  ["snowwarning", "snow"],
+]);
+const ENTRY_TERRAIN = new Map([
+  ["electricsurge", "electric"],
+  ["grassysurge", "grassy"],
+  ["mistysurge", "misty"],
+  ["psychicsurge", "psychic"],
+]);
+
 export function estimateDamage(
   state: PerspectiveStateView,
   args: JsonObject,
@@ -382,9 +460,10 @@ export function estimateDamage(
   if (!attackerName || !defenderName || !move) return "attacker, defender, and move are required.";
   let attacker = findMon(state, attackerName);
   let defender = findMon(state, defenderName);
-  const visible = activeEntries(state).map(
-    (entry) => `${entry.pid === state.pid ? "ally" : "foe"} ${entry.slot}: ${entry.mon.species}`,
-  );
+  const fielded = activeEntries(state);
+  const label = (entry: MonEntry) =>
+    `${entry.pid === state.pid ? "ally" : "foe"} ${entry.slot}: ${entry.mon.species}`;
+  const visible = fielded.map(label);
   if (!attacker || !defender) {
     const missing = !attacker ? attackerName : defenderName;
     return `Could not resolve ${JSON.stringify(missing)} on the visible battle rosters. Active Pokémon: ${visible.join("; ") || "none"}.`;
@@ -400,136 +479,49 @@ export function estimateDamage(
     args.defender_mega === true,
     reference,
   );
+  const pair = [attacker, defender] as const;
 
-  const active = activeEntries(state);
-  const switches: string[] = [];
-  const replacedSlots = new Set<string>();
-  for (const [side, entry] of [
-    ["attacker", attacker],
-    ["defender", defender],
-  ] as const) {
+  /** A benched Pokémon takes a named slot, an empty one, or, when its side is full and no slot is named, each slot it could take. */
+  const outgoingOptions = (
+    side: "attacker" | "defender",
+    entry: FoundMon,
+  ): Array<MonEntry | null> => {
     const replaces = text(args[`${side}_replaces`]).trim();
     if (!entry.benched) {
       if (replaces)
         throw new Error(`${entry.mon.species} is already active; omit ${side}_replaces.`);
-      continue;
+      return [null];
     }
-    const fielded = active.filter((other) => other.pid === entry.pid);
-    if (!replaces && fielded.length < 2) {
-      const slot = fielded.some((other) => other.slot === 1) ? 2 : 1;
-      active.push({ ...entry, slot });
-      switches.push(`${entry.mon.species} fields into an empty slot`);
-      continue;
-    }
-    const outgoing = replaces ? findActive(state, replaces) : undefined;
+    const sameSide = fielded.filter((other) => other.pid === entry.pid);
+    if (!replaces && sameSide.length < 2) return [null];
+    const free = sameSide.filter((other) =>
+      pair.every((party) => party.mon.ident !== other.mon.ident),
+    );
+    if (!replaces) return free;
+    const outgoing = findActive(state, replaces);
     if (!outgoing || outgoing.pid !== entry.pid)
       throw new Error(
-        `${entry.mon.species} is benched and its side is full. Set ${side}_replaces to the same-side active Pokémon or slot it would replace: ${visible.join("; ")}.`,
+        `${side}_replaces must name a same-side active Pokémon or slot: ${sameSide.map(label).join("; ")}.`,
       );
-    if (outgoing.mon.ident === attacker.mon.ident || outgoing.mon.ident === defender.mon.ident)
+    if (!free.includes(outgoing) && !free.some((other) => other.mon === outgoing.mon))
       throw new Error("A switch-in cannot replace the other Pokémon in the damage calculation.");
-    const key = `${outgoing.pid}:${outgoing.slot}`;
-    if (replacedSlots.has(key)) throw new Error("Two switch-ins cannot replace the same slot.");
-    replacedSlots.add(key);
-    active[
-      active.findIndex((other) => other.pid === outgoing.pid && other.slot === outgoing.slot)
-    ] = { ...entry, slot: outgoing.slot };
-    switches.push(`${entry.mon.species} replaces ${outgoing.mon.species}`);
-  }
+    return [outgoing];
+  };
 
-  const exactStats = (entry: MonEntry, includeHp: boolean) => {
-    if (entry.pid !== state.pid) return {};
-    const stats = { ...entry.mon.stats };
-    if (includeHp) {
-      const maximum = /\/(\d+)/.exec(entry.mon.hp ?? "")?.[1];
-      if (maximum) stats.hp = Number(maximum);
-    }
-    return stats;
-  };
-  const ability = (mon: MonState) =>
-    mon.abilitySuppressed ? undefined : (mon.ability ?? reference.speciesAbility(mon.species));
-  const authoritative: EstimateDamageArguments = {
-    attacker: attacker.mon.species,
-    defender: defender.mon.species,
-    move,
-  };
-  const setMon = (side: "attacker" | "defender", entry: MonEntry): void => {
-    const monAbility = ability(entry.mon);
-    const stats = exactStats(entry, side === "defender");
-    if (side === "attacker") {
-      if (monAbility) authoritative.attacker_ability = monAbility;
-      if (entry.mon.item && !entry.mon.itemConsumed) authoritative.attacker_item = entry.mon.item;
-      if (entry.mon.nature) authoritative.attacker_nature = entry.mon.nature;
-      if (entry.mon.status) authoritative.attacker_status = entry.mon.status;
-      if (Object.keys(entry.mon.boosts).length)
-        authoritative.attacker_boosts = { ...entry.mon.boosts };
-      if (entry.mon.hpPercent !== undefined)
-        authoritative.attacker_hp_percent = entry.mon.hpPercent;
-      if (Object.keys(stats).length) authoritative.attacker_stats = stats;
-    } else {
-      if (monAbility) authoritative.defender_ability = monAbility;
-      if (entry.mon.item && !entry.mon.itemConsumed) authoritative.defender_item = entry.mon.item;
-      if (entry.mon.nature) authoritative.defender_nature = entry.mon.nature;
-      if (entry.mon.status) authoritative.defender_status = entry.mon.status;
-      if (Object.keys(entry.mon.boosts).length)
-        authoritative.defender_boosts = { ...entry.mon.boosts };
-      if (entry.mon.hpPercent !== undefined)
-        authoritative.defender_hp_percent = entry.mon.hpPercent;
-      if (Object.keys(stats).length) authoritative.defender_stats = stats;
-    }
-  };
-  setMon("attacker", attacker);
-  setMon("defender", defender);
-  authoritative.attacker_fainted_allies = [...state.sides[attacker.pid].mons.values()].filter(
-    (mon) => mon.fainted,
-  ).length;
-  authoritative.attacker_hits_taken =
-    args.attacker_hits_taken === undefined
-      ? attacker.benched
-        ? 0
-        : attacker.mon.timesAttacked
-      : Math.max(0, Math.trunc(count(args.attacker_hits_taken)));
-  const moveTarget = reference.moveTarget(move);
-  const liveFoes = active.filter((entry) => entry.pid !== attacker.pid).length;
-  const hasLiveAlly = active.some(
-    (entry) => entry.pid === attacker.pid && entry.mon.ident !== attacker.mon.ident,
-  );
-  authoritative.is_spread_hit =
-    moveTarget === "allAdjacentFoes"
-      ? liveFoes === 2
-      : moveTarget === "allAdjacent"
-        ? liveFoes + Number(hasLiveAlly) > 1
-        : false;
-  for (const [side, entry] of [
-    ["attacker", attacker],
-    ["defender", defender],
-  ] as const) {
-    const ally = active.find(
-      (other) => other.pid === entry.pid && other.mon.ident !== entry.mon.ident,
-    );
-    if (!ally) continue;
-    const allyAbility = ability(ally.mon);
-    if (side === "attacker") {
-      authoritative.attacker_ally = ally.mon.species;
-      if (allyAbility) authoritative.attacker_ally_ability = allyAbility;
-      if (ally.mon.item && !ally.mon.itemConsumed) authoritative.attacker_ally_item = ally.mon.item;
-    } else {
-      authoritative.defender_ally = ally.mon.species;
-      if (allyAbility) authoritative.defender_ally_ability = allyAbility;
-      if (ally.mon.item && !ally.mon.itemConsumed) authoritative.defender_ally_item = ally.mon.item;
-    }
-  }
-  const screens = [...state.sides[defender.pid].conditions.keys()].filter((condition) =>
-    SCREEN_MOVES.has(condition),
-  );
-  if (screens.length) authoritative.defender_screens = screens;
   const liveTerrain = [...state.fields.values()].find((effect) => /terrain/i.test(effect.name));
   const weatherOverride = fieldOverride(args.weather);
   const terrainOverride = fieldOverride(args.terrain);
-  const weather = weatherOverride === undefined ? state.weather?.name : weatherOverride;
-  const terrain = terrainOverride === undefined ? liveTerrain?.name : terrainOverride;
-  if (weather) authoritative.weather = weather;
-  if (terrain) authoritative.terrain = terrain;
+  const megas = pair.filter((_, index) => args[index ? "defender_mega" : "attacker_mega"] === true);
+  const entryField = (effects: Map<string, string>) => {
+    const brought = megas.flatMap((entry) => effects.get(stateKey(entry.mon.ability ?? "")) ?? []);
+    return brought.length === 1 ? brought[0] : undefined;
+  };
+  const megaWeather = weatherOverride === undefined ? entryField(ENTRY_WEATHER) : undefined;
+  const megaTerrain = terrainOverride === undefined ? entryField(ENTRY_TERRAIN) : undefined;
+  const weather =
+    weatherOverride === undefined ? (megaWeather ?? state.weather?.name) : weatherOverride;
+  const terrain =
+    terrainOverride === undefined ? (megaTerrain ?? liveTerrain?.name) : terrainOverride;
   const fieldNotes = [
     ...(weatherOverride === undefined
       ? []
@@ -537,15 +529,137 @@ export function estimateDamage(
     ...(terrainOverride === undefined
       ? []
       : [`terrain ${terrainOverride ?? "none"} (live: ${liveTerrain?.name ?? "none"})`]),
+    ...(megaWeather ? [`${megaWeather} from the Mega Evolution's ability`] : []),
+    ...(megaTerrain ? [`${megaTerrain} terrain from the Mega Evolution's ability`] : []),
   ];
-  if (
-    (moveTarget === "allAdjacentFoes" || moveTarget === "allAdjacent") &&
-    !authoritative.is_spread_hit
-  )
-    fieldNotes.push("single-target power: only one foe is fielded for this estimate");
-  if (args.helping_hand === true) authoritative.helping_hand = true;
-  if (args.is_critical_hit === true) authoritative.is_critical_hit = true;
 
+  const supposedStages = {
+    attacker: definedStages(hypotheticalStages.parse(args.attacker_boosts)),
+    defender: definedStages(hypotheticalStages.parse(args.defender_boosts)),
+  };
+  for (const side of ["attacker", "defender"] as const) {
+    const stages = Object.entries(supposedStages[side]).map(
+      ([stat, stage]) => `${stage > 0 ? "+" : ""}${stage} ${stat}`,
+    );
+    if (stages.length) fieldNotes.push(`${side} at ${stages.join(", ")}`);
+  }
+
+  const ability = (mon: MonState) =>
+    mon.abilitySuppressed ? undefined : (mon.ability ?? reference.speciesAbility(mon.species));
+  const faintedOn = (pid: Pid) =>
+    [...state.sides[pid].mons.values()].filter((mon) => mon.fainted).length;
+  const fallen = (entry: FoundMon) => {
+    if (entry.benched) return faintedOn(entry.pid);
+    const volatile = [...entry.mon.volatiles].find((name) => /^fallen\d$/.test(stateKey(name)));
+    return volatile ? Number(stateKey(volatile).slice(-1)) : 0;
+  };
+  const moveTarget = reference.moveTarget(move);
+
+  const estimateWith = (active: readonly MonEntry[]): string => {
+    const exactStats = (entry: MonEntry, includeHp: boolean) => {
+      if (entry.pid !== state.pid) return {};
+      const { transientBase } = entry.mon;
+      const stats: Record<string, number> = transientBase
+        ? reference.formeStats(transientBase, entry.mon.species, entry.mon.stats, entry.mon.nature)
+        : { ...entry.mon.stats };
+      if (includeHp) {
+        const maximum = /\/(\d+)/.exec(entry.mon.hp ?? "")?.[1];
+        if (maximum) stats.hp = Number(maximum);
+      }
+      return stats;
+    };
+    const authoritative: EstimateDamageArguments = {
+      attacker: attacker.mon.species,
+      defender: defender.mon.species,
+      move,
+      weather: weather ?? "none",
+      terrain: terrain ?? "none",
+    };
+    for (const [side, entry] of [
+      ["attacker", attacker],
+      ["defender", defender],
+    ] as const) {
+      const monAbility = ability(entry.mon);
+      const stats = exactStats(entry, side === "defender");
+      if (monAbility) authoritative[`${side}_ability`] = monAbility;
+      if (entry.mon.item && !entry.mon.itemConsumed) authoritative[`${side}_item`] = entry.mon.item;
+      if (entry.mon.nature) authoritative[`${side}_nature`] = entry.mon.nature;
+      if (entry.mon.status) authoritative[`${side}_status`] = entry.mon.status;
+      const boosts = { ...entry.mon.boosts, ...supposedStages[side] };
+      if (Object.keys(boosts).length) authoritative[`${side}_boosts`] = boosts;
+      if (entry.mon.hpPercent !== undefined)
+        authoritative[`${side}_hp_percent`] = entry.mon.hpPercent;
+      if (Object.keys(stats).length) authoritative[`${side}_stats`] = stats;
+      if (entry.mon.types) authoritative[`${side}_types`] = entry.mon.types;
+      const ally = active.find(
+        (other) => other.pid === entry.pid && other.mon.ident !== entry.mon.ident,
+      );
+      if (!ally) continue;
+      const allyAbility = ability(ally.mon);
+      authoritative[`${side}_ally`] = ally.mon.species;
+      if (allyAbility) authoritative[`${side}_ally_ability`] = allyAbility;
+      if (ally.mon.item && !ally.mon.itemConsumed)
+        authoritative[`${side}_ally_item`] = ally.mon.item;
+    }
+    authoritative.attacker_fainted_allies = faintedOn(attacker.pid);
+    authoritative.attacker_fallen = fallen(attacker);
+    authoritative.attacker_hits_taken =
+      args.attacker_hits_taken === undefined
+        ? attacker.benched
+          ? 0
+          : attacker.mon.timesAttacked
+        : Math.max(0, Math.trunc(count(args.attacker_hits_taken)));
+    authoritative.fielded_foes = active.filter((entry) => entry.pid !== attacker.pid).length;
+    authoritative.fielded_ally = active.some(
+      (entry) => entry.pid === attacker.pid && entry.mon.ident !== attacker.mon.ident,
+    );
+    const screens = [...state.sides[defender.pid].conditions.keys()].filter((condition) =>
+      SCREEN_MOVES.has(condition),
+    );
+    if (screens.length) authoritative.defender_screens = screens;
+    if (args.helping_hand === true) authoritative.helping_hand = true;
+    if (args.is_critical_hit === true) authoritative.is_critical_hit = true;
+    return reference.lookup("estimate_damage", authoritative);
+  };
+
+  const scenarios = outgoingOptions("attacker", attacker).flatMap((attackerOut) =>
+    outgoingOptions("defender", defender)
+      .filter((defenderOut) => !attackerOut || !defenderOut || attackerOut.mon !== defenderOut.mon)
+      .map((defenderOut) => {
+        const active = [...fielded];
+        const switches: string[] = [];
+        for (const [entry, outgoing] of [
+          [attacker, attackerOut],
+          [defender, defenderOut],
+        ] as const) {
+          if (!entry.benched) continue;
+          if (!outgoing) {
+            const taken = active.some((other) => other.pid === entry.pid && other.slot === 1);
+            active.push({ ...entry, slot: taken ? 2 : 1 });
+            switches.push(`${entry.mon.species} fields into an empty slot`);
+            continue;
+          }
+          active[active.findIndex((other) => other.mon === outgoing.mon)] = {
+            ...entry,
+            slot: outgoing.slot,
+          };
+          switches.push(`${entry.mon.species} replaces ${outgoing.mon.species}`);
+        }
+        const foes = active.filter((entry) => entry.pid !== attacker.pid).length;
+        const ally = active.some(
+          (entry) => entry.pid === attacker.pid && entry.mon.ident !== attacker.mon.ident,
+        );
+        const lone =
+          (moveTarget === "allAdjacentFoes" && foes < 2) ||
+          (moveTarget === "allAdjacent" && foes + Number(ally) < 2);
+        return { switches, lone, result: estimateWith(active) };
+      }),
+  );
+  if (!scenarios.length)
+    throw new Error("No active slot is free for that switch-in in this damage calculation.");
+
+  if (scenarios[0]!.lone)
+    fieldNotes.push("single-target power: only one foe is fielded for this estimate");
   const known = (entry: MonEntry, side: string) => {
     const monAbility = ability(entry.mon);
     return `${side} ${entry.mon.species}${
@@ -556,14 +670,23 @@ export function estimateDamage(
           : " (ability unknown)"
     }`;
   };
-  const scenario =
-    args.attacker_mega === true || args.defender_mega === true
-      ? "Hypothetical Mega Evolution: projected forme, ability, and raw stats; current field and boosts held fixed. Ambiguous stats retain legal ranges. "
-      : "";
-  const context = `${scenario}Live battle and known team-sheet state applied: ${known(attacker, "attacker")}; ${known(defender, "defender")}.`;
-  const switchContext = switches.length
-    ? `Hypothetical switch-in: ${switches.join("; ")}. Current weather, terrain and boosts held fixed; switch-in events are not simulated.\n`
+  const scenario = megas.length
+    ? "Hypothetical Mega Evolution: projected forme, ability, and raw stats; boosts held fixed, and the field too unless the Mega's ability sets one. Ambiguous stats retain legal ranges. "
     : "";
-  const fieldContext = fieldNotes.length ? `Hypothetical field: ${fieldNotes.join("; ")}.\n` : "";
-  return `${switchContext}${fieldContext}${context}\n${reference.lookup("estimate_damage", authoritative)}`;
+  const context = `${scenario}Live battle and known team-sheet state applied: ${known(attacker, "attacker")}; ${known(defender, "defender")}.`;
+  const fieldContext = fieldNotes.length ? `Hypothetical: ${fieldNotes.join("; ")}.\n` : "";
+  const switchNote =
+    "Current weather, terrain and boosts held fixed; switch-in events are not simulated.";
+  const same = scenarios.every((entry) => entry.result === scenarios[0]!.result);
+  const switchContext = !scenarios[0]!.switches.length
+    ? ""
+    : same && scenarios.length > 1
+      ? `Hypothetical switch-in into either slot (the result is the same for each). ${switchNote}\n`
+      : same
+        ? `Hypothetical switch-in: ${scenarios[0]!.switches.join("; ")}. ${switchNote}\n`
+        : `Hypothetical switch-in; the result depends on which Pokémon leaves. ${switchNote}\n`;
+  const body = same
+    ? scenarios[0]!.result
+    : scenarios.map((entry) => `If ${entry.switches.join(" and ")}: ${entry.result}`).join("\n");
+  return `${switchContext}${fieldContext}${context}\n${body}`;
 }

@@ -337,9 +337,6 @@ export class LLMEngine extends BaseEngine {
   readContext(query: AgentContextQuery = {}) {
     return this.context.read(query);
   }
-  decisionToolDefinitions(): ToolDefinition[] {
-    return structuredClone(this.tools);
-  }
 
   private battleSystem(): string {
     return this.briefed(battleSystemPrompt({ sheets: this.sheets, timed: this.timed }));
@@ -357,8 +354,7 @@ export class LLMEngine extends BaseEngine {
       throw new Error(`unknown battle tool ${name}`);
     if (name !== ACTION_ORDER_TOOL.name && name !== "estimate_damage")
       return this.lookupReferenceTool(name, input);
-    if (!this.activeToolRequest)
-      throw new Error("battle state tools need a battle request first");
+    if (!this.activeToolRequest) throw new Error("battle state tools need a battle request first");
     return name === ACTION_ORDER_TOOL.name
       ? this.state.compareActionOrder(input, this.reference)
       : this.state.estimateDamage(input, this.activeToolRequest, this.reference);
@@ -444,9 +440,7 @@ export class LLMEngine extends BaseEngine {
     return result.value.choices;
   }
 
-  private async run<T>(
-    task: Omit<AgentTask<T>, "model" | "reasoning">,
-  ): Promise<AgentResult<T>> {
+  private async run<T>(task: Omit<AgentTask<T>, "model" | "reasoning">): Promise<AgentResult<T>> {
     const signal =
       this.options.signal && task.signal
         ? AbortSignal.any([this.options.signal, task.signal])

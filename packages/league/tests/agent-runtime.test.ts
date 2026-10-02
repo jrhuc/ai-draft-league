@@ -299,9 +299,7 @@ it("keeps concurrent seats' credentials, tools, and observations private within 
           const live = readLiveRun(runDir);
           expect(live?.agents).toHaveLength(2);
           expect(live?.agents.map((agent) => agent.session).sort()).toEqual(["seat-0", "seat-1"]);
-          expect(JSON.stringify(live)).not.toMatch(
-            /PRIVATE_FIRST_OBSERVATION|RIVAL_OBSERVATION/,
-          );
+          expect(JSON.stringify(live)).not.toMatch(/PRIVATE_FIRST_OBSERVATION|RIVAL_OBSERVATION/);
         });
       } finally {
         release.resolve();
@@ -355,7 +353,6 @@ it("stops recording reference calls once a task spends its budget", async () => 
   expect(JSON.stringify(requests[1])).not.toContain("P399: row");
   expect(JSON.stringify(requests[0])).toContain("at most 400 reference calls");
 }, 60000);
-
 
 it("returns lookups and validation errors to the model and logs the stage line", async () => {
   const { runDir, task, requests, host } = await fixture((_body, index) => {
@@ -479,6 +476,32 @@ it("registers every session submission tool and rejects calls to the inactive on
   });
 }, 60000);
 
+it("rejects a submission field the tool does not declare instead of saving nothing", async () => {
+  const { task, requests, host } = await fixture((_body, index) => ({
+    input:
+      index === 1 ? { pick: "Pikachu", notes: { plan: "lost if dropped" } } : { pick: "Pikachu" },
+  }));
+  const seen: JsonObject[] = [];
+  const result = await host((agents) =>
+    agents.run({
+      ...task,
+      validate: (input) => {
+        seen.push(input);
+        return task.validate(input);
+      },
+    }),
+  );
+  expect(result.attempts).toBe(2);
+  expect(seen).toEqual([{ pick: "Pikachu" }]);
+  expect(result.tools[0]?.arguments).toEqual({
+    pick: "Pikachu",
+    notes: { plan: "lost if dropped" },
+  });
+  expect(result.tools[0]?.result).toContain('submit_pick has no field "notes"');
+  expect(JSON.stringify(requests[1])).toContain("nothing was accepted. Its fields are pick.");
+  expect(requests[1]?.tools).toEqual(requests[0]?.tools);
+}, 60000);
+
 it("preserves nullable object submissions through the SDK and rejects string null", async () => {
   const { task, requests, host } = await fixture((_body, index) => ({
     input: { offer: index === 1 ? "null" : null },
@@ -509,7 +532,8 @@ it("preserves nullable object submissions through the SDK and rejects string nul
   expect(result.value).toEqual({ offer: null });
   expect(result.attempts).toBe(2);
   expect(requests).toHaveLength(2);
-  expect(JSON.stringify(requests[0]?.tools)).toContain(JSON.stringify(schema));
+  const { additionalProperties: _, ...advertised } = schema;
+  expect(JSON.stringify(requests[0]?.tools)).toContain(JSON.stringify(advertised));
 }, 60000);
 
 it("uses upstream retries off-clock and vetoes retries while Showdown's timer is active", async () => {
@@ -552,18 +576,18 @@ it("recovers Gemini malformed calls through native retries and vetoes them on th
 }, 60000);
 
 it.each([
-  { reason: "MALFORMED_FUNCTION_CALL", attempts: 5 },
-  { reason: "MISSING_THOUGHT_SIGNATURE", attempts: 1 },
+  { reason: "MALFORMED_FUNCTION_CALL", retried: true },
+  { reason: "MISSING_THOUGHT_SIGNATURE", retried: false },
 ])(
-  "bounds native Gemini retries for $reason",
-  async ({ reason, attempts }) => {
+  "leaves the retry bound for a persistent Gemini $reason to OpenCode",
+  async ({ reason, retried }) => {
     const { task, requests, host } = await fixture(
       () => ({ finishReason: reason }),
       "gemini-fixture",
       "google",
     );
     await expect(host((agents) => agents.run(task))).rejects.toThrow(reason);
-    expect(requests).toHaveLength(attempts);
+    expect(requests.length > 1).toBe(retried);
   },
   60000,
 );
@@ -679,6 +703,38 @@ it("only advances past an unfinished task when the simulator explicitly supersed
       ).value,
     ).toBe("Pikachu");
     await expect(agents.run(task)).rejects.toThrow("earlier incomplete");
+  });
+}, 60000);
+
+it("replays a task's rejected submissions into a new validator when it resumes", async () => {
+  const started = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  cleanup.push(() => release.resolve());
+  const { task, host } = await fixture(async (_body, index) => {
+    if (index === 2) {
+      started.resolve();
+      await release.promise;
+    }
+    return { input: { pick: index === 1 ? "Eevee" : "Pikachu" } };
+  });
+  const staged = (seen: string[]) => (input: JsonObject) => {
+    const pick = z.string().parse(input.pick);
+    seen.push(pick);
+    if (pick !== "Pikachu") throw new Error("Saved: Eevee as an alternate. Now submit Pikachu.");
+    return [...seen];
+  };
+  await host(async (agents) => {
+    const controller = new AbortController();
+    const interrupted = expect(
+      agents.run({ ...task, validate: staged([]), signal: controller.signal }),
+    ).rejects.toThrow();
+    await started.promise;
+    controller.abort(new Error("process stopped"));
+    await interrupted;
+    release.resolve();
+    const resumed = await agents.run({ ...task, validate: staged([]) });
+    expect(resumed.value).toEqual(["Eevee", "Pikachu"]);
+    expect(resumed.attempts).toBe(2);
   });
 }, 60000);
 

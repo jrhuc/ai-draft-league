@@ -6,6 +6,10 @@ import { z } from "zod";
 
 export const RUN_DATABASE_FILE = "league.sqlite";
 
+/** The journal stays in rollback mode because archive tooling tars live run directories, so a
+ * connection has to wait out another process's lock instead of failing on it. */
+const BUSY_TIMEOUT_MS = 5_000;
+
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS league_transitions (
     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,7 +93,7 @@ function open(runDir: string): DatabaseSync {
   const file = path.join(runDir, RUN_DATABASE_FILE);
   const existed = fs.existsSync(file);
   if (!existed) fs.mkdirSync(runDir, { recursive: true });
-  const database = new DatabaseSync(file);
+  const database = new DatabaseSync(file, { timeout: BUSY_TIMEOUT_MS });
   database.exec("PRAGMA foreign_keys = ON");
   database.exec("PRAGMA synchronous = FULL");
   if (!existed || !prepared.has(file)) {

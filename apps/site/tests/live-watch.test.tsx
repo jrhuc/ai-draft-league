@@ -74,10 +74,13 @@ test("watches an unfinished run without a season export and updates the player w
   const frame = document.querySelector<HTMLIFrameElement>(".ps-frame")!;
   const doc = frame.srcdoc;
   const post = vi.spyOn(frame.contentWindow!, "postMessage");
-  window.dispatchEvent(
-    new MessageEvent("message", { data: { type: "ps-ready" }, source: frame.contentWindow }),
-  );
-  expect(post).toHaveBeenCalledWith({ type: "ps-live", raw: "|turn|1\n", follow: true }, "*");
+  await vi.waitFor(() => {
+    post.mockClear();
+    window.dispatchEvent(
+      new MessageEvent("message", { data: { type: "ps-ready" }, source: frame.contentWindow }),
+    );
+    expect(post).toHaveBeenCalledWith({ type: "ps-live", raw: "|turn|1\n", follow: true }, "*");
+  });
   document.querySelector<HTMLInputElement>(".live-follow input")!.click();
   await vi.waitFor(() =>
     expect(post).toHaveBeenLastCalledWith(

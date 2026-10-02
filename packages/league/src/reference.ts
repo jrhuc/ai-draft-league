@@ -1,6 +1,3 @@
-import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import type { Battle, Dex } from "pokemon-showdown";
 
 import { defaultPsDir } from "./paths.js";
@@ -12,6 +9,9 @@ import {
   lookupSpeciesArgumentsSchema,
   matchupArgumentsSchema,
   type MatchupArguments,
+  type MoveMatchup,
+  type MoveMatchupInput,
+  moveMatchup,
   type ReferenceCalculationContext,
 } from "./reference-calculations.js";
 import type {
@@ -29,20 +29,15 @@ import {
   cleanDescription,
   effectivenessDetail,
   effectivenessLabel,
-  filledStats,
   id,
   investmentLimits,
   modifyRange,
+  projectStats,
   SPEED_HALVING_ITEMS,
-  speciesMoveType,
   statRange,
-  statSet,
-  STAT_IDS,
   TARGET_TAGS,
   typeModifier,
   uniqueNames,
-  visibleDamageBlock,
-  weatherBallOverride,
 } from "./reference-mechanics.js";
 import { loadShowdown, type ShowdownApi, showdownCommit } from "./showdown.js";
 import type { JsonObject } from "./types.js";
@@ -58,8 +53,6 @@ export type {
 } from "./reference-contracts.js";
 export type { EstimateDamageArguments } from "./reference-calculations.js";
 
-const REFERENCE_RENDER_DIGEST_PROTOCOL = "showdown-reference-render-v1";
-
 type FormatDataKind = "move" | "item";
 
 const HIT_COUNT_MOVES = new Set(["ragefist"]);
@@ -69,6 +62,7 @@ export class ShowdownReference {
   private readonly battle: Battle;
   private readonly showdown: ShowdownApi;
   private readonly resolvedFormat: ReturnType<ShowdownApi["Dex"]["formats"]["get"]>;
+  private readonly usedTypes = new Map<string, string>();
 
   constructor(
     readonly format: string,
@@ -103,45 +97,25 @@ export class ShowdownReference {
     return mega.exists && !mega.isNonstandard ? mega : undefined;
   }
 
-  megaStats(name: string, mega: Dex.Species, stats: Record<string, number>, nature?: string) {
-    const base = this.getSpecies(name);
-    const limits = investmentLimits(this.battle);
-    const natures = nature ? [this.dex.natures.get(nature)] : this.dex.natures.all();
-    const projected: Record<string, number> = {};
-    for (const stat of STAT_IDS) {
-      if (stats[stat] === undefined) continue;
-      const values = new Set<number>();
-      for (const alignment of natures) {
-        for (let ev = 0; ev <= limits.perStat; ev += 1) {
-          for (let iv = limits.fixedIvs ? 31 : 0; iv <= 31; iv += 1) {
-            const set = statSet(
-              this.battle,
-              alignment.name,
-              { ...filledStats(0), [stat]: ev },
-              filledStats(iv),
-            );
-            if (this.battle.statModify(base.baseStats, set, stat) === stats[stat])
-              values.add(this.battle.statModify(mega.baseStats, set, stat));
-          }
-        }
-      }
-      if (values.size === 1) projected[stat] = [...values][0]!;
-    }
-    return projected;
+  /** Exact stats of `name` carried to another of its formes, such as its Mega or Aegislash-Blade. */
+  formeStats(
+    name: string,
+    forme: string,
+    stats: Readonly<Record<string, number>>,
+    nature?: string,
+  ): Record<string, number> {
+    return projectStats(
+      this.battle,
+      this.getSpecies(name).baseStats,
+      this.getSpecies(forme).baseStats,
+      stats,
+      nature,
+    );
   }
 
   moveTarget(name: string): string | undefined {
     const move = this.dex.moves.get(name);
     return move.exists ? move.target : undefined;
-  }
-
-  static renderRevision(): string {
-    return createHash("sha256")
-      .update(REFERENCE_RENDER_DIGEST_PROTOCOL)
-      .update("\0")
-      .update(readFileSync(fileURLToPath(import.meta.url)))
-      .digest("hex")
-      .slice(0, 12);
   }
 
   renderCompact(mons: CompactMon[]): string[] {
@@ -182,7 +156,7 @@ export class ShowdownReference {
         const move = this.dex.moves.get(moveName);
         if (!move.exists) return [];
         const power = move.basePower ? String(move.basePower) : "no power";
-        const moveType = speciesMoveType(move.id, move.type, species.name);
+        const moveType = move.category === "Status" ? move.type : this.usedType(species, move.id);
         const details = [`${moveType}/${move.category}/${power}`];
         if (move.target !== "normal") details.push(TARGET_TAGS.get(move.target) ?? move.target);
         if (move.priority) details.push(`priority ${move.priority > 0 ? "+" : ""}${move.priority}`);
@@ -200,6 +174,8 @@ export class ShowdownReference {
       speed: `${low}-${high}`,
       moves,
     };
+    const ability = this.speciesAbility(species.name);
+    if (ability) reference.ability = ability;
     const mega = mon.item ? this.megaSpecies(species.name, mon.item) : undefined;
     if (mega) {
       const [megaLow, megaHigh] = statRange(this.battle, mega.baseStats, knownNature, "spe");
@@ -263,11 +239,6 @@ export class ShowdownReference {
     return { raw, effective, modifiers };
   }
 
-  movePriority(name: string): number | undefined {
-    const move = this.dex.moves.get(name);
-    return move.exists ? move.priority : undefined;
-  }
-
   priorityProfile(
     name: string,
     context: {
@@ -317,7 +288,7 @@ export class ShowdownReference {
   renderActiveMatchups(attackers: MatchupMon[], defenders: MatchupMon[], weather = ""): string[] {
     const lines: string[] = [];
     let examined = false;
-    const weatherId = canonicalWeather(weather);
+    const held = (mon: MatchupMon) => (mon.itemConsumed ? undefined : mon.item);
     for (const attacker of attackers) {
       const species = this.dex.species.get(attacker.species);
       if (!species.exists) continue;
@@ -325,24 +296,8 @@ export class ShowdownReference {
         const move = this.dex.moves.get(moveName);
         if (!move.exists || move.category === "Status" || !move.type || move.type === "???")
           continue;
-        const override = weatherBallOverride(move.id, weatherId);
-        const speciesType = speciesMoveType(move.id, move.type, species.name);
-        const moveType =
-          override?.type ??
-          speciesMoveType(
-            move.id,
-            move.type,
-            species.name,
-            attacker.ability ?? "",
-            !!move.flags.sound,
-          );
-        const abilityConverted = !override && moveType !== speciesType && attacker.ability;
-        const typeLabel = override
-          ? `currently ${override.type} in ${weather}`
-          : moveType !== move.type
-            ? `currently ${moveType} for ${species.name}${abilityConverted ? ` (${attacker.ability})` : ""}`
-            : moveType;
         const bits: string[] = [];
+        let moveType = move.type;
         for (const defender of defenders) {
           if (
             attacker.ally !== undefined &&
@@ -353,20 +308,55 @@ export class ShowdownReference {
           const target = this.dex.species.get(defender.species);
           if (!target.exists) continue;
           examined = true;
-          const modifier = typeModifier(this.dex, moveType, target.types);
-          const blockedBy = visibleDamageBlock(attacker, defender, move, moveType, modifier);
-          if (blockedBy)
+          const matchup = this.matchup({
+            attacker: species,
+            defender: target,
+            moveId: move.id,
+            attackerAbility: attacker.ability,
+            defenderAbility: defender.ability,
+            attackerItem: held(attacker),
+            defenderItem: held(defender),
+            attackerTypes: attacker.types,
+            defenderTypes: defender.types,
+            weather,
+          });
+          moveType = matchup.moveType;
+          if (matchup.via)
             bits.push(
-              `${target.name} immune via ${blockedBy} (type chart ${effectivenessLabel(modifier)})`,
+              `${target.name} immune via ${matchup.via} (type chart ${effectivenessLabel(matchup.chart)})`,
             );
-          else if (modifier !== 1) bits.push(`${target.name} ${effectivenessLabel(modifier)}`);
+          else if (matchup.multiplier !== 1)
+            bits.push(`${target.name} ${effectivenessLabel(matchup.multiplier)}`);
         }
+        const typeLabel = moveType === move.type ? moveType : `currently ${moveType}`;
         if (bits.length)
           lines.push(`- ${species.name} ${move.name} (${typeLabel}): ${bits.join("; ")}`);
       }
     }
     if (examined) lines.push("- Damaging matchups not listed above are neutral (1x).");
     return lines;
+  }
+
+  /** The type a species' own forme gives a move, such as Raging Bull's, whatever it targets. */
+  private usedType(species: Dex.Species, moveId: string): string {
+    const key = `${species.id}|${moveId}`;
+    const known = this.usedTypes.get(key);
+    if (known) return known;
+    const type = this.matchup({ attacker: species, defender: species, moveId }).moveType;
+    this.usedTypes.set(key, type);
+    return type;
+  }
+
+  /** A move the scratch battle cannot stage (it throws for multi-target allocation) falls back to the plain type chart. */
+  private matchup(input: MoveMatchupInput): MoveMatchup {
+    try {
+      return moveMatchup(this.calculationContext(), input);
+    } catch {
+      const move = this.dex.moves.get(input.moveId);
+      const types = input.defenderTypes ?? input.defender.types;
+      const chart = typeModifier(this.dex, move.type, types);
+      return { moveType: move.type, multiplier: chart, chart };
+    }
   }
 
   render(query: ReferenceQuery = {}): string[] {
@@ -581,58 +571,45 @@ export class ShowdownReference {
     const defender = this.getSpecies(defenderName);
     if (!defender.exists)
       return `No species data for ${JSON.stringify(defenderName)} in ${this.format}.`;
-    const attackerName = args.attacker;
-    const attacker = attackerName ? this.getSpecies(attackerName) : undefined;
-    let attackType = args.attacker_type;
-    let moveName = args.move;
-    let typeNote = "";
-    if (moveName.trim()) {
-      const move = this.dex.moves.get(moveName);
-      if (!move.exists) return `No move data for ${JSON.stringify(moveName)} in ${this.format}.`;
-      const error = this.formatLegalityError("move", moveName);
+    const attacker = args.attacker ? this.getSpecies(args.attacker) : undefined;
+    const into = `into ${defender.name} (${defender.types.join("/")})`;
+    if (args.move.trim()) {
+      const move = this.dex.moves.get(args.move);
+      if (!move.exists) return `No move data for ${JSON.stringify(args.move)} in ${this.format}.`;
+      const error = this.formatLegalityError("move", args.move);
       if (error) return error;
-      if (move.id === "ragingbull" && !attacker?.exists)
-        return "attacker is required to resolve Raging Bull typing.";
-      attackType = speciesMoveType(move.id, move.type, attacker?.name ?? "");
-      if (attacker?.exists) {
-        const abilities = [
-          ...new Set(Object.values(attacker.abilities).flatMap((entry) => (entry ? [entry] : []))),
-        ];
-        const conversions = abilities.flatMap((abilityName) => {
-          const converted = speciesMoveType(
-            move.id,
-            move.type,
-            attacker.name,
-            abilityName,
-            !!move.flags.sound,
-          );
-          return converted === attackType ? [] : [{ abilityName, converted }];
+      if (!attacker?.exists) {
+        if (move.id === "ragingbull") return "attacker is required to resolve Raging Bull typing.";
+        return `${move.name} (${move.type}) ${into}: ${effectivenessDetail(this.dex, move.type, defender.types)}.`;
+      }
+      const verdict = (ability?: string) => {
+        const matchup = this.matchup({
+          attacker,
+          defender,
+          moveId: move.id,
+          attackerAbility: ability,
         });
-        const onlyConversion = conversions.length === 1 ? conversions[0] : undefined;
-        if (onlyConversion && abilities.length === 1) {
-          attackType = onlyConversion.converted;
-          typeNote = ` via ${onlyConversion.abilityName}`;
-        } else if (conversions.length) {
-          typeNote = ` (${conversions
-            .map((entry) => `${entry.abilityName} would make it ${entry.converted}`)
-            .join("; ")})`;
-        }
-      }
-      moveName = move.name;
+        return `${matchup.moveType}: ${effectivenessLabel(matchup.multiplier)}`;
+      };
+      const abilities = uniqueNames(Object.values(attacker.abilities));
+      const plain = verdict();
+      const differing = abilities.filter((ability) => verdict(ability) !== plain);
+      const sole = abilities.length === 1 ? abilities[0] : undefined;
+      if (sole && differing.length)
+        return `${attacker.name} ${move.name} ${into}: ${verdict(sole)} with ${sole}.`;
+      const variants = differing.map((ability) => `with ${ability}, ${verdict(ability)}`);
+      return `${attacker.name} ${move.name} ${into}: ${plain}${variants.length ? ` (${variants.join("; ")})` : ""}.`;
     }
-    if (!attackType.trim()) {
-      if (attacker?.exists) {
-        const perType = attacker.types.map(
-          (type) => `${type}: ${effectivenessDetail(this.dex, type, defender.types)}`,
-        );
-        return `${attacker.name} types into ${defender.name} (${defender.types.join("/")}): ${perType.join(" | ")}.`;
-      }
-      return "Provide move or attacker_type.";
+    if (!args.attacker_type.trim()) {
+      if (!attacker?.exists) return "Provide move or attacker_type.";
+      const perType = attacker.types.map(
+        (type) => `${type}: ${effectivenessDetail(this.dex, type, defender.types)}`,
+      );
+      return `${attacker.name} types ${into}: ${perType.join(" | ")}.`;
     }
-    const type = this.dex.types.get(attackType);
-    if (!type.exists) return `No type data for ${JSON.stringify(attackType)}.`;
-    const source = moveName ? `${moveName} (${type.name}${typeNote})` : type.name;
-    return `${source} into ${defender.name} (${defender.types.join("/")}): ${effectivenessDetail(this.dex, type.name, defender.types)}.`;
+    const type = this.dex.types.get(args.attacker_type);
+    if (!type.exists) return `No type data for ${JSON.stringify(args.attacker_type)}.`;
+    return `${type.name} ${into}: ${effectivenessDetail(this.dex, type.name, defender.types)}.`;
   }
 
   private lookupOne(

@@ -13,7 +13,7 @@ import {
 import { loadShowdown } from "./showdown.js";
 import { normalizeStageEvidence, type StageEvidence } from "./stage-evidence.js";
 import type { JsonObject } from "./types.js";
-import { fileSlug } from "./value.js";
+import { clip, fileSlug } from "./value.js";
 import type { BoardInfo, DraftBoardMonView } from "./views.js";
 
 const BOARD_SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -108,7 +108,10 @@ export const DRAFT_PROMPT_POLICY = {
   turnInstruction:
     'Call submit_pick with {"pick":"<board-id>"}. Optional evidence fields are "reasoning":"<concise reason>" and, only when your durable plan changed, "plan":"<your complete plan for your remaining picks>". The plan limit is 4000 characters; oversized updates are rejected.',
   turnTemplate:
-    "Overall pick {{pick}} of {{total}}; {{remaining}} left for you, {{budget}} points to fill them from what is still on the board.",
+    "Overall pick {{pick}} of {{total}}; {{remaining}} left for you, {{budget}} points to fill them from what is still on the board. {{next}}",
+  nextPick: "Your next pick is overall pick {{pick}}, after {{between}} picks by other coaches.",
+  consecutivePick: "Your next pick is overall pick {{pick}}, straight after this one.",
+  finalPick: "This is your final pick.",
   boardHeading: `DRAFT BOARD (${BOARD_COLUMNS}):`,
   boardOrder: "cost-descending",
   takenHeading: "ALREADY DRAFTED:",
@@ -282,18 +285,25 @@ function cheapestByBase(state: DraftState, drafter: number, exclude?: DraftBoard
   return [...floor.values()].sort((a, b) => a - b);
 }
 
+function reserveAfter(state: DraftState, drafter: number, mon: DraftBoardMon) {
+  const picks = state.board.picks - state.rosters[drafter]!.length - 1;
+  const rest = cheapestByBase(state, drafter, mon);
+  return {
+    picks,
+    fillable: rest.length >= picks,
+    cost: rest.slice(0, picks).reduce((sum, cost) => sum + cost, 0),
+  };
+}
+
 export function legalPicks(state: DraftState, drafter: number): DraftBoardMon[] {
   const roster = state.rosters[drafter]!;
   if (roster.length >= state.board.picks) return [];
   const owned = new Set(roster.map((mon) => mon.base));
-  const slotsLeft = state.board.picks - roster.length;
   return state.board.mons.filter((mon) => {
     if (state.taken.has(mon.id) || owned.has(mon.base)) return false;
     if (mon.cost > state.budgets[drafter]!) return false;
-    const rest = cheapestByBase(state, drafter, mon);
-    if (rest.length < slotsLeft - 1) return false;
-    const reserve = rest.slice(0, slotsLeft - 1).reduce((sum, cost) => sum + cost, 0);
-    return reserve <= state.budgets[drafter]! - mon.cost;
+    const reserve = reserveAfter(state, drafter, mon);
+    return reserve.fillable && reserve.cost <= state.budgets[drafter]! - mon.cost;
   });
 }
 
@@ -325,7 +335,7 @@ export function applyDraftPick(state: DraftState, action: DraftPickAction): Draf
   const legal = legalPicks(state, action.entrant);
   if (!legal.includes(mon)) {
     throw new Error(
-      `draft pick ${expectedPick} is illegal: ${rejection(mon.id, legal, state, action.entrant)}`,
+      `draft pick ${expectedPick} is illegal: ${rejection(mon.id, state, action.entrant)}`,
     );
   }
 
@@ -336,10 +346,6 @@ export function applyDraftPick(state: DraftState, action: DraftPickAction): Draf
   const taken = new Map(state.taken);
   taken.set(mon.id, action.entrant);
   return { board: state.board, taken, rosters, budgets, teamNames: [...state.teamNames] };
-}
-
-export function maxAffordable(legal: readonly DraftBoardMon[]): number {
-  return legal.length ? Math.max(...legal.map((mon) => mon.cost)) : 0;
 }
 
 export function snakeOrder(entrants: number, rounds: number): number[] {
@@ -420,13 +426,22 @@ export function draftUserPrompt(
       : [DRAFT_PROMPT_POLICY.emptyRoster]),
   );
   if (notebook) lines.push("", DRAFT_PROMPT_POLICY.notebookHeading, notebook);
+  const nextPick = snakeOrder(models.length, state.board.picks).indexOf(drafter, pickNumber + 1);
+  const between = nextPick - pickNumber - 1;
+  const next =
+    nextPick === -1
+      ? DRAFT_PROMPT_POLICY.finalPick
+      : (between === 0 ? DRAFT_PROMPT_POLICY.consecutivePick : DRAFT_PROMPT_POLICY.nextPick)
+          .replace("{{pick}}", String(nextPick + 1))
+          .replace("{{between}}", String(between));
   lines.push(
     "",
     DRAFT_PROMPT_POLICY.turnTemplate
       .replace("{{pick}}", String(pickNumber + 1))
       .replace("{{total}}", String(models.length * state.board.picks))
       .replace("{{budget}}", String(state.budgets[drafter]))
-      .replace("{{remaining}}", `${slotsLeft} ${slotsLeft === 1 ? "pick" : "picks"}`),
+      .replace("{{remaining}}", `${slotsLeft} ${slotsLeft === 1 ? "pick" : "picks"}`)
+      .replace("{{next}}", next),
   );
   lines.push("", DRAFT_PROMPT_POLICY.turnInstruction);
   return lines.join("\n");
@@ -441,7 +456,6 @@ interface ParsedPick {
 
 function rejection(
   pickId: string,
-  legal: DraftBoardMon[],
   state: DraftState,
   drafter: number,
   models?: readonly string[],
@@ -459,10 +473,17 @@ function rejection(
   if (clash) {
     return `${entry.name} shares the species ${entry.base} with your ${clash.name}, and a roster holds only one of each.`;
   }
-  const affordable = maxAffordable(legal);
+  const budget = state.budgets[drafter]!;
+  const points = (count: number) => `${count} ${count === 1 ? "point" : "points"}`;
+  if (entry.cost > budget)
+    return `${entry.name} costs ${entry.cost}, but you have ${points(budget)} left.`;
+  const reserve = reserveAfter(state, drafter, entry);
+  const picks = `${reserve.picks} ${reserve.picks === 1 ? "pick" : "picks"}`;
+  if (!reserve.fillable)
+    return `Taking ${entry.name} leaves too few undrafted species on the board for your other ${picks}.`;
   return (
-    `${entry.name} costs ${entry.cost}, but you can spend at most ${affordable} ` +
-    `${affordable === 1 ? "point" : "points"} on this pick and still fill your remaining slots.`
+    `${entry.name} costs ${entry.cost}: taking it leaves ${points(budget - entry.cost)} ` +
+    `for your other ${picks}, which need at least ${reserve.cost}.`
   );
 }
 
@@ -498,15 +519,14 @@ export function parsePick(
   const mon = legal.find(
     (candidate) => candidate.id === pickId || fileSlug(candidate.name) === pickId,
   );
-  if (!mon) throw new Error(rejection(pickId, legal, state, drafter, models));
+  if (!mon) throw new Error(rejection(pickId, state, drafter, models));
   const evidence = normalizeStageEvidence(reply.data.reasoning, reply.data.plan, {
     currentNotebook,
-    rationaleLimit: DRAFT_PROMPT_POLICY.rationaleLimit,
     notebookLimit: DRAFT_PROMPT_POLICY.notebookLimit,
   });
   return {
     mon,
-    reasoning: evidence.rationale,
+    reasoning: clip(evidence.rationale, DRAFT_PROMPT_POLICY.rationaleLimit),
     evidence,
     notebook: evidence.supplied.notebookUpdate ? evidence.notebook : undefined,
   };

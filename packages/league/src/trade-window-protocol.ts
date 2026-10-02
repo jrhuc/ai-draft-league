@@ -24,7 +24,6 @@ export const MAX_TRADE_OFFERS = 3;
 export const DEFAULT_SWAPS_ALLOWED = 6;
 export const MAX_SWAPS_ALLOWED = 20;
 
-
 export const TRADE_WINDOW_PROMPT_POLICY = {
   systemTemplate: [
     "You are {{model}}, manager of a franchise in a Pokémon VGC draft league played in the format {{format}}.",
@@ -45,7 +44,6 @@ export const TRADE_WINDOW_PROMPT_POLICY = {
   standingsHeading: "LEAGUE STANDINGS (rank | coach | W-L | games):",
   resultsHeading: "YOUR ROUND-ROBIN RESULTS:",
   wordsHeading: "YOUR PRIVATE WORDS:",
-  rostersHeading: "PUBLIC CURRENT ROSTERS:",
   scheduleHeading: "YOUR REMAINING SCHEDULE (week | opponent | their current roster):",
   historyHeading: "PUBLIC TRANSACTIONS FROM EARLIER WINDOWS:",
   freeAgentsHeading: `UNDRAFTED FREE AGENTS (${BOARD_COLUMNS}):`,
@@ -206,10 +204,6 @@ export interface ParsedTradeOffer {
 export interface ParsedTradeResponse {
   accept: boolean;
   reasoning: string;
-}
-
-export interface TradePromptRenderOptions {
-  position?: TradeWindowPosition;
 }
 
 export function validateSwapsAllowed(value: number, context = "swaps allowed"): void {

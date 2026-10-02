@@ -160,7 +160,24 @@ export function readCompletedSeriesGameLogs(runDir: string, seriesId: string): s
   );
 }
 
-/** Decision rows of the attempts that resolved each game; rows from superseded attempts are dropped. */
+/** A game keeps the decision rows of the attempt that resolved it and the last review written for
+ * it: a resumed attempt finishes the reviews an earlier one left pending, under its own attempt id. */
+export function resolvedGameRows(
+  rows: JsonObject[],
+  owners: ReadonlyMap<number, string>,
+): JsonObject[] {
+  const reviews = new Map<number, JsonObject>();
+  for (const row of rows) {
+    if (row.kind === "game_reflection") reviews.set(Number(row.game_number), row);
+  }
+  return rows.filter((row) => {
+    const game = Number(row.game_number);
+    return row.kind === "game_reflection"
+      ? owners.has(game) && reviews.get(game) === row
+      : owners.get(game) === row.attempt_id;
+  });
+}
+
 export function readCompletedSeriesDecisionRows(
   runDir: string,
   seriesId: string,
@@ -168,10 +185,10 @@ export function readCompletedSeriesDecisionRows(
 ): JsonObject[] {
   const series = readStoredSeries(runDir, seriesId);
   if (!series?.completedAttemptId) throw new Error(`series ${seriesId} is not complete`);
-  const owners = new Map(series.games.map((game) => [game.gameNumber, game.attemptId]));
-  return readJsonlObjects(
-    path.join(seriesDirectory(runDir, seriesId), `${pid}-decisions.jsonl`),
-  ).filter((row) => owners.get(Number(row.game_number)) === row.attempt_id);
+  return resolvedGameRows(
+    readJsonlObjects(path.join(seriesDirectory(runDir, seriesId), `${pid}-decisions.jsonl`)),
+    new Map(series.games.map((game) => [game.gameNumber, game.attemptId])),
+  );
 }
 
 interface CompletedSeriesEvidence {

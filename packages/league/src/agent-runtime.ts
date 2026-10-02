@@ -5,7 +5,6 @@ import type { SessionInboxInfo, SessionMessageInfo } from "@opencode/client";
 import type { OpenCode, OpenCodeEvent } from "@opencode/sdk";
 import { z } from "zod";
 
-import "./opencode-loader.js";
 import { LiveRun } from "./live-run.js";
 import {
   modelUpstreamRoutes,
@@ -15,7 +14,7 @@ import {
   type ReasoningLevel,
 } from "./providers.js";
 import type { AgentActivity, AgentProgress, LiveGame } from "./public/live-protocol.js";
-import type { JsonObject, ToolDefinition } from "./types.js";
+import type { JsonObject, JsonValue, ToolDefinition } from "./types.js";
 
 export interface AgentTool {
   definition: ToolDefinition;
@@ -71,6 +70,63 @@ type Message = SessionMessageInfo;
 type UserMessage = Extract<Message, { type: "user" }>;
 
 const object = z.record(z.string(), z.json());
+const schemaNode = z.object({
+  properties: object.optional(),
+  additionalProperties: z.json().optional(),
+  items: z.json().optional(),
+});
+
+function undeclaredFields(schema: JsonValue, value: JsonValue, path = ""): string[] {
+  const node = schemaNode.safeParse(schema);
+  if (!node.success) return [];
+  const { properties, additionalProperties, items } = node.data;
+  if (Array.isArray(value))
+    return items === undefined
+      ? []
+      : value.flatMap((item, index) => undeclaredFields(items, item, `${path}[${index}]`));
+  const record = object.safeParse(value);
+  if (!record.success || !properties) return [];
+  return Object.entries(record.data).flatMap(([key, child]) => {
+    const declared = properties[key];
+    const field = path ? `${path}.${key}` : key;
+    if (declared === undefined) return additionalProperties === false ? [field] : [];
+    return undeclaredFields(declared, child, field);
+  });
+}
+
+function rejectUndeclared(tool: ToolDefinition, args: JsonObject): void {
+  const undeclared = undeclaredFields(tool.parameters, args);
+  if (!undeclared.length) return;
+  const declared = Object.keys(schemaNode.parse(tool.parameters).properties ?? {});
+  throw new Error(
+    `${tool.name} has no field ${undeclared.map((field) => JSON.stringify(field)).join(", ")}; nothing was accepted. Its fields are ${declared.join(", ")}.`,
+  );
+}
+
+function withoutClosedObjects(schema: JsonValue): JsonValue {
+  if (Array.isArray(schema)) return schema.map(withoutClosedObjects);
+  const record = object.safeParse(schema);
+  if (!record.success) return schema;
+  return Object.fromEntries(
+    Object.entries(record.data)
+      .filter(([key, value]) => key !== "additionalProperties" || value !== false)
+      .map(([key, value]) => [key, withoutClosedObjects(value)]),
+  );
+}
+
+const anyJson = z.json();
+
+/** OpenCode deletes every field a closed schema does not declare before the league sees the call, so a misnamed field would read as an omitted one. The league advertises the schema open, receives the arguments as sent, and rejects undeclared fields by name. */
+function declaredInput(parameters: JsonObject) {
+  const advertised = withoutClosedObjects(parameters);
+  return {
+    "~standard": {
+      ...anyJson["~standard"],
+      jsonSchema: { input: () => advertised, output: () => advertised },
+    },
+  };
+}
+
 const SUBMISSION_REMINDERS = 2;
 const REFERENCE_CALL_BUDGET = 400;
 const CATALOG_INTRO = `Code Mode catalog: these are all the tools callable inside \`execute\` through \`tools\`, with their exact signatures. Run independent calls concurrently with \`Promise.all\` and return every result you need to read. A call the harness rejects returns its error message as its result instead of throwing, so the rest of the batch still completes. A task may make at most ${REFERENCE_CALL_BUDGET} reference calls in total; the call that exceeds it throws and ends the program, so a loop over a whole board or roster wastes the budget on rows you will never read.`;
@@ -216,7 +272,6 @@ class AgentHost {
   }
 
   private async create(): Promise<Host> {
-    /** The resolver must be registered before loading the SDK's extensionless imports. */
     const { OpenCode: SDK } = await import("@opencode/sdk");
     const directory = path.resolve(this.runDir, "agents");
     fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -334,11 +389,13 @@ function taskAccepted(messages: readonly Message[], task: string): boolean {
   );
 }
 
+/** `replay` rebuilds a validator's state in a new process: a review that saved some pages and rejected others keeps those saves only in its validator, so the rejected submissions run through it again before the task resumes or its accepted one is read back. */
 function acceptedResult<T>(
   task: AgentTask<T>,
   sessionID: string,
   messages: readonly Message[],
   submitted?: { value: T },
+  replay = false,
 ): AgentResult<T> | undefined {
   const usage: Record<string, number> = {};
   const reasoning: string[] = [];
@@ -378,6 +435,13 @@ function acceptedResult<T>(
       tools.push({ name: part.name, arguments: input, result: content });
       if (part.name !== task.submission.name) continue;
       attempts += 1;
+      if (replay && part.state.status === "error") {
+        try {
+          task.validate(input);
+        } catch {
+          continue;
+        }
+      }
       if (
         part.state.status === "completed" &&
         part.state.metadata?.accepted === true &&
@@ -419,7 +483,7 @@ function planTask<T>(
     throw new Error(`Pending agent task input changed: ${task.task}`);
   if (prior && (prior.text !== prompt || prior.metadata?.system !== task.system))
     throw new Error(`Agent task input changed: ${task.task}`);
-  const recovered = acceptedResult(task, sessionID, messages);
+  const recovered = acceptedResult(task, sessionID, messages, undefined, true);
   if (recovered) return { kind: "recovered", result: recovered };
   const latest = messages.findLast(
     (message) => message.type === "user" && message.metadata?.task !== undefined,
@@ -471,7 +535,6 @@ async function codeModeCatalog(tools: readonly AgentTool[]): Promise<string> {
 }
 
 async function leaguePlugin(slot: AgentSlot) {
-  /** The resolver must be registered before loading the SDK's extensionless imports. */
   const { Plugin } = await import("@opencode/plugin");
   const initial = await slot.ready.promise;
   const spec = parseSpec(initial.task.model);
@@ -481,15 +544,15 @@ async function leaguePlugin(slot: AgentSlot) {
     async setup(ctx) {
       const routes = modelUpstreamRoutes();
       if (routes.size)
-        await ctx.catalog.transform((editor) => {
+        await ctx.model.transform((editor) => {
           for (const [from, upstream] of routes) {
             const route = parseSpec(from);
-            const target = editor.model.get(route.provider, upstream);
+            const target = editor.get(route.provider, upstream);
             if (!target)
               throw new Error(
                 `VGC_MODEL_UPSTREAM target ${route.provider}:${upstream} is not in the catalog`,
               );
-            editor.model.update(route.provider, route.model, (model) => {
+            editor.update(route.provider, route.model, (model) => {
               model.modelID = target.modelID;
               model.cost = target.cost;
             });
@@ -533,7 +596,7 @@ async function leaguePlugin(slot: AgentSlot) {
           editor.add({
             name: tool.definition.name,
             description: tool.definition.description,
-            input: tool.definition.parameters,
+            input: declaredInput(tool.definition.parameters),
             execute: async (input) => {
               await admitted.promise;
               task.signal?.throwIfAborted();
@@ -553,6 +616,7 @@ async function leaguePlugin(slot: AgentSlot) {
                 content = record(tool.definition.name, args, () => {
                   if (active.submitted)
                     throw new Error("This task already has an accepted submission.");
+                  rejectUndeclared(tool.definition, args);
                   return tool.run(args);
                 });
               } catch (error) {
@@ -565,7 +629,7 @@ async function leaguePlugin(slot: AgentSlot) {
           editor.add({
             name: submission.name,
             description: submission.description,
-            input: submission.parameters,
+            input: declaredInput(submission.parameters),
             options: { codemode: false },
             execute: async (input) => {
               await admitted.promise;
@@ -589,6 +653,7 @@ async function leaguePlugin(slot: AgentSlot) {
                   ),
                 };
               const content = record(submission.name, args, () => {
+                rejectUndeclared(submission, args);
                 task.validate(args);
                 return "Submission accepted. End your reply; await the next observation.";
               });
@@ -603,7 +668,7 @@ async function leaguePlugin(slot: AgentSlot) {
         await active.admitted.promise;
         task.signal?.throwIfAborted();
         if (!validated) {
-          const models = await ctx.catalog.model.list();
+          const models = await ctx.model.list();
           const model = models.data.find(
             (model) => model.providerID === spec.provider && model.id === spec.model,
           );
@@ -683,7 +748,6 @@ async function executeTask<T>(task: AgentTask<T>, owner: AgentHost): Promise<Age
   try {
     host = await owner.open();
     const location = { directory };
-    await host.plugin.awaitActivation({ location });
     const sessions = await host.sessions.list({ directory });
     const session =
       sessions.data[0] ??
@@ -707,7 +771,7 @@ async function executeTask<T>(task: AgentTask<T>, owner: AgentHost): Promise<Age
       !isDeepStrictEqual(session.metadata?.routing, active.routing ?? null)
     )
       throw new Error(`Agent session configuration changed: ${task.session}`);
-    await host.sessions.interrupt({ sessionID: session.id, continue: false });
+    await host.sessions.interrupt({ sessionID: session.id, resume: false });
     await slot.reload?.();
     const plan = planTask(
       task,
@@ -741,13 +805,14 @@ async function executeTask<T>(task: AgentTask<T>, owner: AgentHost): Promise<Age
           finished.promise,
         ]);
       } finally {
-        await host.sessions.interrupt({ sessionID: session.id, continue: false });
+        await host.sessions.interrupt({ sessionID: session.id, resume: false });
       }
       task.signal?.throwIfAborted();
       if (active.failure) throw active.failure;
       const completed = await host.sessions.export({ sessionID: session.id });
       const accepted = acceptedResult(task, session.id, completed.messages, submitted);
-      if (accepted) return active.calls.length ? { ...accepted, tools: [...active.calls] } : accepted;
+      if (accepted)
+        return active.calls.length ? { ...accepted, tools: [...active.calls] } : accepted;
       const last = taskMessages(completed.messages, task.task).findLast(
         (message) => message.type === "assistant",
       );
@@ -775,7 +840,7 @@ async function executeTask<T>(task: AgentTask<T>, owner: AgentHost): Promise<Age
     }
   } finally {
     try {
-      if (host && sessionID) await host.sessions.interrupt({ sessionID, continue: false });
+      if (host && sessionID) await host.sessions.interrupt({ sessionID, resume: false });
     } finally {
       slot.end();
       owner.emit(active.progress("ended"));

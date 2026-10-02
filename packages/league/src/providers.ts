@@ -22,7 +22,9 @@ export function modelUpstreamRoutes(): Map<string, string> {
     if (!trimmed) continue;
     const separator = trimmed.lastIndexOf("=");
     if (separator < 1 || separator === trimmed.length - 1)
-      throw new Error(`VGC_MODEL_UPSTREAM entry must be <provider>:<model>=<upstream model id>: ${trimmed}`);
+      throw new Error(
+        `VGC_MODEL_UPSTREAM entry must be <provider>:<model>=<upstream model id>: ${trimmed}`,
+      );
     parseSpec(trimmed.slice(0, separator));
     routes.set(trimmed.slice(0, separator), trimmed.slice(separator + 1));
   }

@@ -2,7 +2,10 @@ import { decisionTools, parseDecision } from "../src/llm-engine-support.js";
 import { applyMemoryUpdate, emptyBattleMemory } from "../src/battle-memory.js";
 import { notebook } from "./engine-test-helpers.js";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { test } from "vite-plus/test";
+import { defaultPsDir } from "../src/paths.js";
 import {
   battleSystemPrompt,
   DRAFT_SERIES_REFLECTION_TASK,
@@ -10,6 +13,7 @@ import {
   REFLECTION_TASK,
   renderDecision,
   SERIES_REFLECTION_TASK,
+  STATUS_ODDS_RULE,
 } from "../src/prompts.js";
 
 const SYSTEM = battleSystemPrompt({ sheets: "open", timed: false });
@@ -48,9 +52,10 @@ test("decision submissions hold one choice per displayed slot", () => {
     () => parseDecision({ choices: [0] }, [menu, menu], emptyBattleMemory()),
     /exactly 2 entries/,
   );
-  assert.deepEqual(parseDecision({ choices: [0, 0] }, [menu, menu], emptyBattleMemory()).choices, [
-    0, 0,
-  ]);
+  assert.deepEqual(
+    parseDecision({ choices: [0, 0] }, [menu, menu], emptyBattleMemory()).choices,
+    [0, 0],
+  );
 });
 
 test("closed-sheet system prompt never claims open team sheets", () => {
@@ -101,4 +106,23 @@ test("team preview renders one shared ordered menu", () => {
   assert.equal(prompt.match(/Pick Gengar/g)?.length, 1);
   assert.match(prompt, /choices 1-2 lead; choices 3-4 back/);
   assert.doesNotMatch(prompt, /"choices"/);
+});
+
+test("the stated status odds are the pinned Champions mod's", () => {
+  const conditions = fs.readFileSync(
+    path.join(defaultPsDir(), "data/mods/champions/conditions.ts"),
+    "utf8",
+  );
+  const body = (status: string) =>
+    conditions.slice(
+      conditions.indexOf(`\t${status}: {`),
+      conditions.indexOf("\n\t},", conditions.indexOf(`\t${status}: {`)),
+    );
+  assert.match(body("par"), /this\.randomChance\(1, 8\)/);
+  assert.match(body("slp"), /this\.sample\(\[2, 3, 3\]\)/);
+  assert.match(body("frz"), /startTime = 3;[\s\S]*this\.randomChance\(1, 4\)/);
+  assert.match(STATUS_ODDS_RULE, /loses its move 1 time in 8/);
+  assert.match(STATUS_ODDS_RULE, /1 turn \(1 in 3\) or 2 turns \(2 in 3\)/);
+  assert.match(STATUS_ODDS_RULE, /thaws 1 time in 4 each turn and always by its third attempt/);
+  assert.ok(battleSystemPrompt({ sheets: "open", timed: false }).includes(STATUS_ODDS_RULE));
 });

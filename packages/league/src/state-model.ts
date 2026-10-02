@@ -19,18 +19,6 @@ export interface TimedEffect {
   duration?: number;
 }
 
-export interface SideTimer {
-  seconds: number | null;
-  turnSeconds: number | null;
-  at: number;
-  running: boolean;
-}
-
-export interface SideTimers {
-  p1: SideTimer | undefined;
-  p2: SideTimer | undefined;
-}
-
 export interface ProtectReducedSlots {
   [slot: number]: boolean;
 }
@@ -57,12 +45,32 @@ export class MonState {
   preview = false;
   brought: boolean | undefined;
   formes = new Set<string>();
-  /** Successful consecutive Protect-like stalls; 0 means next Protect is full odds. */
+  /** Types while they differ from the species' own (Protean, Soak); they revert on leaving the field. */
+  types: string[] | undefined;
+  /** The species to return to when a forme taken in battle (Stance Change, Transform) ends. */
+  transientBase: string | undefined;
+  transformed = false;
+  /** Successful consecutive stalls; the next one's odds drop only while `lastStallTurn` is the previous turn. */
   protectSuccessStreak = 0;
+  lastStallTurn: number | undefined;
   /** Direct hits since entering; Champions resets it on switch-out (Rage Fist). */
   timesAttacked = 0;
 
   constructor(public ident: string) {}
+
+  /** Everything that ends when the Pokémon leaves the field. */
+  leaveField(): void {
+    this.boosts = {};
+    this.volatiles.clear();
+    this.choiceLock = undefined;
+    this.timesAttacked = 0;
+    this.types = undefined;
+    this.transformed = false;
+    this.protectSuccessStreak = 0;
+    this.lastStallTurn = undefined;
+    if (this.transientBase) this.species = this.transientBase;
+    this.transientBase = undefined;
+  }
 
   recordMove(name: string, used = 0): MoveState {
     const key = stateKey(name);
@@ -77,6 +85,8 @@ export class MonState {
 export class SideState {
   mons = new Map<string, MonState>();
   active: Record<string, string> = {};
+  /** What was known of each slot's occupant before it entered, restored to a disguise when Illusion breaks. */
+  entered: Record<string, Pick<MonState, "hp" | "hpPercent" | "status">> = {};
   conditions = new Map<string, TimedEffect>();
   sheet: MonState[] = [];
   showteam = false;
@@ -89,13 +99,16 @@ export interface PerspectiveStateView {
   sides: { p1: SideState; p2: SideState };
 }
 
+/** Moves that share Showdown's `stall` counter: each success lowers the next one's odds. */
 export const PROTECT_MOVES = new Set([
   "protect",
   "detect",
   "banefulbunker",
   "spikyshield",
-  "silktrap",
-  "burningbulwark",
+  "kingsshield",
+  "endure",
+  "wideguard",
+  "quickguard",
 ]);
 
 export const SCREEN_MOVES = new Set(["reflect", "lightscreen", "auroraveil"]);

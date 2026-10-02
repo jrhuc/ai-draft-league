@@ -340,6 +340,27 @@ test("the season bundle publishes one complete week with its public evidence and
   assert.equal(bundle.playoffs, null);
 });
 
+test("the public status of a release boundary does not move with private progress", () => {
+  const { league, plans } = fixture();
+  const roundRobin = plans.filter((plan) => plan.stage === "roundrobin");
+  league.series = roundRobin.map((plan) =>
+    completedSeries(plan.index, plan.round, plan.entrants!, plan.entrants![0]),
+  );
+  const statuses = (["roundrobin", "playoffs", "complete"] as const).map((phase) => {
+    const bundle = buildPublicSeasonBundle({
+      ...COMMON,
+      league: { ...league, phase },
+      plans,
+      releasedThroughWeek: 3,
+      games: gamesFor(league.series),
+    });
+    assert.equal(bundle.playoffs, null);
+    assert.equal(bundle.season.releasedPlayoffRounds, 0);
+    return bundle.season.status;
+  });
+  assert.deepEqual(statuses, ["regular-season", "regular-season", "regular-season"]);
+});
+
 test("a mid-draft league without team names labels franchises by model", () => {
   const { league, plans } = fixture();
   for (const entry of league.franchises) entry.teamName = "";
@@ -499,7 +520,7 @@ test("the season bundle releases playoff rounds past the last week and reviews o
     releasedThroughWeek: 3,
     games: gamesFor(league.series.filter((series) => series.stage === "roundrobin")),
   });
-  assert.equal(regular.season.status, "playoffs");
+  assert.equal(regular.season.status, "regular-season");
   assert.equal(regular.playoffs, null);
   assert.equal(regular.reviews.length, 0);
   assert.throws(

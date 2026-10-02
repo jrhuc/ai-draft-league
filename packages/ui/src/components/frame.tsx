@@ -6,10 +6,11 @@ import { PokeBall } from "./pokeball";
 function RouteEffects() {
   const { pathname, hash } = useLocation();
   useEffect(() => {
-    const target = hash ? document.getElementById(hash.slice(1)) : null;
-    if (target) target.scrollIntoView?.({ block: "start" });
-    else window.scrollTo(0, 0);
+    window.scrollTo(0, 0);
     document.querySelector<HTMLElement>("#main")?.focus({ preventScroll: true });
+  }, [pathname]);
+  useEffect(() => {
+    if (hash) document.getElementById(hash.slice(1))?.scrollIntoView?.({ block: "start" });
   }, [pathname, hash]);
   return null;
 }

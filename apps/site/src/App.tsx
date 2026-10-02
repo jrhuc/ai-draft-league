@@ -3,6 +3,7 @@ import { Route, Routes } from "react-router-dom";
 import { Frame } from "ui/components/frame";
 import { formatLabel } from "ui/lib/format";
 import { NavLink } from "@/components/nav-link";
+import { statusLabel } from "@/lib/load";
 import { useSeason } from "@/lib/season-context";
 import { DecisionTracePage } from "@/routes/decision-trace";
 import { DraftPage } from "@/routes/draft";
@@ -25,19 +26,6 @@ const NAV: Array<[string, string]> = [
   ["/transactions", "Transactions"],
   ["/playoffs", "Playoffs"],
 ];
-
-function releaseLabel(bundle: ReturnType<typeof useSeason>): string {
-  const s = bundle.season;
-  if (s.status === "complete") return "Season complete";
-  if (s.status === "draft") {
-    const total = bundle.franchises.length * s.board.picksPerFranchise;
-    const picks = bundle.draft.picks.length;
-    return picks < total ? `Drafting · pick ${picks + 1} of ${total}` : "Draft complete";
-  }
-  if (s.releasedPlayoffRounds > 0)
-    return s.releasedPlayoffRounds >= s.playoffRounds ? "Final played" : "Playoffs underway";
-  return `Through week ${s.releasedThroughWeek} of ${s.totalWeeks}`;
-}
 
 export function App() {
   const season = useSeason();
@@ -63,7 +51,7 @@ export function App() {
           ) : null}
         </nav>
       }
-      release={releaseLabel(season)}
+      release={statusLabel(season)}
       repo="https://github.com/jrhuc/ai-draft-league"
       footer={
         <>

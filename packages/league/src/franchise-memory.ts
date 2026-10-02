@@ -51,7 +51,9 @@ export function validateMemory(memory: FranchiseMemory): string | undefined {
     total += text.length;
   }
   if (total > MEMORY_LIMITS.totalChars) {
-    const sizes = names.map((name) => `${name} ${z.string().parse(memory[name]).length}`).join(", ");
+    const sizes = names
+      .map((name) => `${name} ${z.string().parse(memory[name]).length}`)
+      .join(", ");
     return `memory totals ${total} characters across its pages; the limit is ${MEMORY_LIMITS.totalChars}, so remove at least ${total - MEMORY_LIMITS.totalChars} characters. Unchanged pages count too: ${sizes}`;
   }
   return undefined;
@@ -81,61 +83,46 @@ function label(name: string, notebookField: string): string {
   return name === NOTEBOOK_PAGE ? notebookField : `page ${JSON.stringify(name)}`;
 }
 
+export interface MemoryEdit {
+  notebook?: string | undefined;
+  set_pages?: Record<string, string> | undefined;
+  delete_pages?: string[] | undefined;
+}
+
 /** Every field is optional and every omission keeps what exists: `notebook` replaces the notebook page,
  * `set_pages` writes the named pages and leaves the rest alone, and only `delete_pages` removes a page.
  * A page that breaks a size limit is the only thing not saved; the rejection names it and carries the
  * memory as saved so far. */
 export function parseMemoryReply(
-  record: JsonObject,
+  edit: MemoryEdit,
   current: FranchiseMemory,
-  options: { notebookField?: string } = {},
+  options: { notebookField: string },
 ): MemoryReply {
-  const notebookField = options.notebookField ?? "notebook";
-  if (record.pages !== undefined) {
-    throw new Error(
-      '"pages" is not a field; write pages with "set_pages" and remove them with "delete_pages"',
-    );
-  }
-  const notebook = z.string().safeParse(record.notebook);
-  if (record.notebook !== undefined && !notebook.success) {
-    throw new Error(`"${notebookField}" must be a string holding the complete replacement text`);
-  }
+  const { notebookField } = options;
   const next = { ...current };
   const writes: PageWrite[] = [];
-  if (notebook.success)
-    writes.push({ name: NOTEBOOK_PAGE, label: notebookField, text: notebook.data.trim() });
+  if (edit.notebook !== undefined)
+    writes.push({ name: NOTEBOOK_PAGE, label: notebookField, text: edit.notebook.trim() });
   const deleted = new Set<string>();
-  if (record.delete_pages !== undefined) {
-    const deletePages = z.array(z.string()).safeParse(record.delete_pages);
-    if (!deletePages.success) throw new Error('"delete_pages" must be an array of page names');
-    for (const name of deletePages.data) {
-      if (name === NOTEBOOK_PAGE)
-        throw new Error(
-          `the "${NOTEBOOK_PAGE}" page cannot be deleted; replace it with "${notebookField}"`,
-        );
-      deleted.add(name);
-      delete next[name];
-    }
+  for (const name of edit.delete_pages ?? []) {
+    if (name === NOTEBOOK_PAGE)
+      throw new Error(
+        `the "${NOTEBOOK_PAGE}" page cannot be deleted; replace it with "${notebookField}"`,
+      );
+    deleted.add(name);
+    delete next[name];
   }
-  if (record.set_pages !== undefined) {
-    const setPages = z.object({}).passthrough().safeParse(record.set_pages);
-    if (!setPages.success)
-      throw new Error('"set_pages" must be an object mapping page names to their complete text');
-    for (const [name, candidate] of Object.entries(setPages.data)) {
-      if (name === NOTEBOOK_PAGE)
-        throw new Error(
-          `"set_pages" may not contain "${NOTEBOOK_PAGE}"; that page is the "${notebookField}" field`,
-        );
-      const text = z.string().safeParse(candidate);
-      if (!text.success) throw new Error(`page ${JSON.stringify(name)} must be a string`);
-      if (deleted.has(name))
-        throw new Error(`page ${JSON.stringify(name)} is both set and deleted`);
-      if (name.length > MEMORY_LIMITS.nameChars || !PAGE_NAME.test(name))
-        throw new Error(
-          `page name ${JSON.stringify(name)} must be 1-${MEMORY_LIMITS.nameChars} lowercase letters, digits, ".", "_" or "-"`,
-        );
-      writes.push({ name, label: label(name, notebookField), text: text.data.trim() });
-    }
+  for (const [name, text] of Object.entries(edit.set_pages ?? {})) {
+    if (name === NOTEBOOK_PAGE)
+      throw new Error(
+        `"set_pages" may not contain "${NOTEBOOK_PAGE}"; that page is the "${notebookField}" field`,
+      );
+    if (deleted.has(name)) throw new Error(`page ${JSON.stringify(name)} is both set and deleted`);
+    if (name.length > MEMORY_LIMITS.nameChars || !PAGE_NAME.test(name))
+      throw new Error(
+        `page name ${JSON.stringify(name)} must be 1-${MEMORY_LIMITS.nameChars} lowercase letters, digits, ".", "_" or "-"`,
+      );
+    writes.push({ name, label: label(name, notebookField), text: text.trim() });
   }
   const rejected: string[] = [];
   const saved: string[] = [];

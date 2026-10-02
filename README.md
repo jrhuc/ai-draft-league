@@ -11,7 +11,7 @@ The spectator sites show specific recorded runs. Their standings and champions a
 
 ## Develop locally
 
-Install Node.js 24.21.0 or newer in the 24.x line, pnpm 12.3.4, and the [`vp` CLI](https://viteplus.dev).
+Install Node.js 24.21.0 or newer in the 24.x line, the pnpm version pinned in `package.json`, and the [`vp` CLI](https://viteplus.dev).
 
 ```sh
 pnpm install --frozen-lockfile
@@ -42,19 +42,19 @@ pnpm run export:season \
 
 `--through-week` is required. Newer private results never advance a release. The exporter validates the projection before writing it. The bundle is committed; the per-game decision traces it writes beside it are not, since they run to megabytes per game. They deploy as the `traces` assets-only Worker at `/traces/*` on the site's domain.
 
-Sprites are optional presentation assets in `apps/site/public/sprites/`. Missing sprites use a stable text marker. Battle animations embed the exported Showdown log in the official replay player, so match pages need `play.pokemonshowdown.com` reachable.
+Sprites are presentation assets in `apps/site/public/sprites/`. Battle animations embed the exported Showdown log in the official replay player, so match pages need `play.pokemonshowdown.com` reachable.
 
 ## Deploy the sites
 
-Both sites deploy to Cloudflare as assets-only Workers with client-side route fallback:
+Both sites deploy to Cloudflare as assets-only Workers with client-side route fallback. CI deploys the site and Worlds apps on every push to `main`. To deploy them from a checkout:
 
 ```sh
 wrangler login
 vp run league#build
-pnpm deploy
+pnpm run deploy
 ```
 
-Deploy only the Worlds app with `vp run worlds#deploy`.
+Deploy only the Worlds app with `vp run worlds#deploy`. CI never deploys the traces Worker: deploy it by hand from the machine that ran the export, with `pnpm --filter traces run deploy`.
 
 ## License
 
