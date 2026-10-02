@@ -259,6 +259,8 @@ export function readPredictions(traceRows: readonly JsonObject[]): Predictions {
     for (const call of asRecords(row.tool_calls)) {
       const args = asRecord(call.arguments);
       const result = text(call.result);
+      /** A what-if (another weather, a Mega, a stat stage, a switch-in, the other turn order) predicts a battle that may not be the one played. */
+      if (/^Hypothetical|Turn order matters:/m.test(result)) continue;
       if (call.name === "estimate_damage") {
         const range = /(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)% of maximum HP/.exec(result);
         if (!range) continue;
@@ -363,7 +365,7 @@ export function auditGame(
         const observed = describeHit(hit);
         if (!survived && (under || over))
           report("damage-range", hit.turn, pid, predicted, observed);
-        if (prediction.ko === "both" && !hit.fainted)
+        if (prediction.ko === "both" && !hit.fainted && hit.hpBefore <= prediction.shownHp)
           report("ko-missed", hit.turn, pid, predicted, observed);
         if (prediction.ko === "none" && hit.fainted && hit.hpBefore >= prediction.shownHp)
           report("ko-unexpected", hit.turn, pid, predicted, observed);

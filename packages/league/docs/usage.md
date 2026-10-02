@@ -115,7 +115,7 @@ pnpm run vgcleague monitor run_id
 pnpm run vgcleague monitor run_id --json
 ```
 
-The monitor reads `league.sqlite` and the decision, trace, and game files of every completed series. It reports per-seat decision integrity (substitution and parse-failure rates, tool queries, latency, tokens), a mechanics audit that replays every `estimate_damage` and `compare_action_order` result against what the simulator then did (wrong KO calls, damage outside the predicted range, inverted action order, with forme changes in the same turn marked), the share of draft reasons that name another coach or the season ahead, per-entry roster usage by week and opponent, entries never registered while owned, and how many board Pokémon each memory barrier names, carries, or drops. Findings are evidence to inspect, not verdicts.
+The monitor reads `league.sqlite` and the decision, trace, and game files of every completed series. It reports per-seat decision integrity (substitution and parse-failure rates, tool queries, latency, tokens), a mechanics audit that replays every `estimate_damage` and `compare_action_order` result against what the simulator then did, leaving out what-if results (another weather, a Mega, a stat stage, a switch-in, the other turn order) (wrong KO calls, damage outside the predicted range, inverted action order, with forme changes in the same turn marked), the share of draft reasons that name another coach or the season ahead, per-entry roster usage by week and opponent, entries never registered while owned, and how many board Pokémon each memory barrier names, carries, or drops. Findings are evidence to inspect, not verdicts.
 
 ## Archive and publish
 
