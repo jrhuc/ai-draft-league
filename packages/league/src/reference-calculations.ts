@@ -136,6 +136,10 @@ interface ScratchDamage {
   spread: boolean;
   /** The attacker's forme once the move is prepared, which Stance Change can alter. */
   attackerForme: string;
+  /** The engine's effectiveness multiplier for the prepared move, before any immunity. */
+  effectiveness: number;
+  /** The ability or item that made the defender immune. */
+  immuneVia?: string;
   damage: number;
   moveType: string;
   basePower: number;
@@ -839,12 +843,21 @@ function scratchDamage(
           ? cfg.spread.foes === 2
           : active.target === "allAdjacent" && cfg.spread.foes + Number(cfg.spread.ally) > 1));
     if (spread) active.spreadHit = true;
+    const effectiveness = 2 ** def.runEffectiveness(active);
+    const logged = battle.log.length;
+    const sinceMove = (pattern: RegExp) =>
+      battle.log
+        .slice(logged)
+        .map((line) => pattern.exec(line)?.[1])
+        .findLast((effect) => effect !== undefined);
+    const immuneVia = () => sinceMove(/^\|-immune\|.*\[from\] (?:ability|item): ([^|]+)/);
     const stopped = (blockedBy?: string): ScratchDamage => {
       const result: ScratchDamage = {
         outcome: blockedBy === undefined ? "immune" : "blocked",
         crit: false,
         spread,
         attackerForme: att.species.name,
+        effectiveness,
         damage: 0,
         moveType: active.type,
         basePower: active.basePower,
@@ -853,18 +866,14 @@ function scratchDamage(
         ...field,
       };
       if (blockedBy !== undefined) result.blockedBy = blockedBy;
+      const via = immuneVia();
+      if (blockedBy === undefined && via !== undefined) result.immuneVia = via;
       return result;
     };
-    const logged = battle.log.length;
     const cause = () =>
-      battle.log
-        .slice(logged)
-        .map(
-          (line) =>
-            /^\|cant\|[^|]*\|(?:ability|item|move): ([^|]+)/.exec(line)?.[1] ??
-            /^\|-fail\|.*\[from\] (?:(?:ability|item|move): )?([^|]+)$/.exec(line)?.[1],
-        )
-        .findLast((effect) => effect !== undefined) ?? "an effect on the field";
+      sinceMove(/^\|cant\|[^|]*\|(?:ability|item|move): ([^|]+)/) ??
+      sinceMove(/^\|-fail\|.*\[from\] (?:(?:ability|item|move): )?([^|]+)$/) ??
+      "an effect on the field";
     if (!battle.runEvent("TryMove", att, def, active)) return stopped(cause());
     if (
       !battle.singleEvent("PrepareHit", active, {}, def, att, active) ||
@@ -888,18 +897,16 @@ function scratchDamage(
     if (!tryHit && tryHit !== 0) return { ...stopped(), basePower, hits };
 
     battle.randomizer = (value: number) => battle.trunc((value * cfg.rollPercent) / 100);
-    let damage = 0;
-    let crit = false;
-    let outcome: ScratchDamage["outcome"] = "none";
+    const tally = { damage: 0, crit: false, immune: false, hit: false };
     const getDamage = battle.actions.getDamage.bind(battle.actions);
     battle.actions.getDamage = (source, target, move, suppressMessages) => {
       const value = getDamage(source, target, move, suppressMessages);
       if (source === att && target === def) {
-        if (value === false) outcome = "immune";
+        if (value === false) tally.immune = true;
         else if (value !== undefined && value !== null) {
-          damage += value;
-          outcome = "damage";
-          crit ||= target.getMoveHitData(move).crit;
+          tally.damage += value;
+          tally.hit = true;
+          tally.crit ||= target.getMoveHitData(move).crit;
         }
       }
       return value;
@@ -907,12 +914,14 @@ function scratchDamage(
     if (active.multihit) active.multihit = cfg.rollPercent === 85 ? hits[0] : hits[1];
     active.multiaccuracy = false;
     battle.actions.hitStepMoveHitLoop([def], att, active);
+    if (tally.immune && !tally.hit) return { ...stopped(), basePower, hits };
     return {
-      outcome,
-      crit,
+      outcome: tally.hit ? "damage" : "none",
+      crit: tally.crit,
       spread,
       attackerForme: att.species.name,
-      damage,
+      effectiveness,
+      damage: tally.damage,
       moveType: active.type,
       basePower,
       hits,
@@ -922,4 +931,70 @@ function scratchDamage(
   } finally {
     battle.destroy();
   }
+}
+
+export interface MoveMatchupInput {
+  attacker: Dex.Species;
+  defender: Dex.Species;
+  moveId: string;
+  attackerAbility?: string | undefined;
+  defenderAbility?: string | undefined;
+  attackerItem?: string | undefined;
+  defenderItem?: string | undefined;
+  attackerTypes?: string[] | undefined;
+  defenderTypes?: string[] | undefined;
+  weather?: string | undefined;
+}
+
+export interface MoveMatchup {
+  moveType: string;
+  /** 0 when the defender takes nothing, whether by type, ability, or item. */
+  multiplier: number;
+  /** The type-chart multiplier the move would have without that ability or item. */
+  chart: number;
+  via?: string;
+}
+
+/** What the engine says a move does to a target: its type as used, its effectiveness, and any immunity. */
+export function moveMatchup(
+  context: ReferenceCalculationContext,
+  input: MoveMatchupInput,
+): MoveMatchup {
+  const weather = input.weather ? WEATHER_IDS.get(canonicalWeather(input.weather)) : undefined;
+  const result = scratchDamage(context, {
+    attacker: input.attacker,
+    defender: input.defender,
+    moveId: input.moveId,
+    attackerAbility: input.attackerAbility,
+    defenderAbility: input.defenderAbility,
+    attackerItem: input.attackerItem,
+    defenderItem: input.defenderItem,
+    pins: { offFromDefender: false, offStat: "atk", offValue: 100, defStat: "def", defValue: 100 },
+    attackerStats: {},
+    defenderStats: {},
+    attackerTypes: input.attackerTypes,
+    defenderTypes: input.defenderTypes,
+    attackerBoosts: {},
+    defenderBoosts: {},
+    screens: [],
+    weather: weather ?? null,
+    terrain: null,
+    helpingHand: false,
+    faintedAllies: 0,
+    fallen: 0,
+    attackerTimesAttacked: 0,
+    crit: false,
+    spread: false,
+    actsLast: false,
+    rollPercent: 100,
+  });
+  const stopped = result.outcome === "immune" || result.outcome === "blocked";
+  const matchup: MoveMatchup = {
+    moveType: result.moveType,
+    multiplier: stopped ? 0 : result.effectiveness,
+    chart: result.effectiveness,
+  };
+  const via = result.immuneVia ?? result.blockedBy;
+  if (stopped && via !== undefined) matchup.via = via;
+  return matchup;
 }

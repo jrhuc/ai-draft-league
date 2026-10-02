@@ -301,4 +301,6 @@ export interface MatchupMon {
   ability?: string;
   item?: string;
   itemConsumed?: boolean;
+  /** Types while they differ from the species' own. */
+  types?: string[];
 }

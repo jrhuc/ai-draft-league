@@ -470,6 +470,7 @@ export class PerspectiveState {
         if (ability !== undefined) matchup.ability = ability;
         if (mon.item !== undefined) matchup.item = mon.item;
         matchup.itemConsumed = mon.itemConsumed;
+        if (mon.types) matchup.types = mon.types;
         return [matchup];
       });
     };
