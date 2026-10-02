@@ -19,8 +19,7 @@
     "@fontsource-variable/geist-mono": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
-    "react-router-dom": "catalog:",
-    "zod": "catalog:"
+    "react-router-dom": "catalog:"
   },
   "devDependencies": {
     "@types/react": "catalog:",

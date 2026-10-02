@@ -284,9 +284,6 @@ importers:
       react-router-dom:
         specifier: 'catalog:'
         version: 7.18.4(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      zod:
-        specifier: 'catalog:'
-        version: 4.6.5
     devDependencies:
       '@types/react':
         specifier: 'catalog:'
@@ -6908,7 +6905,7 @@ snapshots:
 
   happy-dom@20.13.0:
     dependencies:
-      '@types/node': 24.13.3
+      '@types/node': 24.19.1
       '@types/whatwg-mimetype': 3.0.2
       '@types/ws': 8.18.1
       buffer-image-size: 0.6.4

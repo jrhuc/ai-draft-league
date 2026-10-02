@@ -4,24 +4,12 @@ import { defineConfig } from "vite-plus";
 export default defineConfig({
   lint: {
     ignorePatterns: [
-      ".agent/**",
-      ".agents/**",
-      ".claude/**",
-      ".codex/**",
-      ".continue/**",
-      ".cursor/**",
-      ".gemini/**",
-      ".opencode/**",
-      ".pi/**",
-      ".roo/**",
-      ".windsurf/**",
       "tools/oxlint/anti-slop/**",
       "packages/league/dist/**",
       "packages/league/pokemon-showdown/**",
       "packages/league/runs/**",
       "packages/league/records/**",
       "packages/league/boards/**",
-      "packages/league/docs/**",
     ],
     jsPlugins: [{ name: "anti-slop", specifier: "./tools/oxlint/anti-slop/index.ts" }],
     rules: {
@@ -42,8 +30,5 @@ export default defineConfig({
       "anti-slop/require-safety-comment-for-type-assertion": "error",
     },
     options: { typeAware: true, typeCheck: true },
-  },
-  test: {
-    projects: ["apps/site", "apps/worlds"],
   },
 });

@@ -1,3 +1,11 @@
 /traces/*
-  Cache-Control: public, max-age=86400
   X-Content-Type-Options: nosniff
+
+/traces/:series/*
+  Cache-Control: public, max-age=86400
+
+/traces/manifest.json
+  Cache-Control: no-cache
+
+/traces/*.jsonl.gz
+  Cache-Control: no-cache
