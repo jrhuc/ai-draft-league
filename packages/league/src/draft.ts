@@ -9,7 +9,6 @@ export {
   draftUserPrompt,
   legalPicks,
   loadBoard,
-  maxAffordable,
   parseFranchiseName,
   parsePick,
   snakeOrder,

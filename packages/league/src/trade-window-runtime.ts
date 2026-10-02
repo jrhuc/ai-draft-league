@@ -24,7 +24,6 @@ import {
   applyFreeAgency,
   applyTradeOffer,
   commitRosterState,
-  DEFAULT_TRADES_ALLOWED,
   describeWindowPosition,
   freeAgencyReplySchema,
   ownerMap,
@@ -41,7 +40,6 @@ import {
   TRADE_WINDOW_PROMPT_POLICY,
   type TradeOffer,
   tradeOfferReplySchema,
-  type TradePromptRenderOptions,
   tradeResponseReplySchema,
   type TradeWindowArtifact,
   type TradeWindowDecision,
@@ -225,39 +223,6 @@ function responseUserPrompt(
     `- Budget if accepted: ${nextSpent}/${state.board.budget} spent.`,
     "",
     ...TRADE_OFFER_PROMPT_POLICY.responseReplyTemplate,
-  ].join("\n");
-}
-
-const RENDER_POSITION: TradeWindowPosition = { afterWeek: 3, index: 0, count: 1 };
-
-export function renderTradeOfferPrompt(
-  state: TradeWindowState,
-  entrant: number,
-  psDir: string,
-  options: TradePromptRenderOptions = {},
-): string {
-  validateLeagueRosterState(state);
-  return [
-    offerSystemPrompt(state, entrant, options.position ?? RENDER_POSITION, {
-      number: 1,
-      allowed: DEFAULT_TRADES_ALLOWED,
-    }),
-    "",
-    offerUserPrompt(state, entrant, psDir),
-  ].join("\n");
-}
-
-export function renderFreeAgencyPrompt(
-  state: TradeWindowState,
-  entrant: number,
-  psDir: string,
-  options: TradePromptRenderOptions = {},
-): string {
-  validateLeagueRosterState(state);
-  return [
-    systemPrompt(state, entrant, options.position ?? RENDER_POSITION),
-    "",
-    userPrompt(state, entrant, psDir),
   ].join("\n");
 }
 

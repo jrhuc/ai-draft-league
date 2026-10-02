@@ -4,14 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "vite-plus/test";
 import type { DraftBoardMon, DraftState } from "../src/draft.js";
-import {
-  applyDraftPick,
-  boardInfo,
-  legalPicks,
-  loadBoard,
-  maxAffordable,
-  snakeOrder,
-} from "../src/draft.js";
+import { applyDraftPick, boardInfo, legalPicks, loadBoard, snakeOrder } from "../src/draft.js";
 import { runDraftLeague } from "../src/draftleague.js";
 import { draftLeagueTopology, roundRobinWeeks } from "../src/draftleague-topology.js";
 import { emptyMemory } from "../src/franchise-memory.js";
@@ -759,7 +752,6 @@ test("a pick must leave enough budget to finish the roster", () => {
   assert.ok(legal.length > 0);
   for (const entry of legal)
     assert.ok(entry.cost <= 25 - cheapestNine, `${entry.id} leaves the roster unfinishable`);
-  assert.equal(maxAffordable(legal), Math.max(...legal.map((entry) => entry.cost)));
 });
 
 test("the last pick may spend everything that is left", () => {

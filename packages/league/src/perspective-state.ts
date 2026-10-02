@@ -12,7 +12,6 @@ import {
   SCREEN_MOVES,
   type SideState,
   SideState as MutableSideState,
-  type SideTimers,
   stateKey,
   type TimedEffect,
 } from "./state-model.js";
@@ -64,8 +63,6 @@ export class PerspectiveState {
   weather: TimedEffect | undefined;
   fields = new Map<string, TimedEffect>();
   sides = { p1: new MutableSideState(), p2: new MutableSideState() };
-  timers: SideTimers = { p1: undefined, p2: undefined };
-  private logClockMs: number | undefined;
 
   constructor(readonly pid: Pid) {}
 
@@ -342,33 +339,6 @@ export class PerspectiveState {
       mon.formes.add(this.speciesKey(args[1]!));
     } else if (kind === "showteam" && args.length >= 2)
       this.showTeam(args[0]!, args.slice(1).join("|"));
-    else if (kind === "t:" && Number.isFinite(Number(args[0])))
-      this.logClockMs = Number(args[0]) * 1000;
-    else if (kind === "-vgctimer" && (args[0] === "p1" || args[0] === "p2")) {
-      const parse = (value: string | undefined) =>
-        value && Number.isFinite(Number(value)) ? Number(value) : null;
-      this.timers[args[0]] = {
-        seconds: parse(args[1]),
-        turnSeconds: parse(args[2]),
-        at: this.logClockMs ?? Date.now(),
-        running: true,
-      };
-    } else if (kind === "-vgcdeciding" && (args[0] === "p1" || args[0] === "p2")) {
-      this.timers[args[0]] = {
-        seconds: null,
-        turnSeconds: null,
-        at: this.logClockMs ?? Date.now(),
-        running: true,
-      };
-    } else if (
-      (kind === "-vgctimerstop" || kind === "-vgctimeout") &&
-      (args[0] === "p1" || args[0] === "p2")
-    ) {
-      this.stopTimer(args[0]);
-    } else if (kind === "win" || kind === "tie") {
-      this.stopTimer("p1");
-      this.stopTimer("p2");
-    }
   }
 
   render(
@@ -404,38 +374,6 @@ export class PerspectiveState {
     if (mon) return mon.species;
     const active = (request.side?.pokemon ?? []).filter((item) => item.active);
     return active[slot] ? PerspectiveState.requestName(active[slot]) : "Pokémon";
-  }
-
-  compactMons(): CompactMon[] {
-    const out: CompactMon[] = [];
-    for (const pid of ["p1", "p2"] as const) {
-      const side = this.sides[pid];
-      const own = pid === this.pid;
-      const activeKeys = new Set(Object.values(side.active));
-      const mons = [...side.mons.values()].filter((mon) => {
-        if (mon.fainted) return false;
-        if (own && mon.brought === false) return false;
-        if (activeKeys.has(this.monKey(mon.ident))) return true;
-        if (own) return mon.brought !== false;
-        return Boolean(mon.hp !== undefined || mon.moves.size || side.showteam);
-      });
-      if (!own && side.showteam) {
-        const known = new Set(mons.map((mon) => this.speciesKey(mon.species)));
-        for (const sheetMon of side.sheet) {
-          if (!known.has(this.speciesKey(sheetMon.species))) mons.push(sheetMon);
-        }
-      }
-      for (const mon of mons) {
-        out.push({
-          species: mon.species,
-          item: mon.item ?? null,
-          nature: mon.nature ?? null,
-          moves: [...mon.moves.values()].map((move) => move.name),
-          active: activeKeys.has(this.monKey(mon.ident)),
-        });
-      }
-    }
-    return out;
   }
 
   protectReducedSlots(): ProtectReducedSlots {
@@ -518,19 +456,6 @@ export class PerspectiveState {
     return estimateDamage(this, args, reference);
   }
 
-  private stopTimer(pid: Pid): void {
-    const timer = this.timers[pid];
-    if (!timer?.running) return;
-    const now = Date.now();
-    const drained = (now - timer.at) / 1000;
-    this.timers[pid] = {
-      seconds: timer.seconds === null ? null : Math.max(0, timer.seconds - drained),
-      turnSeconds: timer.turnSeconds === null ? null : Math.max(0, timer.turnSeconds - drained),
-      at: now,
-      running: false,
-    };
-  }
-
   weatherLabel(): string {
     return this.formatTimed(this.weather);
   }
@@ -543,17 +468,6 @@ export class PerspectiveState {
     return [...this.sides[pid].conditions.values()]
       .map((effect) => this.formatTimed(effect))
       .sort();
-  }
-
-  /** Mons a spectator should see: team-preview ghosts are dropped once a richer entry covers the species. */
-  visibleMons(pid: Pid): MonState[] {
-    const side = this.sides[pid];
-    return this.withoutPreviewGhosts(side, [...side.mons.values()]);
-  }
-
-  activeSlot(pid: Pid, mon: MonState): string | undefined {
-    const key = this.monKey(mon.ident);
-    return Object.entries(this.sides[pid].active).find(([, active]) => active === key)?.[0];
   }
 
   private withoutPreviewGhosts(side: SideState, mons: MonState[]): MonState[] {

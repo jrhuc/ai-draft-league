@@ -348,10 +348,6 @@ export function applyDraftPick(state: DraftState, action: DraftPickAction): Draf
   return { board: state.board, taken, rosters, budgets, teamNames: [...state.teamNames] };
 }
 
-export function maxAffordable(legal: readonly DraftBoardMon[]): number {
-  return legal.length ? Math.max(...legal.map((mon) => mon.cost)) : 0;
-}
-
 export function snakeOrder(entrants: number, rounds: number): number[] {
   const order: number[] = [];
   for (let round = 0; round < rounds; round += 1) {

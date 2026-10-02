@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
-import fs from "node:fs";
 import path from "node:path";
 import { test } from "vite-plus/test";
-import { fileURLToPath } from "node:url";
 
 import { LEAGUE_ROOT } from "../src/paths.js";
 import { DEX_TOOLS, type MatchupMon, ShowdownReference } from "../src/reference.js";
@@ -175,27 +172,6 @@ test("lookup tools return one entry and reject missing data", () => {
 
 test("default Showdown checkout matches the pinned revision", () => {
   assert.equal(showdownCommit(), SHOWDOWN_LOCK.commit);
-});
-
-test("reference render revision binds the versioned executed module bytes", () => {
-  const modulePath = fileURLToPath(new URL("../src/reference.ts", import.meta.url));
-  const moduleBytes = fs.readFileSync(modulePath);
-  const revisionFor = (content: Buffer): string =>
-    createHash("sha256")
-      .update("showdown-reference-render-v1")
-      .update("\0")
-      .update(content)
-      .digest("hex")
-      .slice(0, 12);
-  const revision = ShowdownReference.renderRevision();
-  assert.match(revision, /^[0-9a-f]{12}$/);
-  assert.equal(revision, revisionFor(moduleBytes));
-  assert.notEqual(
-    revisionFor(
-      Buffer.concat([moduleBytes, Buffer.from("\nvoid 'modified reference revision fixture';\n")]),
-    ),
-    revision,
-  );
 });
 
 test("missing Showdown checkout fails immediately", () => {
@@ -671,8 +647,6 @@ test("speed profiles apply visible battle modifiers without collapsing hidden ra
     })?.effective,
     [85, 85],
   );
-  assert.equal(reference.movePriority("Quick Attack"), 1);
-  assert.equal(reference.movePriority("Encore"), 0);
 });
 
 test("type-changing abilities convert Normal moves in the chart and matchup tool", () => {

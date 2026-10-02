@@ -1,6 +1,3 @@
-import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import type { Battle, Dex } from "pokemon-showdown";
 
 import { defaultPsDir } from "./paths.js";
@@ -55,8 +52,6 @@ export type {
   SpeedProfileInput,
 } from "./reference-contracts.js";
 export type { EstimateDamageArguments } from "./reference-calculations.js";
-
-const REFERENCE_RENDER_DIGEST_PROTOCOL = "showdown-reference-render-v1";
 
 type FormatDataKind = "move" | "item";
 
@@ -121,15 +116,6 @@ export class ShowdownReference {
   moveTarget(name: string): string | undefined {
     const move = this.dex.moves.get(name);
     return move.exists ? move.target : undefined;
-  }
-
-  static renderRevision(): string {
-    return createHash("sha256")
-      .update(REFERENCE_RENDER_DIGEST_PROTOCOL)
-      .update("\0")
-      .update(readFileSync(fileURLToPath(import.meta.url)))
-      .digest("hex")
-      .slice(0, 12);
   }
 
   renderCompact(mons: CompactMon[]): string[] {
@@ -251,11 +237,6 @@ export class ShowdownReference {
       multiply("paralysis ×0.5", 1, 2);
     effective = modifyRange(effective, numerator, denominator);
     return { raw, effective, modifiers };
-  }
-
-  movePriority(name: string): number | undefined {
-    const move = this.dex.moves.get(name);
-    return move.exists ? move.priority : undefined;
   }
 
   priorityProfile(

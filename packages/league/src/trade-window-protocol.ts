@@ -206,10 +206,6 @@ export interface ParsedTradeResponse {
   reasoning: string;
 }
 
-export interface TradePromptRenderOptions {
-  position?: TradeWindowPosition;
-}
-
 export function validateSwapsAllowed(value: number, context = "swaps allowed"): void {
   if (!Number.isSafeInteger(value) || value < 0 || value > MAX_SWAPS_ALLOWED) {
     throw new Error(`${context} must be an integer between 0 and ${MAX_SWAPS_ALLOWED}`);

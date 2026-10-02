@@ -19,18 +19,6 @@ export interface TimedEffect {
   duration?: number;
 }
 
-export interface SideTimer {
-  seconds: number | null;
-  turnSeconds: number | null;
-  at: number;
-  running: boolean;
-}
-
-export interface SideTimers {
-  p1: SideTimer | undefined;
-  p2: SideTimer | undefined;
-}
-
 export interface ProtectReducedSlots {
   [slot: number]: boolean;
 }

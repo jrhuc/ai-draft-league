@@ -129,15 +129,6 @@ export function parseSeriesRecord(value: JsonValue, label: string): ParsedSeries
   return parsed.data;
 }
 
-/** Normalizes provider-qualified specs when joining one model across archived evidence. */
-export function modelKey(spec: string): string {
-  const model = spec.slice(spec.indexOf(":") + 1);
-  return model
-    .slice(model.lastIndexOf("/") + 1)
-    .toLowerCase()
-    .replace(/:(?:nitro|floor|free)$/, "");
-}
-
 export const TEST_POOL = "test";
 
 export function scopeRows<Row extends SeriesRecord>(rows: Row[], pool?: string): Row[] {
