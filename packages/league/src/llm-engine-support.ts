@@ -89,7 +89,7 @@ export const BATTLE_HISTORY_TOOL: ToolDefinition = {
 export const ACTION_ORDER_TOOL: ToolDefinition = {
   name: "compare_action_order",
   description:
-    'Compare two Pokémon (active, benched, or any two registered at team preview) using live Speed state without revealing hidden EVs. Applies visible items, boosts, status, Tailwind, weather abilities, Trick Room, and move priority including ability modifiers (Prankster, Gale Wings, Triage, Grassy Glide, Stall, Mycelium Might) and priority items (Quick Claw, Lagging Tail); also explains Encore timing and redundant locks. Set weather to project Chlorophyll, Swift Swim, Sand Rush or Slush Rush before the weather is up. Pass "switch" as a move to time a switch-out, which resolves before moves.',
+    'Compare two Pokémon (active, benched, or any two registered at team preview) using live Speed state without revealing hidden EVs. Applies visible items, boosts, status, Tailwind, weather abilities, Trick Room, and move priority including ability modifiers (Prankster, Gale Wings, Triage, Grassy Glide, Stall, Mycelium Might) and priority items (Quick Claw, Lagging Tail); also explains Encore timing and redundant locks. A Speed change takes effect the moment it happens, so to see the order after a Tailwind, Icy Wind, Trick Room or weather that goes up earlier in the same turn, set the matching hypothetical. Pass "switch" as a move to time a switch-out, which resolves before moves.',
   parameters: {
     type: "object",
     properties: {
@@ -125,11 +125,50 @@ export const ACTION_ORDER_TOOL: ToolDefinition = {
         description:
           "Hypothetical weather: sun, rain, sand, snow, or none. Defaults to the live weather.",
       },
+      first_speed_stage: {
+        type: "integer",
+        minimum: -6,
+        maximum: 6,
+        description:
+          "Hypothetical Speed stage for the first Pokémon, such as -1 after Icy Wind or +1 after Dragon Dance. Defaults to its live stage.",
+      },
+      second_speed_stage: {
+        type: "integer",
+        minimum: -6,
+        maximum: 6,
+        description: "Hypothetical Speed stage for the second Pokémon.",
+      },
+      first_tailwind: {
+        type: "boolean",
+        description:
+          "Whether Tailwind is up on the first Pokémon's side for this comparison. Defaults to the live field.",
+      },
+      second_tailwind: {
+        type: "boolean",
+        description: "Whether Tailwind is up on the second Pokémon's side for this comparison.",
+      },
+      trick_room: {
+        type: "boolean",
+        description: "Whether Trick Room is up for this comparison. Defaults to the live field.",
+      },
     },
     required: ["first", "second"],
     additionalProperties: false,
   },
 };
+
+const BATTLER_DESCRIPTION =
+  "Species name, or a slot: ally 1, ally 2, foe 1, foe 2. When both sides have the species, prefix it: ally Charizard or foe Charizard.";
+
+function stagesParameter(description: string): JsonObject {
+  const stage = { type: "integer", minimum: -6, maximum: 6 };
+  return {
+    type: "object",
+    description,
+    properties: { atk: stage, def: stage, spa: stage, spd: stage, spe: stage },
+    additionalProperties: false,
+  };
+}
 
 const DAMAGE_TOOL_DESCRIPTIONS = {
   open: "Estimate conditional hit outcomes using the current battle request and open team sheets. Hits are assumed to connect; evaluated endpoints do not establish exhaustive KO certainty or resolve action-level effects such as protection or redirection. Supply only the two visible Pokémon and move; the harness applies known abilities, items, exact own stats, opposing nature ranges, boosts, status, HP, screens, weather, terrain, both active allies with their abilities, the fainted count that scales Last Respects, and the hits the attacker has taken that scale Rage Fist. Helping Hand, critical-hit and hits-taken inputs are optional hypothetical overrides.",
@@ -144,19 +183,23 @@ export function decisionTools(sheets: SheetPolicy): ToolDefinition[] {
       const parameters = decisionToolParametersSchema.parse(tool.parameters);
       return {
         ...tool,
-        description: `${DAMAGE_TOOL_DESCRIPTIONS[sheets]} Any two registered Pokémon can be evaluated at team preview. A benched Pokémon fills an empty slot on its side; when the side is full, name the outgoing active Pokémon or slot in attacker_replaces or defender_replaces so the remaining ally is known. Switch-in events are not simulated. Set attacker_mega or defender_mega to evaluate its legal Mega forme with the known stone; weather and terrain default to the live field and can be overridden; the live state is unchanged.`,
+        description: `${DAMAGE_TOOL_DESCRIPTIONS[sheets]} Any two registered Pokémon can be evaluated at team preview. A benched Pokémon fills an empty slot on its side; when the side is full it is evaluated in each slot it could take, unless attacker_replaces or defender_replaces names the one that leaves. Switch-in events are not simulated. Set attacker_mega or defender_mega to evaluate its legal Mega forme with the known stone, which also brings the weather its ability sets; weather, terrain and each side's stat stages default to the live state and can be overridden; the live state is unchanged.`,
         parameters: {
           ...parameters,
           properties: {
             ...Object.fromEntries(
-              [
-                "attacker",
-                "defender",
-                "move",
-                "helping_hand",
-                "is_critical_hit",
-                "attacker_hits_taken",
-              ].map((name) => [name, parameters.properties[name] ?? null]),
+              ["move", "helping_hand", "is_critical_hit", "attacker_hits_taken"].map((name) => [
+                name,
+                parameters.properties[name] ?? null,
+              ]),
+            ),
+            attacker: { type: "string", description: BATTLER_DESCRIPTION },
+            defender: { type: "string", description: BATTLER_DESCRIPTION },
+            attacker_boosts: stagesParameter(
+              'Hypothetical stat stages for the attacker, such as {"atk": 2} after Swords Dance or {"atk": -1} after an Intimidate. Stats left out keep their live stage.',
+            ),
+            defender_boosts: stagesParameter(
+              "Hypothetical stat stages for the defender. Stats left out keep their live stage.",
             ),
             weather: {
               type: "string",

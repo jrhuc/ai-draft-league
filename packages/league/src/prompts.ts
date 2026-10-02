@@ -33,6 +33,10 @@ export function renderPromptTemplate(
     .join("\n");
 }
 
+/** Champions changes these from the mainline games; `tests/prompts.test.ts` holds the wording to the pinned mod. */
+export const STATUS_ODDS_RULE =
+  "Status odds here differ from other Pokémon games: a paralyzed Pokémon loses its move 1 time in 8; sleep costs 1 turn (1 in 3) or 2 turns (2 in 3) and never more; a frozen Pokémon thaws 1 time in 4 each turn and always by its third attempt to move.";
+
 const SYSTEM_CORE_BEFORE_SHEETS = [
   "You are an expert VGC player in a persistent best-of-three match. Maximize the probability of winning the series.",
   FORMAT_AUTHORITY_NOTICE,
@@ -41,6 +45,7 @@ const SYSTEM_CORE_BEFORE_SHEETS = [
   "One Mega Evolution is allowed per game; if you brought more than one Mega Stone holder, which of them evolves is your choice.",
   "Within a turn, all switches resolve first, then Mega Evolutions in Speed order, then moves by priority and then Speed; apart from Speed ties the order is deterministic, never random.",
   "On-entry abilities such as weather trigger at the moment their Pokémon switches in or Mega Evolves; simultaneous triggers resolve in Speed order, and a newer weather or terrain replaces the current one.",
+  STATUS_ODDS_RULE,
 ];
 
 const SHEET_RULES = {

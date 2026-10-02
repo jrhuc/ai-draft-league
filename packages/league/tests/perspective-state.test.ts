@@ -652,7 +652,7 @@ test("team preview calculators accept any two registered Pokémon, Mega hypothet
     preview,
     reference,
   );
-  assert.match(sun, /Hypothetical field: weather sun \(live: none\); single-target power/);
+  assert.match(sun, /Hypothetical: weather sun \(live: none\); single-target power/);
   assert.notEqual(noSun.match(/\d+\.\d+-\d+\.\d+%/)?.[0], sun.match(/\d+\.\d+-\d+\.\d+%/)?.[0]);
   const order = state.compareActionOrder(
     { first: "Venusaur", second: "Gengar", weather: "sun" },
@@ -1180,12 +1180,50 @@ test("battle tools refuse a species name both sides field and bring a Mega's wea
   const rain = state.estimateDamage(args, request, reference);
   const mega = state.estimateDamage({ ...args, attacker_mega: true }, request, reference);
   assert.match(rain, /applied .*rain,/);
-  assert.match(mega, /Hypothetical field: sun from the Mega Evolution's ability\./);
+  assert.match(mega, /Hypothetical: sun from the Mega Evolution's ability\./);
   assert.match(mega, /applied attacker ability Drought, .*sun,/);
   const forced: BattleRequest = { forceSwitch: [false, true], side: request.side! };
   assert.match(
     state.estimateDamage({ ...args, attacker_mega: true }, forced, reference),
     /sun from the Mega Evolution's ability/,
     "a forced-switch request carries no Mega flag and must not clear the one already known",
+  );
+});
+
+test("the calculators answer what-if questions about stat stages and speed control", () => {
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
+  const state = new PerspectiveState("p1");
+  state.feed([
+    "|switch|p1a: Garchomp|Garchomp, L50|183/183",
+    "|switch|p2a: Incineroar|Incineroar, L50|100/100",
+    "|switch|p2b: Charizard|Charizard, L50|100/100",
+    "|turn|1",
+  ]);
+  const percent = (text: string) => Number(/-([\d.]+)% of maximum HP/.exec(text)?.[1]);
+  const quake = { attacker: "ally 1", defender: "Incineroar", move: "Earthquake" };
+  const live = state.estimateDamage(quake, {}, reference);
+  const danced = state.estimateDamage({ ...quake, attacker_boosts: { atk: 2 } }, {}, reference);
+  assert.match(danced, /^Hypothetical: attacker at \+2 atk\./);
+  assert.match(danced, /applied attacker \+2 atk/);
+  assert.ok(percent(danced) > percent(live) * 1.8);
+  assert.equal(state.estimateDamage(quake, {}, reference), live, "the live state is untouched");
+  assert.throws(
+    () => state.estimateDamage({ ...quake, attacker_boosts: { attack: 2 } }, {}, reference),
+    /attack/,
+    "a stage for a stat that does not exist is refused, not ignored",
+  );
+
+  const order = { first: "ally 1", second: "Charizard" };
+  const before = state.compareActionOrder(order, reference);
+  const tailwind = state.compareActionOrder({ ...order, second_tailwind: true }, reference);
+  assert.match(tailwind, /^Hypothetical: Tailwind up for Charizard\./);
+  assert.match(tailwind, /Charizard is guaranteed to act first/);
+  assert.doesNotMatch(before, /Charizard is guaranteed to act first/);
+  assert.match(
+    state.compareActionOrder(
+      { ...order, second_tailwind: true, second_speed_stage: -2, trick_room: true },
+      reference,
+    ),
+    /^Hypothetical: Charizard at Speed stage -2; Tailwind up for Charizard; Trick Room up\./,
   );
 });

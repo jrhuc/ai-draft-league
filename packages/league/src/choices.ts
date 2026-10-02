@@ -206,7 +206,14 @@ export function buildMenus(request: BattleRequest, hints?: MenuHints): SlotMenu[
       );
       if (moves.length && moves.every((move) => move.disabled))
         menu.push({ label: "Struggle", part: "move 1", kind: "move" });
-      if (!active.trapped) menu.push(...switches(request));
+      if (!active.trapped)
+        menu.push(
+          ...switches(request).map((item) =>
+            active.maybeTrapped
+              ? { ...item, label: `${item.label} [rejected if an opposing ability is trapping it]` }
+              : item,
+          ),
+        );
       return menu.length ? menu : [{ label: "Pass", part: "pass", kind: "pass" }];
     });
     if (menus.some((menu) => menu.some((item) => item.kind !== "pass")))

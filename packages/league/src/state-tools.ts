@@ -6,6 +6,7 @@ import type {
 } from "./reference.js";
 import { type PerspectiveStateView, MonState, SCREEN_MOVES, stateKey } from "./state-model.js";
 import type { JsonObject, JsonValue, Pid } from "./types.js";
+import { z } from "zod";
 import { afterColon, count, text } from "./value.js";
 
 interface MonEntry {
@@ -148,6 +149,24 @@ function findActive(state: PerspectiveStateView, query: string): MonEntry | unde
   return found && !found.benched ? found : undefined;
 }
 
+const stageSchema = z.number().int().min(-6).max(6).optional();
+const hypotheticalOrder = z.object({
+  first_speed_stage: stageSchema,
+  second_speed_stage: stageSchema,
+  first_tailwind: z.boolean().optional(),
+  second_tailwind: z.boolean().optional(),
+  trick_room: z.boolean().optional(),
+});
+const hypotheticalStages = z
+  .strictObject({
+    atk: stageSchema,
+    def: stageSchema,
+    spa: stageSchema,
+    spd: stageSchema,
+    spe: stageSchema,
+  })
+  .optional();
+
 const CLEAR_WORDS = new Set(["none", "clear", "off", "no", "nothing"]);
 
 /** `undefined` keeps the live field, `null` clears it, a string names the hypothetical condition. */
@@ -162,7 +181,7 @@ export function speedProfile(
   pid: Pid,
   mon: MonState,
   reference: ShowdownReference,
-  overrides: { weather?: string | null } = {},
+  overrides: { weather?: string | null; stage?: number; tailwind?: boolean } = {},
 ): SpeedProfile | undefined {
   const conditions = state.sides[pid].conditions;
   const terrain = [...state.fields.values()].find((effect) => /terrain/i.test(effect.name))?.name;
@@ -170,7 +189,7 @@ export function speedProfile(
   const input: SpeedProfileInput = {
     species: mon.species,
     itemConsumed: mon.itemConsumed,
-    tailwind: conditions.has("tailwind"),
+    tailwind: overrides.tailwind ?? conditions.has("tailwind"),
   };
   if (mon.nature !== undefined) input.nature = mon.nature;
   const speed = mon.stats.spe;
@@ -178,7 +197,8 @@ export function speedProfile(
   if (mon.item !== undefined) input.item = mon.item;
   if (mon.ability !== undefined) input.ability = mon.ability;
   if (mon.status !== undefined) input.status = mon.status;
-  if (mon.boosts.spe !== undefined) input.boost = mon.boosts.spe;
+  const stage = overrides.stage ?? mon.boosts.spe;
+  if (stage !== undefined) input.boost = stage;
   if (weather) input.weather = weather;
   if (terrain !== undefined) input.terrain = terrain;
   return reference.speedProfile(input);
@@ -237,8 +257,29 @@ export function compareActionOrder(
   );
 
   const weather = fieldOverride(args.weather);
-  const firstProfile = speedProfile(state, first.pid, first.mon, reference, { weather });
-  const secondProfile = speedProfile(state, second.pid, second.mon, reference, { weather });
+  const hypothetical = hypotheticalOrder.parse(args);
+  const speedOverrides = (side: "first" | "second") => {
+    const overrides: Parameters<typeof speedProfile>[4] = { weather };
+    const stage = hypothetical[`${side}_speed_stage`];
+    const tailwind = hypothetical[`${side}_tailwind`];
+    if (stage !== undefined) overrides.stage = stage;
+    if (tailwind !== undefined) overrides.tailwind = tailwind;
+    return overrides;
+  };
+  const firstProfile = speedProfile(
+    state,
+    first.pid,
+    first.mon,
+    reference,
+    speedOverrides("first"),
+  );
+  const secondProfile = speedProfile(
+    state,
+    second.pid,
+    second.mon,
+    reference,
+    speedOverrides("second"),
+  );
   if (!firstProfile || !secondProfile)
     return "Speed data is unavailable for one of the selected Pokémon.";
   const firstMove = text(args.first_move).trim();
@@ -270,7 +311,7 @@ export function compareActionOrder(
   const firstPriority = firstInfo.priority;
   const secondPriority = secondInfo.priority;
 
-  const trickRoom = state.fields.has("trickroom");
+  const trickRoom = hypothetical.trick_room ?? state.fields.has("trickroom");
   const bracketLast = (info: { notes: string[] }) =>
     info.notes.some((note) => note.includes("acts last within its bracket"));
   const signed = (value: number) => `${value >= 0 ? "+" : ""}${value}`;
@@ -326,6 +367,21 @@ export function compareActionOrder(
     describe(`${second.mon.species}${second.benched ? " (benched)" : ""}`, secondProfile),
     `${orderText} (${reason}).`,
   ];
+  const supposed = [
+    ...(["first", "second"] as const).flatMap((side) => {
+      const name = (side === "first" ? first : second).mon.species;
+      const stage = hypothetical[`${side}_speed_stage`];
+      const tailwind = hypothetical[`${side}_tailwind`];
+      return [
+        ...(stage === undefined ? [] : [`${name} at Speed stage ${stage > 0 ? "+" : ""}${stage}`]),
+        ...(tailwind === undefined ? [] : [`Tailwind ${tailwind ? "up" : "down"} for ${name}`]),
+      ];
+    }),
+    ...(hypothetical.trick_room === undefined
+      ? []
+      : [`Trick Room ${hypothetical.trick_room ? "up" : "down"}`]),
+  ];
+  if (supposed.length) lines.unshift(`Hypothetical: ${supposed.join("; ")}.`);
   if (weather !== undefined)
     lines.unshift(
       `Hypothetical weather: ${weather ?? "none"} (live: ${state.weather?.name ?? "none"}).`,
@@ -370,6 +426,14 @@ export function compareActionOrder(
       );
   }
   return lines.join("\n");
+}
+
+function definedStages(stages: z.infer<typeof hypotheticalStages>): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(stages ?? {}).flatMap(([stat, stage]) =>
+      stage === undefined ? [] : [[stat, stage]],
+    ),
+  );
 }
 
 const ENTRY_WEATHER = new Map([
@@ -469,6 +533,17 @@ export function estimateDamage(
     ...(megaTerrain ? [`${megaTerrain} terrain from the Mega Evolution's ability`] : []),
   ];
 
+  const supposedStages = {
+    attacker: definedStages(hypotheticalStages.parse(args.attacker_boosts)),
+    defender: definedStages(hypotheticalStages.parse(args.defender_boosts)),
+  };
+  for (const side of ["attacker", "defender"] as const) {
+    const stages = Object.entries(supposedStages[side]).map(
+      ([stat, stage]) => `${stage > 0 ? "+" : ""}${stage} ${stat}`,
+    );
+    if (stages.length) fieldNotes.push(`${side} at ${stages.join(", ")}`);
+  }
+
   const ability = (mon: MonState) =>
     mon.abilitySuppressed ? undefined : (mon.ability ?? reference.speciesAbility(mon.species));
   const faintedOn = (pid: Pid) =>
@@ -510,8 +585,8 @@ export function estimateDamage(
       if (entry.mon.item && !entry.mon.itemConsumed) authoritative[`${side}_item`] = entry.mon.item;
       if (entry.mon.nature) authoritative[`${side}_nature`] = entry.mon.nature;
       if (entry.mon.status) authoritative[`${side}_status`] = entry.mon.status;
-      if (Object.keys(entry.mon.boosts).length)
-        authoritative[`${side}_boosts`] = { ...entry.mon.boosts };
+      const boosts = { ...entry.mon.boosts, ...supposedStages[side] };
+      if (Object.keys(boosts).length) authoritative[`${side}_boosts`] = boosts;
       if (entry.mon.hpPercent !== undefined)
         authoritative[`${side}_hp_percent`] = entry.mon.hpPercent;
       if (Object.keys(stats).length) authoritative[`${side}_stats`] = stats;
@@ -599,7 +674,7 @@ export function estimateDamage(
     ? "Hypothetical Mega Evolution: projected forme, ability, and raw stats; boosts held fixed, and the field too unless the Mega's ability sets one. Ambiguous stats retain legal ranges. "
     : "";
   const context = `${scenario}Live battle and known team-sheet state applied: ${known(attacker, "attacker")}; ${known(defender, "defender")}.`;
-  const fieldContext = fieldNotes.length ? `Hypothetical field: ${fieldNotes.join("; ")}.\n` : "";
+  const fieldContext = fieldNotes.length ? `Hypothetical: ${fieldNotes.join("; ")}.\n` : "";
   const switchNote =
     "Current weather, terrain and boosts held fixed; switch-in events are not simulated.";
   const same = scenarios.every((entry) => entry.result === scenarios[0]!.result);
