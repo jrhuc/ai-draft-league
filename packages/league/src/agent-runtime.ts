@@ -5,7 +5,6 @@ import type { SessionInboxInfo, SessionMessageInfo } from "@opencode/client";
 import type { OpenCode, OpenCodeEvent } from "@opencode/sdk";
 import { z } from "zod";
 
-import "./opencode-loader.js";
 import { LiveRun } from "./live-run.js";
 import {
   modelUpstreamRoutes,
@@ -216,7 +215,6 @@ class AgentHost {
   }
 
   private async create(): Promise<Host> {
-    /** The resolver must be registered before loading the SDK's extensionless imports. */
     const { OpenCode: SDK } = await import("@opencode/sdk");
     const directory = path.resolve(this.runDir, "agents");
     fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -471,7 +469,6 @@ async function codeModeCatalog(tools: readonly AgentTool[]): Promise<string> {
 }
 
 async function leaguePlugin(slot: AgentSlot) {
-  /** The resolver must be registered before loading the SDK's extensionless imports. */
   const { Plugin } = await import("@opencode/plugin");
   const initial = await slot.ready.promise;
   const spec = parseSpec(initial.task.model);
