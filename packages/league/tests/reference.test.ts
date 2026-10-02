@@ -136,7 +136,7 @@ test("active matchups exclude same-side targets and handle primal weather", () =
       move: "Flare Blitz",
       weather: "PrimordialSea (5 turns left)",
     }),
-    /fails in Primordial Sea; 0% damage\. Cannot KO\./,
+    /blocked by Primordial Sea; 0% damage\. Cannot KO\./,
   );
 });
 
@@ -836,4 +836,150 @@ test("damage estimates carry no repeated standing caveats", () => {
       !text.includes(boilerplate),
       `standing caveat "${boilerplate}" belongs in the tool description`,
     );
+});
+
+test("damage follows the stated field, not a setter's ability once its weather or terrain is gone", () => {
+  const reference = new ShowdownReference("gen9championsvgc2026regmcbo3");
+  const woodHammer = (terrain?: string) => {
+    const call: Parameters<ShowdownReference["lookup"]>[1] = {
+      attacker: "Rillaboom",
+      attacker_ability: "Grassy Surge",
+      defender: "Incineroar",
+      move: "Wood Hammer",
+    };
+    if (terrain !== undefined) call.terrain = terrain;
+    return reference.lookup("estimate_damage", call);
+  };
+  const cleared = woodHammer("none");
+  assert.doesNotMatch(cleared, /Grassy Terrain/);
+  assert.match(woodHammer("grassy"), /applied attacker ability Grassy Surge, Grassy Terrain;/);
+  assert.match(
+    woodHammer(),
+    /Grassy Terrain \(set on entry by an ability in this calculation\)/,
+    "an offline estimate names the field it inferred",
+  );
+  assert.notEqual(/: ([\d.-]+)% of maximum HP/.exec(cleared)?.[1], undefined);
+  assert.notEqual(
+    /: ([\d.-]+)% of maximum HP/.exec(cleared)?.[1],
+    /: ([\d.-]+)% of maximum HP/.exec(woodHammer("grassy"))?.[1],
+  );
+  assert.match(
+    reference.lookup("estimate_damage", {
+      attacker: "Charizard-Mega-Y",
+      attacker_ability: "Drought",
+      defender: "Garchomp",
+      move: "Flamethrower",
+      weather: "none",
+    }),
+    /applied attacker ability Drought;/,
+  );
+});
+
+test("damage runs the engine's own preparation: guaranteed crits, Parental Bond, Protean and priority blocks", () => {
+  const reference = new ShowdownReference("gen9championsvgc2026regmcbo3");
+  const estimate = (call: Parameters<ShowdownReference["lookup"]>[1]) =>
+    reference.lookup("estimate_damage", call);
+  assert.match(
+    estimate({ attacker: "Meowscarada", defender: "Garchomp", move: "Flower Trick" }),
+    /critical hit \(guaranteed\)/,
+  );
+  assert.match(
+    estimate({
+      attacker: "Kangaskhan-Mega",
+      attacker_ability: "Parental Bond",
+      defender: "Garchomp",
+      move: "Double-Edge",
+    }),
+    /Double-Edge \(Normal Physical BP 120 x2 hits\)/,
+  );
+  const percent = (text: string) => Number(/-([\d.]+)% of maximum HP/.exec(text)?.[1]);
+  const suckerPunch = (ability: string) =>
+    percent(
+      estimate({
+        attacker: "Cinderace",
+        attacker_ability: ability,
+        defender: "Garchomp",
+        move: "Sucker Punch",
+      }),
+    );
+  assert.ok(suckerPunch("Libero") > suckerPunch("Blaze") * 1.4, "Libero grants STAB");
+  assert.equal(
+    percent(
+      estimate({
+        attacker: "Cinderace",
+        attacker_ability: "Libero",
+        attacker_types: ["Fire"],
+        defender: "Garchomp",
+        move: "Sucker Punch",
+      }),
+    ),
+    suckerPunch("Blaze"),
+    "a Libero user whose type already changed this stay does not change again",
+  );
+  assert.match(
+    estimate({
+      attacker: "Incineroar",
+      defender: "Garchomp",
+      defender_ally: "Farigiraf",
+      defender_ally_ability: "Armor Tail",
+      move: "Fake Out",
+    }),
+    /Fake Out into Garchomp: blocked by Armor Tail; 0% damage/,
+  );
+});
+
+test("damage uses fallen allies, supplied Speed, turn order and the forme that attacks", () => {
+  const reference = new ShowdownReference("gen9championsvgc2026regmcbo3");
+  const estimate = (call: Parameters<ShowdownReference["lookup"]>[1]) =>
+    reference.lookup("estimate_damage", call);
+  const percent = (text: string) => Number(/-([\d.]+)% of maximum HP/.exec(text)?.[1]);
+  const kowtow = (fallen: number) =>
+    percent(
+      estimate({
+        attacker: "Kingambit",
+        attacker_ability: "Supreme Overlord",
+        attacker_fallen: fallen,
+        defender: "Garchomp",
+        move: "Kowtow Cleave",
+      }),
+    );
+  assert.ok(kowtow(3) > kowtow(0) * 1.25);
+  const gyro = (attackerSpeed: number, defenderSpeed: number) =>
+    /BP (\d+)/.exec(
+      estimate({
+        attacker: "Ferrothorn",
+        attacker_stats: { spe: attackerSpeed },
+        defender: "Garchomp",
+        defender_stats: { spe: defenderSpeed },
+        move: "Gyro Ball",
+      }),
+    )?.[1];
+  assert.equal(gyro(40, 160), "101");
+  assert.equal(gyro(160, 40), "7");
+  assert.match(
+    estimate({ attacker: "Sableye", defender: "Garchomp", move: "Payback" }),
+    /Payback \(Dark Physical BP 50\).*Turn order matters: that range is Sableye acting before Garchomp; acting after every other Pokémon this turn it is [\d.-]+% \(BP 100\)\./,
+  );
+  const stance = estimate({
+    attacker: "Aegislash",
+    attacker_ability: "Stance Change",
+    attacker_nature: "Quiet",
+    attacker_stats: { spa: 112 },
+    defender: "Garchomp",
+    move: "Shadow Ball",
+  });
+  assert.match(stance, /^Aegislash-Blade Shadow Ball/);
+  assert.match(stance, /attack exact from request/);
+  assert.equal(
+    percent(stance),
+    percent(
+      estimate({
+        attacker: "Aegislash-Blade",
+        attacker_ability: "Stance Change",
+        attacker_stats: { spa: 211 },
+        defender: "Garchomp",
+        move: "Shadow Ball",
+      }),
+    ),
+  );
 });

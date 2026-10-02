@@ -147,6 +147,42 @@ export function statRange(
   ];
 }
 
+/** Carries exact stats from one forme of a Pokémon to another by recovering the investment that produced them; a stat stays out when more than one result is possible. */
+export function projectStats(
+  battle: BattleStatCalculator,
+  from: Dex.StatsTable,
+  to: Dex.StatsTable,
+  stats: Partial<Record<StatId, number>>,
+  nature?: string,
+) {
+  const limits = investmentLimits(battle);
+  const natures: string[] = nature
+    ? [nature]
+    : battle.dex.natures.all().map((entry: { name: string }) => entry.name);
+  const projected: Partial<Record<StatId, number>> = {};
+  for (const stat of STAT_IDS) {
+    const exact = stats[stat];
+    if (exact === undefined) continue;
+    const values = new Set<number>();
+    for (const alignment of natures) {
+      for (let ev = 0; ev <= limits.perStat; ev += 1) {
+        for (let iv = limits.fixedIvs ? 31 : 0; iv <= 31; iv += 1) {
+          const set = statSet(
+            battle,
+            alignment,
+            { ...filledStats(0), [stat]: ev },
+            filledStats(iv),
+          );
+          if (battle.statModify(from, set, stat) === exact)
+            values.add(battle.statModify(to, set, stat));
+        }
+      }
+    }
+    if (values.size === 1) projected[stat] = [...values][0]!;
+  }
+  return projected;
+}
+
 export function hpRange(battle: BattleStatCalculator, stats: Dex.StatsTable): [number, number] {
   const limits = investmentLimits(battle);
   const lowEvs = filledStats(0);

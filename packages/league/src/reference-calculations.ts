@@ -11,6 +11,7 @@ import {
   id,
   investmentLimits,
   type PokemonSet,
+  projectStats,
   STAT_IDS,
   statRange,
   statSet,
@@ -56,6 +57,7 @@ const boostInputSchema = z.object({
   spe: stageSchema.optional(),
 });
 const screenInputSchema = z.array(z.string());
+const typesSchema = z.array(z.string()).optional().catch(undefined);
 
 export const lookupSpeciesArgumentsSchema = z.object({
   name: z.string().catch(""),
@@ -101,7 +103,12 @@ export const estimateDamageArgumentsSchema = z.object({
   attacker_hp_percent: optionalNumberSchema,
   defender_hp_percent: optionalNumberSchema,
   attacker_fainted_allies: optionalNumberSchema,
+  attacker_fallen: optionalNumberSchema,
   attacker_hits_taken: optionalNumberSchema,
+  attacker_types: typesSchema,
+  defender_types: typesSchema,
+  fielded_foes: optionalNumberSchema,
+  fielded_ally: optionalBooleanSchema,
   attacker_ally: optionalStringSchema,
   defender_ally: optionalStringSchema,
   attacker_ally_ability: optionalStringSchema,
@@ -122,12 +129,20 @@ interface ScratchAlly {
 }
 
 interface ScratchDamage {
-  outcome: "immune" | "none" | "damage";
+  outcome: "immune" | "blocked" | "none" | "damage";
+  /** The ability, item or condition that stopped the move before it could hit. */
+  blockedBy?: string;
+  crit: boolean;
+  spread: boolean;
+  /** The attacker's forme once the move is prepared, which Stance Change can alter. */
+  attackerForme: string;
   damage: number;
   moveType: string;
   basePower: number;
   hits: [number, number];
   knockedOut: boolean;
+  weather: string;
+  terrain: string;
 }
 
 interface ScratchDamageConfig {
@@ -145,21 +160,31 @@ interface ScratchDamageConfig {
     defStat: Exclude<StatId, "hp">;
     defValue: number;
   };
+  attackerStats: Partial<Record<StatId, number>>;
+  defenderStats: Partial<Record<StatId, number>>;
+  /** Types already changed this stay; Protean and Libero then count as spent, as their once-per-entry flag is their own id. */
+  attackerTypes?: string[] | undefined;
+  defenderTypes?: string[] | undefined;
   attackerBoosts: StatBoosts;
   defenderBoosts: StatBoosts;
   defenderMaxHp?: number | undefined;
   attackerStatus?: string | undefined;
   defenderStatus?: string | undefined;
   screens: string[];
-  weather?: string | undefined;
-  terrain?: string | undefined;
+  /** `null` clears the field; `undefined` keeps whatever the fielded abilities set on entry. */
+  weather: string | null | undefined;
+  terrain: string | null | undefined;
   helpingHand: boolean;
   faintedAllies: number;
+  fallen: number;
   attackerTimesAttacked: number;
   attackerAlly?: ScratchAlly | undefined;
   defenderAlly?: ScratchAlly | undefined;
   crit: boolean;
-  spread: boolean;
+  /** A boolean is the caller's verdict; target counts let the engine's own target decide. */
+  spread: boolean | { foes: number; ally: boolean };
+  /** Whether every other Pokémon has already acted this turn, which Payback and Analytic read. */
+  actsLast: boolean;
   attackerHpPercent?: number | undefined;
   defenderHpPercent?: number | undefined;
   rollPercent: 85 | 100;
@@ -269,6 +294,16 @@ const TERRAIN_WORDS = new Map(
     psychicterrain: "Psychic Terrain",
   }),
 );
+
+const BOOST_STATS = ["atk", "def", "spa", "spd", "spe"] as const;
+const filledUndefined = {
+  hp: undefined,
+  atk: undefined,
+  def: undefined,
+  spa: undefined,
+  spd: undefined,
+  spe: undefined,
+};
 
 function emptyBoosts(): StatBoosts {
   return {};
@@ -404,17 +439,19 @@ export function estimateDamage(
       if (!screens.includes(screen)) screens.push(screen);
     }
   }
-  let weatherId: string | undefined;
+  let weatherId: string | null | undefined;
   if (args.weather?.trim()) {
-    weatherId = WEATHER_IDS.get(canonicalWeather(args.weather));
-    if (!weatherId)
-      return `Unknown weather ${JSON.stringify(args.weather)}; accepted: sun, rain, sand, snow, desolateland, primordialsea, deltastream.`;
+    const word = canonicalWeather(args.weather);
+    weatherId = word === "none" ? null : WEATHER_IDS.get(word);
+    if (weatherId === undefined)
+      return `Unknown weather ${JSON.stringify(args.weather)}; accepted: none, sun, rain, sand, snow, desolateland, primordialsea, deltastream.`;
   }
-  let terrainId: string | undefined;
+  let terrainId: string | null | undefined;
   if (args.terrain?.trim()) {
-    terrainId = TERRAIN_IDS.get(id(args.terrain.replace(/\s*terrain\s*$/i, "")));
-    if (!terrainId)
-      return `Unknown terrain ${JSON.stringify(args.terrain)}; accepted: electric, grassy, misty, psychic.`;
+    const word = id(args.terrain.replace(/\s*terrain\s*$/i, ""));
+    terrainId = word === "none" ? null : TERRAIN_IDS.get(word);
+    if (terrainId === undefined)
+      return `Unknown terrain ${JSON.stringify(args.terrain)}; accepted: none, electric, grassy, misty, psychic.`;
   }
 
   const offFromDefender = move.overrideOffensivePokemon === "target";
@@ -471,10 +508,21 @@ export function estimateDamage(
   const hpPercent =
     suppliedHpPercent === undefined ? undefined : Math.max(0, Math.min(100, suppliedHpPercent));
 
-  const isSpread = args.is_spread_hit === true;
-  const crit = args.is_critical_hit === true;
+  const spreadInput =
+    args.is_spread_hit ??
+    (args.fielded_foes === undefined
+      ? false
+      : { foes: Math.trunc(args.fielded_foes), ally: args.fielded_ally === true });
   const helpingHand = args.helping_hand === true;
   const faintedAllies = Math.max(0, Math.trunc(args.attacker_fainted_allies ?? 0));
+  const fallen = Math.max(0, Math.trunc(args.attacker_fallen ?? faintedAllies));
+  const exactStats = (side: "attacker" | "defender") =>
+    Object.fromEntries(
+      BOOST_STATS.flatMap((stat) => {
+        const value = args[`${side}_stats`]?.[stat];
+        return value !== undefined && value > 0 ? [[stat, value]] : [];
+      }),
+    );
   const attackerTimesAttacked = Math.max(0, Math.trunc(args.attacker_hits_taken ?? 0));
   const allies: Partial<Record<"attacker" | "defender", ScratchAlly>> = {};
   for (const side of ["attacker", "defender"] as const) {
@@ -491,16 +539,29 @@ export function estimateDamage(
     };
   }
 
-  const run = (offValue: number, defValue: number, defenderMaxHp: number, rollPercent: 85 | 100) =>
+  const genderBlind = abilities.attacker === "Rivalry";
+  if (genderBlind)
+    notes.push("Rivalry (1.25x into the same gender, 0.75x into the opposite) is not applied");
+  const run = (
+    offValue: number,
+    defValue: number,
+    defenderMaxHp: number,
+    rollPercent: 85 | 100,
+    actsLast: boolean,
+  ) =>
     scratchDamage(context, {
       attacker,
       defender,
       moveId: move.id,
-      attackerAbility: abilities.attacker,
+      attackerAbility: genderBlind ? undefined : abilities.attacker,
       defenderAbility: abilities.defender,
       attackerItem: items.attacker,
       defenderItem: items.defender,
       pins: { offFromDefender, offStat, offValue, defStat, defValue },
+      attackerStats: exactStats("attacker"),
+      defenderStats: exactStats("defender"),
+      attackerTypes: args.attacker_types,
+      defenderTypes: args.defender_types,
       attackerBoosts: boosts.attacker,
       defenderBoosts: boosts.defender,
       attackerStatus: statuses.attacker,
@@ -511,33 +572,52 @@ export function estimateDamage(
       terrain: terrainId,
       helpingHand,
       faintedAllies,
+      fallen,
       attackerTimesAttacked,
       attackerAlly: allies.attacker,
       defenderAlly: allies.defender,
-      crit,
-      spread: isSpread,
+      crit: args.is_critical_hit === true,
+      spread: spreadInput,
+      actsLast,
       attackerHpPercent,
       defenderHpPercent: hpPercent,
       rollPercent,
     });
   let low: ScratchDamage;
   let high: ScratchDamage;
+  let lastLow: ScratchDamage;
+  let lastHigh: ScratchDamage;
   try {
-    low = run(offLow, defHigh, hpHigh, 85);
-    high = run(offHigh, defLow, hpLow, 100);
+    low = run(offLow, defHigh, hpHigh, 85, false);
+    high = run(offHigh, defLow, hpLow, 100, false);
+    lastLow = run(offLow, defHigh, hpHigh, 85, true);
+    lastHigh = run(offHigh, defLow, hpLow, 100, true);
   } catch (error) {
     return `Damage engine error: ${error instanceof Error ? error.message : String(error)}`;
   }
+  if (high.attackerForme !== attacker.name) {
+    const stats = projectStats(
+      context.battle,
+      attacker.baseStats,
+      context.dex.species.get(high.attackerForme).baseStats,
+      args.attacker_stats ?? {},
+      natures.attacker?.name,
+    );
+    return estimateDamage(context, {
+      ...args,
+      attacker: high.attackerForme,
+      attacker_stats: { ...filledUndefined, ...stats },
+    });
+  }
+  if (high.outcome === "blocked" || low.outcome === "blocked")
+    return `${attacker.name} ${move.name} into ${defender.name}: blocked by ${high.blockedBy ?? low.blockedBy}; 0% damage. Cannot KO.`;
 
   const moveType = high.moveType;
-  if (weatherId === "desolateland" && moveType === "Water")
-    return `${attacker.name} ${move.name} into ${defender.name}: fails in Desolate Land; 0% damage. Cannot KO.`;
-  if (weatherId === "primordialsea" && moveType === "Fire")
-    return `${attacker.name} ${move.name} into ${defender.name}: fails in Primordial Sea; 0% damage. Cannot KO.`;
+  const defenderTypes = args.defender_types?.length ? args.defender_types : defender.types;
   if (low.outcome === "immune" || high.outcome === "immune") {
-    const chartDetail = effectivenessDetail(context.dex, moveType, defender.types);
+    const chartDetail = effectivenessDetail(context.dex, moveType, defenderTypes);
     const reason =
-      typeModifier(context.dex, moveType, defender.types) === 0
+      typeModifier(context.dex, moveType, defenderTypes) === 0
         ? chartDetail
         : `immune or absorbed${abilities.defender ? ` by ${abilities.defender}` : ""}; type chart alone says ${chartDetail}`;
     return `${attacker.name} ${move.name} into ${defender.name}: ${reason}; 0% damage. Cannot KO.`;
@@ -545,24 +625,28 @@ export function estimateDamage(
   if (low.outcome === "none" || high.outcome === "none")
     return `${move.name} has no standard damage output to estimate.`;
 
-  const minTotal = low.damage;
-  const maxTotal = high.damage;
   const pct = (damage: number, hp: number) => Math.round((damage / hp) * 1000) / 10;
-  const lowPercent = pct(minTotal, hpHigh);
-  const highPercent = pct(maxTotal, hpLow);
-  const minimumPercent = Math.min(lowPercent, highPercent);
-  const maximumPercent = Math.max(lowPercent, highPercent);
+  const span = (from: ScratchDamage, to: ScratchDamage) => {
+    const percents = [pct(from.damage, hpHigh), pct(to.damage, hpLow)];
+    return `${Math.min(...percents)}-${Math.max(...percents)}%`;
+  };
   const targetPercent = hpPercent ?? 100;
   const fullHealth = targetPercent === 100;
   const koLabel = fullHealth ? "OHKO" : `KO from the shown ${Math.round(targetPercent)}%`;
-  const outcome =
+  const verdict = (from: ScratchDamage, to: ScratchDamage) =>
     targetPercent <= 0
       ? "Target is already at 0%."
-      : low.knockedOut && high.knockedOut
+      : from.knockedOut && to.knockedOut
         ? `${koLabel} at both evaluated endpoints.`
-        : low.knockedOut || high.knockedOut
+        : from.knockedOut || to.knockedOut
           ? `${koLabel} at one evaluated endpoint only.`
           : `No ${koLabel} at either evaluated endpoint.`;
+  const outcome = verdict(low, high);
+  const orderText =
+    lastHigh.outcome === "damage" &&
+    (lastLow.damage !== low.damage || lastHigh.damage !== high.damage)
+      ? ` Turn order matters: that range is ${attacker.name} acting before ${defender.name}; acting after every other Pokémon this turn it is ${span(lastLow, lastHigh)} (BP ${lastHigh.basePower}). ${verdict(lastLow, lastHigh)}`
+      : "";
   const shownHp = hpPercent === undefined ? "" : ` Target HP shown: ${Math.round(hpPercent)}%.`;
   const attackBasis =
     exactOff !== undefined
@@ -580,7 +664,7 @@ export function estimateDamage(
           : "legal defense/HP range";
 
   const applied: string[] = [];
-  if (abilities.attacker) applied.push(`attacker ability ${abilities.attacker}`);
+  if (abilities.attacker && !genderBlind) applied.push(`attacker ability ${abilities.attacker}`);
   if (abilities.defender) applied.push(`defender ability ${abilities.defender}`);
   if (items.attacker) applied.push(`attacker item ${items.attacker}`);
   if (items.defender) applied.push(`defender item ${items.defender}`);
@@ -594,13 +678,17 @@ export function estimateDamage(
     const screenName = SCREEN_WORDS.get(screen);
     if (screenName) applied.push(screenName);
   }
-  if (weatherId) applied.push(WEATHER_WORDS.get(weatherId) ?? weatherId);
-  if (terrainId) applied.push(TERRAIN_WORDS.get(terrainId) ?? terrainId);
+  const inferred = " (set on entry by an ability in this calculation)";
+  if (high.weather)
+    applied.push(`${WEATHER_WORDS.get(high.weather) ?? high.weather}${weatherId ? "" : inferred}`);
+  if (high.terrain)
+    applied.push(`${TERRAIN_WORDS.get(high.terrain) ?? high.terrain}${terrainId ? "" : inferred}`);
   if (helpingHand) applied.push("Helping Hand");
   if (attackerTimesAttacked)
     applied.push(`attacker hit ${attackerTimesAttacked} times since entering`);
-  if (crit) applied.push("critical hit");
-  if (isSpread) applied.push("spread (0.75x)");
+  if (high.crit)
+    applied.push(args.is_critical_hit === true ? "critical hit" : "critical hit (guaranteed)");
+  if (high.spread) applied.push("spread (0.75x)");
   for (const side of ["attacker", "defender"] as const) {
     const ally = allies[side];
     if (ally) applied.push(`${side} ally ${ally.name}${ally.ability ? ` (${ally.ability})` : ""}`);
@@ -614,7 +702,7 @@ export function estimateDamage(
     hits[1] > 1 ? ` x${hits[0] === hits[1] ? hits[0] : `${hits[0]}-${hits[1]}`} hits` : "";
   const bpText = high.basePower > 0 ? `BP ${high.basePower}` : "fixed damage";
   const notesText = notes.length ? ` Notes: ${notes.join("; ")}.` : "";
-  return `${attacker.name} ${move.name} (${moveType} ${move.category} ${bpText}${hitsText}) into ${defender.name}: ${minimumPercent}-${maximumPercent}% of maximum HP before survival effects.${shownHp} ${outcome} Hit outcomes assume the selected hits connect; endpoints do not establish exhaustive KO certainty. ${effectivenessDetail(context.dex, moveType, defender.types)}; ${appliedText}; ${attackBasis}, ${defenseBasis}.${notesText}`;
+  return `${attacker.name} ${move.name} (${moveType} ${move.category} ${bpText}${hitsText}) into ${defender.name}: ${span(low, high)} of maximum HP before survival effects.${shownHp} ${outcome}${orderText} Hit outcomes assume the selected hits connect; endpoints do not establish exhaustive KO certainty. ${effectivenessDetail(context.dex, moveType, defenderTypes)}; ${appliedText}; ${attackBasis}, ${defenseBasis}.${notesText}`;
 }
 
 function scratchDamage(
@@ -672,22 +760,38 @@ function scratchDamage(
       ],
     },
   });
+  /** Only certainties happen: no chance crit, no chance secondary effect between hits. */
+  battle.randomChance = (numerator: number, denominator: number) => numerator >= denominator;
   try {
     if (!battle.turn) battle.makeChoices("default", "default");
     const att = battle.p1.active[0];
     const def = battle.p2.active[0];
     if (!att || !def) throw new Error("scratch battle failed to field both sides");
+    for (const stat of BOOST_STATS) {
+      const attackerStat = cfg.attackerStats[stat];
+      if (attackerStat !== undefined) att.storedStats[stat] = attackerStat;
+      const defenderStat = cfg.defenderStats[stat];
+      if (defenderStat !== undefined) def.storedStats[stat] = defenderStat;
+    }
     const offHolder = cfg.pins.offFromDefender ? def : att;
     offHolder.storedStats[cfg.pins.offStat] = cfg.pins.offValue;
     def.storedStats[cfg.pins.defStat] = cfg.pins.defValue;
+    if (cfg.attackerTypes?.length) {
+      att.setType(cfg.attackerTypes);
+      att.abilityState[att.ability] = true;
+    }
+    if (cfg.defenderTypes?.length) def.setType(cfg.defenderTypes);
     const fromAlly = (state: Battle["field"]["weatherState"]): boolean => {
       const source = state.source;
       return Boolean(source) && source !== att && source !== def;
     };
     if (cfg.weather) battle.field.setWeather(cfg.weather, "debug");
-    else if (fromAlly(battle.field.weatherState)) battle.field.clearWeather();
+    else if (cfg.weather === null || fromAlly(battle.field.weatherState))
+      battle.field.clearWeather();
     if (cfg.terrain) battle.field.setTerrain(cfg.terrain, "debug");
-    else if (fromAlly(battle.field.terrainState)) battle.field.clearTerrain();
+    else if (cfg.terrain === null || fromAlly(battle.field.terrainState))
+      battle.field.clearTerrain();
+    const field = { weather: battle.field.weather, terrain: battle.field.terrain };
     for (const stat of BOOST_IDS) att.boosts[stat] = 0;
     for (const stat of BOOST_IDS) def.boosts[stat] = 0;
     Object.assign(att.boosts, cfg.attackerBoosts);
@@ -701,14 +805,26 @@ function scratchDamage(
     if (cfg.defenderStatus) def.status = battle.dex.toID(cfg.defenderStatus);
     if (cfg.helpingHand) att.addVolatile("helpinghand");
     att.side.totalFainted = cfg.faintedAllies;
+    if (att.hasAbility("supremeoverlord")) att.abilityState.fallen = Math.min(5, cfg.fallen);
     att.timesAttacked = cfg.attackerTimesAttacked;
     if (cfg.attackerHpPercent !== undefined)
       att.hp = Math.max(1, Math.round((att.maxhp * cfg.attackerHpPercent) / 100));
     if (cfg.defenderHpPercent !== undefined)
       def.hp = Math.max(1, Math.round((def.maxhp * cfg.defenderHpPercent) / 100));
 
-    let active = battle.dex.getActiveMove(cfg.moveId);
-    active.willCrit = cfg.crit;
+    if (!cfg.actsLast)
+      for (const other of battle.getAllActive())
+        if (other !== att)
+          battle.queue.addChoice({ choice: "move", pokemon: other, moveid: "splash" });
+    const [action] = battle.queue.resolveAction({
+      choice: "move",
+      pokemon: att,
+      moveid: cfg.moveId,
+      targetLoc: att.getLocOf(def),
+    });
+    if (action?.choice !== "move") throw new Error("scratch battle failed to resolve the move");
+    let active = action.move;
+    if (cfg.crit) active.willCrit = true;
     battle.activePokemon = att;
     battle.activeTarget = def;
     battle.activeMove = active;
@@ -716,7 +832,45 @@ function scratchDamage(
     battle.singleEvent("ModifyMove", active, null, att, def, active, active);
     active = battle.runEvent("ModifyType", att, def, active, active);
     active = battle.runEvent("ModifyMove", att, def, active, active);
-    if (cfg.spread) active.spreadHit = true;
+    const spread =
+      cfg.spread === true ||
+      (cfg.spread !== false &&
+        (active.target === "allAdjacentFoes"
+          ? cfg.spread.foes === 2
+          : active.target === "allAdjacent" && cfg.spread.foes + Number(cfg.spread.ally) > 1));
+    if (spread) active.spreadHit = true;
+    const stopped = (blockedBy?: string): ScratchDamage => {
+      const result: ScratchDamage = {
+        outcome: blockedBy === undefined ? "immune" : "blocked",
+        crit: false,
+        spread,
+        attackerForme: att.species.name,
+        damage: 0,
+        moveType: active.type,
+        basePower: active.basePower,
+        hits: [1, 1],
+        knockedOut: false,
+        ...field,
+      };
+      if (blockedBy !== undefined) result.blockedBy = blockedBy;
+      return result;
+    };
+    const logged = battle.log.length;
+    const cause = () =>
+      battle.log
+        .slice(logged)
+        .map(
+          (line) =>
+            /^\|cant\|[^|]*\|(?:ability|item|move): ([^|]+)/.exec(line)?.[1] ??
+            /^\|-fail\|.*\[from\] (?:(?:ability|item|move): )?([^|]+)$/.exec(line)?.[1],
+        )
+        .findLast((effect) => effect !== undefined) ?? "an effect on the field";
+    if (!battle.runEvent("TryMove", att, def, active)) return stopped(cause());
+    if (
+      !battle.singleEvent("PrepareHit", active, {}, def, att, active) ||
+      !battle.runEvent("PrepareHit", att, def, active)
+    )
+      return stopped("its own precondition");
 
     const hits = (
       Array.isArray(active.multihit)
@@ -731,18 +885,11 @@ function scratchDamage(
       if (computed !== false && computed !== null && computed !== undefined) basePower = computed;
     }
     const tryHit = battle.runEvent("TryHit", def, att, active);
-    if (!tryHit && tryHit !== 0)
-      return {
-        outcome: "immune",
-        damage: 0,
-        moveType: active.type,
-        basePower,
-        hits,
-        knockedOut: false,
-      };
+    if (!tryHit && tryHit !== 0) return { ...stopped(), basePower, hits };
 
     battle.randomizer = (value: number) => battle.trunc((value * cfg.rollPercent) / 100);
     let damage = 0;
+    let crit = false;
     let outcome: ScratchDamage["outcome"] = "none";
     const getDamage = battle.actions.getDamage.bind(battle.actions);
     battle.actions.getDamage = (source, target, move, suppressMessages) => {
@@ -752,6 +899,7 @@ function scratchDamage(
         else if (value !== undefined && value !== null) {
           damage += value;
           outcome = "damage";
+          crit ||= target.getMoveHitData(move).crit;
         }
       }
       return value;
@@ -759,7 +907,18 @@ function scratchDamage(
     if (active.multihit) active.multihit = cfg.rollPercent === 85 ? hits[0] : hits[1];
     active.multiaccuracy = false;
     battle.actions.hitStepMoveHitLoop([def], att, active);
-    return { outcome, damage, moveType: active.type, basePower, hits, knockedOut: def.hp === 0 };
+    return {
+      outcome,
+      crit,
+      spread,
+      attackerForme: att.species.name,
+      damage,
+      moveType: active.type,
+      basePower,
+      hits,
+      knockedOut: def.hp === 0,
+      ...field,
+    };
   } finally {
     battle.destroy();
   }

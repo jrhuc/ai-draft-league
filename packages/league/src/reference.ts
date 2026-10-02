@@ -29,15 +29,13 @@ import {
   cleanDescription,
   effectivenessDetail,
   effectivenessLabel,
-  filledStats,
   id,
   investmentLimits,
   modifyRange,
+  projectStats,
   SPEED_HALVING_ITEMS,
   speciesMoveType,
   statRange,
-  statSet,
-  STAT_IDS,
   TARGET_TAGS,
   typeModifier,
   uniqueNames,
@@ -103,31 +101,20 @@ export class ShowdownReference {
     return mega.exists && !mega.isNonstandard ? mega : undefined;
   }
 
-  megaStats(name: string, mega: Dex.Species, stats: Record<string, number>, nature?: string) {
-    const base = this.getSpecies(name);
-    const limits = investmentLimits(this.battle);
-    const natures = nature ? [this.dex.natures.get(nature)] : this.dex.natures.all();
-    const projected: Record<string, number> = {};
-    for (const stat of STAT_IDS) {
-      if (stats[stat] === undefined) continue;
-      const values = new Set<number>();
-      for (const alignment of natures) {
-        for (let ev = 0; ev <= limits.perStat; ev += 1) {
-          for (let iv = limits.fixedIvs ? 31 : 0; iv <= 31; iv += 1) {
-            const set = statSet(
-              this.battle,
-              alignment.name,
-              { ...filledStats(0), [stat]: ev },
-              filledStats(iv),
-            );
-            if (this.battle.statModify(base.baseStats, set, stat) === stats[stat])
-              values.add(this.battle.statModify(mega.baseStats, set, stat));
-          }
-        }
-      }
-      if (values.size === 1) projected[stat] = [...values][0]!;
-    }
-    return projected;
+  /** Exact stats of `name` carried to another of its formes, such as its Mega or Aegislash-Blade. */
+  formeStats(
+    name: string,
+    forme: string,
+    stats: Readonly<Record<string, number>>,
+    nature?: string,
+  ): Record<string, number> {
+    return projectStats(
+      this.battle,
+      this.getSpecies(name).baseStats,
+      this.getSpecies(forme).baseStats,
+      stats,
+      nature,
+    );
   }
 
   moveTarget(name: string): string | undefined {

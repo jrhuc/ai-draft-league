@@ -90,33 +90,57 @@ export class PerspectiveState {
       this.turn = Number(args[0]);
       this.upkeepDone = false;
     } else if (kind === "upkeep") this.upkeepDone = true;
-    else if ((kind === "switch" || kind === "drag" || kind === "replace") && args.length >= 3) {
+    else if ((kind === "switch" || kind === "drag") && args.length >= 3) {
+      const [side, slot] = this.identParts(args[0]!);
+      const previous = side ? this.sides[side].active[slot] : undefined;
+      const previousMon = previous && side ? this.sides[side].mons.get(previous) : undefined;
+      previousMon?.leaveField();
       const mon = this.mon(args[0]!);
+      const entered = { hp: mon.hp, hpPercent: mon.hpPercent, status: mon.status };
+      mon.leaveField();
       this.setDetails(mon, args[1]!);
       this.setHp(mon, args[2]!);
-      const [side, slot] = this.identParts(args[0]!);
       if (side) {
-        if (kind !== "replace") {
-          mon.ability = undefined;
-          mon.abilitySuppressed = false;
+        mon.ability = undefined;
+        mon.abilitySuppressed = false;
+        this.mergeSheetMon(mon, this.sides[side]);
+        this.sides[side].active[slot] = this.monKey(args[0]!);
+        this.sides[side].entered[slot] = entered;
+      }
+    } else if (kind === "replace" && args.length >= 2) {
+      const [side, slot] = this.identParts(args[0]!);
+      const disguiseKey = side ? this.sides[side].active[slot] : undefined;
+      const disguise = disguiseKey && side ? this.sides[side].mons.get(disguiseKey) : undefined;
+      const mon = this.mon(args[0]!);
+      this.setDetails(mon, args[1]!);
+      if (side) {
+        if (disguise && disguise !== mon) {
+          Object.assign(mon, {
+            hp: disguise.hp,
+            hpPercent: disguise.hpPercent,
+            status: disguise.status,
+            boosts: disguise.boosts,
+            volatiles: disguise.volatiles,
+            lastMove: disguise.lastMove,
+            timesAttacked: disguise.timesAttacked,
+          });
+          disguise.boosts = {};
+          disguise.volatiles = new Set();
+          disguise.lastMove = undefined;
+          disguise.timesAttacked = 0;
+          Object.assign(disguise, this.sides[side].entered[slot]);
         }
         this.mergeSheetMon(mon, this.sides[side]);
-        const previous = this.sides[side].active[slot];
-        const previousMon = previous ? this.sides[side].mons.get(previous) : undefined;
-        if (previousMon) {
-          previousMon.boosts = {};
-          previousMon.volatiles.clear();
-          previousMon.choiceLock = undefined;
-          previousMon.timesAttacked = 0;
-        }
-        if (kind !== "replace") {
-          mon.boosts = {};
-          mon.volatiles.clear();
-          mon.protectSuccessStreak = 0;
-          mon.timesAttacked = 0;
-          mon.choiceLock = undefined;
-        }
         this.sides[side].active[slot] = this.monKey(args[0]!);
+      }
+    } else if (kind === "swap" && args[0]) {
+      const [side] = this.identParts(args[0]);
+      if (side) {
+        const { a, b } = this.sides[side].active;
+        const swapped: Record<string, string> = {};
+        if (b) swapped.a = b;
+        if (a) swapped.b = a;
+        this.sides[side].active = swapped;
       }
     } else if (kind === "detailschange" && args.length >= 2) {
       const mon = this.mon(args[0]!);
@@ -133,17 +157,23 @@ export class PerspectiveState {
       mon.preview = true;
     } else if (kind === "move" && args.length >= 2) {
       const mon = this.mon(args[0]!);
+      const moveId = this.speciesKey(args[1]!);
+      if (!PROTECT_MOVES.has(moveId)) mon.protectSuccessStreak = 0;
+      /** A bounced or called move (Magic Bounce, Sleep Talk) is not one of the user's own selections. */
+      const called = args.some((arg) => arg.startsWith("[from]") && !/lockedmove/i.test(arg));
+      if (called) return;
       mon.recordMove(args[1]!, 1);
       mon.lastMove = args[2]
         ? { name: args[1]!, target: args[2], turn: this.turn }
         : { name: args[1]!, turn: this.turn };
       if (!mon.itemConsumed && CHOICE_ITEMS.has(this.speciesKey(mon.item ?? "")))
         mon.choiceLock = args[1]!;
-      const moveId = this.speciesKey(args[1]!);
-      if (!PROTECT_MOVES.has(moveId)) mon.protectSuccessStreak = 0;
     } else if (kind === "-singleturn" && args.length >= 2) {
-      if (PROTECT_MOVES.has(this.speciesKey(this.effect(args[1]!))))
-        this.mon(args[0]!).protectSuccessStreak += 1;
+      if (PROTECT_MOVES.has(this.speciesKey(this.effect(args[1]!)))) {
+        const mon = this.mon(args[0]!);
+        mon.protectSuccessStreak += 1;
+        mon.lastStallTurn = this.turn;
+      }
     } else if (kind === "-fail" && args[0]) {
       const mon = this.mon(args[0]!);
       if (
@@ -157,8 +187,7 @@ export class PerspectiveState {
       mon.hp = "0 fnt";
       mon.hpPercent = 0;
       mon.fainted = true;
-      mon.boosts = {};
-      mon.volatiles.clear();
+      mon.leaveField();
     } else if ((kind === "-damage" || kind === "-heal") && args.length >= 2) {
       const mon = this.mon(args[0]!);
       this.setHp(mon, args[1]!);
@@ -185,13 +214,49 @@ export class PerspectiveState {
     else if (kind === "-clearallboost") {
       for (const side of Object.values(this.sides))
         for (const mon of side.mons.values()) mon.boosts = {};
-    } else if (kind === "-clearnegativeboost" && args[0]) {
+    } else if ((kind === "-clearnegativeboost" || kind === "-clearpositiveboost") && args[0]) {
       const mon = this.mon(args[0]);
-      mon.boosts = Object.fromEntries(Object.entries(mon.boosts).filter(([, value]) => value > 0));
+      const keeps = kind === "-clearnegativeboost" ? 1 : -1;
+      mon.boosts = Object.fromEntries(
+        Object.entries(mon.boosts).filter(([, value]) => value * keeps > 0),
+      );
+    } else if (kind === "-invertboost" && args[0]) {
+      const mon = this.mon(args[0]);
+      mon.boosts = Object.fromEntries(
+        Object.entries(mon.boosts).map(([stat, value]) => [stat, -value]),
+      );
+    } else if (kind === "-copyboost" && args.length >= 2) {
+      this.mon(args[0]!).boosts = { ...this.mon(args[1]!).boosts };
+    } else if (kind === "-swapboost" && args.length >= 2) {
+      const [first, second] = [this.mon(args[0]!), this.mon(args[1]!)];
+      const listed =
+        args[2] && !args[2].startsWith("[") ? args[2].split(",") : [...STAT_LABELS.keys()];
+      for (const stat of listed.map((name) => name.trim())) {
+        const [mine, theirs] = [first.boosts[stat] ?? 0, second.boosts[stat] ?? 0];
+        first.boosts[stat] = theirs;
+        second.boosts[stat] = mine;
+      }
+    } else if (kind === "-transform" && args.length >= 2) {
+      const mon = this.mon(args[0]!);
+      const target = this.mon(args[1]!);
+      mon.transientBase ??= mon.species;
+      mon.transformed = true;
+      mon.species = target.species;
+      mon.ability = target.ability;
+      mon.types = target.types;
+      mon.boosts = { ...target.boosts };
     } else if ((kind === "-start" || kind === "-end") && args.length >= 2) {
       const mon = this.mon(args[0]!);
       const effect = this.effect(args[1]!);
-      if (kind === "-start") {
+      if (kind === "-start" && this.speciesKey(effect) === "typechange") {
+        const types = args[2]?.startsWith("[")
+          ? this.effectSource(args)?.types
+          : args[2]?.split("/");
+        if (types) mon.types = types;
+        else mon.volatiles.add(effect);
+      } else if (kind === "-start" && this.speciesKey(effect) === "typeadd" && args[2]) {
+        mon.volatiles.add(`${args[2]} type added`);
+      } else if (kind === "-start") {
         if (/^perish\d$/.test(this.speciesKey(effect))) {
           for (const volatile of mon.volatiles) {
             if (/^perish\d$/.test(this.speciesKey(volatile))) mon.volatiles.delete(volatile);
@@ -207,18 +272,23 @@ export class PerspectiveState {
         this.speciesKey(this.weather.name) !== this.speciesKey(args[0])
       ) {
         const name = this.effect(args[0]);
-        const rock = WEATHER_ROCKS.get(this.speciesKey(name));
         const setter = this.effectSource(args) ?? this.lastMoveUserThisTurn(this.speciesKey(name));
-        const extended =
-          rock !== undefined && setter?.item !== undefined && this.speciesKey(setter.item) === rock;
+        const extended = this.holds(setter, WEATHER_ROCKS.get(this.speciesKey(name)));
         this.weather = { name, startedTurn: this.effectStartTurn(), duration: extended ? 8 : 5 };
       }
     } else if (kind === "-fieldstart" && args[0]) {
       const name = this.effect(args[0]);
-      this.fields.set(this.speciesKey(name), {
+      const key = this.speciesKey(name);
+      const terrain = key.endsWith("terrain");
+      /** Showdown announces a new terrain without ending the one it replaces. */
+      if (terrain)
+        for (const existing of this.fields.keys())
+          if (existing.endsWith("terrain")) this.fields.delete(existing);
+      const setter = this.effectSource(args) ?? this.lastMoveUserThisTurn(key);
+      this.fields.set(key, {
         name,
         startedTurn: this.effectStartTurn(),
-        duration: 5,
+        duration: terrain && this.holds(setter, "terrainextender") ? 8 : 5,
       });
     } else if (kind === "-fieldend" && args[0])
       this.fields.delete(this.speciesKey(this.effect(args[0]!)));
@@ -229,14 +299,11 @@ export class PerspectiveState {
         const key = this.speciesKey(effect);
         if (kind === "-sidestart") {
           let duration = TIMED_SIDE_CONDITIONS.get(key);
-          if (SCREEN_MOVES.has(key)) {
-            const setter =
-              this.lastMoveUserThisTurn(key, side) ??
-              [...this.sides[side].mons.values()].find(
-                (mon) => mon.item && this.speciesKey(mon.item) === "lightclay",
-              );
-            if (setter?.item && this.speciesKey(setter.item) === "lightclay") duration = 8;
-          }
+          if (
+            SCREEN_MOVES.has(key) &&
+            this.holds(this.lastMoveUserThisTurn(key, side), "lightclay")
+          )
+            duration = 8;
           const condition: TimedEffect = {
             name: effect,
             startedTurn: Math.max(1, this.turn),
@@ -270,10 +337,9 @@ export class PerspectiveState {
       mon.abilitySuppressed = false;
     } else if (kind === "-formechange" && args.length >= 2) {
       const mon = this.mon(args[0]!);
+      mon.transientBase ??= mon.species;
       mon.species = args[1]!;
       mon.formes.add(this.speciesKey(args[1]!));
-      mon.ability = undefined;
-      mon.abilitySuppressed = false;
     } else if (kind === "showteam" && args.length >= 2)
       this.showTeam(args[0]!, args.slice(1).join("|"));
     else if (kind === "t:" && Number.isFinite(Number(args[0])))
@@ -381,7 +447,7 @@ export class PerspectiveState {
     ] as const) {
       const key = side.active[slot];
       const mon = key ? side.mons.get(key) : undefined;
-      if (mon && !mon.fainted && mon.protectSuccessStreak > 0) reduced[number] = true;
+      if (mon && !mon.fainted && this.stallStreak(mon) > 0) reduced[number] = true;
     }
     return reduced;
   }
@@ -507,6 +573,13 @@ export class PerspectiveState {
     );
   }
 
+  /** Showdown's stall counter lapses after a turn without a successful stall, so a flinch or a switch ends the streak. */
+  private stallStreak(mon: MonState): number {
+    return mon.lastStallTurn !== undefined && mon.lastStallTurn >= this.turn - 1
+      ? mon.protectSuccessStreak
+      : 0;
+  }
+
   private effectStartTurn(): number {
     return Math.max(1, this.turn + (this.upkeepDone ? 1 : 0));
   }
@@ -517,6 +590,12 @@ export class PerspectiveState {
     const elapsed = Math.max(0, this.turn - effect.startedTurn);
     const remaining = Math.max(0, effect.duration - elapsed);
     return `${effect.name} (${remaining} turn${remaining === 1 ? "" : "s"} left)`;
+  }
+
+  private holds(mon: MonState | undefined, item: string | undefined): boolean {
+    return Boolean(
+      item && mon?.item !== undefined && !mon.itemConsumed && this.speciesKey(mon.item) === item,
+    );
   }
 
   private effectSource(args: string[]): MonState | undefined {
@@ -603,7 +682,8 @@ export class PerspectiveState {
         active: activeSlots.length > 0,
       });
       const attrs = [mon.species];
-      if (reference?.types) attrs.push(`types ${reference.types}`);
+      if (mon.types) attrs.push(`types ${mon.types.join("/")} (changed)`);
+      else if (reference?.types) attrs.push(`types ${reference.types}`);
       if (activeSlots.length) attrs.push(`active slot ${activeSlots.join("/")}`);
       if ((own && mon.brought === false) || (foesResolved && mon.hpPercent === undefined))
         attrs.push("not brought this game");
@@ -651,11 +731,12 @@ export class PerspectiveState {
             })
             .join(", ")}`,
         );
-      if (mon.protectSuccessStreak > 0)
+      const streak = this.stallStreak(mon);
+      if (streak > 0)
         attrs.push(
-          mon.protectSuccessStreak === 1
+          streak === 1
             ? "Protect success rate reduced next use"
-            : `Protect success rate heavily reduced (streak ${mon.protectSuccessStreak})`,
+            : `Protect success rate heavily reduced (streak ${streak})`,
         );
       if (mon.lastMove) {
         const target = mon.lastMove.target
@@ -695,7 +776,8 @@ export class PerspectiveState {
       if (!ident) continue;
       const mon = this.mon(ident);
       if (!request.teamPreview) mon.brought = true;
-      this.setDetails(mon, text(pokemon.details));
+      /** The request keeps reporting the base forme while Stance Change or Transform is in effect. */
+      if (!mon.transientBase) this.setDetails(mon, text(pokemon.details));
       const condition = text(pokemon.condition);
       this.setHp(mon, condition);
       const conditionParts = condition.split(" ");
@@ -703,7 +785,7 @@ export class PerspectiveState {
       mon.item = text(pokemon.item) || mon.item;
       mon.ability = text(pokemon.ability) || text(pokemon.baseAbility) || mon.ability;
       if (text(pokemon.ability) || text(pokemon.baseAbility)) mon.abilitySuppressed = false;
-      const stats = asRecord(pokemon.stats);
+      const stats = mon.transformed ? {} : asRecord(pokemon.stats);
       mon.stats = {};
       for (const [stat, value] of Object.entries(stats)) {
         if (Number.isInteger(value)) mon.stats[stat] = Number(value);
@@ -714,8 +796,8 @@ export class PerspectiveState {
       this.sides[this.pid].active[String.fromCharCode("a".charCodeAt(0) + slot)] =
         this.monKey(ident);
       const active = request.active?.[slot];
-      mon.canMegaEvo = Boolean(active?.canMegaEvo);
       if (!active) continue;
+      mon.canMegaEvo = Boolean(active.canMegaEvo);
       for (const move of asRecords(active.moves)) {
         const name = text(move.move) || text(move.id);
         if (!name) continue;

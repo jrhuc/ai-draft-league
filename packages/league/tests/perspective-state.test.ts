@@ -417,7 +417,10 @@ test("switch-in damage keeps the chosen remaining ally and matches the resulting
   const request: BattleRequest = { side: { pokemon: mons } };
   const args = { attacker: "Incineroar", defender: "Palafin", move: "Flare Blitz" };
   const before = state.render(request);
-  assert.throws(() => state.estimateDamage(args, request, reference), /Set defender_replaces/);
+  const either = state.estimateDamage(args, request, reference);
+  assert.match(either, /^Hypothetical switch-in; the result depends on which Pokémon leaves\./);
+  assert.match(either, /^If Palafin replaces Mimikyu: .*defender ally Altaria \(Cloud Nine\)/m);
+  assert.match(either, /^If Palafin replaces Altaria: .*defender ally Mimikyu \(Disguise\)/m);
   assert.throws(
     () => state.estimateDamage({ ...args, defender_replaces: "foe1" }, request, reference),
     /same-side active/,
@@ -745,6 +748,7 @@ test("field weather and screens render remaining turns", () => {
     "|turn|1",
     "|-fieldstart|move: Trick Room",
     "|-weather|SunnyDay|[from] ability: Drought|[of] p2a: Torkoal",
+    "|move|p1a: Grimmsnarl|Reflect|p1a: Grimmsnarl",
     "|-sidestart|p1: p1|Reflect",
     "|turn|2",
   ]);
@@ -1033,4 +1037,155 @@ test("blocked moves, side labels, and win lines render from the player point of 
   assert.match(events, /The opponent's side lost Tailwind\./);
   assert.match(events, /The opponent won the game\./);
   assert.doesNotMatch(events, /openrouter|openai/);
+});
+
+test("a new terrain replaces the old one and extender items count only while held", () => {
+  const state = new PerspectiveState("p1");
+  state.feed([
+    "|showteam|p2|Rillaboom||TerrainExtender|GrassySurge|fakeout|Adamant|||||50]Pelipper||DampRock|Drizzle|hurricane|Bold|||||50",
+    "|switch|p1a: Indeedee|Indeedee, L50|100/100",
+    "|switch|p2a: Rillaboom|Rillaboom, L50|100/100",
+    "|-fieldstart|move: Psychic Terrain|[from] ability: Psychic Surge|[of] p1a: Indeedee",
+    "|-fieldstart|move: Grassy Terrain|[from] ability: Grassy Surge|[of] p2a: Rillaboom",
+    "|turn|1",
+  ]);
+  assert.match(state.render({}), /^Field: Grassy Terrain \(8 turns left\)$/m);
+  state.feed([
+    "|-enditem|p2a: Rillaboom|Terrain Extender|[from] move: Knock Off|[of] p1a: Indeedee",
+    "|switch|p2b: Pelipper|Pelipper, L50|100/100",
+    "|-enditem|p2b: Pelipper|Damp Rock|[from] move: Knock Off|[of] p1a: Indeedee",
+    "|-fieldstart|move: Grassy Terrain|[from] ability: Grassy Surge|[of] p2a: Rillaboom",
+    "|-weather|RainDance|[from] ability: Drizzle|[of] p2b: Pelipper",
+  ]);
+  const rendered = state.render({});
+  assert.match(rendered, /^Field: Grassy Terrain \(5 turns left\)$/m);
+  assert.match(rendered, /^Weather: RainDance \(5 turns left\)$/m);
+});
+
+test("an Illusion break and an Ally Switch put the right Pokémon in each slot", () => {
+  const state = new PerspectiveState("p1");
+  state.feed([
+    "|switch|p2a: Ditto|Ditto, L50, M|100/100",
+    "|switch|p2b: Alakazam|Alakazam, L50|100/100",
+    "|-boost|p2a: Ditto|atk|1",
+    "|-damage|p2a: Ditto|76/100",
+    "|replace|p2a: Zoroark|Zoroark, L50, M",
+  ]);
+  const broken = state.render({});
+  assert.match(broken, /^- Zoroark; active slot a; HP 76%; boosts Attack \+1/m);
+  assert.doesNotMatch(broken, /Ditto; active slot/);
+  assert.doesNotMatch(broken, /Ditto; HP 76%/);
+  state.feed(["|swap|p2b: Alakazam|0|[from] move: Ally Switch"]);
+  const swapped = state.render({});
+  assert.match(swapped, /^- Alakazam; active slot a;/m);
+  assert.match(swapped, /^- Zoroark; active slot b;/m);
+});
+
+test("type changes, copied and inverted boosts are tracked until the Pokémon leaves", () => {
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
+  const state = new PerspectiveState("p1");
+  state.feed([
+    "|switch|p1a: Gardevoir|Gardevoir, L50|143/143",
+    "|switch|p2a: Greninja|Greninja, L50|100/100",
+    "|switch|p2b: Malamar|Malamar, L50|100/100",
+    "|-start|p2a: Greninja|typechange|Ice|[from] ability: Protean",
+    "|-boost|p2a: Greninja|spa|2",
+    "|-unboost|p2a: Greninja|def|1",
+    "|-copyboost|p2b: Malamar|p2a: Greninja|[from] move: Psych Up",
+    "|-invertboost|p2b: Malamar|[from] move: Topsy-Turvy",
+  ]);
+  const rendered = state.render({}, (mon) => reference.describeCompact(mon));
+  assert.match(rendered, /^- Greninja; types Ice \(changed\); active slot a;/m);
+  assert.match(rendered, /^- Malamar; .*boosts Defense \+1, Special Attack -2;/m);
+  const moonblast = state.estimateDamage(
+    { attacker: "ally 1", defender: "foe 1", move: "Moonblast" },
+    {},
+    reference,
+  );
+  assert.match(moonblast, /neutral \(1x\)/, "Fairy into the changed Ice typing, not Water/Dark");
+  state.feed(["|switch|p2a: Rillaboom|Rillaboom, L50|100/100"]);
+  assert.doesNotMatch(
+    state.render({}, (mon) => reference.describeCompact(mon)),
+    /Greninja; types Ice/,
+  );
+});
+
+test("the Protect penalty follows Showdown's stall counter", () => {
+  const state = new PerspectiveState("p1");
+  state.feed([
+    "|switch|p1a: Hitmontop|Hitmontop, L50|100/100",
+    "|switch|p1b: Garchomp|Garchomp, L50|100/100",
+    "|turn|1",
+    "|move|p1a: Hitmontop|Wide Guard|p1a: Hitmontop",
+    "|-singleturn|p1a: Hitmontop|Wide Guard",
+    "|move|p1b: Garchomp|Protect|p1b: Garchomp",
+    "|-singleturn|p1b: Garchomp|Protect",
+    "|turn|2",
+  ]);
+  assert.deepEqual(state.protectReducedSlots(), { 1: true, 2: true });
+  state.feed(["|cant|p1b: Garchomp|flinch", "|turn|3"]);
+  assert.deepEqual(
+    state.protectReducedSlots(),
+    {},
+    "a turn without a stall ends the streak even when no other move was used",
+  );
+});
+
+test("a bounced move is not recorded as the bouncer's own", () => {
+  const state = new PerspectiveState("p1");
+  state.feed([
+    "|switch|p2a: Hatterene|Hatterene, L50|100/100",
+    "|turn|1",
+    "|move|p2a: Hatterene|Taunt|p1a: Incineroar|[from] ability: Magic Bounce",
+  ]);
+  assert.doesNotMatch(state.render({}), /Taunt/);
+});
+
+test("battle tools refuse a species name both sides field and bring a Mega's weather with it", () => {
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
+  const state = new PerspectiveState("p2");
+  state.feed([
+    "|switch|p1a: Charizard|Charizard, L50|100/100",
+    "|switch|p1b: Garchomp|Garchomp, L50|100/100",
+    "|switch|p2a: Charizard|Charizard, L50|153/153",
+    "|-item|p2a: Charizard|Charizardite Y",
+    "|-weather|RainDance|[from] ability: Drizzle|[of] p1b: Garchomp",
+  ]);
+  const request: BattleRequest = {
+    active: [{ moves: [], canMegaEvo: true }],
+    side: {
+      pokemon: [
+        {
+          ident: "p2: Charizard",
+          details: "Charizard, L50",
+          condition: "153/153",
+          active: true,
+          item: "charizarditey",
+          stats: { atk: 104, def: 98, spa: 161, spd: 105, spe: 152 },
+          moves: ["heatwave"],
+        },
+      ],
+    },
+  };
+  assert.throws(
+    () =>
+      state.estimateDamage(
+        { attacker: "Charizard", defender: "Garchomp", move: "Heat Wave" },
+        request,
+        reference,
+      ),
+    /Both sides have Charizard; say "ally Charizard" or "foe Charizard"\./,
+  );
+  const args = { attacker: "ally Charizard", defender: "Garchomp", move: "Heat Wave" };
+  const rain = state.estimateDamage(args, request, reference);
+  const mega = state.estimateDamage({ ...args, attacker_mega: true }, request, reference);
+  assert.match(rain, /applied .*rain,/);
+  assert.match(mega, /Hypothetical field: sun from the Mega Evolution's ability\./);
+  assert.match(mega, /applied attacker ability Drought, .*sun,/);
+  const forced: BattleRequest = { forceSwitch: [false, true], side: request.side! };
+  assert.match(
+    state.estimateDamage({ ...args, attacker_mega: true }, forced, reference),
+    /sun from the Mega Evolution's ability/,
+    "a forced-switch request carries no Mega flag and must not clear the one already known",
+  );
 });
