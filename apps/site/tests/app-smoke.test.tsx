@@ -60,6 +60,14 @@ test("home renders standings from the fetched bundle", async () => {
   expect(document.querySelector('[title*="contributor"]')).toBeNull();
 });
 
+test("the hero and the header state the same season status", async () => {
+  mount("/");
+  await until(() => document.querySelector(".hero .label") !== null);
+  expect(document.querySelector(".hero .label")?.textContent).toBe(
+    document.querySelector(".release")?.textContent,
+  );
+});
+
 test("a match page embeds the Showdown replay with the sheets folded beneath it", async () => {
   const seriesId = Object.keys(season.replays)[0]!;
   mount(`/matches/${seriesId}`);

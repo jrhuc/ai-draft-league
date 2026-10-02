@@ -91,8 +91,20 @@ export function allMatches(season: SeasonBundle): ScheduledMatch[] {
 }
 
 export function playoffRoundLabel(season: SeasonBundle, round: number): string {
-  if (round === season.season.playoffRounds) return "Final";
-  return round === season.season.playoffRounds - 1 ? "Semifinal" : `Playoff round ${round}`;
+  return round === season.season.playoffRounds ? "Final" : "Semifinal";
+}
+
+export function statusLabel(season: SeasonBundle): string {
+  const s = season.season;
+  if (s.status === "complete") return "Season complete";
+  if (s.status === "draft") {
+    const total = season.franchises.length * s.board.picksPerFranchise;
+    const picks = season.draft.picks.length;
+    return picks < total ? `Drafting · pick ${picks + 1} of ${total}` : "Draft complete";
+  }
+  if (s.releasedPlayoffRounds > 0)
+    return `Playoffs · round ${s.releasedPlayoffRounds} of ${s.playoffRounds}`;
+  return `Through week ${s.releasedThroughWeek} of ${s.totalWeeks}`;
 }
 
 export function matchBySeries(season: SeasonBundle, seriesId: string): ScheduledMatch | null {

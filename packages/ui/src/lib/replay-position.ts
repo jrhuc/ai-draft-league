@@ -5,5 +5,5 @@ export function replayPositionPath(
   seat: string,
 ): string {
   const search = new URLSearchParams({ game: String(game), turn: String(turn), seat });
-  return `/matches/${seriesId}?${search}#turn-${turn}`;
+  return `/matches/${seriesId}?${search}`;
 }

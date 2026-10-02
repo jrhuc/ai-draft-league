@@ -2,9 +2,10 @@ import { displaySpecies } from "ui/lib/format";
 import type { Entrant, Match, TournamentBundle } from "./tournament";
 
 /**
- * Pure selectors over a {@link TournamentBundle}. The bundle is the producer's
- * artifact; nothing here recalculates competitive facts, it only indexes and
- * projects what was released.
+ * Pure selectors over a {@link TournamentBundle}. Entrants, the bracket, and
+ * replays are indexed and projected as released. {@link tapeStats} and
+ * {@link entrantStats} are the exception: the bundle carries no totals, so
+ * those are computed here from the released decisions.
  */
 
 export type ScheduledMatch = {
@@ -121,6 +122,21 @@ export type EntrantStats = {
   switchRate: number;
 };
 
+const PROTECTION_MOVES = [
+  "Protect",
+  "Detect",
+  "Baneful Bunker",
+  "Spiky Shield",
+  "King's Shield",
+  "Obstruct",
+  "Silk Trap",
+  "Burning Bulwark",
+];
+
+function protects(choice: string): boolean {
+  return PROTECTION_MOVES.some((move) => choice === move || choice.startsWith(`${move} `));
+}
+
 export function entrantStats(bundle: TournamentBundle): EntrantStats[] {
   type StatRow = {
     lat: number[];
@@ -144,7 +160,7 @@ export function entrantStats(bundle: TournamentBundle): EntrantStats[] {
         if (decision.reasoningTokens !== null) row.tok.push(decision.reasoningTokens);
         if (decision.phase !== "turn") continue;
         row.turns += 1;
-        if (decision.selection.some((choice) => choice.startsWith("Protect"))) row.protects += 1;
+        if (decision.selection.some(protects)) row.protects += 1;
         if (decision.selection.some((choice) => choice.startsWith("Switch to"))) row.switches += 1;
       }
     }
