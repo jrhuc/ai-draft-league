@@ -1,3 +1,5 @@
+import { setImmediate as yieldTurn } from "node:timers/promises";
+
 import type { Battle } from "pokemon-showdown";
 
 import { battleActionCandidates, cloneBattle, forkPoint, pendingSides } from "./fork.js";
@@ -125,13 +127,14 @@ function payoff(battle: Battle, pid: Pid, winner: Pid | null): number {
 const MIXING_FLOOR = 0.15;
 
 /** Reads the true battle, so it knows both full teams, but never a choice the other side has
- * already committed for this decision. */
-export function searchAction(
+ * already committed for this decision. Yields after every rollout so a search never holds up the
+ * other seats sharing its process. */
+export async function searchAction(
   battle: Battle,
   pid: Pid,
   settings: SearchSettings,
   rng: Rng,
-): SearchResult {
+): Promise<SearchResult> {
   const other = opposing(pid);
   const root = cloneBattle(battle);
   for (const side of root.sides) side.clearChoice();
@@ -146,7 +149,7 @@ export function searchAction(
   const cache = new Map<string, number | null>();
   let rollouts = 0;
 
-  const evaluate = (own: string, reply: string | null, sample: number): number | null => {
+  const evaluate = async (own: string, reply: string | null, sample: number) => {
     if (illegal[pid]!.has(own) || (reply !== null && illegal[other]!.has(reply))) return null;
     const key = `${sample}\n${own}\n${reply ?? ""}`;
     const known = cache.get(key);
@@ -160,12 +163,17 @@ export function searchAction(
       rollouts += 1;
       const winner = playOut(scratch, seededRng(`rollout:${seeds[sample]}`), settings.maxTurns, 0);
       value = payoff(scratch, pid, winner);
+      await yieldTurn();
     }
     cache.set(key, value);
     return value;
   };
-  const mean = (values: Array<number | null>): number | null => {
-    const played = values.flatMap((value) => (value === null ? [] : [value]));
+  const mean = async (cells: Array<[string, string | null, number]>) => {
+    const played: number[] = [];
+    for (const [own, reply, sample] of cells) {
+      const value = await evaluate(own, reply, sample);
+      if (value !== null) played.push(value);
+    }
     return played.length ? played.reduce((sum, value) => sum + value, 0) / played.length : null;
   };
 
@@ -183,18 +191,18 @@ export function searchAction(
     }
     return probes;
   };
-  const shortlist = (
+  const shortlist = async (
     commands: string[],
     probes: string[],
-    score: (command: string) => number | null,
+    score: (command: string) => Promise<number | null>,
     direction: 1 | -1,
-  ): string[] => {
-    const ranked = commands
-      .flatMap((command): Array<[string, number]> => {
-        const value = score(command);
-        return value === null ? [] : [[command, value]];
-      })
-      .sort((a, b) => direction * (b[1] - a[1]));
+  ) => {
+    const ranked: Array<[string, number]> = [];
+    for (const command of commands) {
+      const value = await score(command);
+      if (value !== null) ranked.push([command, value]);
+    }
+    ranked.sort((a, b) => direction * (b[1] - a[1]));
     const kept = ranked.slice(0, settings.shortlistPerSide).map(([command]) => command);
     for (const probe of probes)
       if (!kept.includes(probe) && ranked.some(([command]) => command === probe)) kept.push(probe);
@@ -206,26 +214,30 @@ export function searchAction(
   const ownProbes = references(pid, ownCommands);
   const replyProbes: Array<string | null> = contested ? references(other, replyCommands) : [null];
 
-  const own = shortlist(
+  const own = await shortlist(
     ownCommands,
     ownProbes,
-    (command) => mean(replyProbes.map((reply, sample) => evaluate(command, reply, sample))),
+    (command) => mean(replyProbes.map((reply, sample) => [command, reply, sample])),
     1,
   );
   const replies: Array<string | null> = contested
-    ? shortlist(
+    ? await shortlist(
         replyCommands,
         replyProbes.flatMap((reply) => (reply === null ? [] : [reply])),
-        (reply) => mean(ownProbes.map((command, sample) => evaluate(command, reply, sample))),
+        (reply) => mean(ownProbes.map((command, sample) => [command, reply, sample])),
         -1,
       )
     : [null];
   if (!own.length) throw new Error(`${pid} has no playable action to search`);
 
   const samples = Array.from({ length: settings.rolloutsPerCell }, (_, sample) => sample);
-  const matrix = own.map((command) =>
-    replies.map((reply) => mean(samples.map((sample) => evaluate(command, reply, sample))) ?? 0.5),
-  );
+  const matrix: number[][] = [];
+  for (const command of own) {
+    const row: number[] = [];
+    for (const reply of replies)
+      row.push((await mean(samples.map((sample) => [command, reply, sample]))) ?? 0.5);
+    matrix.push(row);
+  }
   const strategy = solveZeroSum(matrix);
   const weights = strategy.map((weight) => (weight >= MIXING_FLOOR ? weight : 0));
   const mass = weights.reduce((sum, weight) => sum + weight, 0);

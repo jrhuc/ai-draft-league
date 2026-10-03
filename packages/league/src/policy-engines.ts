@@ -1,5 +1,3 @@
-import { setImmediate as nextTick } from "node:timers/promises";
-
 import type { Battle } from "pokemon-showdown";
 
 import { BaseEngine, type DecisionLog, type GameStart, RandomEngine } from "./battle-agent.js";
@@ -36,12 +34,10 @@ abstract class SimulatorEngine extends BaseEngine {
     return automatic ? "automatic" : "policy";
   }
 
-  /** A search blocks the event loop for seconds; the other seat's request must go out first. */
   protected async decideJoint(_menus: SlotMenu[], request: BattleRequest): Promise<number[]> {
-    await nextTick();
     const battle = this.live?.();
     if (!battle) throw new Error(`${this.pid} plays from the live simulator and has none attached`);
-    const command = this.command(battle);
+    const command = await this.command(battle);
     const entry = requestActionCandidateEntries(request).find(
       (candidate) => candidate.command === command,
     );
@@ -49,7 +45,7 @@ abstract class SimulatorEngine extends BaseEngine {
     return entry.choices;
   }
 
-  protected abstract command(battle: Battle): string;
+  protected abstract command(battle: Battle): string | Promise<string>;
 }
 
 export class GreedyEngine extends SimulatorEngine {
@@ -71,8 +67,8 @@ export class SearchEngine extends SimulatorEngine {
     super(pid, seed, decisionLog);
   }
 
-  protected command(battle: Battle): string {
-    return searchAction(battle, this.pid, this.settings, this.random).command;
+  protected async command(battle: Battle): Promise<string> {
+    return (await searchAction(battle, this.pid, this.settings, this.random)).command;
   }
 }
 

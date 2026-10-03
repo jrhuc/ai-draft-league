@@ -74,7 +74,7 @@ test("regret matching finds the equilibrium row strategy", () => {
 test("search returns an accepted action, repeats for a seed, and ignores a committed reply", async () => {
   const position = await midGame();
   const battle = openPosition(position);
-  const first = searchAction(battle, "p1", SETTINGS, seededRng("search"));
+  const first = await searchAction(battle, "p1", SETTINGS, seededRng("search"));
   assert.ok(first.rollouts > 0);
   assert.ok(first.value >= 0 && first.value <= 1);
   assert.ok(
@@ -84,7 +84,7 @@ test("search returns an accepted action, repeats for a seed, and ignores a commi
   const reply = acceptedBattleActionEntries(battle, "p2").at(-1)!;
   assert.ok(battle.getSide("p2").choose(reply.command));
   assert.ok(battle.getSide("p2").isChoiceDone());
-  assert.deepEqual(searchAction(battle, "p1", SETTINGS, seededRng("search")), first);
+  assert.deepEqual(await searchAction(battle, "p1", SETTINGS, seededRng("search")), first);
   assert.ok(battle.getSide("p2").isChoiceDone(), "the live battle keeps its committed choice");
 });
 
