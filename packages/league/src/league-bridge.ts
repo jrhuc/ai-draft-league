@@ -61,7 +61,6 @@ const seriesRecordSchema = z.object({
   score: z.object({ p1: z.int(), p2: z.int() }),
 });
 
-/** Playoff finishers in bracket order, then everyone else by regular-season rank. */
 export function finalPlacement(standings: DraftTableRow[], series: LeagueSeries[]): number[] {
   const rank = (entrant: number) => standings.findIndex((row) => row.entrant === entrant);
   const placed: number[] = [];
