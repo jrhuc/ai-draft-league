@@ -184,11 +184,11 @@ The outside seat is the league's battle coach with its model replaced: it receiv
 
 A `seat` is `external` or a fixed policy. At least one seat must be external.
 
-| Policy                                 | Plays                                                                                                       |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `random`                               | A uniformly random legal action                                                                             |
-| `greedy`                               | The highest projected damage for each active Pokémon; never switches by choice                              |
-| `search`, `search:fast`, `search:deep` | The equilibrium of a payoff matrix filled by three-turn rollouts that protect, switch and set speed control |
+| Policy                                 | Plays                                                                          |
+| -------------------------------------- | ------------------------------------------------------------------------------ |
+| `random`                               | A uniformly random legal action                                                |
+| `greedy`                               | The highest projected damage for each active Pokémon; never switches by choice |
+| `search`, `search:fast`, `search:deep` | The equilibrium of a payoff matrix filled by greedy rollouts                   |
 
 `greedy` and `search` read the simulator's battle, so they know the opposing bench and exact stats. They never see the other side's choice for the current decision. `script` holds recorded choices per side; the bridge replays them and hands over at the first decision past each list.
 

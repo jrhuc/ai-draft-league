@@ -1,23 +1,22 @@
 import { setImmediate as yieldTurn } from "node:timers/promises";
 
-import type { Battle, Pokemon } from "pokemon-showdown";
+import type { Battle } from "pokemon-showdown";
 
 import { battleActionCandidates, cloneBattle, forkPoint, pendingSides } from "./fork.js";
-import { opposing } from "./playout.js";
-import { type Rng, shuffle } from "./random.js";
-import { rollOut, rolloutCommand } from "./rollout.js";
+import { greedyCommand, opposing, playOut } from "./playout.js";
+import { type Rng, seededRng, shuffle } from "./random.js";
 import type { Pid } from "./types.js";
 
 export interface SearchSettings {
   shortlistPerSide: number;
   rolloutsPerCell: number;
-  horizon: number;
+  maxTurns: number;
 }
 
 export const SEARCH_LEVELS = {
-  fast: { shortlistPerSide: 3, rolloutsPerCell: 2, horizon: 3 },
-  standard: { shortlistPerSide: 5, rolloutsPerCell: 3, horizon: 3 },
-  deep: { shortlistPerSide: 7, rolloutsPerCell: 6, horizon: 3 },
+  fast: { shortlistPerSide: 3, rolloutsPerCell: 2, maxTurns: 40 },
+  standard: { shortlistPerSide: 5, rolloutsPerCell: 3, maxTurns: 40 },
+  deep: { shortlistPerSide: 7, rolloutsPerCell: 6, maxTurns: 40 },
 } satisfies Record<string, SearchSettings>;
 
 export type SearchLevel = keyof typeof SEARCH_LEVELS;
@@ -113,31 +112,16 @@ export function solveZeroSum(payoff: readonly (readonly number[])[], iterations 
   return total.map((weight) => weight / iterations);
 }
 
-/** A logistic fit of `rolloutCommands` self-play results on each feature's difference between the
- * sides; refit it whenever that policy changes. */
-const WIN_WEIGHTS = { hp: 5.35, standing: 2.09, tailwind: 1.47, trickRoom: 0.55, mega: 0.25 };
-
-function standing(battle: Battle, pid: Pid): number {
-  const side = battle.getSide(pid);
-  const team = side.pokemon;
-  const share = (count: (mon: Pokemon) => number) =>
-    team.reduce((sum, mon) => sum + count(mon), 0) / Math.max(1, team.length);
-  const pace = (mons: readonly (Pokemon | null)[]) =>
-    mons.reduce((sum, mon) => sum + (mon && mon.hp > 0 ? mon.getStat("spe", true, true) : 0), 0);
-  const trickRoom = (battle.field.pseudoWeather.trickroom?.duration ?? 0) / 5;
-  return (
-    WIN_WEIGHTS.hp * share((mon) => mon.hp / mon.maxhp) +
-    WIN_WEIGHTS.standing * share((mon) => Number(mon.hp > 0)) +
-    (WIN_WEIGHTS.tailwind * (side.sideConditions.tailwind?.duration ?? 0)) / 4 +
-    WIN_WEIGHTS.trickRoom * trickRoom * Math.sign(pace(side.foe.active) - pace(side.active)) +
-    WIN_WEIGHTS.mega * Number(team.some((mon) => mon.hp > 0 && mon.canMegaEvo))
-  );
+function remaining(battle: Battle, pid: Pid): number {
+  const team = battle.getSide(pid).pokemon;
+  return team.reduce((sum, mon) => sum + mon.hp / mon.maxhp, 0) / Math.max(1, team.length);
 }
 
 /** The two sides' payoffs must sum to 1: the matrix solve treats the game as zero-sum. */
 function payoff(battle: Battle, pid: Pid, winner: Pid | null): number {
-  if (winner !== null) return Number(winner === pid);
-  return 1 / (1 + Math.exp(standing(battle, opposing(pid)) - standing(battle, pid)));
+  const other = opposing(pid);
+  if (winner === null) return 0.5 + (remaining(battle, pid) - remaining(battle, other)) / 2;
+  return winner === pid ? 0.5 + remaining(battle, pid) / 2 : 0.5 - remaining(battle, other) / 2;
 }
 
 const MIXING_FLOOR = 0.15;
@@ -177,7 +161,7 @@ export async function searchAction(
     else if (reply !== null && !scratch.choose(other, reply)) illegal[other]!.add(reply);
     else {
       rollouts += 1;
-      const winner = rollOut(scratch, settings.horizon);
+      const winner = playOut(scratch, seededRng(`rollout:${seeds[sample]}`), settings.maxTurns, 0);
       value = payoff(scratch, pid, winner);
       await yieldTurn();
     }
@@ -197,8 +181,8 @@ export async function searchAction(
   const references = (side: Pid, commands: string[]): string[] => {
     const request = root.getSide(side).activeRequest;
     if (request && !request.teamPreview && !request.forceSwitch) {
-      const reference = rolloutCommand(root, side);
-      if (accepted(side, reference)) return [reference];
+      const greedy = greedyCommand(root, side, rng);
+      if (accepted(side, greedy)) return [greedy];
     }
     const probes: string[] = [];
     for (const command of shuffle(commands, rng)) {
