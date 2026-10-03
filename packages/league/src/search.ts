@@ -113,20 +113,31 @@ export function solveZeroSum(payoff: readonly (readonly number[])[], iterations 
   return total.map((weight) => weight / iterations);
 }
 
-const STANDING = 0.25;
+/** A logistic fit of `rolloutCommands` self-play results on each feature's difference between the
+ * sides; refit it whenever that policy changes. */
+const WIN_WEIGHTS = { hp: 5.35, standing: 2.09, tailwind: 1.47, trickRoom: 0.55, mega: 0.25 };
 
-function remaining(battle: Battle, pid: Pid): number {
-  const team = battle.getSide(pid).pokemon;
-  const worth = (mon: Pokemon) =>
-    mon.hp > 0 ? STANDING + ((1 - STANDING) * mon.hp) / mon.maxhp : 0;
-  return team.reduce((sum, mon) => sum + worth(mon), 0) / Math.max(1, team.length);
+function standing(battle: Battle, pid: Pid): number {
+  const side = battle.getSide(pid);
+  const team = side.pokemon;
+  const share = (count: (mon: Pokemon) => number) =>
+    team.reduce((sum, mon) => sum + count(mon), 0) / Math.max(1, team.length);
+  const pace = (mons: readonly (Pokemon | null)[]) =>
+    mons.reduce((sum, mon) => sum + (mon && mon.hp > 0 ? mon.getStat("spe", true, true) : 0), 0);
+  const trickRoom = (battle.field.pseudoWeather.trickroom?.duration ?? 0) / 5;
+  return (
+    WIN_WEIGHTS.hp * share((mon) => mon.hp / mon.maxhp) +
+    WIN_WEIGHTS.standing * share((mon) => Number(mon.hp > 0)) +
+    (WIN_WEIGHTS.tailwind * (side.sideConditions.tailwind?.duration ?? 0)) / 4 +
+    WIN_WEIGHTS.trickRoom * trickRoom * Math.sign(pace(side.foe.active) - pace(side.active)) +
+    WIN_WEIGHTS.mega * Number(team.some((mon) => mon.hp > 0 && mon.canMegaEvo))
+  );
 }
 
 /** The two sides' payoffs must sum to 1: the matrix solve treats the game as zero-sum. */
 function payoff(battle: Battle, pid: Pid, winner: Pid | null): number {
-  const other = opposing(pid);
-  if (winner === null) return 0.5 + (remaining(battle, pid) - remaining(battle, other)) / 2;
-  return winner === pid ? 0.5 + remaining(battle, pid) / 2 : 0.5 - remaining(battle, other) / 2;
+  if (winner !== null) return Number(winner === pid);
+  return 1 / (1 + Math.exp(standing(battle, opposing(pid)) - standing(battle, pid)));
 }
 
 const MIXING_FLOOR = 0.15;
