@@ -1,6 +1,6 @@
 import { setImmediate as yieldTurn } from "node:timers/promises";
 
-import type { Battle } from "pokemon-showdown";
+import type { Battle, Pokemon } from "pokemon-showdown";
 
 import { battleActionCandidates, cloneBattle, forkPoint, pendingSides } from "./fork.js";
 import { opposing } from "./playout.js";
@@ -113,9 +113,13 @@ export function solveZeroSum(payoff: readonly (readonly number[])[], iterations 
   return total.map((weight) => weight / iterations);
 }
 
+const STANDING = 0.25;
+
 function remaining(battle: Battle, pid: Pid): number {
   const team = battle.getSide(pid).pokemon;
-  return team.reduce((sum, mon) => sum + mon.hp / mon.maxhp, 0) / Math.max(1, team.length);
+  const worth = (mon: Pokemon) =>
+    mon.hp > 0 ? STANDING + ((1 - STANDING) * mon.hp) / mon.maxhp : 0;
+  return team.reduce((sum, mon) => sum + worth(mon), 0) / Math.max(1, team.length);
 }
 
 /** The two sides' payoffs must sum to 1: the matrix solve treats the game as zero-sum. */
