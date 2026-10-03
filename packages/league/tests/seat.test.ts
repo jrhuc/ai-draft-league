@@ -69,6 +69,7 @@ test("seat bridge keeps a pending exchange, tools, and private context behind on
     const poll: { exchange: JsonObject } = await (await post("/poll", { waitMs: 2000 })).json();
     const { id: _id, ...view } = poll.exchange;
     assert.deepEqual(view, {
+      model: "external",
       session: "seat",
       task: "decision-1",
       system: "SYSTEM TEXT",

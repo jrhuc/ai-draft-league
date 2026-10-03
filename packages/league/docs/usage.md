@@ -4,7 +4,7 @@ Run these commands from `packages/league` after completing the [local setup](../
 
 ## Configure a provider
 
-Use `<OpenCode-provider-id>:<model-id>`, or `random` for the baseline. Common providers are:
+Use `<OpenCode-provider-id>:<model-id>`, or a fixed policy: `random` or `bot`. Common providers are:
 
 | Prefix         | Provider             | Environment variable |
 | -------------- | -------------------- | -------------------- |
@@ -12,6 +12,9 @@ Use `<OpenCode-provider-id>:<model-id>`, or `random` for the baseline. Common pr
 | `opencode-go:` | OpenCode Go          | `OPENCODE_API_KEY`   |
 | `openrouter:`  | OpenRouter           | `OPENROUTER_API_KEY` |
 | `random`       | Seeded random engine | None                 |
+| `bot`          | Fixed league policy  | None                 |
+
+`bot` drafts by board cost, spending its budget on six core picks and filling the bench at the board minimum. It builds the six highest-cost picks, at most two of them Megas, from tournament pastes in `teams/`, Showdown's curated Champions random-doubles sets, or a move heuristic, in that order. It battles with the standard `search`. It files no reviews and makes no transactions, and it declines every trade.
 
 Any other provider in the OpenCode catalog works with its own environment key; the catalog only lists providers whose key is present.
 
@@ -154,7 +157,7 @@ This cannot recover memory from an earlier external process.
 
 ## Drive a seat from another program
 
-`bridge` plays one battle where another program holds a seat. It speaks JSON lines on stdio and is what the `league-evals` Inspect tasks run against:
+`bridge` plays one battle or one whole league where another program holds a seat. It speaks JSON lines on stdio and is what the `league-evals` Inspect tasks run against:
 
 ```sh
 node dist/src/cli.js bridge
@@ -188,6 +191,24 @@ A `seat` is `external` or a fixed policy. At least one seat must be external.
 | `search`, `search:fast`, `search:deep` | The equilibrium of a payoff matrix filled by greedy rollouts                   |
 
 `greedy` and `search` read the simulator's battle, so they know the opposing bench and exact stats. They never see the other side's choice for the current decision. `script` holds recorded choices per side; the bridge replays them and hands over at the first decision past each list.
+
+A session that starts with `league` instead of `open` runs a whole season: the draft, franchise naming, a build before every series, every battle decision and post-game review, weekly reviews, transaction windows, and the season review. `seats` lists `external:<label>` seats and fixed policies (`bot`, `random`); the seed shuffles them into draft order.
+
+| Method    | Parameters                                                                  | Result                                                 |
+| --------- | --------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `league`  | `seats`, `seed`, `run_dir`, optional `board`, `concurrency`, `transactions` | The run directory and the Showdown and harness commits |
+| `tool`    | `exchange`, `name`, `arguments`                                             | The tool's text                                        |
+| `submit`  | `exchange`, `input`, optional `response`, `reasoning`, `usage`              | `accepted`, or the validator's message as an error     |
+| `abandon` | `exchange`, `reason`                                                        | A battle decision plays the harness default            |
+| `outcome` |                                                                             | Entrants, team names, standings, series, placement     |
+
+| Event      | Meaning                                                                                                                      |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `exchange` | A task waits for an outside seat: its `entrant` and the task (`model`, `session`, `system`, `prompt`, `tools`, `submission`) |
+| `series`   | A series ended: `stage`, `round`, the two entrants, the score, and the winning entrant                                       |
+| `end`      | The season ended or failed; carries the outcome                                                                              |
+
+Tasks on one `session` belong to one conversation: a game and its review, or a franchise's draft. Only battle decisions may be abandoned; an abandoned draft, build, or review fails the season, so a client keeps asking until the validator accepts a submission. `placement` lists entrants in finishing order: the playoff bracket, then regular-season rank. The run directory holds the usual run evidence, so `monitor` and the site's live watch read it as they read any league.
 
 `positions` values recorded turn decisions. It reads one game per line (`id`, `source`, `log`, optional `settings` and `only`) and writes one line per game and per valued decision, with the win rate of every accepted action when both sides continue with the greedy policy:
 

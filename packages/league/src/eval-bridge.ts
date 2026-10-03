@@ -4,9 +4,9 @@ import readline from "node:readline";
 import type { Battle } from "pokemon-showdown";
 import { z } from "zod";
 
-import { BaseEngine, type ChoiceSubstitution } from "./battle-agent.js";
 import type { SlotMenu } from "./choices.js";
-import { ExchangeAbandoned, type ExternalExchange, ExternalRunner } from "./external-runner.js";
+import { type ExternalExchange, ExternalRunner } from "./external-runner.js";
+import { handleLeagueRequest, LeagueBridge, leagueSchema } from "./league-bridge.js";
 import { LLMEngine } from "./llm-engine.js";
 import { type DecisionPhase, decisionPhase } from "./llm-engine-support.js";
 import { auditGame, type GameMechanicsAudit } from "./monitor-mechanics.js";
@@ -27,7 +27,6 @@ import type {
   Pid,
   SubmissionContext,
   SubmissionOutcome,
-  SubmissionSource,
 } from "./types.js";
 
 const EXTERNAL = "external";
@@ -72,14 +71,12 @@ export type BridgeEvent =
 
 class ExternalCoach extends LLMEngine {
   decision: DecisionView | undefined;
-  private gaveUp = false;
 
-  protected override async decideJoint(
+  protected override decideJoint(
     menus: SlotMenu[],
     request: BattleRequest,
     context: AgentContext,
   ): Promise<number[]> {
-    this.gaveUp = false;
     this.decision = {
       turn: this.state.turn,
       phase: decisionPhase(request),
@@ -87,20 +84,7 @@ class ExternalCoach extends LLMEngine {
       menus: menus.map((menu) => menu.map((item) => item.label)),
       request,
     };
-    try {
-      return await super.decideJoint(menus, request, context);
-    } catch (error) {
-      if (!(error instanceof ExchangeAbandoned)) throw error;
-      this.gaveUp = true;
-      return BaseEngine.defaults(menus)[0];
-    }
-  }
-
-  protected override submissionSource(
-    automatic: boolean,
-    substitution?: ChoiceSubstitution,
-  ): SubmissionSource {
-    return this.gaveUp ? "model-default" : super.submissionSource(automatic, substitution);
+    return super.decideJoint(menus, request, context);
   }
 }
 
@@ -354,19 +338,30 @@ export async function serveBridge(
 ): Promise<void> {
   const write = <Line extends object>(line: Line) => output.write(`${JSON.stringify(line)}\n`);
   let bridge: EvalBridge | undefined;
+  let league: LeagueBridge | undefined;
   for await (const text of readline.createInterface({ input, crlfDelay: Infinity })) {
     if (!text.trim()) continue;
     let id: z.infer<typeof lineSchema>["id"] = null;
     try {
       const line = lineSchema.parse(JSON.parse(text));
       id = line.id;
-      if (line.method === "open") {
+      if (line.method === "open" || line.method === "league") {
+        if (bridge || league) throw new Error("this bridge already holds a session");
+        if (line.method === "league") {
+          league = new LeagueBridge((event) => write({ event }), psDir);
+          write({ id, result: league.start(leagueSchema.parse(line.params)) });
+          continue;
+        }
         const format = z.object({ format: z.string().min(1) }).parse(line.params).format;
         bridge = new EvalBridge(format, (event) => write({ event }), psDir);
         write({ id, result: bridge.hello() });
         continue;
       }
-      if (!bridge) throw new Error("call open first");
+      if (league) {
+        write({ id, result: handleLeagueRequest(league, line.method, line.params) });
+        continue;
+      }
+      if (!bridge) throw new Error("call open or league first");
       write({ id, result: handleBridgeRequest(bridge, line.method, line.params) });
     } catch (error) {
       write({ id, error: error instanceof Error ? error.message : String(error) });

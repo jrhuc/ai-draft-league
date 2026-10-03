@@ -118,9 +118,10 @@ Commands:
       and provenance come from the run's recorded config)
   monitor <run-dir|run-id> [--json]   harness monitors for a league run: decision integrity, tool predictions
       against the simulator, draft horizon, roster usage and retention, memory continuity per barrier
-  bridge                              play one battle with a seat driven from outside over JSON lines on
-      stdio: open, pool, start, tool, submit, abandon, outcome, audit. An outside seat is the league's
-      battle coach; the other seat may be random, greedy, or search[:fast|standard|deep]
+  bridge                              play one battle or one league with seats driven from outside over
+      JSON lines on stdio. open, pool, start, tool, submit, abandon, outcome, audit run a battle against
+      random, greedy, or search[:fast|standard|deep]; league, tool, submit, abandon, outcome run a season
+      against bot and random seats
   positions                           value recorded turn decisions: one game per JSON line on stdin
       (id, source, log, settings, only), one line out per game and per valued decision with the win
       rate of every accepted action under a damage-greedy continuation

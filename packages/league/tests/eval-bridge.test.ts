@@ -164,7 +164,7 @@ test("the stdio protocol answers requests by id and opens first", async () => {
     .trim()
     .split("\n")
     .map((line) => z.record(z.string(), z.json()).parse(JSON.parse(line)));
-  assert.deepEqual(lines[0], { id: 1, error: "call open first" });
+  assert.deepEqual(lines[0], { id: 1, error: "call open or league first" });
   const hello = z
     .object({ format: z.string(), showdown_commit: z.string(), seats: z.array(z.string()) })
     .parse(lines[1]?.result);

@@ -4,6 +4,7 @@ import type { JsonObject } from "./types.js";
 
 export interface ExternalExchange extends JsonObject {
   id: number;
+  model: string;
   session: string;
   task: string;
   system: string;
@@ -51,6 +52,7 @@ export class ExternalRunner {
     task.signal?.addEventListener("abort", abort, { once: true });
     const view: ExternalExchange = {
       id,
+      model: task.model,
       session: task.session,
       task: task.task,
       system: task.system,
