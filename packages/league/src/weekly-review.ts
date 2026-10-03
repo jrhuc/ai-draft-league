@@ -28,7 +28,7 @@ import {
   PARALLEL_TOOLS_RULE,
   renderPromptTemplate,
 } from "./prompts.js";
-import { reasoningForModel, type ModelReasoningConfig } from "./providers.js";
+import { isModelSeat, reasoningForModel, type ModelReasoningConfig } from "./providers.js";
 import { ShowdownReference } from "./reference.js";
 import {
   mapLimit,
@@ -616,7 +616,7 @@ export async function runWeeklyReview(
       const current = cloneMemory(state.memories[entrant]!);
       let staged = current;
       let parsedReview: ParsedWeeklyReview | undefined;
-      if (model !== "random") {
+      if (isModelSeat(model)) {
         const seatLog = path.join(logDir, `seat-${entrant}-${fileSlug(model)}.jsonl`);
         const reference = new ShowdownReference(state.board.format, options.psDir);
         const boardSearch = createBoardSearch(state.board, options.psDir);

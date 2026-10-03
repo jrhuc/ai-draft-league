@@ -8,7 +8,7 @@ import type { DraftBoardMon } from "./draft.js";
 import { draftBoardTable } from "./draft.js";
 import { MEMORY_TOOL_NOTICE, memoryPageTool, renderMemory } from "./franchise-memory.js";
 import { renderPromptTemplate } from "./prompts.js";
-import { reasoningForModel } from "./providers.js";
+import { isModelSeat, reasoningForModel } from "./providers.js";
 import { ShowdownReference } from "./reference.js";
 import { renderRosterUsage, ROSTER_USAGE_HEADING } from "./roster-usage.js";
 import { commitRunArtifact, readRunArtifacts } from "./run-artifact-store.js";
@@ -319,7 +319,7 @@ export async function runTradeWindow(
       let made = prior.length;
       while (made < tradesAllowed) {
         let parsed: ParsedTradeOffer | undefined;
-        if (liveState.models[entrant] !== "random") {
+        if (isModelSeat(liveState.models[entrant]!)) {
           const completed = await completeTradePhase({
             task: `offer-${entrant}-${made + 1}`,
             state: liveState,
@@ -343,7 +343,7 @@ export async function runTradeWindow(
         let offerOutcome: TradeWindowState | null = null;
         if (parsed.offer) {
           const responder = parsed.offer.to;
-          if (liveState.models[responder] !== "random") {
+          if (isModelSeat(liveState.models[responder]!)) {
             const completed = await completeTradePhase({
               task: `response-${entrant}-${made + 1}`,
               state: liveState,
@@ -393,7 +393,7 @@ export async function runTradeWindow(
     if (position < decisions.length) continue;
     options.signal?.throwIfAborted();
     let parsed: ParsedTradeDecision | undefined;
-    if (liveState.models[entrant] !== "random") {
+    if (isModelSeat(liveState.models[entrant]!)) {
       parsed = await completeTradePhase({
         task: `free-agency-${entrant}`,
         state: liveState,
