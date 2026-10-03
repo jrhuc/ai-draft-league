@@ -64,8 +64,12 @@ test("an outside seat plays a whole league over the bridge", async (t) => {
     assert.ok(accepted, `no probe answer fits ${tool} in ${exchange.task}`);
   };
   assert.throws(
-    () => bridge.start({ seats: ["bot", "random"], seed: 1, run_dir: runDir }),
-    /external/,
+    () => bridge.start({ seats: ["external:a", "external:a"], seed: 1, run_dir: runDir }),
+    /distinct/,
+  );
+  assert.throws(
+    () => bridge.start({ seats: ["model", "bot"], seed: 1, run_dir: runDir }),
+    /bot, random, or external/,
   );
   bridge.start({ seats: ["external:probe", "random"], seed: 3, run_dir: runDir });
   await ended;

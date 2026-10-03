@@ -105,7 +105,6 @@ export class LeagueBridge {
       if (!FIXED_SEATS.includes(seat) && !EXTERNAL_SEAT.test(seat))
         throw new Error(`seat ${JSON.stringify(seat)} must be bot, random, or external:<label>`);
     const external = league.seats.filter((seat) => EXTERNAL_SEAT.test(seat));
-    if (!external.length) throw new Error("at least one seat must be external");
     if (new Set(external).size !== external.length)
       throw new Error("external seats need distinct labels");
     this.started = true;

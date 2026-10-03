@@ -192,7 +192,7 @@ A `seat` is `external` or a fixed policy. At least one seat must be external.
 
 `greedy` and `search` read the simulator's battle, so they know the opposing bench and exact stats. They never see the other side's choice for the current decision. `script` holds recorded choices per side; the bridge replays them and hands over at the first decision past each list.
 
-A session that starts with `league` instead of `open` runs a whole season: the draft, franchise naming, a build before every series, every battle decision and post-game review, weekly reviews, transaction windows, and the season review. `seats` lists `external:<label>` seats and fixed policies (`bot`, `random`); the seed shuffles them into draft order.
+A session that starts with `league` instead of `open` runs a whole season: the draft, franchise naming, a build before every series, every battle decision and post-game review, weekly reviews, transaction windows, and the season review. `seats` lists `external:<label>` seats and fixed policies (`bot`, `random`); the seed shuffles them into draft order. A league with no external seat is a no-model control.
 
 | Method    | Parameters                                                                  | Result                                                 |
 | --------- | --------------------------------------------------------------------------- | ------------------------------------------------------ |
