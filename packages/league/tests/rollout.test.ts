@@ -41,6 +41,26 @@ test("rollout choices are accepted and projecting them leaves the battle's futur
   }
 });
 
+test("Fake Out is chosen on a mon's first turn out and never after", () => {
+  const battle = opening(4, 0, 1);
+  const raichu = battle.getSide("p1").active[0]!;
+  const fakeOut = `move ${raichu.moveSlots.findIndex((slot) => slot.id === "fakeout") + 1}`;
+  const lead = (command: string | undefined) => command?.split(", ")[0] ?? "";
+  const first = rolloutCommands(battle);
+  assert.ok(lead(first.p1).startsWith(`${fakeOut} `), first.p1);
+  for (const pid of pendingSides(battle)) assert.ok(battle.choose(pid, first[pid]!));
+  while (battle.getSide("p1").activeRequest?.wait) {
+    const replacements = rolloutCommands(battle);
+    for (const pid of pendingSides(battle)) assert.ok(battle.choose(pid, replacements[pid]!));
+  }
+  assert.equal(battle.turn, 2);
+  assert.equal(battle.getSide("p1").active[0], raichu);
+  const request = battle.getSide("p1").activeRequest;
+  assert.ok(request && "active" in request);
+  assert.ok(request.active[0]!.moves.find((move) => move.id === "fakeout")?.disabled);
+  assert.ok(!lead(rolloutCommands(battle).p1).startsWith(`${fakeOut} `));
+});
+
 test("a rollout finishes the game or stops at its turn limit", () => {
   const finished = opening(1, 0, 4);
   assert.ok(rollOut(finished, 40));
