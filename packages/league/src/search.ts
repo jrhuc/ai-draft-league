@@ -11,13 +11,13 @@ import type { Pid } from "./types.js";
 export interface SearchSettings {
   shortlistPerSide: number;
   rolloutsPerCell: number;
-  maxTurns: number;
+  horizon: number;
 }
 
 export const SEARCH_LEVELS = {
-  fast: { shortlistPerSide: 3, rolloutsPerCell: 2, maxTurns: 40 },
-  standard: { shortlistPerSide: 5, rolloutsPerCell: 3, maxTurns: 40 },
-  deep: { shortlistPerSide: 7, rolloutsPerCell: 6, maxTurns: 40 },
+  fast: { shortlistPerSide: 3, rolloutsPerCell: 2, horizon: 3 },
+  standard: { shortlistPerSide: 5, rolloutsPerCell: 3, horizon: 3 },
+  deep: { shortlistPerSide: 7, rolloutsPerCell: 6, horizon: 3 },
 } satisfies Record<string, SearchSettings>;
 
 export type SearchLevel = keyof typeof SEARCH_LEVELS;
@@ -162,7 +162,7 @@ export async function searchAction(
     else if (reply !== null && !scratch.choose(other, reply)) illegal[other]!.add(reply);
     else {
       rollouts += 1;
-      const winner = rollOut(scratch, settings.maxTurns);
+      const winner = rollOut(scratch, settings.horizon);
       value = payoff(scratch, pid, winner);
       await yieldTurn();
     }

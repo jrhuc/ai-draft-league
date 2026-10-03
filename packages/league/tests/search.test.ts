@@ -15,7 +15,7 @@ import { loadPool } from "../src/teams.js";
 import type { JsonObject } from "../src/types.js";
 import { text } from "../src/value.js";
 
-const SETTINGS: SearchSettings = { shortlistPerSide: 2, rolloutsPerCell: 1, maxTurns: 2 };
+const SETTINGS: SearchSettings = { shortlistPerSide: 2, rolloutsPerCell: 1, horizon: 2 };
 const SEED: [number, number, number, number] = [9, 8, 7, 6];
 
 function players(first = 0, second = 1) {
