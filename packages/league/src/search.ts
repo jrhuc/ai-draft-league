@@ -3,8 +3,9 @@ import { setImmediate as yieldTurn } from "node:timers/promises";
 import type { Battle } from "pokemon-showdown";
 
 import { battleActionCandidates, cloneBattle, forkPoint, pendingSides } from "./fork.js";
-import { greedyCommand, opposing, playOut } from "./playout.js";
-import { type Rng, seededRng, shuffle } from "./random.js";
+import { opposing } from "./playout.js";
+import { type Rng, shuffle } from "./random.js";
+import { rollOut, rolloutCommand } from "./rollout.js";
 import type { Pid } from "./types.js";
 
 export interface SearchSettings {
@@ -161,7 +162,7 @@ export async function searchAction(
     else if (reply !== null && !scratch.choose(other, reply)) illegal[other]!.add(reply);
     else {
       rollouts += 1;
-      const winner = playOut(scratch, seededRng(`rollout:${seeds[sample]}`), settings.maxTurns, 0);
+      const winner = rollOut(scratch, settings.maxTurns);
       value = payoff(scratch, pid, winner);
       await yieldTurn();
     }
@@ -181,8 +182,8 @@ export async function searchAction(
   const references = (side: Pid, commands: string[]): string[] => {
     const request = root.getSide(side).activeRequest;
     if (request && !request.teamPreview && !request.forceSwitch) {
-      const greedy = greedyCommand(root, side, rng);
-      if (accepted(side, greedy)) return [greedy];
+      const reference = rolloutCommand(root, side);
+      if (accepted(side, reference)) return [reference];
     }
     const probes: string[] = [];
     for (const command of shuffle(commands, rng)) {
