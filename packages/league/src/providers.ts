@@ -52,8 +52,19 @@ export function reasoningForModel(
   return config.reasoningByModel?.[model] ?? config.reasoning;
 }
 
+const FIXED_POLICIES = new Set(["random", "bot"]);
+
+export function isModelSeat(spec: string): boolean {
+  return !FIXED_POLICIES.has(spec);
+}
+
+export function defaultTeamName(spec: string, entrant: number): string {
+  const label = spec === "random" ? "Random Coach" : spec === "bot" ? "Bot Coach" : "Coach";
+  return `${label} ${entrant + 1}`;
+}
+
 export function parseSpec(value: string) {
-  if (value === "random") return { provider: "random", model: "random" };
+  if (FIXED_POLICIES.has(value)) return { provider: value, model: value };
   const separator = value.indexOf(":");
   const provider = value.slice(0, separator);
   const model = value.slice(separator + 1);
@@ -64,7 +75,7 @@ export function parseSpec(value: string) {
     model.startsWith("-") ||
     /[\s\p{Cc}]/u.test(model)
   )
-    throw new Error("Expected <OpenCode-provider-id>:<model-id> or random");
+    throw new Error("Expected <OpenCode-provider-id>:<model-id>, random, or bot");
   return { provider, model };
 }
 

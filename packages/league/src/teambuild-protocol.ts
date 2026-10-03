@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { DraftBoardMon } from "./draft-protocol.js";
 import type { FranchiseMemory } from "./franchise-memory.js";
 import type { ModelReasoningConfig } from "./providers.js";
 import type { Rng } from "./random.js";
@@ -162,8 +163,8 @@ export interface TeamBuildRequest {
   stage: "roundrobin" | "playoff";
   model: string;
   opponentModel: string;
-  roster: TeamBuildCandidate[];
-  opponentRoster: TeamBuildCandidate[];
+  roster: DraftBoardMon[];
+  opponentRoster: DraftBoardMon[];
   memory: FranchiseMemory;
   playoffContext: string[];
   format: string;

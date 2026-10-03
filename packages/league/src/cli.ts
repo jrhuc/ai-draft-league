@@ -7,9 +7,11 @@ import { z } from "zod";
 import type { AgentProgress } from "./agent-runtime.js";
 import type { DraftLeagueOptions } from "./draftleague-protocol.js";
 import type { ExhibitionOptions } from "./exhibition.js";
+import { serveBridge } from "./eval-bridge.js";
 import { exportSeasonBundle } from "./export-season.js";
 import { draftLeagueConfigSchema } from "./league-store.js";
 import { makeRunDirectory, prepareDataDirectories, RESULTS_PATH, RUNS_DIR } from "./paths.js";
+import { servePositions } from "./position-value.js";
 import type { ReasoningLevel } from "./providers.js";
 import { isReasoningLevel } from "./providers.js";
 import type { ParsedSeriesRecord, SeriesRecord } from "./records.js";
@@ -116,6 +118,13 @@ Commands:
       and provenance come from the run's recorded config)
   monitor <run-dir|run-id> [--json]   harness monitors for a league run: decision integrity, tool predictions
       against the simulator, draft horizon, roster usage and retention, memory continuity per barrier
+  bridge                              play one battle or one league with seats driven from outside over
+      JSON lines on stdio. open, pool, start, tool, submit, abandon, outcome, audit run a battle against
+      random, greedy, or search[:fast|standard|deep]; league, tool, submit, abandon, outcome run a season
+      against bot and random seats
+  positions                           value recorded turn decisions: one game per JSON line on stdin
+      (id, source, log, settings, only), one line out per game and per valued decision with the win
+      rate of every accepted action under a damage-greedy continuation
   draft --models <spec> <spec>...     snake-draft rosters from a board, then a weekly round robin and playoffs
       each coach drafts 10 within a 100-point budget, then picks 6 and builds every set before each match
       [--board <name>] [--seed <n>] [--concurrency <n>] [--reasoning <level>] [--timer-scale <n|off>]
@@ -218,6 +227,14 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   prepareDataDirectories();
   const [command, ...rest] = argv;
   if (command === "selfcheck") return selfcheck();
+  if (command === "bridge") {
+    await serveBridge();
+    return 0;
+  }
+  if (command === "positions") {
+    await servePositions();
+    return 0;
+  }
   if (command === "rotation") {
     const { values, positionals } = parseArgs({
       args: rest,

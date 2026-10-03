@@ -18,6 +18,7 @@ import {
   serializeBattleMemory,
 } from "./battle-memory.js";
 import { summarizeBattleEvents } from "./battle-transcript.js";
+import { ExchangeAbandoned } from "./external-runner.js";
 import type { MenuHints, SlotMenu } from "./choices.js";
 import { LLMEngineContext } from "./llm-engine-context.js";
 import { battleMenuHints } from "./llm-engine-menu.js";
@@ -95,7 +96,7 @@ const BATTLE_SUBMISSIONS = [SUBMIT_ACTION, SUBMIT_REVIEW];
 
 export class LLMEngine extends BaseEngine {
   readonly reference: ShowdownReference;
-  private state: PerspectiveState;
+  protected state: PerspectiveState;
   private readonly context: LLMEngineContext;
   private readonly stats = new LLMEngineStats();
   private memory: BattleMemory;
@@ -105,6 +106,7 @@ export class LLMEngine extends BaseEngine {
   private seriesScore = { p1: 0, p2: 0 };
   private loggedMemoryState = "";
   private pending: PendingDecision | undefined;
+  private gaveUp = false;
   private generation = 0;
   private decisionController: AbortController | undefined;
   private activeToolRequest: BattleRequest | undefined;
@@ -367,6 +369,7 @@ export class LLMEngine extends BaseEngine {
   }
 
   override async act(request: BattleRequest, context: AgentContext): Promise<string> {
+    this.gaveUp = false;
     this.observe(context.povLines);
     this.context.request(request);
     this.activeToolRequest = request;
@@ -416,7 +419,7 @@ export class LLMEngine extends BaseEngine {
       (request.timer
         ? `\nShowdown clock: ${request.timer.turnSeconds} seconds this turn; ${request.timer.seconds} seconds in the bank.`
         : "");
-    const result = await this.run({
+    const decided = this.run({
       session: this.sessionKey(this.gameId),
       task: `decision-${++this.decisionSequence}`,
       supersedes: this.abandonedTask,
@@ -433,6 +436,14 @@ export class LLMEngine extends BaseEngine {
       },
       signal: this.decisionController?.signal,
     });
+    let result: Awaited<typeof decided>;
+    try {
+      result = await decided;
+    } catch (error) {
+      if (!(error instanceof ExchangeAbandoned)) throw error;
+      this.gaveUp = true;
+      return BaseEngine.defaults(menus)[0];
+    }
     if (generation !== this.generation) return [];
     this.firstDecision = false;
     this.observations = [];
@@ -471,7 +482,7 @@ export class LLMEngine extends BaseEngine {
     automatic: boolean,
     substitution?: ChoiceSubstitution,
   ): SubmissionSource {
-    return substitution ? "model-default" : automatic ? "automatic" : "model";
+    return substitution || this.gaveUp ? "model-default" : automatic ? "automatic" : "model";
   }
 
   protected override actionSubmitted(

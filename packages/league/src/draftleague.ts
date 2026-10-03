@@ -4,7 +4,11 @@ import path from "node:path";
 
 import { loadBoard } from "./draft.js";
 import { runDraftPhase } from "./draftleague-draft.js";
-import { buildDraftLeagueSchedule, type DraftLeagueOptions } from "./draftleague-protocol.js";
+import {
+  buildDraftLeagueSchedule,
+  type DraftLeagueEvent,
+  type DraftLeagueOptions,
+} from "./draftleague-protocol.js";
 import { runPlayoffPhase } from "./draftleague-playoffs.js";
 import { runRoundRobinPhase } from "./draftleague-roundrobin.js";
 import { type DraftLeagueContext, LeagueCoordinator } from "./league-coordinator.js";
@@ -39,24 +43,17 @@ export async function runDraftLeague(
 ): Promise<SeriesRecord[]> {
   return withAgentHost(
     runDir,
-    (agents) =>
-      executeDraftLeague(models, runDir, agents, {
-        ...options,
-        onEvent: (event) => {
-          if (event.type === "draft" || event.type === "series-end") agents.live.invalidate();
-          options.onEvent?.(event);
-        },
-      }),
+    async (agents) => (await playDraftLeague(models, runDir, agents, options)).results(),
     options.onAgentProgress,
   );
 }
 
-async function executeDraftLeague(
+export async function playDraftLeague(
   models: string[],
   runDir: string,
   agents: AgentRuntime,
   options: DraftLeagueOptions,
-): Promise<SeriesRecord[]> {
+): Promise<LeagueCoordinator> {
   if (models.length < 2) throw new Error("a draft league needs at least two models");
   validateModelExecution(models, options);
 
@@ -132,6 +129,14 @@ async function executeDraftLeague(
       contributor: options.contributor ?? null,
     });
   }
+  const { onEvent } = options;
+  options = {
+    ...options,
+    onEvent: (event: DraftLeagueEvent) => {
+      if (event.type === "draft" || event.type === "series-end") agents.live.invalidate();
+      onEvent?.(event);
+    },
+  };
   const context: DraftLeagueContext = {
     models,
     runDir,
@@ -187,7 +192,7 @@ async function executeDraftLeague(
   await runDraftPhase(context, runtime);
   if (draftOnly) {
     options.onEvent?.({ type: "draft", draft: runtime.draftView(true) });
-    return [];
+    return runtime;
   }
   if (stored && stored.transactions === undefined) {
     promoteDraftOnlyConfig(runDir, configuredTransactions);
@@ -197,5 +202,5 @@ async function executeDraftLeague(
 
   const roundRobin = await runRoundRobinPhase(context, runtime);
   if (roundRobin.status === "complete") await runPlayoffPhase(context, runtime);
-  return runtime.results();
+  return runtime;
 }

@@ -14,7 +14,8 @@ import {
   type ReasoningLevel,
 } from "./providers.js";
 import type { AgentActivity, AgentProgress, LiveGame } from "./public/live-protocol.js";
-import type { JsonObject, JsonValue, ToolDefinition } from "./types.js";
+import { rejectUndeclared, withoutClosedObjects } from "./tool-input.js";
+import type { JsonObject, ToolDefinition } from "./types.js";
 
 export interface AgentTool {
   definition: ToolDefinition;
@@ -70,49 +71,6 @@ type Message = SessionMessageInfo;
 type UserMessage = Extract<Message, { type: "user" }>;
 
 const object = z.record(z.string(), z.json());
-const schemaNode = z.object({
-  properties: object.optional(),
-  additionalProperties: z.json().optional(),
-  items: z.json().optional(),
-});
-
-function undeclaredFields(schema: JsonValue, value: JsonValue, path = ""): string[] {
-  const node = schemaNode.safeParse(schema);
-  if (!node.success) return [];
-  const { properties, additionalProperties, items } = node.data;
-  if (Array.isArray(value))
-    return items === undefined
-      ? []
-      : value.flatMap((item, index) => undeclaredFields(items, item, `${path}[${index}]`));
-  const record = object.safeParse(value);
-  if (!record.success || !properties) return [];
-  return Object.entries(record.data).flatMap(([key, child]) => {
-    const declared = properties[key];
-    const field = path ? `${path}.${key}` : key;
-    if (declared === undefined) return additionalProperties === false ? [field] : [];
-    return undeclaredFields(declared, child, field);
-  });
-}
-
-function rejectUndeclared(tool: ToolDefinition, args: JsonObject): void {
-  const undeclared = undeclaredFields(tool.parameters, args);
-  if (!undeclared.length) return;
-  const declared = Object.keys(schemaNode.parse(tool.parameters).properties ?? {});
-  throw new Error(
-    `${tool.name} has no field ${undeclared.map((field) => JSON.stringify(field)).join(", ")}; nothing was accepted. Its fields are ${declared.join(", ")}.`,
-  );
-}
-
-function withoutClosedObjects(schema: JsonValue): JsonValue {
-  if (Array.isArray(schema)) return schema.map(withoutClosedObjects);
-  const record = object.safeParse(schema);
-  if (!record.success) return schema;
-  return Object.fromEntries(
-    Object.entries(record.data)
-      .filter(([key, value]) => key !== "additionalProperties" || value !== false)
-      .map(([key, value]) => [key, withoutClosedObjects(value)]),
-  );
-}
 
 const anyJson = z.json();
 
