@@ -45,7 +45,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@babel/parser": "8.0.7",
+    "@babel/parser": "8.1.0",
     "@types/node": "catalog:",
     "typescript": "7.0.2",
     "vite-plus": "catalog:"
