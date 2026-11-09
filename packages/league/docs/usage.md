@@ -4,7 +4,7 @@ Run these commands from `packages/league` after completing the [local setup](../
 
 ## Configure a provider
 
-Use `<OpenCode-provider-id>:<model-id>`, or `random` for the baseline. Common providers are:
+Use `<provider>:<model-id>` from the pi-ai catalog, or `random` for the baseline. Common providers are:
 
 | Prefix         | Provider             | Environment variable |
 | -------------- | -------------------- | -------------------- |
@@ -13,15 +13,13 @@ Use `<OpenCode-provider-id>:<model-id>`, or `random` for the baseline. Common pr
 | `openrouter:`  | OpenRouter           | `OPENROUTER_API_KEY` |
 | `random`       | Seeded random engine | None                 |
 
-Any other provider in the OpenCode catalog works with its own environment key; the catalog only lists providers whose key is present.
+Any other pi-ai provider works with its own environment key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, ...). The catalog ships with the pinned pi-ai release, so a model newer than the release is unknown until pi-ai is upgraded. OpenRouter variant suffixes such as `:nitro` reuse their base model's entry.
 
-OpenCode owns the provider catalog, credentials, and routing. `VGC_MODEL_UPSTREAM=opencode:muse-spark-1.3-contributor-free=muse-spark-1.3` bills a seat to another model id on the same provider (for example a free tier's paid twin once its quota is spent) while the run keeps recording the original identity; the target's cost table is used for spend. Additional provider configuration belongs in `<run-dir>/agents/opencode.json`, using the [OpenCode V2 provider schema](https://opencode.ai/v2/docs/providers). The embedded host excludes project configuration and uses only league tools. Its native databases stay in the private run directory.
+`VGC_MODEL_UPSTREAM=opencode:muse-spark-1.3-contributor-free=muse-spark-1.3` sends a seat's requests to another model id on the same provider (for example a free tier's paid twin, or an id the catalog does not list) while the run keeps recording the original identity; the target's cost table is used for spend.
 
-The SDK and plugin use matching, exactly pinned `dev` builds. OpenCode packages are exempt from pnpm's release-age delay so upgrades can use newly published model APIs.
+OpenRouter requests set `allow_fallbacks: false`. Set `VGC_OPENROUTER_PIN` to one upstream provider name to restore an explicit pin, for example `VGC_OPENROUTER_PIN=Anthropic`. Comma-separated pins are rejected. Keep the same model, reasoning, and routing when resuming a session. Prompt caching follows each provider's protocol, keyed by the private session.
 
-Use OpenCode provider settings for custom endpoints. OpenRouter requests set `allow_fallbacks: false`. Set `VGC_OPENROUTER_PIN` to one upstream provider name to restore an explicit pin, for example `VGC_OPENROUTER_PIN=Anthropic`. Comma-separated pins are rejected. Keep the same routing policy when resuming a session. Claude system prompts carry an ephemeral cache hint through the native protocol.
-
-`--reasoning` selects a variant from the chosen OpenCode model. Omitting it uses the model's default. Unavailable models or variants fail before model dispatch. OpenCode owns infrastructure retries and native tool correction. A reply that ends without an accepted submission gets two reminders to call its submission tool; the stage fails only after those.
+`--reasoning` sets a pi thinking level: `minimal`, `low`, `medium`, `high`, or `xhigh` and `max` on models that offer them. Omitting it sends no reasoning setting, so the provider default applies (Anthropic models then run without extended thinking). A model the catalog lacks, or a level it does not offer, fails before model dispatch. Transient provider errors are retried up to four times with backoff, and Gemini malformed function calls and Anthropic refusals are resampled; timed stages never retry. A reply that ends without an accepted submission gets two reminders to call its submission tool; five rejected submissions in one attempt, or a third reply without one, fail the stage.
 
 ## Choose a run mode
 
@@ -42,7 +40,7 @@ pnpm run vgcleague exhibition --opponent model_spec
 
 All experiment modes accept `--seed`. Rotation, tournament, and draft accept `--concurrency` and `--timer-scale value`. Battles are untimed by default. Use `--timer-scale 1` for the standard VGC clock or a value from 0.5 through 4 to scale it.
 
-Add `--progress` to any run command to print one JSON line per agent update on stderr: the private session and task, the model, its current activity (`starting`, `generating`, `reasoning`, `tool` with the tool name, `retry`, `compacting`, `ended`), and the session's cost and token usage once known. Updates omit prompt, reasoning, and tool-input text. Programmatic runs receive the same updates through `onAgentProgress`. The optional Showdown clock disables infrastructure retries during decisions; untimed stages retain OpenCode's retry policy.
+Add `--progress` to any run command to print one JSON line per agent update on stderr: the private session and task, the model, its current activity (`starting`, `generating`, `reasoning`, `tool` with the tool name, `retry`, `compacting`, `ended`), and the session's cost and token usage once known. Updates omit prompt, reasoning, and tool-input text. Programmatic runs receive the same updates through `onAgentProgress`. The optional Showdown clock disables retries during decisions; untimed stages keep the retry policy above.
 
 For a live spectator screen, run `pnpm dev` from the repository root, open `/live`, and choose **Watch live**. The screen shows active agent tasks, reasoning/tool/retry/compaction activity, conversation usage, and an animated Showdown battle. Switch between concurrent series, or uncheck **Follow live** to pause and rewind. Public battle updates arrive over SSE; reconnecting restores the current state. Live snapshots are written automatically, including without `--progress`.
 
@@ -58,7 +56,7 @@ A seeded event pool preserves bracket positions while shuffling models across te
 
 Resume validates entrants, teams, seed, provenance, reasoning, timer, draw, and completed evidence. Untimed games replay accepted native submissions from the seed without inference, validating the original inputs, then continue the unfinished conversation. Timed games restart the unresolved game with a new conversation because the elapsed clock and timer substitutions are not checkpointed. Resolved games and their completed reviews are retained. Stop the previous owner before resuming, and never resume one run concurrently.
 
-Native conversations share `<run-dir>/agents/opencode.sqlite`.
+Each private conversation is `<run-dir>/agents/<session>.jsonl`: a header with the session's model, reasoning, and routing, then every task, message, and compaction in order. Recovery reads only this transcript; a torn final line from a crash is discarded on reopen.
 
 ## Run or resume a draft league
 
