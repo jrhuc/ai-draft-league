@@ -26,7 +26,13 @@ import {
 } from "./draft-protocol.js";
 import { defaultPsDir } from "./paths.js";
 import { commitRunArtifact, readRunArtifacts } from "./run-artifact-store.js";
-import { reasoningForModel, type ModelReasoningConfig } from "./providers.js";
+import { botDraftPick } from "./bot.js";
+import {
+  defaultTeamName,
+  isModelSeat,
+  reasoningForModel,
+  type ModelReasoningConfig,
+} from "./providers.js";
 import type { Rng } from "./random.js";
 import { ShowdownReference } from "./reference.js";
 import type { StageEvidence } from "./stage-evidence.js";
@@ -146,8 +152,8 @@ async function nameFranchises(
         options.onName?.(entrant, state.teamNames[entrant]!, state);
         return;
       }
-      let teamName = `Random Coach ${entrant + 1}`;
-      if (model !== "random") {
+      let teamName = defaultTeamName(model, entrant);
+      if (isModelSeat(model)) {
         const seatLog = path.join(options.logDir, `namer-${entrant}-${fileSlug(model)}.jsonl`);
         const result = await runStage({
           session: `name-${entrant}`,
@@ -244,7 +250,7 @@ export async function runDraft(
       supplied: { rationale: false, notebookUpdate: false },
     };
     const model = models[drafter]!;
-    if (model !== "random") {
+    if (isModelSeat(model)) {
       const result = await runStage({
         session: `draft-${drafter}`,
         task: `pick-${pickNumber + 1}`,
@@ -264,8 +270,11 @@ export async function runDraft(
       evidence = result.value.evidence;
       notebooks[drafter] = evidence.notebook;
     } else {
-      chosen = legal[Math.floor(options.rng() * legal.length)]!;
-      reasoning = "random baseline pick";
+      chosen =
+        model === "bot"
+          ? botDraftPick(state, drafter, legal, options.rng)
+          : legal[Math.floor(options.rng() * legal.length)]!;
+      reasoning = `${model} baseline pick`;
       evidence = {
         rationale: reasoning,
         notebook: notebooks[drafter]!,

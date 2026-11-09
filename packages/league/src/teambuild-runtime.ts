@@ -18,6 +18,7 @@ import {
 import { validateTeamBuildSubmission } from "./teambuild-referee.js";
 import { teamBuildSystemPrompt, teamBuildUserPrompt } from "./teambuild-prompts.js";
 import { randomTeamSets } from "./teambuild-validation.js";
+import { botTeamSets } from "./bot.js";
 import type { JsonObject } from "./types.js";
 import { fileSlug } from "./value.js";
 
@@ -65,25 +66,30 @@ export async function runTeambuild(
           sets: randomTeamSets(dex, task.constraint, options.rng, evLimit, evMax),
           team_plan: `Random baseline: ${task.constraint.teamSize} candidates with legal sets.`,
         })
-      : await runStage({
-          session: `build-${task.id}`,
-          task: task.id,
-          model: task.model,
-          reasoning: reasoningForModel(task.model, options),
-          system: teamBuildSystemPrompt(task, dex, evLimit, evMax),
-          prompt: teamBuildUserPrompt(task, dex),
-          tools: referenceTools(new ShowdownReference(task.format, psDir), undefined, [
-            memoryPageTool(() => request.memory),
-          ]),
-          submission: submissionTool("submit_team", teamBuildReplySchema),
-          validate,
-          runner: options.runAgent,
-          signal: options.signal,
-          logFile: path.join(
-            options.logDir,
-            `series-${request.seriesIndex + 1}-e${request.entrant}-${fileSlug(task.model)}.jsonl`,
-          ),
-        }).then((result) => ({ ...result.value, attempts: result.attempts }));
+      : task.model === "bot"
+        ? validate({
+            sets: botTeamSets(request.roster, task.constraint.teamSize, task.format, psDir),
+            team_plan: "Bot baseline: the six highest-cost picks, at most two Megas.",
+          })
+        : await runStage({
+            session: `build-${task.id}`,
+            task: task.id,
+            model: task.model,
+            reasoning: reasoningForModel(task.model, options),
+            system: teamBuildSystemPrompt(task, dex, evLimit, evMax),
+            prompt: teamBuildUserPrompt(task, dex),
+            tools: referenceTools(new ShowdownReference(task.format, psDir), undefined, [
+              memoryPageTool(() => request.memory),
+            ]),
+            submission: submissionTool("submit_team", teamBuildReplySchema),
+            validate,
+            runner: options.runAgent,
+            signal: options.signal,
+            logFile: path.join(
+              options.logDir,
+              `series-${request.seriesIndex + 1}-e${request.entrant}-${fileSlug(task.model)}.jsonl`,
+            ),
+          }).then((result) => ({ ...result.value, attempts: result.attempts }));
   const journalRow: JsonObject = JSON.parse(JSON.stringify({ artifact }));
   commitRunArtifact(
     options.runDir,

@@ -4,28 +4,14 @@ import { createServer } from "node:http";
 import { z } from "zod";
 
 import type { AgentContextQuery } from "./agent-context.js";
-import type { AgentRunner, AgentTask } from "./agent-runtime.js";
-import type { JsonObject, JsonValue, ToolDefinition } from "./types.js";
+import type { AgentRunner } from "./agent-runtime.js";
+import { type ExternalExchange, ExternalRunner } from "./external-runner.js";
+import type { JsonObject, JsonValue } from "./types.js";
 import { isRecord, text } from "./value.js";
-
-interface SeatExchangeView extends JsonObject {
-  id: number;
-  task: string;
-  system: string;
-  prompt: string;
-  submission: { name: string; parameters: JsonObject };
-}
-
-interface PendingExchange {
-  id: number;
-  task: AgentTask<unknown>;
-  submit: (input: JsonObject) => void;
-  reject: (error: Error) => void;
-}
 
 interface SeatBridgeOptions {
   context?: (query: AgentContextQuery) => JsonObject;
-  onExchange?: (view: SeatExchangeView) => void;
+  onExchange?: (view: ExternalExchange) => void;
   onTool?: (name: string, args: JsonObject, result: string) => void;
 }
 
@@ -38,8 +24,10 @@ export class SeatBridge {
   readonly token = randomBytes(16).toString("hex");
   status: JsonObject = {};
   private readonly server: Server;
-  private exchange: PendingExchange | undefined;
-  private sequence = 0;
+  private readonly runner = new ExternalRunner((view) => {
+    this.options.onExchange?.(view);
+    this.wakePollers();
+  });
   private pollWaiters: Array<() => void> = [];
   private closed = false;
 
@@ -67,70 +55,26 @@ export class SeatBridge {
     });
   }
 
-  readonly runAgent: AgentRunner = async <T>(task: AgentTask<T>) => {
-    const started = performance.now();
-    task.signal?.throwIfAborted();
-    const pending = this.complete(task);
-    const exchange = this.exchange;
-    const abort = () => {
-      if (this.exchange === exchange) this.exchange = undefined;
-      exchange?.reject(new Error("seat exchange aborted"));
-      this.wakePollers();
-    };
-    task.signal?.addEventListener("abort", abort, { once: true });
+  readonly runAgent: AgentRunner = async (task) => {
+    if (this.closed) throw new Error("seat bridge closed");
+    if (this.view()) throw new Error("a seat exchange is already pending");
     try {
-      const { input, value } = await pending;
-      return {
-        value,
-        sessionID: `external-${task.session}`,
-        messageID: `exchange-${exchange?.id}`,
-        response: JSON.stringify(input),
-        reasoning: "",
-        usage: {},
-        tools: [],
-        attempts: 1,
-        latencyMs: performance.now() - started,
-      };
+      return await this.runner.run(task);
     } finally {
-      task.signal?.removeEventListener("abort", abort);
+      this.wakePollers();
     }
   };
 
   close(): void {
     this.closed = true;
-    this.exchange?.reject(new Error("seat bridge closed"));
-    this.exchange = undefined;
+    this.runner.close("seat bridge closed");
     this.wakePollers();
     this.server.close();
     this.server.closeAllConnections();
   }
 
-  private complete<T>(task: AgentTask<T>): Promise<{ input: JsonObject; value: T }> {
-    if (this.closed) return Promise.reject(new Error("seat bridge closed"));
-    if (this.exchange) return Promise.reject(new Error("a seat exchange is already pending"));
-    const { promise, resolve, reject } = Promise.withResolvers<{ input: JsonObject; value: T }>();
-    this.exchange = {
-      id: ++this.sequence,
-      task,
-      submit: (input) => resolve({ input, value: task.validate(input) }),
-      reject,
-    };
-    const view = this.view();
-    if (view) this.options.onExchange?.(view);
-    this.wakePollers();
-    return promise;
-  }
-
-  private view(): SeatExchangeView | null {
-    if (!this.exchange) return null;
-    const { task } = this.exchange;
-    return {
-      id: this.exchange.id,
-      task: task.task,
-      system: task.system,
-      prompt: task.prompt,
-      submission: { name: task.submission.name, parameters: task.submission.parameters },
-    };
+  private view(): ExternalExchange | null {
+    return this.runner.exchanges()[0] ?? null;
   }
 
   private waitForExchange(ms: number): Promise<void> {
@@ -158,10 +102,6 @@ export class SeatBridge {
     const supplied = Buffer.from(request.headers.authorization ?? "");
     const expected = Buffer.from(`Bearer ${this.token}`);
     return supplied.length === expected.length && timingSafeEqual(supplied, expected);
-  }
-
-  private availableTools(): readonly ToolDefinition[] {
-    return this.exchange?.task.tools?.map((tool) => tool.definition) ?? [];
   }
 
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -192,14 +132,11 @@ export class SeatBridge {
     }
 
     if (route === "/status")
-      return send(200, { status: this.status, exchange: this.exchange?.id ?? null });
-    if (route === "/tools") {
-      const tools = this.availableTools().map((definition) => ({ ...definition }));
-      return send(200, { tools });
-    }
+      return send(200, { status: this.status, exchange: this.view()?.id ?? null });
+    if (route === "/tools") return send(200, { tools: this.view()?.tools ?? [] });
     if (route === "/poll") {
       const waitMs = Math.max(0, Math.min(Number(body.waitMs) || 0, POLL_LIMIT_MS));
-      if (!this.exchange && waitMs && !this.closed) await this.waitForExchange(waitMs);
+      if (!this.view() && waitMs && !this.closed) await this.waitForExchange(waitMs);
       return send(200, { exchange: this.view(), status: this.status });
     }
     if (route === "/context") {
@@ -234,15 +171,14 @@ export class SeatBridge {
       }
     }
     if (route === "/tool") {
+      const exchange = this.view();
       const name = text(body.name);
-      if (!this.availableTools().some((tool) => tool.name === name))
+      if (!exchange?.tools.some((tool) => tool.name === name))
         return send(400, { error: `unknown tool ${name}` });
       const args = isRecord(body.arguments) ? body.arguments : {};
-      const tool = this.exchange?.task.tools?.find((tool) => tool.definition.name === name);
-      if (!tool) return send(400, { error: `unknown tool ${name}` });
       let result: string;
       try {
-        result = tool.run(args);
+        result = this.runner.tool(exchange.id, name, args);
       } catch (error) {
         return send(400, { error: error instanceof Error ? error.message : String(error) });
       }
@@ -250,7 +186,7 @@ export class SeatBridge {
       return send(200, { result });
     }
     if (route === "/submit") {
-      const exchange = this.exchange;
+      const exchange = this.view();
       if (!exchange) return send(409, { error: "no pending exchange" });
       const id = z.number().safe().int().safeParse(body.id);
       if (!id.success) return send(400, { error: "id must be a safe integer" });
@@ -260,11 +196,14 @@ export class SeatBridge {
       if (!submitted.success || !submitted.data.trim())
         return send(400, { error: "text must be a non-empty string" });
       try {
-        exchange.submit(z.record(z.string(), z.json()).parse(JSON.parse(submitted.data)));
+        this.runner.submit(
+          exchange.id,
+          z.record(z.string(), z.json()).parse(JSON.parse(submitted.data)),
+          { response: submitted.data },
+        );
       } catch (error) {
         return send(400, { error: error instanceof Error ? error.message : String(error) });
       }
-      this.exchange = undefined;
       return send(200, { ok: true, id: exchange.id });
     }
     send(404, { error: "unknown route" });

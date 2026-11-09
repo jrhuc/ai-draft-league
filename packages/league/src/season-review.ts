@@ -14,7 +14,7 @@ import {
   PARALLEL_TOOLS_RULE,
   renderPromptTemplate,
 } from "./prompts.js";
-import { reasoningForModel, type ModelReasoningConfig } from "./providers.js";
+import { isModelSeat, reasoningForModel, type ModelReasoningConfig } from "./providers.js";
 import { ShowdownReference } from "./reference.js";
 import { mapLimit } from "./series.js";
 import type { TradeWindowArtifact } from "./trade-window.js";
@@ -282,7 +282,7 @@ export async function runSeasonReview(
       const model = state.models[entrant]!;
       let parsed: ParsedSeasonReview | undefined;
       const system = systemPrompt(state, entrant);
-      if (model !== "random") {
+      if (isModelSeat(model)) {
         const seatLog = path.join(logDir, `seat-${entrant}-${fileSlug(model)}.jsonl`);
         const result = await runStage({
           session: `season-review-${entrant}`,
@@ -301,7 +301,7 @@ export async function runSeasonReview(
         parsed = result.value;
       }
       if (!parsed) {
-        const reason = "the random baseline files no review";
+        const reason = `the ${model} baseline files no review`;
         parsed = { summary: reason, did_well: reason, did_poorly: reason, would_change: reason };
       }
       const review: SeasonReview = { entrant, model, outcome, ...parsed };

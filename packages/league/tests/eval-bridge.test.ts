@@ -1,128 +1,182 @@
 import assert from "node:assert/strict";
+import { PassThrough } from "node:stream";
+import { text as readAll } from "node:stream/consumers";
 import { test } from "vite-plus/test";
 import { z } from "zod";
-import { RandomEngine } from "../src/battle-agent.js";
-import { EvalBridge, GreedySeat, handleBridgeRequest } from "../src/eval-bridge.js";
-import { ShowdownReference } from "../src/reference.js";
-import { SimBattle } from "../src/sim.js";
+import {
+  type BridgeEvent,
+  EvalBridge,
+  handleBridgeRequest,
+  serveBridge,
+} from "../src/eval-bridge.js";
 import { loadPool } from "../src/teams.js";
+import type { Pid } from "../src/types.js";
+import { text } from "../src/value.js";
 
-test("an external seat plays a whole game through the bridge and its calls are audited", async () => {
+const SEED: [number, number, number, number] = [1, 2, 3, 4];
+
+function open() {
   const pool = loadPool();
-  const bridge = new EvalBridge(pool.format);
-  const tools = bridge.tools();
-  assert.ok(tools.some((tool) => tool.name === "estimate_damage"));
-  assert.ok(tools.some((tool) => tool.name === "compare_action_order"));
-  assert.ok(!tools.some((tool) => tool.name === "read_battle_history"));
-  assert.match(bridge.system(), /expert VGC player/);
-
-  let event = await bridge.start({
-    format: pool.format,
-    seed: [1, 2, 3, 4],
-    p1: { name: "A-external", team: pool.teams[0]!.packed },
-    p2: { name: "B-random", team: pool.teams[1]!.packed },
-    external: ["p1"],
-    opponent: "greedy",
-    opponent_seed: 20,
+  const queue: BridgeEvent[] = [];
+  let wake: (() => void) | undefined;
+  const bridge = new EvalBridge(pool.format, (event) => {
+    queue.push(event);
+    wake?.();
   });
-  let decisions = 0;
-  let calls = 0;
-  while (event.kind === "decision") {
-    decisions += 1;
-    assert.equal(event.pid, "p1");
-    assert.equal(event.decision, decisions);
-    assert.match(event.prompt, /Authoritative battle state/);
-    assert.equal(event.menus.length, event.slot_names.length);
-    if (decisions === 1) {
-      assert.equal(event.phase, "team_preview");
-      await assert.rejects(bridge.submit("p1", []), /exactly 4 entries/);
-      await assert.rejects(bridge.submit("p1", [0, 0, 1, 2]), /conflicts|already/);
-      assert.match(bridge.call("p1", "lookup_species", { name: "Incineroar" }), /Incineroar/);
-      ({ next: event } = await bridge.submit("p1", [0, 1, 2, 3]));
+  const next = async (): Promise<BridgeEvent> => {
+    while (!queue.length)
+      await new Promise<void>((resolve) => {
+        wake = resolve;
+      });
+    return queue.shift()!;
+  };
+  const players = (p1: string, p2: string) => ({
+    p1: { name: "A", team: pool.teams[0]!.packed, seat: p1 },
+    p2: { name: "B", team: pool.teams[1]!.packed, seat: p2 },
+  });
+  return { pool, bridge, next, players };
+}
+
+test("an outside seat plays a whole game as the league's coach and its calls are audited", async () => {
+  const { bridge, next, players } = open();
+  bridge.start({ seed: SEED, ...players("external", "greedy"), policy_seed: 20 });
+  const runner = bridge.runner("p1");
+  let exchanges = 0;
+  let event = await next();
+  while (event.kind !== "end") {
+    if (event.kind === "decision") {
+      event = await next();
       continue;
     }
-    if (event.phase === "turn" && calls === 0) {
-      const order = bridge.call("p1", "compare_action_order", { first: "ally 1", second: "foe 1" });
-      assert.ok(order.length > 0);
-      calls += 1;
-    }
-    ({ next: event } = await bridge.submit("p1", "default"));
+    exchanges += 1;
+    const { exchange } = event;
+    assert.equal(event.pid, "p1");
+    assert.equal(exchange.submission.name, "submit_action");
+    assert.match(exchange.system, /expert VGC player/);
+    assert.match(exchange.prompt, /Authoritative battle state/);
+    const tools = exchange.tools.map((tool) => tool.name);
+    assert.ok(tools.includes("estimate_damage") && tools.includes("compare_action_order"));
+    assert.equal(event.decision.menus.length, event.decision.slot_names.length);
+    if (exchanges === 1) {
+      assert.equal(event.decision.phase, "team_preview");
+      assert.equal(event.decision.menus.length, 4);
+      assert.throws(() => runner.submit(exchange.id, { choices: [0] }), /exactly 4 entries/);
+      assert.throws(
+        () => runner.submit(exchange.id, { choices: [0, 1, 2, 3], reason: "x" }),
+        /no field "reason"/,
+      );
+      assert.throws(() => runner.tool(exchange.id, "nope", {}), /unknown tool/);
+      assert.match(
+        runner.tool(exchange.id, "lookup_species", { name: "Incineroar" }),
+        /Incineroar/,
+      );
+      runner.submit(exchange.id, { choices: [0, 1, 2, 3], rationale: "leads first" });
+    } else if (exchanges === 2) {
+      const order = runner.tool(exchange.id, "compare_action_order", {
+        first: "ally 1",
+        second: "foe 1",
+      });
+      assert.match(order, /raw Speed/);
+      runner.abandon(exchange.id, "out of replies");
+    } else runner.abandon(exchange.id, "out of replies");
+    event = await next();
   }
-  assert.ok(decisions > 1);
+  assert.ok(exchanges > 2);
   const outcome = bridge.result();
-  assert.equal(event.outcome.log_sha256, outcome.log_sha256);
+  assert.equal(event.outcome, outcome);
+  assert.equal(outcome.error, null);
   assert.equal(outcome.log_sha256.length, 64);
   assert.ok(outcome.winner);
   assert.deepEqual(outcome.errors, { p1: 0, p2: 0 });
-  const sources = new Set(outcome.submissions.p1.map((row) => row.source));
-  assert.ok(sources.has("model"), "the team preview pick was a model submission");
-  assert.ok(sources.has("model-default"), "later turns were defaulted");
-  assert.ok(outcome.submissions.p1.every((row) => row.outcome === "accepted"));
-  assert.ok(outcome.submissions.p1.some((row) => row.tool_calls === 1));
-  const audit = bridge.audit();
-  assert.ok(Array.isArray(audit.findings));
-  await assert.rejects(bridge.submit("p1", "default"), /no pending decision/);
+  const decisions = outcome.decisions.p1.filter((row) => row.kind === "decision");
+  assert.equal(decisions[0]?.action, "team 1234");
+  assert.equal(decisions[0]?.rationale, "leads first");
+  assert.equal(decisions[0]?.submission_source, "model");
+  assert.equal(decisions[0]?.parse_failures, 2);
+  assert.deepEqual(decisions[0]?.tool_lookups, ["lookup_species"]);
+  assert.ok(decisions.some((row) => row.submission_source === "model-default"));
+  assert.ok(decisions.every((row) => row.outcome === "accepted"));
+  assert.deepEqual(outcome.decisions.p2, []);
+  assert.ok(Array.isArray(bridge.audit().findings));
+  assert.throws(() => runner.abandon(1, "late"), /no pending exchange/);
+  assert.throws(() => bridge.start({ seed: 1, ...players("external", "random") }), /already/);
 });
 
-test("the stdio protocol opens a bridge before any other method", async () => {
+test("a recorded game resumes at a chosen decision with its history", async () => {
+  const recorded = open();
+  recorded.bridge.start({ seed: SEED, ...recorded.players("external", "external") });
+  const turns = { p1: new Array<number>(), p2: new Array<number>() };
+  let event = await recorded.next();
+  while (event.kind !== "end") {
+    if (event.kind === "exchange") {
+      turns[event.pid].push(event.decision.turn);
+      recorded.bridge.runner(event.pid).abandon(event.exchange.id, "default");
+    }
+    event = await recorded.next();
+  }
+  const choices = (pid: Pid) =>
+    event.kind === "end" ? event.outcome.decisions[pid].map((row) => text(row.action)) : [];
+  const before = (pid: Pid) => turns[pid].filter((turn) => turn < 2).length;
+  assert.ok(choices("p1").length > before("p1"));
+
+  const resumed = open();
+  resumed.bridge.start({
+    seed: SEED,
+    ...resumed.players("external", "greedy"),
+    script: {
+      p1: choices("p1").slice(0, before("p1")),
+      p2: choices("p2").slice(0, before("p2")),
+    },
+  });
+  const first = await resumed.next();
+  assert.ok(first.kind === "exchange" && first.pid === "p1");
+  assert.deepEqual([first.decision.turn, first.decision.phase], [2, "turn"]);
+  assert.match(first.exchange.prompt, /^Turn: 2$/m);
+  assert.equal(first.exchange.task, "decision-1");
+  resumed.bridge.runner("p1").abandon(first.exchange.id, "default");
+  let row = await resumed.next();
+  while (row.kind !== "decision") row = await resumed.next();
+  assert.equal(row.row.action, choices("p1")[before("p1")]);
+});
+
+test("a game needs an outside seat and known policies", () => {
+  const { bridge, players } = open();
+  assert.throws(() => bridge.start({ seed: 1, ...players("greedy", "random") }), /external/);
+  assert.throws(
+    () => handleBridgeRequest(bridge, "start", { seed: 1, ...players("external", "minimax") }),
+    /p2 seat must be one of external, random, greedy, search/,
+  );
+  assert.throws(() => handleBridgeRequest(bridge, "nope", {}), /Invalid discriminator/);
+  assert.throws(() => bridge.result(), /has not ended/);
+});
+
+test("the stdio protocol answers requests by id and opens first", async () => {
   const pool = loadPool();
-  await assert.rejects(
-    handleBridgeRequest(undefined, "tools", {}, () => new EvalBridge(pool.format)),
-    /open first/,
-  );
-  const opened = await handleBridgeRequest(
-    undefined,
-    "open",
-    { format: pool.format },
-    (format) => new EvalBridge(format),
-  );
-  assert.ok(opened.bridge);
-  const hello = z.object({ format: z.string(), showdown_commit: z.string() }).parse(opened.result);
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const served = serveBridge(input, output);
+  input.write(`${JSON.stringify({ id: 1, method: "pool", params: {} })}\n`);
+  input.write(`${JSON.stringify({ id: 2, method: "open", params: { format: pool.format } })}\n`);
+  input.write(`${JSON.stringify({ id: 3, method: "pool", params: { name: "test" } })}\n`);
+  input.write("not json\n");
+  input.end();
+  await served;
+  output.end();
+  const lines = (await readAll(output))
+    .trim()
+    .split("\n")
+    .map((line) => z.record(z.string(), z.json()).parse(JSON.parse(line)));
+  assert.deepEqual(lines[0], { id: 1, error: "call open or league first" });
+  const hello = z
+    .object({ format: z.string(), showdown_commit: z.string(), seats: z.array(z.string()) })
+    .parse(lines[1]?.result);
   assert.equal(hello.format, pool.format);
   assert.equal(hello.showdown_commit.length, 40);
-  const tools = await handleBridgeRequest(
-    opened.bridge,
-    "tools",
-    {},
-    () => new EvalBridge(pool.format),
-  );
-  assert.ok(Array.isArray(tools.result));
-  const listed = await handleBridgeRequest(
-    opened.bridge,
-    "pool",
-    { name: "test" },
-    () => new EvalBridge(pool.format),
-  );
-  const { teams } = z
+  assert.ok(hello.seats.includes("search"));
+  const listed = z
     .object({ teams: z.array(z.object({ id: z.string(), packed: z.string() })) })
-    .parse(listed.result);
-  assert.equal(teams.length, pool.teams.length);
-  assert.equal(teams[0]?.packed, pool.teams[0]?.packed);
-  await assert.rejects(
-    handleBridgeRequest(opened.bridge, "nope", {}, () => new EvalBridge(pool.format)),
-    /unknown method/,
-  );
-});
-
-test("the greedy opponent beats the random policy on most seeds", async () => {
-  const pool = loadPool();
-  const reference = new ShowdownReference(pool.format);
-  let wins = 0;
-  for (const seed of [1, 2, 3, 4]) {
-    const battle = new SimBattle(
-      pool.format,
-      {
-        p1: { name: "greedy", team: pool.teams[2]!.packed },
-        p2: { name: "random", team: pool.teams[3]!.packed },
-      },
-      seed,
-    );
-    const outcome = await battle.run({
-      p1: new GreedySeat("p1", reference, seed),
-      p2: new RandomEngine("p2", seed),
-    });
-    assert.deepEqual(outcome.errors, { p1: 0, p2: 0 });
-    if (outcome.winner === "greedy") wins += 1;
-  }
-  assert.ok(wins >= 3, `greedy won ${wins} of 4`);
+    .parse(lines[2]?.result);
+  assert.equal(listed.teams[0]?.packed, pool.teams[0]?.packed);
+  assert.equal(lines[3]?.id, null);
+  assert.match(text(lines[3]?.error), /JSON/);
 });

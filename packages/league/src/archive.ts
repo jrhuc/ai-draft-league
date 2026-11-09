@@ -31,6 +31,7 @@ import {
   readLeagueTransitions,
 } from "./league-journal.js";
 import { draftLeagueConfigSchema } from "./league-store.js";
+import { defaultTeamName } from "./providers.js";
 import { SAFE_SEGMENT } from "./path-safety.js";
 import type { ParsedSeriesRecord } from "./records.js";
 import { readRunArtifacts } from "./run-artifact-store.js";
@@ -121,9 +122,7 @@ function leagueIdentity(
     return {
       models: entrants,
       teamNames: entrants.map(
-        (model, entrant) =>
-          namesByEntrant.get(entrant) ??
-          (model === "random" ? `Random Coach ${entrant + 1}` : `Coach ${entrant + 1}`),
+        (model, entrant) => namesByEntrant.get(entrant) ?? defaultTeamName(model, entrant),
       ),
       weeks: config.weeks ?? null,
       board: config.board ?? null,

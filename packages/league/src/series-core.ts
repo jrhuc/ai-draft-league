@@ -3,10 +3,12 @@ import { z } from "zod";
 import type { AgentContextEvent } from "./agent-context.js";
 import type { AgentProgress, AgentRunner } from "./agent-runtime.js";
 import type { DecisionLog } from "./battle-agent.js";
-import { RandomEngine } from "./battle-agent.js";
+import { type BaseEngine, RandomEngine } from "./battle-agent.js";
 import { LLMEngine } from "./llm-engine.js";
+import { SearchEngine } from "./policy-engines.js";
 import type { ModelReasoningConfig, ReasoningLevel } from "./providers.js";
 import { seededRng } from "./random.js";
+import { SEARCH_LEVELS } from "./search.js";
 import type { ShowdownReference } from "./reference.js";
 import { loadShowdown } from "./showdown.js";
 import type { ContributorAttribution, JsonObject, Pid, TimerScale } from "./types.js";
@@ -77,9 +79,10 @@ export interface EngineSetup {
   closedSheets?: boolean | undefined;
 }
 
-export function makeEngine(setup: EngineSetup): RandomEngine | LLMEngine {
+export function makeEngine(setup: EngineSetup): BaseEngine | LLMEngine {
   const { pid, spec, seed, ...rest } = setup;
   if (spec === "random") return new RandomEngine(pid, seed, setup.decisionLog);
+  if (spec === "bot") return new SearchEngine(pid, seed, SEARCH_LEVELS.standard, setup.decisionLog);
   return new LLMEngine(pid, spec, {
     ...Object.fromEntries(Object.entries(rest).filter(([, value]) => value !== undefined)),
     runAgent: setup.runAgent,

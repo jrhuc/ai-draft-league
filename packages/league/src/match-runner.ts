@@ -10,9 +10,9 @@ import type {
   GameEnd,
   GameStart,
 } from "./battle-agent.js";
-import { DECISION_STAT_NAMES, RandomEngine } from "./battle-agent.js";
+import { type BaseEngine, DECISION_STAT_NAMES } from "./battle-agent.js";
 import { appendJsonlObject, readJsonlObjects } from "./jsonl.js";
-import { reasoningForModel } from "./providers.js";
+import { isModelSeat, reasoningForModel } from "./providers.js";
 import { commitRunArtifact, readRunArtifacts } from "./run-artifact-store.js";
 import { ShowdownReference } from "./reference.js";
 import {
@@ -57,7 +57,7 @@ import {
 } from "./series-store.js";
 
 export interface Bo3Context {
-  engines: Record<Pid, RandomEngine | LLMEngine>;
+  engines: Record<Pid, BaseEngine | LLMEngine>;
   names: Record<Pid, string>;
   players: Record<Pid, string>;
   teams: Record<Pid, Team>;
@@ -454,7 +454,7 @@ async function runRecordedSeries(context: RecordedSeriesContext): Promise<Record
 
   try {
     const names = { p1: `p1-${context.players.p1}`, p2: `p2-${context.players.p2}` };
-    const reference = Object.values(context.players).some((player) => player !== "random")
+    const reference = Object.values(context.players).some(isModelSeat)
       ? new ShowdownReference(context.format, context.psDir)
       : undefined;
     const reasoning = {

@@ -7,7 +7,7 @@ import {
   pendingSides,
   replayGame,
 } from "../src/fork.js";
-import { greedyCommand } from "../src/position-value.js";
+import { greedyCommand } from "../src/playout.js";
 import { seededRng } from "../src/random.js";
 import { parseReplay } from "../src/replay-log.js";
 import { ReplayReview } from "../src/replay-review.js";

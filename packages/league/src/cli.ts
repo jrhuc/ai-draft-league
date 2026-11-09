@@ -138,11 +138,13 @@ Commands:
       and provenance come from the run's recorded config)
   monitor <run-dir|run-id> [--json]   harness monitors for a league run: decision integrity, tool predictions
       against the simulator, draft horizon, roster usage and retention, memory continuity per barrier
-  bridge                              play one battle for an external driver over JSON lines on stdio:
-      open, tools, system, start, call, submit, outcome, audit (used by the league-evals Inspect tasks)
+  bridge                              play one battle or one league with seats driven from outside over
+      JSON lines on stdio. open, pool, start, tool, submit, abandon, outcome, audit run a battle against
+      random, greedy, or search[:fast|standard|deep]; league, tool, submit, abandon, outcome run a season
+      against bot and random seats
   positions                           value recorded turn decisions: one game per JSON line on stdin
-      (source, log, settings, only), one line out per game and per valued decision with the win rate
-      of every accepted action under a damage-greedy continuation
+      (id, source, log, settings, only), one line out per game and per valued decision with the win
+      rate of every accepted action under a damage-greedy continuation
   replay <url|id|file>... [--as <player|p1|p2>] [--team <export file>]
       print public Showdown replays as one player saw them: both sheets, the state at every decision
       with the calculators' type and Speed references, and what happened; --team gives exact own stats

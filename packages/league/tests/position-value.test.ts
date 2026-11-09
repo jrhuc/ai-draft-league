@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "vite-plus/test";
-import { type BridgeEvent, EvalBridge } from "../src/eval-bridge.js";
+import { RandomEngine } from "../src/battle-agent.js";
 import { type GameSource, replayGame } from "../src/fork.js";
 import { valuePosition } from "../src/position-value.js";
+import { SimBattle } from "../src/sim.js";
 import { loadPool } from "../src/teams.js";
-import type { Pid } from "../src/types.js";
+import type { JsonObject } from "../src/types.js";
+import { text } from "../src/value.js";
 
 const SEED: [number, number, number, number] = [5, 6, 7, 8];
 
@@ -14,60 +16,23 @@ async function recordedGame() {
     p1: { name: "A", team: pool.teams[0]!.packed },
     p2: { name: "B", team: pool.teams[1]!.packed },
   };
-  const bridge = new EvalBridge(pool.format);
-  const events: BridgeEvent[] = [];
-  let event = await bridge.start({
-    format: pool.format,
-    seed: SEED,
-    ...players,
-    external: ["p1", "p2"],
+  const p1: JsonObject[] = [];
+  const p2: JsonObject[] = [];
+  const outcome = await new SimBattle(pool.format, players, SEED).run({
+    p1: new RandomEngine("p1", 1, p1),
+    p2: new RandomEngine("p2", 2, p2),
   });
-  while (event.kind === "decision") {
-    events.push(event);
-    event = (await bridge.submit(event.pid, "default")).next;
-  }
-  const submissions = bridge.result().submissions;
+  const choices = (decisions: JsonObject[]) =>
+    decisions.filter((row) => row.outcome === "accepted").map((row) => text(row.action));
   const source: GameSource = {
     format: pool.format,
     seed: SEED,
     names: { p1: players.p1.name, p2: players.p2.name },
     packed: { p1: players.p1.team, p2: players.p2.team },
-    choices: {
-      p1: submissions.p1.map((row) => row.choice),
-      p2: submissions.p2.map((row) => row.choice),
-    },
+    choices: { p1: choices(p1), p2: choices(p2) },
   };
-  return { pool, players, source, events, submissions, log: bridge.result().log };
+  return { source, log: outcome.log };
 }
-
-test("a recorded game resumes at a chosen decision with the same request and its history", async () => {
-  const { pool, players, source, events, submissions } = await recordedGame();
-  const original = events.find(
-    (event) => event.kind === "decision" && event.pid === "p1" && event.turn === 2,
-  );
-  assert.ok(original?.kind === "decision" && original.phase === "turn");
-  const before = (pid: Pid) => submissions[pid].filter((row) => row.turn < 2).length;
-  const bridge = new EvalBridge(pool.format);
-  const resumed = await bridge.start({
-    format: pool.format,
-    seed: SEED,
-    ...players,
-    external: ["p1"],
-    opponent: "greedy",
-    script: {
-      p1: source.choices.p1.slice(0, before("p1")),
-      p2: source.choices.p2.slice(0, before("p2")),
-    },
-  });
-  assert.equal(resumed.kind, "decision");
-  assert.equal(resumed.decision, 1);
-  assert.equal(resumed.turn, original.turn);
-  assert.deepEqual(resumed.menus, original.menus);
-  assert.deepEqual(resumed.request, original.request);
-  assert.match(resumed.prompt, /Turn: /);
-  const { choice } = await bridge.submit("p1", "default");
-  assert.equal(choice, source.choices.p1[before("p1")]);
-});
 
 test("recorded turn decisions are valued over every accepted action", async () => {
   const { source, log } = await recordedGame();
@@ -90,6 +55,5 @@ test("recorded turn decisions are valued over every accepted action", async () =
     valuePosition(position, "p1", value.settings, undefined, [value.recorded ?? ""])?.actions,
     recorded,
   );
-  const preview = replay.positions[0]!;
-  assert.equal(valuePosition(preview, "p1"), null);
+  assert.equal(valuePosition(replay.positions[0]!, "p1"), null);
 });
