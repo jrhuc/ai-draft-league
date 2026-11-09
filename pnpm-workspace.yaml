@@ -3,10 +3,12 @@ packages:
   - "packages/*"
 
 allowBuilds:
+  "@google/genai": false
   "@parcel/watcher": false
   esbuild: true
   fsevents: true
   msgpackr-extract: false
+  protobufjs: false
   tree-sitter-bash: false
   tree-sitter-powershell: false
   workerd: true
