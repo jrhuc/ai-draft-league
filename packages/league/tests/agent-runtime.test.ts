@@ -2,6 +2,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createServer } from "node:http";
+import { createModels, createProvider } from "@earendil-works/pi-ai";
+import { googleGenerativeAIApi } from "@earendil-works/pi-ai/api/google-generative-ai.lazy";
+import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { afterEach, expect, it, vi } from "vite-plus/test";
 import { z } from "zod";
 import {
@@ -150,28 +153,28 @@ async function fixture(
     );
   });
   const address = z.object({ port: z.number() }).parse(server.address());
-  const configure = (session: string) => {
-    const directory = path.join(runDir, "agents", encodeURIComponent(session));
-    fs.mkdirSync(directory, { recursive: true });
-    fs.writeFileSync(
-      path.join(runDir, "agents", "opencode.json"),
-      JSON.stringify({
-        providers: {
-          [provider]: {
-            package: `@opencode/ai/providers/${provider}`,
-            settings: { baseURL: `http://127.0.0.1:${address.port}/v1`, apiKey: "test" },
-            models: {
-              [model]: {
-                capabilities: { tools: true, input: ["text"], output: ["text"] },
-                limit: { context: 128000, output: 32000 },
-              },
-            },
-          },
+  const models = createModels();
+  models.setProvider(
+    createProvider({
+      id: provider,
+      auth: { apiKey: { name: "test key", resolve: async () => ({ auth: { apiKey: "test" } }) } },
+      models: [
+        {
+          id: model,
+          name: model,
+          provider,
+          api: provider === "google" ? "google-generative-ai" : "openai-completions",
+          baseUrl: `http://127.0.0.1:${address.port}/v1`,
+          reasoning: false,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 128000,
+          maxTokens: 32000,
         },
-      }),
-    );
-  };
-  configure("seat-0");
+      ],
+      api: provider === "google" ? googleGenerativeAIApi() : openAICompletionsApi(),
+    }),
+  );
   const task = {
     session: "seat-0",
     task: "pick-1",
@@ -197,14 +200,14 @@ async function fixture(
   const host = <T>(
     run: (agents: AgentRuntime) => Promise<T>,
     onProgress?: (p: AgentProgress) => void,
-  ) => withAgentHost(runDir, run, onProgress);
-  return { runDir, requests, authorizations, task, configure, host };
+  ) => withAgentHost(runDir, run, onProgress, models);
+  return { runDir, requests, authorizations, task, host };
 }
 
 it("repairs native tool submissions, stops immediately, and continues the durable private conversation", async () => {
-  const { runDir, requests, authorizations, task, configure, host } = await fixture(
-    (_body, index) => ({ input: { pick: index === 1 ? "illegal" : "Pikachu" } }),
-  );
+  const { runDir, requests, authorizations, task, host } = await fixture((_body, index) => ({
+    input: { pick: index === 1 ? "illegal" : "Pikachu" },
+  }));
   fs.writeFileSync(path.join(runDir, "AGENTS.md"), "FOREIGN_PROJECT_INSTRUCTIONS");
   const progress: AgentProgress[] = [];
   await host(
@@ -244,7 +247,6 @@ it("repairs native tool submissions, stops immediately, and continues the durabl
         { pick: "Pikachu" },
       ]);
       expect(JSON.stringify(requests[2])).toContain("UPDATED_COACHING_INSTRUCTIONS");
-      configure("seat-1");
       const rival = await agents.run({
         ...task,
         session: "seat-1",
@@ -267,11 +269,10 @@ it("repairs native tool submissions, stops immediately, and continues the durabl
 
 it("keeps concurrent seats' credentials, tools, and observations private within one host", async () => {
   const release = Promise.withResolvers<void>();
-  const { runDir, task, requests, configure, host } = await fixture(async () => {
+  const { runDir, task, requests, host } = await fixture(async () => {
     await release.promise;
     return { input: { pick: "Pikachu" } };
   });
-  configure("seat-1");
   await withRunStatus(runDir, () =>
     host(async (agents) => {
       const running = Promise.all([
@@ -299,9 +300,7 @@ it("keeps concurrent seats' credentials, tools, and observations private within 
           const live = readLiveRun(runDir);
           expect(live?.agents).toHaveLength(2);
           expect(live?.agents.map((agent) => agent.session).sort()).toEqual(["seat-0", "seat-1"]);
-          expect(JSON.stringify(live)).not.toMatch(
-            /PRIVATE_FIRST_OBSERVATION|RIVAL_OBSERVATION/,
-          );
+          expect(JSON.stringify(live)).not.toMatch(/PRIVATE_FIRST_OBSERVATION|RIVAL_OBSERVATION/);
         });
       } finally {
         release.resolve();
@@ -356,7 +355,6 @@ it("stops recording reference calls once a task spends its budget", async () => 
   expect(JSON.stringify(requests[0])).toContain("at most 400 reference calls");
 }, 60000);
 
-
 it("returns lookups and validation errors to the model and logs the stage line", async () => {
   const { runDir, task, requests, host } = await fixture((_body, index) => {
     if (index === 1)
@@ -395,7 +393,7 @@ it("returns lookups and validation errors to the model and logs the stage line",
     { name: "submit_pick", arguments: { pick: "Pikachu" }, result: expect.any(String) },
   ]);
   expect(requests).toHaveLength(3);
-  expect(JSON.stringify(requests[0])).toContain("tools.lookup_species(");
+  expect(JSON.stringify(requests[0])).toContain("lookup_species(args:");
   const toolResults = (body: JsonObject | undefined) =>
     openAiMessages
       .parse(body?.messages)
@@ -711,7 +709,7 @@ it("cancels inference and refuses changed or later tasks until the interrupted i
   });
 }, 60000);
 
-it("lets OpenCode compact a full conversation and preserves accepted submissions for recovery", async () => {
+it("compacts a full conversation and preserves accepted submissions for recovery", async () => {
   const sentinels = [
     "PLAYBOOK_SENTINEL_71a",
     "SERIES_MEMORY_SENTINEL_2c9",
@@ -759,66 +757,25 @@ it("lets OpenCode compact a full conversation and preserves accepted submissions
   );
 }, 60000);
 
-it("admits suspended native sessions only after checking the resumed league task", async () => {
+it("reopens a session interrupted mid-request and resumes only the unchanged task", async () => {
   const started = Promise.withResolvers<void>();
   const release = Promise.withResolvers<void>();
+  cleanup.push(() => release.resolve());
   const { runDir, task, requests, host } = await fixture(async (_body, index) => {
     if (index === 1) {
       started.resolve();
       await release.promise;
-      return { text: "Interrupted request" };
     }
     return { input: { pick: "Pikachu" } };
   });
-  const { OpenCode } = await import("@opencode/sdk");
-  const { Plugin } = await import("@opencode/plugin");
-  const directory = path.join(runDir, "agents", task.session);
-  const suspended = await OpenCode.create({
-    database: { path: path.join(runDir, "agents", "opencode.sqlite") },
-    config: {
-      directory: path.dirname(directory),
-      project: false,
-      content: '{"snapshots":false,"warming":false}',
-    },
-    fs: { filewatcher: false, fff: false },
-    plugins: [
-      Plugin.define({
-        id: "league",
-        async setup(ctx) {
-          await ctx.agent.transform((editor) =>
-            editor.update("league", (agent) => {
-              agent.system = task.system;
-            }),
-          );
-        },
-      }),
-    ],
-    log: { level: "error", emit: () => {} },
+  const crash = new AbortController();
+  await host(async (agents) => {
+    const pending = agents.run({ ...task, signal: crash.signal });
+    await started.promise;
+    crash.abort(new Error("process exit"));
+    await expect(pending).rejects.toThrow("process exit");
   });
-  cleanup.push(async () => {
-    release.resolve();
-    await suspended.close();
-  });
-  const session = await suspended.sessions.create({
-    location: { directory },
-    agent: "league",
-    title: task.session,
-    model: { providerID: "openrouter", id: "test" },
-    metadata: {
-      leagueSession: task.session,
-      model: task.model,
-      reasoning: null,
-      routing: { allow_fallbacks: false },
-    },
-  });
-  await suspended.sessions.prompt({
-    sessionID: session.id,
-    text: task.prompt,
-    metadata: { task: task.task, system: task.system },
-  });
-  await started.promise;
-  await suspended.close();
-  release.resolve();
+  fs.appendFileSync(path.join(runDir, "agents", "seat-0.jsonl"), '{"kind":"mess');
   await host(async (agents) => {
     await expect(agents.run({ ...task, prompt: "Changed during suspension" })).rejects.toThrow(
       "input changed",
@@ -826,5 +783,6 @@ it("admits suspended native sessions only after checking the resumed league task
     expect(requests).toHaveLength(1);
     expect((await agents.run(task)).value).toBe("Pikachu");
     expect(requests).toHaveLength(2);
+    expect(JSON.stringify(requests[1])).toContain("PRIVATE_FIRST_OBSERVATION");
   });
 }, 60000);

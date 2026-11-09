@@ -1,16 +1,42 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { isDeepStrictEqual } from "node:util";
-import type { SessionInboxInfo, SessionMessageInfo } from "@opencode/client";
-import type { OpenCode, OpenCodeEvent } from "@opencode/sdk";
+import {
+  Agent,
+  type AgentEvent,
+  type AgentMessage,
+  type AgentTool as ModelTool,
+  type AgentTurnDecision,
+} from "@earendil-works/pi-agent-core";
+import {
+  getCurrentSystemMessage,
+  getSupportedThinkingLevels,
+  isRetryableAssistantError,
+  type Api,
+  type AssistantMessage,
+  type ImageContent,
+  type Model,
+  type Models,
+  type SimpleStreamOptions,
+  type TextContent,
+  type ToolResultMessage,
+  type Usage,
+  type UserMessage,
+} from "@earendil-works/pi-ai";
+import {
+  CodemodeSandbox,
+  renderDeclarations,
+  type CodemodeTool,
+} from "@earendil-works/pi-codemode";
 import { z } from "zod";
 
-import "./opencode-loader.js";
 import { LiveRun } from "./live-run.js";
 import {
   modelUpstreamRoutes,
-  parseSpec,
   openRouterRouting,
+  parseSpec,
   type OpenRouterRouting,
   type ReasoningLevel,
 } from "./providers.js";
@@ -46,7 +72,7 @@ export interface AgentResult<T> {
   response: string;
   reasoning: string;
   usage: Record<string, number>;
-  tools: Array<{ name: string; arguments: JsonObject; result: string }>;
+  tools: ToolCallRecord[];
   attempts: number;
   latencyMs: number;
   recoveryMs?: number;
@@ -66,88 +92,401 @@ export interface AgentRuntime {
 
 export type { AgentProgress } from "./public/live-protocol.js";
 
-type Host = OpenCode.Interface;
-type Message = SessionMessageInfo;
-type UserMessage = Extract<Message, { type: "user" }>;
+type ToolCallRecord = { name: string; arguments: JsonObject; result: string };
 
 const object = z.record(z.string(), z.json());
 const SUBMISSION_REMINDERS = 2;
-const REFERENCE_CALL_BUDGET = 400;
-const CATALOG_INTRO = `Code Mode catalog: these are all the tools callable inside \`execute\` through \`tools\`, with their exact signatures. Run independent calls concurrently with \`Promise.all\` and return every result you need to read. A call the harness rejects returns its error message as its result instead of throwing, so the rest of the batch still completes. A task may make at most ${REFERENCE_CALL_BUDGET} reference calls in total; the call that exceeds it throws and ends the program, so a loop over a whole board or roster wastes the budget on rows you will never read.`;
 const SUBMISSION_FAILURES = 5;
-/** Anthropic refusal stops are stochastic on identical input; OpenCode reports them as a normal stop. */
-const CONTENT_FILTER_RETRIES = 3;
-
-const COMPACTION_SYSTEM = `When asked for a conversation checkpoint, follow these summary instructions only for that checkpoint:
-Summarize this private Pokémon coaching conversation for continued play. Use the requested summary headings, including ## Objective.
+const MODEL_RETRIES = 4;
+const RETRY_BASE_MS = 1000;
+const REFERENCE_CALL_BUDGET = 400;
+const COMPACTION_RESERVE_TOKENS = 24000;
+const COMPACTION_KEEP_TOKENS = 12000;
+const PROMPT_SECTION = "league";
+const SUBMISSION_ACCEPTED = "Submission accepted. End your reply; await the next observation.";
+const CONTINUE = "Continue the pending task and submit it using its submission tool.";
+const CHECKPOINT = "Earlier conversation, compacted into this checkpoint:";
+const CATALOG_INTRO = `Code Mode catalog: these are all the tools callable inside \`execute\` through \`tools\`, with their exact signatures. Run independent calls concurrently with \`Promise.all\` and return every result you need to read. A call the harness rejects returns its error message as its result instead of throwing, so the rest of the batch still completes. A task may make at most ${REFERENCE_CALL_BUDGET} reference calls in total; the call that exceeds it throws and ends the program, so a loop over a whole board or roster wastes the budget on rows you will never read.`;
+const EXECUTE_DESCRIPTION =
+  "Run a JavaScript async function body that calls the Code Mode catalog as `await tools.<name>(args)`. Print with `text(value)` or return a value; only the printed output and the return value come back.";
+const COMPACTION_PROMPT = `Write a checkpoint of this private Pokémon coaching conversation so play can continue from it alone. Use the headings ## Objective, ## Important Context, and ## Pending Task.
 Preserve the latest team_playbook, series_memory, and next_game_plan notebook fields verbatim, with their opponent and game scope. Preserve roster and registered sets, bring and lead choices, series score, current game and turn, remaining resources, and the current win condition.
 Record revealed opponent moves, items, abilities, forms, speed-order evidence, and damage evidence with their source game/turn. Separate observations from hypotheses; preserve uncertainty and never invent hidden sets. Keep relevant opponent tendencies and rejected hypotheses.
 Distinguish accepted submissions, simulator rejections, abandoned decisions, and proposed actions. Retain unresolved validation errors and the pending task. A tool submission is not proof the simulator accepted the action.
 Preserve decisions and reasons that affect the next turn or game. Drop repeated dex output, superseded plans, and narration. Current observations override stale battle state. This is a checkpoint, not a new decision; do not call tools.`;
+/** Gemini's malformed function calls and Anthropic's refusals are stochastic on identical input, so they are resampled. */
+const RESAMPLED_STOPS = new Set(["MALFORMED_FUNCTION_CALL", "refusal"]);
 
-const ACTIVITIES = {
-  "session.step.started": "generating",
-  "session.step.ended": "generating",
-  "session.step.failed": "generating",
-  "session.reasoning.started": "reasoning",
-  "session.reasoning.ended": "generating",
-  "session.tool.input.started": "tool",
-  "session.tool.success": "generating",
-  "session.tool.failed": "generating",
-  "session.retry.scheduled": "retry",
-  "session.compaction.started": "compacting",
-  "session.compaction.ended": "generating",
-} satisfies Partial<Record<OpenCodeEvent["type"], AgentActivity>>;
+const routingSchema = z.object({
+  order: z.array(z.string()).optional(),
+  allow_fallbacks: z.boolean(),
+});
+const headerSchema = z.object({
+  kind: z.literal("session"),
+  id: z.string(),
+  model: z.string(),
+  reasoning: z.string().nullable(),
+  routing: routingSchema.nullable(),
+});
+const taskEntrySchema = z.object({
+  kind: z.literal("task"),
+  task: z.string(),
+  prompt: z.string(),
+  system: z.string(),
+  at: z.number(),
+});
+const compactionEntrySchema = z.object({
+  kind: z.literal("compaction"),
+  summary: z.string(),
+  kept: z.number().int().nonnegative(),
+  usage: z.record(z.string(), z.number()),
+  at: z.number(),
+});
+const messageEntrySchema = z.object({
+  kind: z.literal("message"),
+  id: z.string(),
+  message: z.looseObject({ role: z.enum(["system", "user", "assistant", "toolResult"]) }),
+});
+const entrySchema = z.discriminatedUnion("kind", [
+  taskEntrySchema,
+  compactionEntrySchema,
+  messageEntrySchema,
+]);
+const acceptedSchema = z.object({ accepted: z.literal(true) });
+const lookupsSchema = z.object({
+  calls: z.array(z.object({ name: z.string(), arguments: object, result: z.string() })),
+});
 
-function hasActivity(type: OpenCodeEvent["type"]): type is keyof typeof ACTIVITIES {
-  return Object.hasOwn(ACTIVITIES, type);
+type TaskEntry = z.infer<typeof taskEntrySchema>;
+type CompactionEntry = z.infer<typeof compactionEntrySchema>;
+type MessageEntry = { kind: "message"; id: string; message: AgentMessage };
+type Entry = TaskEntry | CompactionEntry | MessageEntry;
+
+interface SessionConfig {
+  model: string;
+  reasoning: string | null;
+  routing: OpenRouterRouting | null;
 }
 
-/**
- * One task's handshake with the plugin hooks running inside OpenCode: `admitted` releases tools and
- * generation once the session history is verified; `finished` tells the runner a submission was
- * accepted or the task failed; `stopped` holds the context hook until the runner has interrupted the
- * session, so the accepted tool result is durable before generation is refused.
- */
-class ActiveTask {
-  submitted = false;
-  attempts = 0;
-  readonly calls: AgentResult<unknown>["tools"] = [];
-  failure?: Error;
-  activity: AgentActivity = "starting";
-  tool?: string;
-  usage?: AgentProgress["usage"];
-  readonly admitted = Promise.withResolvers<void>();
-  readonly finished = Promise.withResolvers<void>();
-  readonly stopped = Promise.withResolvers<void>();
-  readonly routing: OpenRouterRouting | undefined;
-  readonly system: string;
-  readonly submissions: ToolDefinition[];
-  readonly toolNames: string[];
+/** One private conversation, persisted as an append-only JSONL transcript that every recovery reads. */
+class Session {
+  readonly entries: Entry[] = [];
 
-  constructor(
-    readonly task: AgentTask<unknown>,
-    catalog: string,
-  ) {
-    this.routing =
-      parseSpec(task.model).provider === "openrouter" ? openRouterRouting() : undefined;
-    this.submissions = sessionSubmissions(task);
-    this.system = [
-      task.system,
-      `${this.submissions.length === 1 ? `Submit using ${task.submission.name}.` : "Submit each task with the submission tool its instructions name."} Rejected submissions return validation errors; correct them and submit again.`,
-      catalog,
-      COMPACTION_SYSTEM,
-    ]
-      .filter(Boolean)
-      .join("\n\n");
-    this.toolNames = [
-      ...(task.tools?.length ? ["execute"] : []),
-      ...(task.tools ?? []).map((tool) => tool.definition.name),
-      ...this.submissions.map((tool) => tool.name),
-    ];
+  private constructor(
+    readonly file: string,
+    readonly id: string,
+    readonly config: SessionConfig,
+  ) {}
+
+  static open(file: string, config: SessionConfig): Session {
+    if (!fs.existsSync(file)) {
+      const session = new Session(file, randomUUID(), config);
+      fs.writeFileSync(
+        file,
+        `${JSON.stringify({ kind: "session", id: session.id, ...config })}\n`,
+        {
+          mode: 0o600,
+        },
+      );
+      return session;
+    }
+    const contents = fs.readFileSync(file, "utf8");
+    const complete = contents.slice(0, contents.lastIndexOf("\n") + 1);
+    if (complete.length < contents.length) fs.truncateSync(file, Buffer.byteLength(complete));
+    const [header, ...rows] = complete.split("\n").filter(Boolean);
+    const { id, model, reasoning, routing } = headerSchema.parse(JSON.parse(header ?? "null"));
+    const session = new Session(file, id, { model, reasoning, routing });
+    for (const row of rows) session.entries.push(parseEntry(row));
+    return session;
   }
 
-  progress(activity = this.activity): AgentProgress {
+  append(entry: Entry): void {
+    this.entries.push(entry);
+    fs.appendFileSync(this.file, `${JSON.stringify(entry)}\n`);
+  }
+}
+
+function parseEntry(line: string): Entry {
+  const entry = entrySchema.parse(JSON.parse(line));
+  if (entry.kind !== "message") return entry;
+  // SAFETY: message rows are written only by Session.append from finalized pi-agent-core messages.
+  return { ...entry, message: entry.message as AgentMessage };
+}
+
+/** The messages the model sees: failed replies are dropped and each compaction replaces what it summarized. */
+function transcript(entries: readonly Entry[]): AgentMessage[] {
+  let messages: AgentMessage[] = [];
+  for (const entry of entries) {
+    if (entry.kind === "message" && !failed(entry.message)) messages.push(entry.message);
+    if (entry.kind === "compaction") {
+      const cut = messages.length - entry.kept;
+      const head = getCurrentSystemMessage(messages.slice(0, cut));
+      if (!head) throw new Error("Agent session has no system prompt to compact under");
+      messages = [
+        head,
+        user(`${CHECKPOINT}\n\n${entry.summary}`, entry.at),
+        ...messages.slice(cut),
+      ];
+    }
+  }
+  return messages;
+}
+
+function failed(message: AgentMessage): boolean {
+  return (
+    message.role === "assistant" &&
+    (message.stopReason === "error" || message.stopReason === "aborted")
+  );
+}
+
+function user(content: string, timestamp = Date.now()): UserMessage {
+  return { role: "user", content, timestamp };
+}
+
+function contentText(content: readonly (TextContent | ImageContent)[]): string {
+  return content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n");
+}
+
+function contextTokens(messages: readonly AgentMessage[]): number {
+  const last = messages.findLast(
+    (message): message is AssistantMessage => message.role === "assistant",
+  );
+  return last
+    ? last.usage.input + last.usage.cacheRead + last.usage.cacheWrite + last.usage.output
+    : 0;
+}
+
+/** How many trailing messages stay verbatim: at most the keep budget, starting at an assistant reply so no tool result is orphaned. */
+function keptCount(messages: readonly AgentMessage[]): number {
+  let tokens = 0;
+  let kept = 0;
+  for (let index = messages.length - 1; index > 0; index -= 1) {
+    tokens += JSON.stringify(messages[index]).length / 4;
+    if (tokens > COMPACTION_KEEP_TOKENS) break;
+    if (messages[index]!.role === "assistant") kept = messages.length - index;
+  }
+  return kept;
+}
+
+function usageRecord(usage: Usage) {
+  return {
+    input_tokens: usage.input + usage.cacheRead + usage.cacheWrite,
+    output_tokens: usage.output,
+    reasoning_tokens: usage.reasoning ?? 0,
+    cached_input_tokens: usage.cacheRead,
+    cost: usage.cost.total,
+  };
+}
+
+function addUsage(total: Record<string, number>, usage: Record<string, number>): void {
+  for (const [key, value] of Object.entries(usage)) total[key] = (total[key] ?? 0) + value;
+}
+
+interface TaskState {
+  entry: TaskEntry;
+  prompted: boolean;
+  usage: Record<string, number>;
+  reasoning: string[];
+  tools: ToolCallRecord[];
+  attempts: number;
+  accepted?: { input: JsonObject; messageID: string; latencyMs: number };
+}
+
+/** Everything one task did, read back from the transcript up to its accepted submission. */
+function taskState(entries: readonly Entry[], task: string, submission: string) {
+  let state: TaskState | undefined;
+  const calls = new Map<string, { input: JsonObject; messageID: string }>();
+  for (const entry of entries) {
+    if (entry.kind === "task") {
+      if (state) break;
+      if (entry.task === task)
+        state = { entry, prompted: false, usage: {}, reasoning: [], tools: [], attempts: 0 };
+      continue;
+    }
+    if (!state) continue;
+    if (entry.kind === "compaction") {
+      addUsage(state.usage, entry.usage);
+      continue;
+    }
+    const { message } = entry;
+    if (message.role === "user") state.prompted = true;
+    if (message.role === "assistant") {
+      addUsage(state.usage, usageRecord(message.usage));
+      for (const part of message.content) {
+        if (part.type === "thinking") state.reasoning.push(part.thinking);
+        if (part.type === "toolCall")
+          calls.set(part.id, { input: object.parse(part.arguments), messageID: entry.id });
+      }
+    }
+    if (message.role !== "toolResult") continue;
+    const lookups = lookupsSchema.safeParse(message.details);
+    if (lookups.success) {
+      state.tools.push(...lookups.data.calls);
+      continue;
+    }
+    const call = calls.get(message.toolCallId);
+    state.tools.push({
+      name: message.toolName,
+      arguments: call?.input ?? {},
+      result: contentText(message.content),
+    });
+    if (message.toolName === submission) state.attempts += 1;
+    if (call && acceptedSchema.safeParse(message.details).success) {
+      state.accepted = {
+        input: call.input,
+        messageID: call.messageID,
+        latencyMs: message.timestamp - state.entry.at,
+      };
+      break;
+    }
+  }
+  return state;
+}
+
+/** Rendered with the runtime's own signature generator into the system prompt, where descriptions are never truncated. */
+function sessionSubmissions(task: AgentTask<unknown>): ToolDefinition[] {
+  const declared = task.submissions ?? [task.submission];
+  if (!declared.some((tool) => tool.name === task.submission.name))
+    throw new Error(`${task.submission.name} is not one of the session's submission tools`);
+  return declared.map((tool) => (tool.name === task.submission.name ? task.submission : tool));
+}
+
+/** OpenRouter variant suffixes such as `:nitro` share their base model's catalog entry. */
+function resolveModel(models: Models, task: AgentTask<unknown>): Model<Api> {
+  const { provider, model } = parseSpec(task.model);
+  const id = modelUpstreamRoutes().get(task.model) ?? model;
+  const found =
+    models.getModel(provider, id) ?? models.getModel(provider, id.replace(/:[a-z]+$/, ""));
+  if (!found)
+    throw new Error(
+      `The pi-ai catalog has no ${provider} model ${id}; map it to a listed model with VGC_MODEL_UPSTREAM`,
+    );
+  if (task.reasoning && !getSupportedThinkingLevels(found).includes(task.reasoning))
+    throw new Error(`${task.model} does not offer reasoning level ${task.reasoning}`);
+  return { ...found, id };
+}
+
+class AgentHost {
+  readonly live: LiveRun;
+  private readonly sessions = new Map<string, Session>();
+  private readonly active = new Set<string>();
+
+  constructor(
+    readonly runDir: string,
+    readonly models: Models,
+    private readonly onProgress?: (progress: AgentProgress) => void,
+  ) {
+    this.live = new LiveRun(runDir);
+  }
+
+  claim(name: string): void {
+    if (this.active.has(name)) throw new Error(`Agent session already has an active task: ${name}`);
+    this.active.add(name);
+  }
+
+  release(name: string): void {
+    this.active.delete(name);
+  }
+
+  session(name: string, config: SessionConfig): Session {
+    let session = this.sessions.get(name);
+    if (!session) {
+      const directory = path.join(this.runDir, "agents");
+      fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+      session = Session.open(path.join(directory, `${encodeURIComponent(name)}.jsonl`), config);
+      this.sessions.set(name, session);
+    }
+    if (!isDeepStrictEqual(session.config, config))
+      throw new Error(`Agent session configuration changed: ${name}`);
+    return session;
+  }
+
+  emit(progress: AgentProgress): void {
+    this.live.agent(progress);
+    this.onProgress?.(progress);
+  }
+}
+
+export async function withAgentHost<T>(
+  runDir: string,
+  run: (agents: AgentRuntime) => Promise<T>,
+  onProgress?: (progress: AgentProgress) => void,
+  models?: Models,
+): Promise<T> {
+  const catalog = models ?? (await import("@earendil-works/pi-ai/providers/all")).builtinModels();
+  const host = new AgentHost(path.resolve(runDir), catalog, onProgress);
+  try {
+    return await run({ run: (task) => executeTask(task, host), live: host.live });
+  } finally {
+    host.live.flush();
+  }
+}
+
+async function executeTask<T>(task: AgentTask<T>, host: AgentHost): Promise<AgentResult<T>> {
+  const started = performance.now();
+  task.signal?.throwIfAborted();
+  host.claim(task.session);
+  const run = new TaskRun(task, host);
+  try {
+    const model = resolveModel(host.models, task);
+    const routing = parseSpec(task.model).provider === "openrouter" ? openRouterRouting() : null;
+    const session = host.session(task.session, {
+      model: task.model,
+      reasoning: task.reasoning ?? null,
+      routing,
+    });
+    const tasks = session.entries.filter((entry) => entry.kind === "task");
+    const prior = tasks.find((entry) => entry.task === task.task);
+    if (prior && (prior.prompt !== task.prompt || prior.system !== task.system))
+      throw new Error(`Agent task input changed: ${task.task}`);
+    const state = taskState(session.entries, task.task, task.submission.name);
+    if (state?.accepted)
+      return {
+        ...run.result(session, state, task.validate(state.accepted.input)),
+        recoveryMs: performance.now() - started,
+      };
+    const latest = tasks.at(-1);
+    if (
+      latest &&
+      latest !== prior &&
+      latest.task !== task.supersedes &&
+      !taskState(session.entries, latest.task, "")?.accepted
+    )
+      throw new Error(`Previous agent task is incomplete: ${latest.task}`);
+    if (prior && latest !== prior)
+      throw new Error(`Cannot resume an earlier incomplete task: ${task.task}`);
+    if (!prior)
+      session.append({
+        kind: "task",
+        task: task.task,
+        prompt: task.prompt,
+        system: task.system,
+        at: Date.now(),
+      });
+    return await run.execute(session, model, routing, state?.prompted ?? false);
+  } finally {
+    host.release(task.session);
+    run.progress("ended");
+  }
+}
+
+class TaskRun<T> {
+  private activity: AgentActivity = "starting";
+  private tool?: string;
+  private usage?: AgentProgress["usage"];
+  private accepted?: { value: T };
+  private failure?: Error;
+  private rejections = 0;
+  private lookups = 0;
+
+  constructor(
+    private readonly task: AgentTask<T>,
+    private readonly host: AgentHost,
+  ) {
+    this.progress();
+  }
+
+  progress(activity = this.activity): void {
     this.activity = activity;
     if (activity !== "tool") this.tool = undefined;
     const progress: AgentProgress = {
@@ -158,627 +497,285 @@ class ActiveTask {
     };
     if (this.tool !== undefined) progress.tool = this.tool;
     if (this.usage !== undefined) progress.usage = this.usage;
-    return progress;
-  }
-}
-
-class AgentSlot {
-  active?: ActiveTask;
-  ready = Promise.withResolvers<ActiveTask>();
-  reload?: () => Promise<void>;
-
-  begin(task: AgentTask<unknown>, catalog: string): ActiveTask {
-    if (this.active) throw new Error(`Agent session already has an active task: ${task.session}`);
-    const active = new ActiveTask(task, catalog);
-    this.active = active;
-    this.ready.resolve(active);
-    return active;
+    this.host.emit(progress);
   }
 
-  end(): void {
-    this.active?.stopped.resolve();
-    this.active = undefined;
-    this.ready = Promise.withResolvers<ActiveTask>();
-  }
-}
-
-class AgentHost {
-  readonly live: LiveRun;
-  private host?: Promise<Host>;
-  private readonly slots = new Map<string, AgentSlot>();
-  private readonly sessions = new Map<string, string>();
-  private readonly eventsController = new AbortController();
-  private events?: Promise<void>;
-
-  constructor(
-    readonly runDir: string,
-    private readonly onProgress?: (progress: AgentProgress) => void,
-  ) {
-    this.live = new LiveRun(runDir);
+  result(session: Session, state: TaskState, value: T): AgentResult<T> {
+    const accepted = state.accepted!;
+    return {
+      value,
+      sessionID: session.id,
+      messageID: accepted.messageID,
+      response: JSON.stringify(accepted.input),
+      reasoning: state.reasoning.join("\n\n"),
+      usage: state.usage,
+      tools: state.tools,
+      attempts: state.attempts,
+      latencyMs: accepted.latencyMs,
+    };
   }
 
-  track(sessionID: string, session: string): void {
-    this.sessions.set(sessionID, session);
-  }
-
-  slot(name: string): AgentSlot {
-    let slot = this.slots.get(name);
-    if (!slot) {
-      slot = new AgentSlot();
-      this.slots.set(name, slot);
-    }
-    return slot;
-  }
-
-  open(): Promise<Host> {
-    this.host ??= this.create();
-    return this.host;
-  }
-
-  private async create(): Promise<Host> {
-    /** The resolver must be registered before loading the SDK's extensionless imports. */
-    const { OpenCode: SDK } = await import("@opencode/sdk");
-    const directory = path.resolve(this.runDir, "agents");
-    fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
-    const host = await SDK.create({
-      app: { name: "vgcleague" },
-      database: { path: path.join(directory, "opencode.sqlite") },
-      models: { snapshot: false },
-      config: {
-        directory,
-        project: false,
-        content: JSON.stringify({
-          snapshots: false,
-          warming: false,
-          plugins: [],
-          compaction: { keep: { tokens: 12000 }, buffer: 24000 },
-        }),
-      },
-      fs: { filewatcher: false, fff: false },
-      instances: {
-        key: (session) => z.string().parse(session.metadata?.leagueSession),
-        configure: async (name) => {
-          const slot = this.slot(name);
-          await slot.ready.promise;
-          return { plugins: [await leaguePlugin(slot)] };
-        },
-      },
-      log: { level: "error", emit: () => {} },
-    });
-    this.events = this.follow(host);
-    return host;
-  }
-
-  private async follow(host: Host): Promise<void> {
-    try {
-      for await (const event of host.events.subscribe({ signal: this.eventsController.signal })) {
-        this.progress(event);
-      }
-    } catch {
-      if (!this.eventsController.signal.aborted) console.error("Agent progress stream stopped");
-    }
-  }
-
-  private progress(event: OpenCodeEvent): void {
-    if (!("sessionID" in event.data)) return;
-    const sessionID = z.string().safeParse(event.data.sessionID);
-    if (!sessionID.success) return;
-    const session = this.sessions.get(sessionID.data);
-    const active = session ? this.slots.get(session)?.active : undefined;
-    if (!active) return;
-    if (event.type === "session.usage.updated") {
-      const { tokens } = event.data;
-      active.usage = {
-        cost: event.data.cost,
-        inputTokens: tokens.input + tokens.cache.read + tokens.cache.write,
-        outputTokens: tokens.output + tokens.reasoning,
-      };
-      this.emit(active.progress());
-      return;
-    }
-    if (!hasActivity(event.type)) return;
-    const activity = ACTIVITIES[event.type];
-    if (event.type === "session.tool.input.started") active.tool = event.data.name;
-    this.emit(active.progress(activity));
-  }
-
-  emit(progress: AgentProgress): void {
-    this.live.agent(progress);
-    this.onProgress?.(progress);
-  }
-
-  async [Symbol.asyncDispose](): Promise<void> {
-    this.eventsController.abort();
-    try {
-      if (this.host) await (await this.host).close();
-    } finally {
-      await this.events;
-      this.live.flush();
-    }
-  }
-}
-
-export async function withAgentHost<T>(
-  runDir: string,
-  run: (agents: AgentRuntime) => Promise<T>,
-  onProgress?: (progress: AgentProgress) => void,
-): Promise<T> {
-  await using host = new AgentHost(path.resolve(runDir), onProgress);
-  return await run({ run: (task) => executeTask(task, host), live: host.live });
-}
-
-function isUserTask(message: Message, task: string): message is UserMessage {
-  return message.type === "user" && message.metadata?.task === task;
-}
-
-function taskMessages(messages: readonly Message[], task: string): Message[] {
-  const start = messages.findIndex((message) => isUserTask(message, task));
-  if (start < 0) return [];
-  const end = messages.findIndex(
-    (message, index) =>
-      index > start && message.type === "user" && message.metadata?.task !== undefined,
-  );
-  return messages.slice(start, end < 0 ? undefined : end);
-}
-
-function taskAccepted(messages: readonly Message[], task: string): boolean {
-  return taskMessages(messages, task).some(
-    (message) =>
-      message.type === "assistant" &&
-      message.content.some(
-        (part) =>
-          part.type === "tool" &&
-          part.state.status === "completed" &&
-          part.state.metadata?.accepted === true,
-      ),
-  );
-}
-
-function acceptedResult<T>(
-  task: AgentTask<T>,
-  sessionID: string,
-  messages: readonly Message[],
-  submitted?: { value: T },
-): AgentResult<T> | undefined {
-  const usage: Record<string, number> = {};
-  const reasoning: string[] = [];
-  const tools: AgentResult<T>["tools"] = [];
-  let accepted: { value: T; messageID: string; response: string; latencyMs: number } | undefined;
-  let attempts = 0;
-  const history = taskMessages(messages, task.task);
-  for (const message of history) {
-    if (message.type !== "assistant" && message.type !== "compaction") continue;
-    if ("tokens" in message && message.tokens) {
-      const tokens = message.tokens;
-      for (const [key, value] of Object.entries({
-        input_tokens: tokens.input + tokens.cache.read + tokens.cache.write,
-        output_tokens: tokens.output + tokens.reasoning,
-        reasoning_tokens: tokens.reasoning,
-        cached_input_tokens: tokens.cache.read,
-        cost: message.cost ?? 0,
-      }))
-        usage[key] = (usage[key] ?? 0) + value;
-    }
-    if (message.type !== "assistant") continue;
-    for (const part of message.content) {
-      if (part.type === "reasoning") reasoning.push(part.text);
-      if (
-        part.type !== "tool" ||
-        part.state.status === "streaming" ||
-        part.state.status === "running"
-      )
-        continue;
-      const input = object.parse(part.state.input);
-      const content =
-        part.state.status === "error"
-          ? part.state.error.message
-          : (part.state.content ?? [])
-              .flatMap((item) => (item.type === "text" ? [item.text] : []))
-              .join("\n");
-      tools.push({ name: part.name, arguments: input, result: content });
-      if (part.name !== task.submission.name) continue;
-      attempts += 1;
-      if (
-        part.state.status === "completed" &&
-        part.state.metadata?.accepted === true &&
-        !accepted
-      ) {
-        accepted = {
-          value: submitted ? submitted.value : task.validate(input),
-          messageID: message.id,
-          response: JSON.stringify(input),
-          latencyMs: z.number().parse(part.time.completed) - history[0]!.time.created,
-        };
-      }
-    }
-    if (accepted) break;
-  }
-  return accepted
-    ? { ...accepted, sessionID, reasoning: reasoning.join("\n\n"), usage, tools, attempts }
-    : undefined;
-}
-
-type TaskPlan<T> = { kind: "recovered"; result: AgentResult<T> } | { kind: "resume" | "fresh" };
-
-/** Decides from the durable session what this task needs; throws when the history contradicts it. */
-function planTask<T>(
-  task: AgentTask<T>,
-  prompt: string,
-  sessionID: string,
-  messages: readonly Message[],
-  inbox: readonly SessionInboxInfo[],
-): TaskPlan<T> {
-  const prior = messages.find((message) => isUserTask(message, task.task));
-  const pending = inbox.find((item) => item.type === "user");
-  if (
-    pending?.type === "user" &&
-    (pending.payload.metadata?.task !== task.task ||
-      pending.payload.text !== prompt ||
-      pending.payload.metadata?.system !== task.system)
-  )
-    throw new Error(`Pending agent task input changed: ${task.task}`);
-  if (prior && (prior.text !== prompt || prior.metadata?.system !== task.system))
-    throw new Error(`Agent task input changed: ${task.task}`);
-  const recovered = acceptedResult(task, sessionID, messages);
-  if (recovered) return { kind: "recovered", result: recovered };
-  const latest = messages.findLast(
-    (message) => message.type === "user" && message.metadata?.task !== undefined,
-  );
-  const latestTask = latest ? z.string().parse(latest.metadata?.task) : undefined;
-  if (
-    latestTask !== undefined &&
-    latest!.id !== prior?.id &&
-    latestTask !== task.supersedes &&
-    !taskAccepted(messages, latestTask)
-  )
-    throw new Error(`Previous agent task is incomplete: ${latestTask}`);
-  if (prior && latest?.id !== prior.id)
-    throw new Error(`Cannot resume an earlier incomplete task: ${task.task}`);
-  return { kind: prior || pending ? "resume" : "fresh" };
-}
-
-/** Rendered with the runtime's own signature generator; OpenCode's inline listing truncates descriptions. */
-function sessionSubmissions(task: AgentTask<unknown>): ToolDefinition[] {
-  const declared = task.submissions ?? [task.submission];
-  if (!declared.some((tool) => tool.name === task.submission.name))
-    throw new Error(`${task.submission.name} is not one of the session's submission tools`);
-  return declared.map((tool) => (tool.name === task.submission.name ? task.submission : tool));
-}
-
-async function codeModeCatalog(tools: readonly AgentTool[]): Promise<string> {
-  if (tools.length === 0) return "";
-  const { CodeMode, Tool } = await import("@opencode/codemode");
-  const runtime = CodeMode.make({
-    tools: Object.fromEntries(
-      tools.map((tool) => [
-        tool.definition.name,
-        // SAFETY: runtime.catalog only renders signatures and never invokes execute.
-        Tool.make({
-          description: tool.definition.description,
-          input: tool.definition.parameters,
-          output: { type: ["string", "null"] },
-          execute: (() => {
-            throw new Error("catalog only");
-          }) as never,
-        }),
-      ]),
-    ),
-  });
-  return [
-    CATALOG_INTRO,
-    ...runtime.catalog.map((entry) => `${entry.description}\n${entry.signature}`),
-  ].join("\n\n");
-}
-
-async function leaguePlugin(slot: AgentSlot) {
-  /** The resolver must be registered before loading the SDK's extensionless imports. */
-  const { Plugin } = await import("@opencode/plugin");
-  const initial = await slot.ready.promise;
-  const spec = parseSpec(initial.task.model);
-  const routing = initial.routing;
-  return Plugin.define({
-    id: "league",
-    async setup(ctx) {
-      const routes = modelUpstreamRoutes();
-      if (routes.size)
-        await ctx.catalog.transform((editor) => {
-          for (const [from, upstream] of routes) {
-            const route = parseSpec(from);
-            const target = editor.model.get(route.provider, upstream);
-            if (!target)
-              throw new Error(
-                `VGC_MODEL_UPSTREAM target ${route.provider}:${upstream} is not in the catalog`,
-              );
-            editor.model.update(route.provider, route.model, (model) => {
-              model.modelID = target.modelID;
-              model.cost = target.cost;
-            });
-          }
-        });
-      let validated = false;
-      let cacheSystem = false;
-      await ctx.agent.transform((editor) => {
-        const active = slot.active ?? initial;
-        for (const agent of editor.list())
-          if (String(agent.id) !== "compaction") editor.remove(String(agent.id));
-        editor.update("league", (agent) => {
-          agent.system = active.system;
-          agent.permissions = [
-            { action: "*", resource: "*", effect: "deny" },
-            ...active.toolNames.map((action) => ({
-              action,
-              resource: "*",
-              effect: "allow" as const,
-            })),
-          ];
-        });
-        editor.default("league");
-      });
-      await ctx.tool.transform((editor) => {
-        const active = slot.active ?? initial;
-        const { task, admitted } = active;
-        const record = (name: string, args: JsonObject, run: () => string): string => {
-          try {
-            const result = run();
-            active.calls.push({ name, arguments: args, result });
-            return result;
-          } catch (error) {
-            const result = error instanceof Error ? error.message : String(error);
-            active.calls.push({ name, arguments: args, result });
-            throw error;
-          }
-        };
-        for (const tool of editor.list()) editor.remove(tool.id);
-        for (const tool of task.tools ?? [])
-          editor.add({
-            name: tool.definition.name,
-            description: tool.definition.description,
-            input: tool.definition.parameters,
-            execute: async (input) => {
-              await admitted.promise;
-              task.signal?.throwIfAborted();
-              const args = object.parse(input);
-              if (active.calls.length >= REFERENCE_CALL_BUDGET) {
-                const message = `this task's budget of ${REFERENCE_CALL_BUDGET} reference calls is spent; decide from the results you already have`;
-                if (active.calls.length === REFERENCE_CALL_BUDGET)
-                  active.calls.push({
-                    name: tool.definition.name,
-                    arguments: args,
-                    result: `Error: ${message}`,
-                  });
-                throw new Error(message);
-              }
-              let content: string;
-              try {
-                content = record(tool.definition.name, args, () => {
-                  if (active.submitted)
-                    throw new Error("This task already has an accepted submission.");
-                  return tool.run(args);
-                });
-              } catch (error) {
-                content = `Error: ${error instanceof Error ? error.message : String(error)}`;
-              }
-              return { content };
-            },
-          });
-        for (const submission of active.submissions)
-          editor.add({
-            name: submission.name,
-            description: submission.description,
-            input: submission.parameters,
-            options: { codemode: false },
-            execute: async (input) => {
-              await admitted.promise;
-              task.signal?.throwIfAborted();
-              const args = object.parse(input);
-              if (submission.name !== task.submission.name)
-                return {
-                  content: record(
-                    submission.name,
-                    args,
-                    () =>
-                      `Error: ${submission.name} is not this task's submission tool; submit with ${task.submission.name}.`,
-                  ),
-                };
-              if (active.submitted)
-                return {
-                  content: record(
-                    submission.name,
-                    args,
-                    () => "This task already has an accepted submission. End your reply.",
-                  ),
-                };
-              const content = record(submission.name, args, () => {
-                task.validate(args);
-                return "Submission accepted. End your reply; await the next observation.";
-              });
-              active.submitted = true;
-              return { content, metadata: { accepted: true } };
-            },
-          });
-      });
-      await ctx.session.hook("context", async (event) => {
-        const active = await slot.ready.promise;
-        const { task } = active;
-        await active.admitted.promise;
-        task.signal?.throwIfAborted();
-        if (!validated) {
-          const models = await ctx.catalog.model.list();
-          const model = models.data.find(
-            (model) => model.providerID === spec.provider && model.id === spec.model,
-          );
-          if (!model?.capabilities.tools)
-            throw new Error(`OpenCode has no available tool-capable model ${task.model}`);
-          if (task.reasoning && !model.variants.some((variant) => variant.id === task.reasoning))
-            throw new Error(`${task.model} does not offer variant ${task.reasoning}`);
-          cacheSystem = model.modelID.includes("claude");
-          validated = true;
-        }
-        if (!active.submitted && active.attempts >= SUBMISSION_FAILURES)
-          active.failure = new Error(
-            `${task.submission.name} failed validation ${active.attempts} times`,
-          );
-        if (active.submitted || active.failure) {
-          active.finished.resolve();
-          await active.stopped.promise;
-          throw active.failure ?? new Error("Submission accepted");
-        }
-        if (routing) event.options.provider = routing;
-        event.system = [
-          cacheSystem
-            ? { type: "text", text: active.system, cache: { type: "ephemeral" } }
-            : { type: "text", text: active.system },
-        ];
-      });
-      await ctx.tool.hook("execute.before", (event) => {
-        const active = slot.active;
-        if (active && event.tool === active.task.submission.name) active.attempts += 1;
-      });
-      await ctx.session.hook("http.request", async () => {
-        const active = await slot.ready.promise;
-        await active.admitted.promise;
-        active.task.signal?.throwIfAborted();
-      });
-      await ctx.session.hook("retry", (event) => {
-        if (slot.active?.submitted || slot.active?.task.timed || slot.active?.task.signal?.aborted)
-          event.decision = { retry: false };
-        else if (
-          event.error.type === "provider.invalid-output" &&
-          event.error.message === "Gemini stopped with MALFORMED_FUNCTION_CALL"
-        )
-          event.decision = { retry: true, delay: 0 };
-      });
-      slot.reload = async () => {
-        await ctx.agent.reload();
-        await ctx.tool.reload();
-      };
-    },
-  });
-}
-
-async function executeTask<T>(task: AgentTask<T>, owner: AgentHost): Promise<AgentResult<T>> {
-  const started = performance.now();
-  task.signal?.throwIfAborted();
-  const directory = path.resolve(owner.runDir, "agents", encodeURIComponent(task.session));
-  fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
-  const spec = parseSpec(task.model);
-  const slot = owner.slot(task.session);
-  const catalog = await codeModeCatalog(task.tools ?? []);
-  let submitted: { value: T } | undefined;
-  const active = slot.begin(
-    {
-      ...task,
-      validate(input) {
-        const value = task.validate(input);
-        submitted = { value };
-        return value;
-      },
-    },
-    catalog,
-  );
-  owner.emit(active.progress());
-  const { admitted, finished } = active;
-  let host: Host | undefined;
-  let sessionID: string | undefined;
-  try {
-    host = await owner.open();
-    const location = { directory };
-    await host.plugin.awaitActivation({ location });
-    const sessions = await host.sessions.list({ directory });
-    const session =
-      sessions.data[0] ??
-      (await host.sessions.create({
-        location,
-        title: task.session,
-        agent: "league",
-        model: { providerID: spec.provider, id: spec.model, variant: task.reasoning },
-        metadata: {
-          leagueSession: task.session,
-          model: task.model,
-          reasoning: task.reasoning ?? null,
-          routing: active.routing ?? null,
-        },
-      }));
-    sessionID = session.id;
-    owner.track(session.id, task.session);
+  async execute(
+    session: Session,
+    model: Model<Api>,
+    routing: OpenRouterRouting | null,
+    prompted: boolean,
+  ): Promise<AgentResult<T>> {
+    const { task } = this;
+    const request: Pick<SimpleStreamOptions, "sessionId" | "onPayload"> = {
+      sessionId: session.id,
+      onPayload: routing
+        ? (payload) => ({ ...z.looseObject({}).parse(payload), provider: routing })
+        : undefined,
+    };
     if (
-      session.metadata?.model !== task.model ||
-      session.metadata?.reasoning !== (task.reasoning ?? null) ||
-      !isDeepStrictEqual(session.metadata?.routing, active.routing ?? null)
+      !prompted &&
+      contextTokens(transcript(session.entries)) > model.contextWindow - COMPACTION_RESERVE_TOKENS
     )
-      throw new Error(`Agent session configuration changed: ${task.session}`);
-    await host.sessions.interrupt({ sessionID: session.id, continue: false });
-    await slot.reload?.();
-    const plan = planTask(
-      task,
-      task.prompt,
-      session.id,
-      (await host.sessions.export({ sessionID: session.id })).messages,
-      await host.sessions.inbox.list({ sessionID: session.id }),
-    );
-    if (plan.kind === "recovered")
-      return { ...plan.result, recoveryMs: performance.now() - started };
-    task.signal?.throwIfAborted();
-    admitted.resolve();
-    if (plan.kind === "resume")
-      await host.sessions.synthetic({
-        sessionID: session.id,
-        text: "Continue the pending task and submit it using its submission tool.",
-        resume: true,
-      });
-    else
-      await host.sessions.prompt({
-        sessionID: session.id,
-        text: task.prompt,
-        metadata: { task: task.task, system: task.system },
-        resume: true,
-      });
-    let filtered = 0;
-    for (let reminders = 0; ; reminders += 1) {
-      try {
-        await Promise.race([
-          host.sessions.wait({ sessionID: session.id }, { signal: task.signal }),
-          finished.promise,
-        ]);
-      } finally {
-        await host.sessions.interrupt({ sessionID: session.id, continue: false });
-      }
-      task.signal?.throwIfAborted();
-      if (active.failure) throw active.failure;
-      const completed = await host.sessions.export({ sessionID: session.id });
-      const accepted = acceptedResult(task, session.id, completed.messages, submitted);
-      if (accepted) return active.calls.length ? { ...accepted, tools: [...active.calls] } : accepted;
-      const last = taskMessages(completed.messages, task.task).findLast(
-        (message) => message.type === "assistant",
-      );
-      if (last && "error" in last && last.error) {
-        if (last.error.type !== "provider.content-filter" || filtered >= CONTENT_FILTER_RETRIES)
-          throw new Error(last.error.message);
-        filtered += 1;
-        reminders -= 1;
-        await host.sessions.synthetic({
-          sessionID: session.id,
-          text: "Continue the pending task and submit it using its submission tool.",
-          resume: true,
+      await this.compact(session, model, request);
+    const context = transcript(session.entries);
+    const agent = new Agent({
+      ...request,
+      initialState: { model, thinkingLevel: task.reasoning ?? "off", messages: context },
+      streamFn: this.host.models.streamSimple.bind(this.host.models),
+      finishTurn: ({ toolResults }) => this.finishTurn(toolResults),
+    });
+    agent.state.tools = this.tools();
+    agent.subscribe((event) => this.observe(session, event));
+    let next = () => agent.continue();
+    if (!prompted) {
+      const system = this.system();
+      const pending: AgentMessage[] = [];
+      if (getCurrentSystemMessage(context)?.sections?.[PROMPT_SECTION] !== system)
+        pending.push({
+          role: "system",
+          content: "",
+          sections: { [PROMPT_SECTION]: system },
+          timestamp: Date.now(),
         });
-        continue;
-      }
-      if (reminders >= SUBMISSION_REMINDERS)
-        throw new Error(
-          `No accepted ${task.submission.name} submission after ${reminders} reminders`,
-        );
-      await host.sessions.synthetic({
-        sessionID: session.id,
-        text: `No ${task.submission.name} submission was accepted. A text reply is not a submission: call ${task.submission.name} now, correcting any validation error it returned.`,
-        resume: true,
-      });
-    }
-  } finally {
+      pending.push(user(task.prompt));
+      next = () => agent.prompt(pending);
+    } else if (context.at(-1)?.role === "assistant") next = () => agent.prompt(user(CONTINUE));
+    const abort = () => agent.abort();
+    task.signal?.addEventListener("abort", abort, { once: true });
     try {
-      if (host && sessionID) await host.sessions.interrupt({ sessionID, continue: false });
+      let retries = 0;
+      for (let reminders = 0; ;) {
+        await next();
+        task.signal?.throwIfAborted();
+        if (this.failure) throw this.failure;
+        const state = taskState(session.entries, task.task, task.submission.name)!;
+        if (state.accepted) return this.result(session, state, this.accepted!.value);
+        const last = agent.state.messages.at(-1);
+        if (last?.role === "assistant" && failed(last)) {
+          const transient = isRetryableAssistantError(last);
+          if (
+            task.timed ||
+            retries >= MODEL_RETRIES ||
+            !(transient || RESAMPLED_STOPS.has(last.rawStopReason ?? ""))
+          )
+            throw new Error(last.errorMessage ?? `${task.model} stopped with ${last.stopReason}`);
+          retries += 1;
+          this.progress("retry");
+          if (transient)
+            await sleep(RETRY_BASE_MS * 2 ** (retries - 1), undefined, {
+              signal: task.signal,
+            }).catch((error: Error) => {
+              task.signal?.throwIfAborted();
+              throw error;
+            });
+          agent.state.messages = agent.state.messages.slice(0, -1);
+          next = () => agent.continue();
+          continue;
+        }
+        if (reminders >= SUBMISSION_REMINDERS)
+          throw new Error(
+            `No accepted ${task.submission.name} submission after ${reminders} reminders`,
+          );
+        reminders += 1;
+        const name = task.submission.name;
+        next = () =>
+          agent.prompt(
+            user(
+              `No ${name} submission was accepted. A text reply is not a submission: call ${name} now, correcting any validation error it returned.`,
+            ),
+          );
+      }
     } finally {
-      slot.end();
-      owner.emit(active.progress("ended"));
+      task.signal?.removeEventListener("abort", abort);
     }
+  }
+
+  private system(): string {
+    const { task } = this;
+    const submissions = sessionSubmissions(task);
+    const catalog = task.tools?.length
+      ? `${CATALOG_INTRO}\n\n${renderDeclarations({ tools: this.catalog([]) })}`
+      : "";
+    return [
+      task.system,
+      `${submissions.length === 1 ? `Submit using ${task.submission.name}.` : "Submit each task with the submission tool its instructions name."} Rejected submissions return validation errors; correct them and submit again.`,
+      catalog,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+  }
+
+  private tools(): ModelTool[] {
+    const { task } = this;
+    const submissions = sessionSubmissions(task).map((definition): ModelTool => ({
+      name: definition.name,
+      label: definition.name,
+      description: definition.description,
+      parameters: definition.parameters,
+      execute: async (_id, input) => {
+        if (definition.name !== task.submission.name)
+          throw new Error(
+            `${definition.name} is not this task's submission tool; submit with ${task.submission.name}.`,
+          );
+        if (this.accepted)
+          return {
+            content: [
+              {
+                type: "text",
+                text: "This task already has an accepted submission. End your reply.",
+              },
+            ],
+            details: null,
+          };
+        this.accepted = { value: task.validate(object.parse(input)) };
+        return {
+          content: [{ type: "text", text: SUBMISSION_ACCEPTED }],
+          details: { accepted: true },
+        };
+      },
+    }));
+    if (!task.tools?.length) return submissions;
+    const execute: ModelTool = {
+      name: "execute",
+      label: "execute",
+      description: EXECUTE_DESCRIPTION,
+      parameters: {
+        type: "object",
+        properties: { code: { type: "string" } },
+        required: ["code"],
+        additionalProperties: false,
+      },
+      execute: async (_id, input, signal) => {
+        const { code } = z.object({ code: z.string() }).parse(input);
+        const calls: ToolCallRecord[] = [];
+        const sandbox = new CodemodeSandbox({ tools: this.catalog(calls) });
+        try {
+          const result = await sandbox.execute(code, { signal });
+          const content: (TextContent | ImageContent)[] = [...result.output];
+          if (!result.ok)
+            content.push({ type: "text", text: result.error.stack ?? result.error.message });
+          else if (result.value !== undefined)
+            content.push({ type: "text", text: JSON.stringify(result.value) });
+          return { content, details: { calls }, isError: !result.ok };
+        } finally {
+          await sandbox.close();
+        }
+      },
+    };
+    return [execute, ...submissions];
+  }
+
+  private catalog(calls: ToolCallRecord[]): CodemodeTool[] {
+    return (this.task.tools ?? []).map((tool) => ({
+      name: tool.definition.name,
+      description: tool.definition.description,
+      inputSchema: tool.definition.parameters,
+      outputSchema: { type: "string" },
+      execute: (input) => this.lookup(tool, object.parse(input), calls),
+    }));
+  }
+
+  private lookup(tool: AgentTool, args: JsonObject, calls: ToolCallRecord[]): string {
+    const name = tool.definition.name;
+    if (this.lookups >= REFERENCE_CALL_BUDGET) {
+      const message = `this task's budget of ${REFERENCE_CALL_BUDGET} reference calls is spent; decide from the results you already have`;
+      if (this.lookups === REFERENCE_CALL_BUDGET)
+        calls.push({ name, arguments: args, result: `Error: ${message}` });
+      this.lookups += 1;
+      throw new Error(message);
+    }
+    this.lookups += 1;
+    let result: string;
+    try {
+      result = tool.run(args);
+    } catch (error) {
+      result = `Error: ${error instanceof Error ? error.message : String(error)}`;
+    }
+    calls.push({ name, arguments: args, result });
+    return result;
+  }
+
+  private finishTurn(toolResults: readonly ToolResultMessage[]): AgentTurnDecision | undefined {
+    const name = this.task.submission.name;
+    this.rejections += toolResults.filter(
+      (result) => result.toolName === name && result.isError,
+    ).length;
+    if (this.accepted) return { action: "end" };
+    if (this.rejections < SUBMISSION_FAILURES) return undefined;
+    this.failure = new Error(`${name} failed validation ${this.rejections} times`);
+    return { action: "end" };
+  }
+
+  private observe(session: Session, event: AgentEvent): void {
+    switch (event.type) {
+      case "message_end":
+        session.append({ kind: "message", id: randomUUID(), message: event.message });
+        if (event.message.role !== "assistant") return;
+        this.addUsage(event.message.usage);
+        return this.progress();
+      case "turn_start":
+        return this.progress("generating");
+      case "message_update":
+        if (event.assistantMessageEvent.type === "thinking_start") this.progress("reasoning");
+        if (event.assistantMessageEvent.type === "thinking_end") this.progress("generating");
+        return;
+      case "tool_execution_start":
+        this.tool = event.toolName;
+        return this.progress("tool");
+      case "tool_execution_end":
+        return this.progress("generating");
+    }
+  }
+
+  private addUsage(usage: Usage): void {
+    const total = this.usage ?? { cost: 0, inputTokens: 0, outputTokens: 0 };
+    this.usage = {
+      cost: total.cost + usage.cost.total,
+      inputTokens: total.inputTokens + usage.input + usage.cacheRead + usage.cacheWrite,
+      outputTokens: total.outputTokens + usage.output,
+    };
+  }
+
+  private async compact(
+    session: Session,
+    model: Model<Api>,
+    request: Pick<SimpleStreamOptions, "sessionId" | "onPayload">,
+  ): Promise<void> {
+    this.progress("compacting");
+    const context = transcript(session.entries);
+    const reply = await this.host.models.completeSimple(
+      model,
+      { messages: [...context, user(COMPACTION_PROMPT)] },
+      { ...request, signal: this.task.signal, reasoning: this.task.reasoning },
+    );
+    const summary = contentText(
+      reply.content.filter((part): part is TextContent => part.type === "text"),
+    ).trim();
+    if (failed(reply) || !summary)
+      throw new Error(`Conversation compaction failed: ${reply.errorMessage ?? "no summary"}`);
+    this.addUsage(reply.usage);
+    session.append({
+      kind: "compaction",
+      summary,
+      kept: keptCount(context),
+      usage: usageRecord(reply.usage),
+      at: Date.now(),
+    });
   }
 }

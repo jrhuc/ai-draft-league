@@ -39,10 +39,9 @@
     "capture-requests": "node dist/tools/capture-requests.js"
   },
   "dependencies": {
-    "@opencode/client": "2.0.3",
-    "@opencode/codemode": "2.0.3",
-    "@opencode/plugin": "2.0.3",
-    "@opencode/sdk": "2.0.3",
+    "@earendil-works/pi-agent-core": "1.5.0",
+    "@earendil-works/pi-ai": "1.5.0",
+    "@earendil-works/pi-codemode": "1.5.0",
     "zod": "4.6.1"
   },
   "devDependencies": {

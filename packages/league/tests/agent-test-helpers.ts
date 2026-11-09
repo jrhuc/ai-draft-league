@@ -22,7 +22,7 @@ type ScriptedInput =
 
 /**
  * Consumes one scripted submission per task; a submission the task rejects is returned to the
- * script as a validation error and the next input is tried, as the OpenCode runtime would.
+ * script as a validation error and the next input is tried, as the agent runtime would.
  */
 export function scriptedAgent(inputs: ScriptedInput[]) {
   const calls: AgentTask<unknown>[] = [];

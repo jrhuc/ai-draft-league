@@ -1,7 +1,10 @@
 import { z } from "zod";
 import type { JsonValue } from "./types.js";
 
-export type ReasoningLevel = string;
+/** Pi thinking levels; `xhigh` and `max` exist only on models that opt in. Omitting a level keeps the provider default. */
+export const reasoningLevelSchema = z.enum(["minimal", "low", "medium", "high", "xhigh", "max"]);
+
+export type ReasoningLevel = z.infer<typeof reasoningLevelSchema>;
 
 export type OpenRouterRouting = { order?: string[]; allow_fallbacks: boolean };
 
@@ -22,20 +25,17 @@ export function modelUpstreamRoutes(): Map<string, string> {
     if (!trimmed) continue;
     const separator = trimmed.lastIndexOf("=");
     if (separator < 1 || separator === trimmed.length - 1)
-      throw new Error(`VGC_MODEL_UPSTREAM entry must be <provider>:<model>=<upstream model id>: ${trimmed}`);
+      throw new Error(
+        `VGC_MODEL_UPSTREAM entry must be <provider>:<model>=<upstream model id>: ${trimmed}`,
+      );
     parseSpec(trimmed.slice(0, separator));
     routes.set(trimmed.slice(0, separator), trimmed.slice(separator + 1));
   }
   return routes;
 }
 
-const VARIANT = /^[a-z0-9][a-z0-9._-]*$/i;
-
-/** Any OpenCode variant id; availability on the selected model is checked by the host. */
-export const reasoningLevelSchema = z.string().regex(VARIANT);
-
 export function isReasoningLevel(value: JsonValue | undefined): value is ReasoningLevel {
-  return typeof value === "string" && VARIANT.test(value);
+  return reasoningLevelSchema.safeParse(value).success;
 }
 
 export interface ModelReasoningConfig {
@@ -62,13 +62,13 @@ export function parseSpec(value: string) {
     model.startsWith("-") ||
     /[\s\p{Cc}]/u.test(model)
   )
-    throw new Error("Expected <OpenCode-provider-id>:<model-id> or random");
+    throw new Error("Expected <provider>:<model-id> or random");
   return { provider, model };
 }
 
 export function validateReasoning(level?: string): void {
   if (level !== undefined && !isReasoningLevel(level))
-    throw new Error(`invalid model variant ${JSON.stringify(level)}`);
+    throw new Error(`invalid reasoning level ${JSON.stringify(level)}`);
 }
 
 export function validateModelExecution(

@@ -43,7 +43,13 @@ test("drafts resume from committed picks, keep notebooks, and name franchises af
     if (["incineroar", "farigiraf"].includes(pick)) assert.match(task.prompt, /Private plan/);
     return agentReply(task, { pick, plan: pick === "incineroar" ? "" : "Private plan" });
   };
-  const options = { runDir: logDir, logDir, rng: seededRng(1), runAgent, reasoning: "high" };
+  const options = {
+    runDir: logDir,
+    logDir,
+    rng: seededRng(1),
+    runAgent,
+    reasoning: "high" as const,
+  };
   await assert.rejects(
     runDraft(models, board, {
       ...options,

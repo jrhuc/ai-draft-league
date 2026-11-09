@@ -90,7 +90,7 @@ async function executeExhibition(
       isolated: false,
     },
     [oppSide]: {
-      adapter: options.opponent === "random" ? "random-engine" : "opencode",
+      adapter: options.opponent === "random" ? "random-engine" : "pi-agent",
     },
   };
   writeAtomicJson(

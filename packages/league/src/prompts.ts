@@ -53,7 +53,7 @@ const TOOL_RULES = `Use compare_action_order for Speed order. Trust a tool only 
 
 const NOTEBOOK_RULE = `Your private notebook has team_playbook (maximum ${TEAM_PLAYBOOK_CHAR_LIMIT} characters), series_memory (maximum ${SERIES_MEMORY_CHAR_LIMIT}), and next_game_plan (maximum ${NEXT_GAME_PLAN_CHAR_LIMIT}); the combined strategic limit is ${DECISION_NOTE_LIMIT}. Include only changed fields: each supplied string replaces that field, omitted fields stay unchanged, and an empty string clears a field.`;
 const HISTORY_RULE =
-  "This conversation continues throughout the game, including your tool results and prior decisions. A new game starts a new conversation with your notebook and build briefing. OpenCode may compact a long conversation; read_battle_history retrieves your private observations, submitted choices and stated reasons, and reviews from any game in this series. Your notes and build briefing are context you may revise as play develops.";
+  "This conversation continues throughout the game, including your tool results and prior decisions. A new game starts a new conversation with your notebook and build briefing. The harness may compact a long conversation; read_battle_history retrieves your private observations, submitted choices and stated reasons, and reviews from any game in this series. Your notes and build briefing are context you may revise as play develops.";
 const NOTEBOOK_OBJECT =
   '{"team_playbook":"transferable facts about piloting your team","series_memory":"facts and tendencies specific to this opponent","next_game_plan":"immediate plan and contingencies for the next game"}';
 

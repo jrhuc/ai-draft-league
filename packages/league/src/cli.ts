@@ -134,7 +134,7 @@ Commands:
   exhibition --opponent <spec>        host one bo3 where a terminal agent plays a seat over a local bridge
       [--seat p1|p2] [--name <label>] [--pool <name>] [--seed <n>] [--port <n>] [--reasoning <level>]
       [--agent-dir <path>]
-      opponent specs: <OpenCode-provider-id>:<model-id> or random
+      opponent specs: <provider>:<model-id> or random
   outcomes [--pool <name>]            print contextual per-series outcomes without an aggregate ranking
   report [--out <path>] [--pool <name>]  write an HTML report
   export-season --run <id> --through-week <n> [--title <text>] [--out <file>] [--traces-dir <dir>]
@@ -145,10 +145,9 @@ Commands:
       atomically write one validated public tournament bundle for a pool bracket;
       every recorded series is released, unplayed bracket slots stay open
 
-Model specs are <OpenCode-provider-id>:<model-id> or random.
-OpenCode owns credentials, routing, model capabilities, and reasoning variants.
-Configure providers in <run-dir>/agents/opencode.json or use their environment keys.
---reasoning selects an OpenCode model variant.
+Model specs are <provider>:<model-id> from the pi-ai catalog, or random. Each provider reads
+its API key from the environment (OPENCODE_API_KEY, OPENROUTER_API_KEY, GEMINI_API_KEY, ...).
+--reasoning sets a thinking level: minimal, low, medium, high, or xhigh and max where the model offers them.
 --progress streams live agent activity and session spend on stderr for every run mode.
 
 Without --pool, outcomes and report retain all rows except the disposable "test" pool;
@@ -178,7 +177,8 @@ function optionalInteger(name: string, value: string | undefined): number | unde
 
 function reasoningLevel(value: string | undefined): ReasoningLevel | undefined {
   if (value === undefined) return undefined;
-  if (!isReasoningLevel(value)) throw new Error("--reasoning must name an OpenCode model variant");
+  if (!isReasoningLevel(value))
+    throw new Error("--reasoning must be minimal, low, medium, high, xhigh, or max");
   return value;
 }
 

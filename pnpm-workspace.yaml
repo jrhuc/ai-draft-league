@@ -8,9 +8,6 @@ allowBuilds:
   workerd: true
 
 minimumReleaseAgeExclude:
-  - "@opencode/*"
-  - ai
-  - "@ai-sdk/*"
   - "@voidzero-dev/vite-plus-*"
   - vite-plus
   - oxlint
