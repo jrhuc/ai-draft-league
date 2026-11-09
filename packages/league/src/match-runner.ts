@@ -19,6 +19,7 @@ import {
   readCompletedSeriesDecisionRows,
   readCompletedSeriesEvidence,
   recordedSeriesIdentity,
+  resolvedGameRows,
   seriesDirectory,
 } from "./recorded-series.js";
 import type { RecordedSeriesIdentity } from "./recorded-series.js";
@@ -207,6 +208,11 @@ export async function playBo3(context: Bo3Context): Promise<Bo3Result> {
         ).run(engines, onUpdate, context.signal);
     context.signal?.throwIfAborted();
     const winnerSide = (["p1", "p2"] as const).find((pid) => names[pid] === outcome.winner);
+    if (outcome.winner !== null && !winnerSide) {
+      throw new Error(
+        `game ${gameNumber} winner ${JSON.stringify(outcome.winner)} is neither ${JSON.stringify(names.p1)} nor ${JSON.stringify(names.p2)}`,
+      );
+    }
     if (winnerSide) score[winnerSide] += 1;
     live.state = "ended";
     live.winner = winnerSide ? context.players[winnerSide] : null;
@@ -314,10 +320,10 @@ export async function playBo3(context: Bo3Context): Promise<Bo3Result> {
 
 const numericDecisionStatSchema = z.number();
 const decisionActionSchema = z.string();
+/** A row's series is the artifact namespace it is stored under; its own `series_id` is null when it was written while finishing a pending review, before any game had begun. */
 const persistedAgentContextSchema = z.looseObject({
   kind: z.literal("agent_context"),
   pid: z.enum(["p1", "p2"]),
-  series_id: z.string(),
   context_id: z.string(),
   sequence: z.number(),
   context_kind: z.enum(["episode", "observation", "decision", "reflection"]),
@@ -393,7 +399,6 @@ function loadAgentContext(runDir: string, seriesId: string, pid: Pid): AgentCont
     if (
       !parsed.success ||
       parsed.data.pid !== pid ||
-      parsed.data.series_id !== seriesId ||
       parsed.data.context_id !== `ctx-${String(sequence).padStart(8, "0")}` ||
       parsed.data.sequence !== sequence
     ) {
@@ -472,7 +477,10 @@ async function runRecordedSeries(context: RecordedSeriesContext): Promise<Record
       (row) => {
         const contextId = z.string().min(1).safeParse(row.context_id);
         if (!contextId.success) throw new Error(`${pid} context event has no identity`);
-        commitRunArtifact(context.runDir, `series-context:${seriesId}:${pid}`, contextId.data, row);
+        commitRunArtifact(context.runDir, `series-context:${seriesId}:${pid}`, contextId.data, {
+          ...row,
+          series_id: seriesId,
+        });
       };
 
     const engineFor = (pid: Pid) => {
@@ -540,10 +548,10 @@ async function runRecordedSeries(context: RecordedSeriesContext): Promise<Record
     }
     const adoptedRows = (pid: Pid): JsonObject[] => {
       if (!adopted) return [];
-      const owners = new Map(adopted.games.map((game) => [game.gameNumber, game.attemptId]));
-      return readJsonlObjects(path.join(seriesDir, `${pid}-decisions.jsonl`)).filter(
-        (row) => owners.get(Number(row.game_number)) === row.attempt_id,
-      );
+      return resolvedGameRows(
+        readJsonlObjects(path.join(seriesDir, `${pid}-decisions.jsonl`)),
+        new Map(adopted.games.map((game) => [game.gameNumber, game.attemptId])),
+      ).filter((row) => row.attempt_id !== attemptId);
     };
     const { score, games, winnerSide } = await playBo3(battleContext);
     const stats = {

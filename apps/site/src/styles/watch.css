@@ -58,10 +58,6 @@
   border-top: 0;
 }
 
-.watch-running {
-  color: var(--good);
-}
-
 .watch-live,
 .watch-notice {
   margin: 0.75rem 0 0;

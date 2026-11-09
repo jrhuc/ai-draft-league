@@ -14,8 +14,7 @@ import { runSeasonReview, type SeasonReviewState } from "../src/season-review.js
 import {
   describeTransactionHistory,
   readTradeWindowArtifact,
-  renderFreeAgencyPrompt,
-  renderTradeOfferPrompt,
+  runTradeWindow,
 } from "../src/trade-window.js";
 import { agentReply, scriptedAgent } from "./agent-test-helpers.js";
 import {
@@ -63,9 +62,7 @@ test("the draft prompt states budget rules without computing a ceiling for the c
   assert.doesNotMatch(prompt, /Drought Dodgers/);
 });
 
-test("season reviews are written once per coach and replayed on resume", async (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-season-review-"));
-  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
+function seasonFixture() {
   const models = ["test:champion", "test:eliminated"];
   const state: SeasonReviewState = {
     board: BOARD,
@@ -109,6 +106,13 @@ test("season reviews are written once per coach and replayed on resume", async (
     did_poorly: "The mega slot was idle.",
     would_change: "Buy the backup mega.",
   };
+  return { models, state, reply };
+}
+
+test("season reviews are written once per coach and replayed on resume", async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-season-review-"));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const { models, state, reply } = seasonFixture();
   const scripted = scriptedAgent([
     { summary: "a", did_well: "b", did_poorly: "c", would_change: "  " },
     { summary: "a", did_well: "b", did_poorly: "c" },
@@ -199,6 +203,39 @@ test("season reviews are written once per coach and replayed on resume", async (
   assert.equal(started.length, 2, "both seats were in flight at once");
 });
 
+test("a season review cancelled mid-wave rejects instead of returning the seats that finished", async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-season-review-abort-"));
+  t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const { models, state, reply } = seasonFixture();
+  const controller = new AbortController();
+  await assert.rejects(
+    runSeasonReview(
+      [
+        { entrant: 0, outcome: "You won the final." },
+        { entrant: 1, outcome: "You missed the playoffs." },
+      ],
+      state,
+      {
+        runDir: directory,
+        psDir: defaultPsDir(),
+        concurrency: 1,
+        signal: controller.signal,
+        runAgent: async (task) => {
+          if (task.model === models[1]) controller.abort();
+          task.signal?.throwIfAborted();
+          return agentReply(task, reply);
+        },
+      },
+    ),
+    { name: "AbortError" },
+  );
+  assert.deepEqual(
+    readRunArtifacts(directory, "season-review").map((row) => row.key),
+    ["000000"],
+    "the seat that finished stays committed for the resume",
+  );
+});
+
 test("search_board filters the board by price, type, ability, and legal movepool", () => {
   const search = createBoardSearch(BOARD, defaultPsDir());
   const ids = (result: string): string[] =>
@@ -262,22 +299,42 @@ test("search_board sorts by price by default and reaches entries the board burie
   }
 });
 
-test("window prompts name their place in the schedule and the public moves of earlier windows", () => {
-  const state = transactionState();
-  const first = { afterWeek: 1, index: 0, count: 3 };
-  const last = { afterWeek: 3, index: 2, count: 3 };
-  const opening = renderTradeOfferPrompt(state, 0, defaultPsDir(), { position: first });
+test("window prompts name their place in the schedule and the public moves of earlier windows", async (t) => {
+  const runDir = () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "vgc-window-prompts-"));
+    t.onTestFinished(() => fs.rmSync(directory, { recursive: true, force: true }));
+    return directory;
+  };
+  const models = ["fake:coach", "random"];
+  const opening = scriptedAgent([{ offer: null }, { swaps: [] }]);
+  await runTradeWindow(
+    { ...transactionState(), models },
+    {
+      runDir: runDir(),
+      psDir: defaultPsDir(),
+      position: { afterWeek: 1, index: 0, count: 3 },
+      tradesAllowed: 1,
+      runAgent: opening.run,
+    },
+  );
+  assert.deepEqual(
+    opening.calls.map((task) => task.task),
+    ["offer-0-1", "free-agency-0"],
+  );
+  const offer = opening.calls[0]!;
   assert.match(
-    opening,
+    offer.system,
     /transaction window 1 of 3, open after round-robin week 1\. 2 more windows follow/,
   );
   assert.ok(
-    !opening.includes("PUBLIC TRANSACTIONS FROM EARLIER WINDOWS"),
+    !offer.prompt.includes("PUBLIC TRANSACTIONS FROM EARLIER WINDOWS"),
     "the first window has no history",
   );
-  const closing = renderFreeAgencyPrompt(
+  const closing = scriptedAgent([{ swaps: [] }]);
+  await runTradeWindow(
     {
-      ...state,
+      ...transactionState(),
+      models,
       history: describeTransactionHistory(
         [
           {
@@ -299,7 +356,7 @@ test("window prompts name their place in the schedule and the public moves of ea
             decisions: [
               {
                 entrant: 0,
-                model: "random",
+                model: "fake:coach",
                 swaps: [{ drop: "c", add: "d" }],
                 reasoning: "",
               },
@@ -307,20 +364,25 @@ test("window prompts name their place in the schedule and the public moves of ea
             rosters: [],
           },
         ],
-        state.models,
+        models,
       ),
     },
-    0,
-    defaultPsDir(),
-    { position: last },
+    {
+      runDir: runDir(),
+      psDir: defaultPsDir(),
+      position: { afterWeek: 3, index: 2, count: 3 },
+      tradesAllowed: 0,
+      runAgent: closing.run,
+    },
   );
+  const freeAgency = closing.calls[0]!;
   assert.match(
-    closing,
+    freeAgency.system,
     /transaction window 3 of 3, open after round-robin week 3\. Rosters lock when this window closes/,
   );
   assert.match(
-    closing,
-    /PUBLIC TRANSACTIONS FROM EARLIER WINDOWS:\n- After week 1: random traded a to random for b\.\n- After week 1: random dropped c and added d\./,
+    freeAgency.prompt,
+    /PUBLIC TRANSACTIONS FROM EARLIER WINDOWS:\n- After week 1: random traded a to fake:coach for b\.\n- After week 1: fake:coach dropped c and added d\./,
   );
 });
 

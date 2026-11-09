@@ -1,3 +1,4 @@
+import { formDetails } from "./board-search.js";
 import { FORMAT_AUTHORITY_NOTICE, PARALLEL_TOOLS_RULE, renderPromptTemplate } from "./prompts.js";
 import { type TeamBuildSheetPolicy, type TeamBuildTask } from "./teambuild-protocol.js";
 import { type DexLike, legalItems, legalMoves } from "./teambuild-validation.js";
@@ -38,7 +39,8 @@ export const TEAMBUILD_PROMPT_POLICY = {
     '           "note": "<one line on this set\'s job>"}]}',
     'Exactly 6 entries in "sets", each one a board id from YOUR ROSTER below.',
   ],
-  rosterHeading: "YOUR ROSTER (board id | name | types | base stats | abilities | legal moves):",
+  rosterHeading:
+    "YOUR ROSTER (board id | name | types | HP/Atk/Def/SpA/SpD/Spe | abilities | item rule; Mega entries show base -> Mega):",
   opponentHeading:
     "OPPONENT ROSTER — {{model}} (they register any 6 of these with new sets for this matchup; a six they brought before is not a commitment):",
   priorContextHeading:
@@ -47,42 +49,6 @@ export const TEAMBUILD_PROMPT_POLICY = {
     "Every coach builds a new six for every matchup; sets, items, moves and spreads seen earlier were built for that series and may not return.",
   lockedItem: "MUST hold {{item}}",
   noMega: "cannot hold a Mega Stone",
-} as const;
-
-const GENERAL_TEAMBUILD_PROMPT_POLICY = {
-  systemTemplate: [
-    "You are {{model}}, building a Pokémon VGC team for format {{format}}.",
-    FORMAT_AUTHORITY_NOTICE,
-    "",
-    "Choose exactly {{teamSize}} entries from the explicit frozen candidate pool supplied below and build every set from scratch.",
-    "No particular opponent is specified. Build for robust play across the format; do not assume an opponent roster.",
-    "Your memory, when supplied, is context, not a constraint.",
-    "",
-    "FORMAT RULES",
-    "{{teamSheetRule}}",
-    "- Every Pokémon is set to level 50.",
-    "- EVs: {{evLimit}} points total across the team member, at most {{evMax}} in any one stat. IVs are fixed at maximum.",
-    "  This is the Champions EV system, not the older 508/252 one. Points are whole numbers.",
-    "- Base PP is capped at 20; battle PP is boosted by the Champions simulator.",
-    "- Item Clause: no two team members may hold the same item. Species Clause: no two may share a species.",
-    "- Use only these items:",
-    "{{items}}",
-    "- A candidate with a locked item must hold it. A candidate without one cannot hold a Mega Stone.",
-    "",
-    "You have the Showdown dex tools. Use them while you build: check legal moves, items, abilities, speed benchmarks,",
-    "and damage against representative threats. The tools compute from the simulator this task validates against.",
-    PARALLEL_TOOLS_RULE,
-    "",
-    "Call submit_team with:",
-    '{"team_plan": "<2-5 sentences on the team and its modes>",',
-    ' "sets": [{"id": "<candidate-id>", "item": "<item>", "ability": "<ability>", "nature": "<nature>",',
-    '           "moves": ["<up to 4 moves>"], "evs": {"hp": 0, "atk": 0, "def": 0, "spa": 0, "spd": 0, "spe": 0},',
-    '           "note": "<one line on this set\'s job>"}]}',
-    'Exactly {{teamSize}} entries in "sets", each one a candidate id from the frozen pool below.',
-  ],
-  candidateHeading:
-    "FROZEN CANDIDATE POOL (id | name | types | base stats | abilities | legal moves):",
-  briefHeading: "TASK BRIEF:",
 } as const;
 
 const SHEET_RULES = {
@@ -101,27 +67,17 @@ function rosterBlock(
 ): string[] {
   const lines: string[] = [];
   for (const mon of roster) {
-    const battleForme = dex.species.get(mon.forme ?? mon.species);
-    const stats = battleForme.baseStats;
-    const abilities = Object.values(battleForme.abilities ?? {})
-      .filter(Boolean)
-      .join("/");
     const constraint = mon.item
       ? TEAMBUILD_PROMPT_POLICY.lockedItem.replace("{{item}}", mon.item)
       : TEAMBUILD_PROMPT_POLICY.noMega;
-    lines.push(
-      `- ${mon.id} | ${mon.name} | ${mon.types.join("/")} | ` +
-        `${stats.hp}/${stats.atk}/${stats.def}/${stats.spa}/${stats.spd}/${stats.spe} | ${abilities} | ${constraint}`,
-    );
+    lines.push(`- ${mon.id} | ${mon.name} | ${formDetails(mon, dex)} | ${constraint}`);
     if (detailed) {
-      const base = dex.species.get(mon.species);
-      const baseAbilities = Object.values(base.abilities ?? {})
-        .filter(Boolean)
-        .join(" or ");
       if (mon.forme) {
+        const base = dex.species.get(mon.species);
+        const mega = dex.species.get(mon.forme);
         lines.push(
-          `    registers as ${base.name}: set "ability" to one of ${baseAbilities}, NOT its Mega ability — ` +
-            `it becomes ${mon.forme} with ${abilities} only after it Mega Evolves in battle`,
+          `    registers as ${base.name}: set "ability" to one of ${Object.values(base.abilities).join(" or ")}, NOT its Mega ability — ` +
+            `it becomes ${mon.forme} with ${Object.values(mega.abilities).join("/")} only after it Mega Evolves in battle`,
         );
       }
       lines.push(`    moves: ${legalMoves(dex, mon).join(", ")}`);
@@ -144,29 +100,15 @@ export function teamBuildSystemPrompt(
     ["model", task.model],
     ["format", task.format],
     ["picks", String(task.constraint.candidates.length)],
-    ["teamSize", String(task.constraint.teamSize)],
     ["evLimit", String(evLimit)],
     ["evMax", String(evMax)],
     ["items", `  ${legalItems(dex).join(", ")}`],
     ["teamSheetRule", teamSheetRule(task.sheetPolicy)],
   ] as const;
-  return renderPromptTemplate(
-    task.objective.kind === "matchup"
-      ? TEAMBUILD_PROMPT_POLICY.systemTemplate
-      : GENERAL_TEAMBUILD_PROMPT_POLICY.systemTemplate,
-    values,
-  );
+  return renderPromptTemplate(TEAMBUILD_PROMPT_POLICY.systemTemplate, values);
 }
 
 export function teamBuildUserPrompt(task: TeamBuildTask, dex: DexLike): string {
-  if (task.objective.kind === "general") {
-    const lines: string[] = [GENERAL_TEAMBUILD_PROMPT_POLICY.candidateHeading];
-    lines.push(...rosterBlock(dex, task.constraint.candidates, true));
-    if (task.notebook) lines.push("", task.notebook);
-    if (task.objective.brief)
-      lines.push("", GENERAL_TEAMBUILD_PROMPT_POLICY.briefHeading, task.objective.brief);
-    return lines.join("\n");
-  }
   const lines: string[] = [TEAMBUILD_PROMPT_POLICY.rosterHeading];
   lines.push(...rosterBlock(dex, task.constraint.candidates, true));
   if (task.notebook) lines.push("", task.notebook);

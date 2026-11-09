@@ -258,7 +258,7 @@ export interface Predictions {
 const APPLIED_PAIR =
   /state applied: attacker (.+?)(?: \([^)]*\))?; defender (.+?)(?: \([^)]*\))?\./;
 const SPEED_LINE = /^(.+?)(?: \(benched\))?: raw Speed /gm;
-const HYPOTHETICAL = /^Hypothetical (?:field|weather|Mega Evolution|switch-in)/m;
+const HYPOTHETICAL = /^Hypothetical|Turn order matters:/m;
 
 export function readPredictions(traceRows: readonly JsonObject[]): Predictions {
   const damage: DamagePrediction[] = [];
@@ -385,7 +385,7 @@ export function auditGame(
         const observed = describeHit(hit);
         if (!survived && (under || over))
           report("damage-range", hit.turn, pid, predicted, observed);
-        if (prediction.ko === "both" && !hit.fainted)
+        if (prediction.ko === "both" && !hit.fainted && hit.hpBefore <= prediction.shownHp)
           report("ko-missed", hit.turn, pid, predicted, observed);
         if (prediction.ko === "none" && hit.fainted && hit.hpBefore >= prediction.shownHp)
           report("ko-unexpected", hit.turn, pid, predicted, observed);

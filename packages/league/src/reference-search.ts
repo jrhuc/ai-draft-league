@@ -96,7 +96,7 @@ export function bulkToSurvive(
   const maxDamage = (defValue: number): number => {
     const cached = damageByDefense.get(defValue);
     if (cached !== undefined) return cached;
-    const hit = plan.run(plan.offHigh, defValue, plan.hpHigh, 100);
+    const hit = plan.run(plan.offHigh, defValue, plan.hpHigh, 100, false);
     if (hit.outcome !== "damage") outcome = hit.outcome;
     damageByDefense.set(defValue, hit.damage);
     return hit.damage;
@@ -148,8 +148,8 @@ export function bulkToSurvive(
         : `- ${label}: never survives; the best it reaches is ${describe(fullest!)}.`,
     );
   }
-  if (outcome === "immune")
-    return `${attacker.name} ${move.name} into ${defender.name}: immune or absorbed; nothing to survive.`;
+  if (outcome === "immune" || outcome === "blocked")
+    return `${attacker.name} ${move.name} into ${defender.name}: ${outcome === "immune" ? "immune or absorbed" : "blocked"}; nothing to survive.`;
   if (outcome) return `${move.name} has no standard damage output to estimate.`;
   const attackBasis =
     plan.exactOff !== undefined

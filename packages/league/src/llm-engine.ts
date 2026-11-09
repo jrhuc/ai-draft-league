@@ -337,9 +337,6 @@ export class LLMEngine extends BaseEngine {
   readContext(query: AgentContextQuery = {}) {
     return this.context.read(query);
   }
-  decisionToolDefinitions(): ToolDefinition[] {
-    return structuredClone(this.tools);
-  }
 
   private battleSystem(): string {
     return this.briefed(battleSystemPrompt({ sheets: this.sheets, timed: this.timed }));

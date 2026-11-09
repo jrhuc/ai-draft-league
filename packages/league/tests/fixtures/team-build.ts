@@ -100,10 +100,12 @@ export function leagueTeamBuildJournalRow(options: {
       notebook: options.notebook,
       provenance: { source: "draft-league", seriesIndex: 0, entrant: 0, opponent: 1 },
     };
-    artifact = validateTeamBuildSubmission(task, legalTeamReply(options.teamPlan), {
+    artifact = {
+      ...validateTeamBuildSubmission(task, legalTeamReply(options.teamPlan), {
+        createdAt: "2026-07-20T09:00:00.000Z",
+      }),
       attempts: options.attempts,
-      createdAt: "2026-07-20T09:00:00.000Z",
-    });
+    };
     artifactCache.set(cacheKey, artifact);
   }
   return { artifact: structuredClone(artifact) };

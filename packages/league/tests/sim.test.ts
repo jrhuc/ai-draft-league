@@ -98,6 +98,33 @@ test("seeded random VGC battle completes untimed by default without protocol err
   assert.match(state.render({}), /Opponent side/);
 });
 
+test("an untimed battle leaves Showdown's server timer and its globals unloaded", async (t) => {
+  const names = ["Config", "Monitor", "Dex"] as const;
+  const loaded = names.map((name) => Object.getOwnPropertyDescriptor(globalThis, name));
+  for (const name of names) Reflect.deleteProperty(globalThis, name);
+  t.onTestFinished(() => {
+    for (const [index, name] of names.entries()) {
+      const descriptor = loaded[index];
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+      else Reflect.deleteProperty(globalThis, name);
+    }
+  });
+  const pool = loadPool();
+  const outcome = await new SimBattle(
+    pool.format,
+    {
+      p1: { name: "A-random", team: pool.teams[0]!.packed },
+      p2: { name: "B-random", team: pool.teams[1]!.packed },
+    },
+    [1, 2, 3, 4],
+  ).run({ p1: new RandomEngine("p1", 10), p2: new RandomEngine("p2", 20) });
+  assert.ok(outcome.turns > 0);
+  assert.deepEqual(
+    names.filter((name) => Object.hasOwn(globalThis, name)),
+    [],
+  );
+});
+
 test("Showdown rejection and accepted retry resolve distinct stable submissions once", async () => {
   const pool = loadPool();
   const p1Rows: JsonObject[] = [];

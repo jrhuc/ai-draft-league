@@ -218,7 +218,7 @@ export function HomePage() {
       <section className="section">
         <div className="section-head">
           <h2>Decision stats</h2>
-          <p>Reasoning and time are per decision; Protect and switch rates are per turn.</p>
+          <p>Reasoning and time are per decision; protection-move and switch rates are per turn.</p>
         </div>
         <div className="card stat-table">
           <div className="stat-row stat-head">

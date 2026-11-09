@@ -64,7 +64,7 @@ export function actionForCandidateTeam(
   sets: RawSet[],
   psDir: string,
 ): TeamBuildAction {
-  const { teamSize, kind } = task.constraint;
+  const { teamSize } = task.constraint;
   if (sets.length !== teamSize)
     throw new Error(`"sets" must hold exactly ${teamSize} entries, not ${sets.length}`);
   const owned = new Map(task.constraint.candidates.map((mon) => [mon.id, mon]));
@@ -72,17 +72,21 @@ export function actionForCandidateTeam(
   const problems: string[] = [];
   const entries = sets.map((set) => {
     const mon = owned.get(set.id);
-    if (!mon)
-      throw new Error(
-        `"${set.id}" is not ${kind === "draft-picks" ? "a board id on your roster" : "an id in the frozen candidate pool"}`,
-      );
+    if (!mon) throw new Error(`"${set.id}" is not a board id on your roster`);
     if (selected.has(set.id))
       throw new Error(`"${set.id}" appears twice; choose ${teamSize} different Pokémon`);
     selected.add(set.id);
     const label = `${mon.name}:`;
+    const canonical = (
+      kind: string,
+      value: string,
+      entry: { exists: boolean; name: string },
+    ): string => {
+      if (entry.exists) return entry.name;
+      problems.push(`${label} ${JSON.stringify(value)} is not ${kind} in this format`);
+      return value;
+    };
     const item = dex.items.get(set.item);
-    if (set.item && (!item.exists || item.name !== set.item))
-      problems.push(`${label} item must use its canonical Showdown name`);
     if (mon.item) {
       if (!item.exists || item.name !== dex.items.get(mon.item).name)
         problems.push(
@@ -90,19 +94,16 @@ export function actionForCandidateTeam(
         );
     } else if (item.exists && item.megaStone)
       problems.push(`${label} drafted as the base forme, so it can never hold ${item.name}`);
-    for (const [field, value] of [
-      ["ability", dex.abilities.get(set.ability)],
-      ["nature", dex.natures.get(set.nature)],
-    ] as const) {
-      if (!value.exists || value.name !== set[field])
-        problems.push(`${label} ${field} must use its canonical Showdown name`);
-    }
-    for (const name of set.moves) {
-      const move = dex.moves.get(name);
-      if (!move.exists || move.name !== name)
-        problems.push(`${label} move ${JSON.stringify(name)} must use its canonical Showdown name`);
-    }
-    return { mon, set };
+    return {
+      mon,
+      set: {
+        ...set,
+        item: set.item ? canonical("an item", set.item, item) : "",
+        ability: canonical("an ability", set.ability, dex.abilities.get(set.ability)),
+        nature: canonical("a nature", set.nature, dex.natures.get(set.nature)),
+        moves: set.moves.map((name) => canonical("a move", name, dex.moves.get(name))),
+      },
+    };
   });
   if (problems.length) throw new Error(problems.join("\n"));
   const packed = normalizePackedTeam(packCandidateTeam(dex, entries, psDir), psDir, task.format);

@@ -41,6 +41,7 @@ import {
   type ReasoningLevel,
 } from "./providers.js";
 import type { AgentActivity, AgentProgress, LiveGame } from "./public/live-protocol.js";
+import { rejectUndeclared, withoutClosedObjects } from "./tool-input.js";
 import type { JsonObject, ToolDefinition } from "./types.js";
 
 export interface AgentTool {
@@ -153,6 +154,7 @@ const entrySchema = z.discriminatedUnion("kind", [
   messageEntrySchema,
 ]);
 const acceptedSchema = z.object({ accepted: z.literal(true) });
+const rejectedSchema = z.object({ rejected: z.literal(true) });
 const lookupsSchema = z.object({
   calls: z.array(z.object({ name: z.string(), arguments: object, result: z.string() })),
 });
@@ -289,6 +291,8 @@ interface TaskState {
   reasoning: string[];
   tools: ToolCallRecord[];
   attempts: number;
+  /** Submissions the validator saw and rejected, in order; a stateful validator is rebuilt from them. */
+  rejected: JsonObject[];
   accepted?: { input: JsonObject; messageID: string; latencyMs: number };
 }
 
@@ -300,7 +304,15 @@ function taskState(entries: readonly Entry[], task: string, submission: string) 
     if (entry.kind === "task") {
       if (state) break;
       if (entry.task === task)
-        state = { entry, prompted: false, usage: {}, reasoning: [], tools: [], attempts: 0 };
+        state = {
+          entry,
+          prompted: false,
+          usage: {},
+          reasoning: [],
+          tools: [],
+          attempts: 0,
+          rejected: [],
+        };
       continue;
     }
     if (!state) continue;
@@ -331,6 +343,7 @@ function taskState(entries: readonly Entry[], task: string, submission: string) 
       result: contentText(message.content),
     });
     if (message.toolName === submission) state.attempts += 1;
+    if (call && rejectedSchema.safeParse(message.details).success) state.rejected.push(call.input);
     if (call && acceptedSchema.safeParse(message.details).success) {
       state.accepted = {
         input: call.input,
@@ -440,9 +453,16 @@ async function executeTask<T>(task: AgentTask<T>, host: AgentHost): Promise<Agen
     if (prior && (prior.prompt !== task.prompt || prior.system !== task.system))
       throw new Error(`Agent task input changed: ${task.task}`);
     const state = taskState(session.entries, task.task, task.submission.name);
+    for (const input of state?.rejected ?? []) {
+      try {
+        run.submit(input);
+      } catch {
+        continue;
+      }
+    }
     if (state?.accepted)
       return {
-        ...run.result(session, state, task.validate(state.accepted.input)),
+        ...run.result(session, state, run.submit(state.accepted.input)),
         recoveryMs: performance.now() - started,
       };
     const latest = tasks.at(-1);
@@ -498,6 +518,11 @@ class TaskRun<T> {
     if (this.tool !== undefined) progress.tool = this.tool;
     if (this.usage !== undefined) progress.usage = this.usage;
     this.host.emit(progress);
+  }
+
+  submit(input: JsonObject): T {
+    rejectUndeclared(this.task.submission, input);
+    return this.task.validate(input);
   }
 
   result(session: Session, state: TaskState, value: T): AgentResult<T> {
@@ -627,7 +652,7 @@ class TaskRun<T> {
       name: definition.name,
       label: definition.name,
       description: definition.description,
-      parameters: definition.parameters,
+      parameters: object.parse(withoutClosedObjects(definition.parameters)),
       execute: async (_id, input) => {
         if (definition.name !== task.submission.name)
           throw new Error(
@@ -643,7 +668,17 @@ class TaskRun<T> {
             ],
             details: null,
           };
-        this.accepted = { value: task.validate(object.parse(input)) };
+        try {
+          this.accepted = { value: this.submit(object.parse(input)) };
+        } catch (error) {
+          return {
+            content: [
+              { type: "text", text: error instanceof Error ? error.message : String(error) },
+            ],
+            details: { rejected: true },
+            isError: true,
+          };
+        }
         return {
           content: [{ type: "text", text: SUBMISSION_ACCEPTED }],
           details: { accepted: true },
@@ -685,7 +720,7 @@ class TaskRun<T> {
     return (this.task.tools ?? []).map((tool) => ({
       name: tool.definition.name,
       description: tool.definition.description,
-      inputSchema: tool.definition.parameters,
+      inputSchema: object.parse(withoutClosedObjects(tool.definition.parameters)),
       outputSchema: { type: "string" },
       execute: (input) => this.lookup(tool, object.parse(input), calls),
     }));
@@ -703,6 +738,7 @@ class TaskRun<T> {
     this.lookups += 1;
     let result: string;
     try {
+      rejectUndeclared(tool.definition, args);
       result = tool.run(args);
     } catch (error) {
       result = `Error: ${error instanceof Error ? error.message : String(error)}`;

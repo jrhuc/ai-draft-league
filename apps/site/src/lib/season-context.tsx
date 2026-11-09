@@ -33,13 +33,15 @@ const bundle = createBundle(
   fetchBundle,
   (season) => season.season.title,
   "Could not load the season",
-  (refresh) => {
-    const live = liveRunId();
-    if (!live) return;
-    const events = new EventSource(`/api/watch/runs/${live}/events`);
-    events.addEventListener("refresh", refresh);
-    return () => events.close();
-  },
+  import.meta.env.DEV
+    ? (refresh) => {
+        const live = liveRunId();
+        if (!live) return;
+        const events = new EventSource(`/api/watch/runs/${live}/events`);
+        events.addEventListener("refresh", refresh);
+        return () => events.close();
+      }
+    : undefined,
 );
 
 export const SeasonProvider = bundle.Provider;

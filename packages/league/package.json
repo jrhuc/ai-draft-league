@@ -42,11 +42,11 @@
     "@earendil-works/pi-agent-core": "1.5.0",
     "@earendil-works/pi-ai": "1.5.0",
     "@earendil-works/pi-codemode": "1.5.0",
-    "zod": "4.6.7"
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@babel/parser": "8.0.7",
-    "@types/node": "26.6.5",
+    "@types/node": "catalog:",
     "typescript": "7.0.2",
     "vite-plus": "catalog:"
   },

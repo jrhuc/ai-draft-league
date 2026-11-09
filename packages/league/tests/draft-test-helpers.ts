@@ -88,7 +88,6 @@ export function teambuildRequest(overrides: JsonObject = {}) {
     stage: "roundrobin" as const,
     model: "fake:model",
     opponentModel: "fake:rival",
-    franchiseName: "Test Tauros",
     roster: TEAMBUILD_ROSTER,
     opponentRoster: TEAMBUILD_ROSTER.slice(0, 10),
     memory: emptyMemory("Flexible Ground offense with two speed-control modes."),

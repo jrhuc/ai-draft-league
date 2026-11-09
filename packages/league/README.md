@@ -10,7 +10,7 @@ The sibling [`apps/site`](../../apps/site) spectator app consumes validated publ
 
 ## Run locally
 
-Install Node.js 26.12.1 or newer in the 26.x line and pnpm 12.3.4. Model execution uses the [Pi](https://github.com/earendil-works/pi) agent loop (`pi-agent-core`, `pi-ai`, `pi-codemode`). Specifications are `<provider>:<model-id>` from the pi-ai catalog, or `random`, for example:
+Install Node.js 26.12.1 or newer in the 26.x line and the pnpm version pinned in the root `package.json`. Model execution uses the [Pi](https://github.com/earendil-works/pi) agent loop (`pi-agent-core`, `pi-ai`, `pi-codemode`). Specifications are `<provider>:<model-id>` from the pi-ai catalog, or `random`, for example:
 
 - `opencode:model_id` (OpenCode Zen)
 - `opencode-go:model_id` (OpenCode Go)

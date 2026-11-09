@@ -72,7 +72,7 @@ test("a team file restores the exact stats a public log leaves out", () => {
     const state = review.stateAt(position.turn);
     for (const pokemon of request.side?.pokemon ?? []) {
       const species = text(pokemon.details).split(",", 1)[0]!;
-      const mon = state.visibleMons("p1").find((entry) => entry.species === species);
+      const mon = [...state.sides.p1.mons.values()].find((entry) => entry.species === species);
       assert.ok(mon, `${species} is missing on turn ${position.turn}`);
       assert.equal(mon.brought, true);
       const [current, maximum] = text(pokemon.condition).split(" ", 1)[0]!.split("/").map(Number);
@@ -106,15 +106,19 @@ test("without a team file both seats read the same calculation", () => {
     .map((entry) => text(entry.move))
     .find((name) => Dex.moves.get(name).category !== "Status");
   assert.ok(move);
-  const call = {
+  const call = (own: "ally" | "foe", other: "ally" | "foe") => ({
     turn: turn.turn,
     tool: "estimate_damage",
-    args: { attacker: actives("p1")[0]!, defender: actives("p2")[0]!, move },
-  };
-  const fromAttacker = new ReplayReview(game, { as: "Ash" }).call(call);
+    args: {
+      attacker: `${own} ${actives("p1")[0]!}`,
+      defender: `${other} ${actives("p2")[0]!}`,
+      move,
+    },
+  });
+  const fromAttacker = new ReplayReview(game, { as: "Ash" }).call(call("ally", "foe"));
   assert.match(fromAttacker, /% of maximum HP/);
-  assert.equal(new ReplayReview(game, { as: "p2" }).call(call), fromAttacker);
-  const preview = new ReplayReview(game, { as: "Ash" }).call({ ...call, turn: 0 });
+  assert.equal(new ReplayReview(game, { as: "p2" }).call(call("foe", "ally")), fromAttacker);
+  const preview = new ReplayReview(game, { as: "Ash" }).call({ ...call("ally", "foe"), turn: 0 });
   assert.match(preview, /% of maximum HP/);
 });
 

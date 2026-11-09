@@ -29,7 +29,7 @@
 
 /* ---------- Scroll reveal ---------- */
 
-/* Applied by the shared observer in App to each direct child of .page. */
+/* Applied by ui/lib/use-reveal.ts, armed by Frame, to each direct child of .page. */
 .reveal {
   opacity: 0;
   transform: translateY(14px);

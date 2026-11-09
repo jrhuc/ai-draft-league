@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { publicSeasonBundleSchema } from "league/protocol";
 import { expect, test } from "vite-plus/test";
-import type { Match } from "../src/lib/season";
+import { statusLabel } from "../src/lib/load";
+import type { Match, SeasonBundle } from "../src/lib/season";
 
 const season = publicSeasonBundleSchema.parse(
   JSON.parse(readFileSync(new URL("../public/season-bundle.json", import.meta.url), "utf8")),
@@ -43,4 +44,30 @@ test("game summaries use exact draft board ids", () => {
       }
     }
   }
+});
+
+function at(patch: Partial<SeasonBundle["season"]>, picks = season.draft.picks): SeasonBundle {
+  return { ...season, season: { ...season.season, ...patch }, draft: { ...season.draft, picks } };
+}
+
+test("the status label follows the draft, the released weeks, and the released playoff rounds", () => {
+  const total = season.franchises.length * season.season.board.picksPerFranchise;
+  expect(statusLabel(at({ status: "draft" }, season.draft.picks.slice(0, 5)))).toBe(
+    `Drafting · pick 6 of ${total}`,
+  );
+  expect(statusLabel(at({ status: "draft" }))).toBe("Draft complete");
+  expect(statusLabel(at({ status: "regular-season", releasedThroughWeek: 3, totalWeeks: 7 }))).toBe(
+    "Through week 3 of 7",
+  );
+  const playoffs = {
+    status: "playoffs",
+    releasedThroughWeek: 7,
+    totalWeeks: 7,
+    playoffRounds: 2,
+  } satisfies Partial<SeasonBundle["season"]>;
+  expect(statusLabel(at({ ...playoffs, releasedPlayoffRounds: 0 }))).toBe("Through week 7 of 7");
+  expect(statusLabel(at({ ...playoffs, releasedPlayoffRounds: 1 }))).toBe(
+    "Playoffs · round 1 of 2",
+  );
+  expect(statusLabel(at({ status: "complete" }))).toBe("Season complete");
 });

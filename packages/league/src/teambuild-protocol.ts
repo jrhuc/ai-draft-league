@@ -7,7 +7,7 @@ import type { AgentRunner } from "./agent-runtime.js";
 import type { JsonObject } from "./types.js";
 import type { TeamBuildSetView, TeamBuildView } from "./views.js";
 
-export const TEAMBUILD_RATIONALE_LIMIT = 2_000;
+const TEAMBUILD_RATIONALE_LIMIT = 2_000;
 export const TEAMBUILD_NOTEBOOK_LIMIT = 4_000;
 export const STATS = ["hp", "atk", "def", "spa", "spd", "spe"] as const;
 
@@ -60,14 +60,9 @@ export const teamBuildReplySchema = z.object(
   {
     team_plan: z
       .string({ error: "must be a string when supplied" })
+      .max(TEAMBUILD_RATIONALE_LIMIT, `must be at most ${TEAMBUILD_RATIONALE_LIMIT} characters`)
       .describe(
         `2-5 sentences on how these six play together; shown to your pilot in battle. At most ${TEAMBUILD_RATIONALE_LIMIT} characters.`,
-      )
-      .optional(),
-    notebook: z
-      .string({ error: "must be a string when supplied" })
-      .describe(
-        `Replacement for your private notebook, at most ${TEAMBUILD_NOTEBOOK_LIMIT} characters after trimming; omit to keep the current notebook.`,
       )
       .optional(),
     sets: z
@@ -89,24 +84,19 @@ export interface TeamBuildCandidate {
   types: string[];
 }
 
-interface TeamBuildConstraintBase {
+export interface TeamBuildConstraint {
+  kind: "draft-picks";
   id: string;
   teamSize: number;
   candidates: readonly TeamBuildCandidate[];
 }
 
-export type TeamBuildConstraint =
-  | ({ kind: "draft-picks" } & TeamBuildConstraintBase)
-  | ({ kind: "frozen-candidate-pool" } & TeamBuildConstraintBase);
-
-export type TeamBuildObjective =
-  | {
-      kind: "matchup";
-      stage: "roundrobin" | "playoff";
-      opponent: { model: string; candidates: readonly TeamBuildCandidate[] };
-      priorContext: readonly string[];
-    }
-  | { kind: "general"; brief?: string };
+export interface TeamBuildObjective {
+  kind: "matchup";
+  stage: "roundrobin" | "playoff";
+  opponent: { model: string; candidates: readonly TeamBuildCandidate[] };
+  priorContext: readonly string[];
+}
 
 export interface TeamBuildTaskProvenance {
   source: string;
@@ -146,7 +136,6 @@ export interface TeamBuildArtifact {
 
 export interface TeamBuildRefereeOptions {
   psDir?: string;
-  attempts?: number;
   createdAt?: string;
 }
 
@@ -173,7 +162,6 @@ export interface TeamBuildRequest {
   stage: "roundrobin" | "playoff";
   model: string;
   opponentModel: string;
-  franchiseName: string;
   roster: TeamBuildCandidate[];
   opponentRoster: TeamBuildCandidate[];
   memory: FranchiseMemory;
@@ -194,27 +182,20 @@ const candidateSchema = z
   })
   .transform((candidate): TeamBuildCandidate => candidate);
 
-const constraintBaseSchema = {
+const constraintSchema = z.strictObject({
+  kind: z.literal("draft-picks"),
   id: z.string(),
   teamSize: z.number(),
   candidates: z.array(candidateSchema),
-};
-
-const constraintSchema = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("draft-picks"), ...constraintBaseSchema }),
-  z.strictObject({ kind: z.literal("frozen-candidate-pool"), ...constraintBaseSchema }),
-]);
+});
 
 const objectiveSchema = z
-  .discriminatedUnion("kind", [
-    z.strictObject({
-      kind: z.literal("matchup"),
-      stage: z.union([z.literal("roundrobin"), z.literal("playoff")]),
-      opponent: z.strictObject({ model: z.string(), candidates: z.array(candidateSchema) }),
-      priorContext: z.array(z.string()),
-    }),
-    z.strictObject({ kind: z.literal("general"), brief: z.string().optional() }),
-  ])
+  .strictObject({
+    kind: z.literal("matchup"),
+    stage: z.union([z.literal("roundrobin"), z.literal("playoff")]),
+    opponent: z.strictObject({ model: z.string(), candidates: z.array(candidateSchema) }),
+    priorContext: z.array(z.string()),
+  })
   .transform((objective): TeamBuildObjective => objective);
 
 const provenanceSchema = z
@@ -290,18 +271,15 @@ export function canonicalTeamBuildTask(task: TeamBuildTask): TeamBuildTask {
     teamSize: task.constraint.teamSize,
     candidates,
   };
-  const objective: TeamBuildObjective =
-    task.objective.kind === "general"
-      ? { ...task.objective }
-      : {
-          kind: "matchup",
-          stage: task.objective.stage,
-          opponent: {
-            model: task.objective.opponent.model,
-            candidates: task.objective.opponent.candidates.map(canonicalCandidate),
-          },
-          priorContext: [...task.objective.priorContext],
-        };
+  const objective: TeamBuildObjective = {
+    kind: "matchup",
+    stage: task.objective.stage,
+    opponent: {
+      model: task.objective.opponent.model,
+      candidates: task.objective.opponent.candidates.map(canonicalCandidate),
+    },
+    priorContext: [...task.objective.priorContext],
+  };
   return {
     id: task.id,
     model: task.model,
@@ -350,10 +328,9 @@ function replyIssueMessage(issue: z.core.$ZodIssue): string {
 export function parseTeamBuildResponse(input: JsonObject, task: TeamBuildTask): ParsedTeamBuild {
   const reply = teamBuildReplySchema.safeParse(input);
   if (!reply.success) throw new Error(replyIssueMessage(reply.error.issues[0]!));
-  const { sets, team_plan, notebook } = reply.data;
-  const evidence = normalizeStageEvidence(team_plan, notebook, {
+  const { sets, team_plan } = reply.data;
+  const evidence = normalizeStageEvidence(team_plan, undefined, {
     currentNotebook: task.notebook,
-    rationaleLimit: TEAMBUILD_RATIONALE_LIMIT,
     notebookLimit: TEAMBUILD_NOTEBOOK_LIMIT,
   });
   return { sets, evidence };

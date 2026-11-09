@@ -119,7 +119,6 @@ async function teambuildFor(
       stage: plan.stage,
       model: entrants[entrant]!,
       opponentModel: entrants[opponent]!,
-      franchiseName: franchise.teamName,
       roster: franchise.roster,
       opponentRoster: rival.roster,
       memory: franchise.memory,

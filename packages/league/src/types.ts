@@ -29,6 +29,8 @@ export interface BattleActiveRequest extends JsonObject {
   moves: BattleMoveRequest[];
   canMegaEvo?: boolean | undefined;
   trapped?: boolean | undefined;
+  /** Showdown cannot say yet whether an unrevealed opposing ability traps this Pokémon. */
+  maybeTrapped?: boolean | undefined;
 }
 
 export interface BattlePokemonRequest extends JsonObject {

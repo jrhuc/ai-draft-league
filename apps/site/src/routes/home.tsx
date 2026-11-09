@@ -5,17 +5,9 @@ import { TeamTag, teamStyle } from "@/components/team";
 import { Mark, Model } from "ui/components/mark";
 import { Sprite } from "ui/components/sprite";
 import { formatLabel } from "ui/lib/format";
-import { allMatches, franchise } from "@/lib/load";
+import { allMatches, franchise, statusLabel } from "@/lib/load";
 import { useSeason, useTitle } from "@/lib/season-context";
 import { deployedTraces, traceArchiveUrl } from "@/lib/traces";
-
-function statusLine(s: ReturnType<typeof useSeason>["season"]): string {
-  if (s.status === "complete") return "Season complete";
-  if (s.status === "playoffs")
-    return `Playoffs · round ${s.releasedPlayoffRounds} of ${s.playoffRounds}`;
-  if (s.status === "regular-season") return `Week ${s.releasedThroughWeek} of ${s.totalWeeks}`;
-  return "Draft complete";
-}
 
 export function HomePage() {
   const season = useSeason();
@@ -35,7 +27,7 @@ export function HomePage() {
   return (
     <>
       <section className="hero">
-        <span className="label">{statusLine(s)}</span>
+        <span className="label">{statusLabel(season)}</span>
         <h1>{s.title}</h1>
         <p className="sub">
           {season.franchises.length} language models each drafted {s.board.picksPerFranchise}{" "}
@@ -95,7 +87,7 @@ export function HomePage() {
             <h2>Standings</h2>
             <p>Top {s.playoffRounds === 2 ? 4 : 2} make the playoffs.</p>
           </div>
-          <Standings compact />
+          <Standings />
         </section>
 
         <section className="section">

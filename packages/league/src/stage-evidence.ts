@@ -1,5 +1,5 @@
 import type { JsonValue } from "./types.js";
-import { clip, isText } from "./value.js";
+import { isText } from "./value.js";
 
 interface EvidenceSupplied {
   rationale: boolean;
@@ -14,7 +14,6 @@ export interface StageEvidence {
 
 interface StageEvidenceOptions {
   currentNotebook: string;
-  rationaleLimit: number;
   notebookLimit: number;
 }
 /** Optional evidence is distinguished by field presence: an absent notebook retains prior context,
@@ -29,7 +28,7 @@ export function normalizeStageEvidence(
   if (hasNotebook && notebook.trim().length > options.notebookLimit)
     throw new Error(`notebook exceeds ${options.notebookLimit} characters`);
   return {
-    rationale: hasRationale ? clip(rationale.trim(), options.rationaleLimit) : "",
+    rationale: hasRationale ? rationale.trim() : "",
     notebook: hasNotebook ? notebook.trim() : options.currentNotebook,
     supplied: { rationale: hasRationale, notebookUpdate: hasNotebook },
   };

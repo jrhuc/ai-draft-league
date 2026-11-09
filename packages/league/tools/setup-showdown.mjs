@@ -23,6 +23,7 @@ const requiredBuildFiles = [
   "dist/server/room-battle.js",
 ];
 const runtimePackages = ["ts-chacha20"];
+const revisionMarker = path.join("dist", ".vgc-model-league-revision");
 
 if (lock.repository !== repository || !/^[0-9a-f]{40}$/.test(lock.commit)) {
   throw new Error(
@@ -50,12 +51,23 @@ function revision() {
   }
 }
 
-function assertBuild() {
-  const requiredFiles = [
+function missingBuildFiles() {
+  return [
     ...requiredBuildFiles,
     ...runtimePackages.map((name) => `node_modules/${name}/package.json`),
-  ];
-  const missing = requiredFiles.filter((file) => !fs.existsSync(path.join(directory, file)));
+  ].filter((file) => !fs.existsSync(path.join(directory, file)));
+}
+
+function builtRevision() {
+  try {
+    return fs.readFileSync(path.join(directory, revisionMarker), "utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
+function assertBuild() {
+  const missing = missingBuildFiles();
   if (missing.length) {
     throw new Error(
       `Pokémon Showdown is not built (${missing.join(", ")} missing); run pnpm run setup:showdown`,
@@ -120,11 +132,7 @@ function buildRevision(commit) {
   run("npm", ["--ignore-scripts", "--prefix", directory, "ci"]);
   run("npm", ["--ignore-scripts", "--prefix", directory, "run", "build-npm"]);
   retainRuntimePackages(packageLock);
-  fs.writeFileSync(
-    path.join(directory, "dist", ".vgc-model-league-revision"),
-    `${commit}\n`,
-    "utf8",
-  );
+  fs.writeFileSync(path.join(directory, revisionMarker), `${commit}\n`, "utf8");
   assertBuild();
 }
 
@@ -186,6 +194,11 @@ function main() {
   if (checkOnly) {
     assertBuild();
     console.log(`Pokémon Showdown ${lock.commit.slice(0, 12)} is pinned and built`);
+    return;
+  }
+
+  if (!updateMode && builtRevision() === target && !missingBuildFiles().length) {
+    console.log(`Pokémon Showdown ${target.slice(0, 12)} is ready`);
     return;
   }
 

@@ -148,7 +148,7 @@ function storedSeriesFromRow(
   };
 }
 
-/** The stored series for a schedule slot, which must have been recorded under the same identity. */
+/** The stored series for a schedule slot. A finished series is adopted as recorded; an unfinished one resumes only under the identity it started with, since its remaining games replay from it. */
 export function findStoredSeries(
   runDir: string,
   seriesIndex: number,
@@ -162,7 +162,7 @@ export function findStoredSeries(
         .get(seriesIndex);
       if (!value) return undefined;
       const stored = storedSeriesFromRow(database, runDir, value);
-      if (!isDeepStrictEqual(stored.identity, identity)) {
+      if (!stored.completedAttemptId && !isDeepStrictEqual(stored.identity, identity)) {
         throw new Error(`recorded series identity mismatch for schedule slot ${seriesIndex}`);
       }
       return stored;

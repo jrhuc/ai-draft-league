@@ -48,8 +48,16 @@ export type ReplayGameView = {
   reflections: ReplayReflection[];
 };
 
-function escapeLog(value: string): string {
+function escapeHtml(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;");
+}
+
+/**
+ * Showdown's replay-embed.js reads the log script's raw text and undoes only
+ * `\/`, so that is the one escape the log may carry.
+ */
+function escapeLog(log: string): string {
+  return log.replaceAll("/", "\\/");
 }
 
 function replayLog(raw: string, teams: [Team, Team]): string {
@@ -58,8 +66,9 @@ function replayLog(raw: string, teams: [Team, Team]): string {
   const collide = teams[0].name === teams[1].name;
   for (const [, pid, recorded] of names) {
     const team = teams[pid === "p1" ? 0 : 1];
-    const label = collide ? `${team.name} (${pid?.toUpperCase()})` : team.name;
-    log = log.replaceAll(recorded!, label);
+    const name = team.name.replaceAll("|", "");
+    const label = collide ? `${name} (${pid?.toUpperCase()})` : name;
+    log = log.replaceAll(recorded!, () => label);
   }
   return log;
 }
@@ -70,7 +79,7 @@ function replayDoc(raw: string, teams: [Team, Team], title: string): string {
 <meta charset="utf-8" />
 <meta name="referrer" content="no-referrer" />
 <!-- version 1 -->
-<title>${escapeLog(title)}</title>
+<title>${escapeHtml(title)}</title>
 <div class="wrapper replay-wrapper" style="max-width:1180px;margin:0 auto">
 <input type="hidden" name="replayid" value="${replayId}" />
 <div class="battle"></div><div class="battle-log"></div><div class="replay-controls"></div><div class="replay-controls-2"></div>

@@ -59,6 +59,7 @@ test("seat bridge keeps a pending exchange, tools, and private context behind on
         {
           definition: { name: "lookup_move", description: "Look up move", parameters: {} },
           run: (input) => {
+            if (input.name === undefined) throw new Error('lookup_move needs a "name"');
             lookups.push("lookup_move");
             return `result for ${text(input.name)}`;
           },
@@ -81,6 +82,9 @@ test("seat bridge keeps a pending exchange, tools, and private context behind on
       await post("/tool", { name: "lookup_move", arguments: { name: "Protect" } })
     ).json();
     assert.equal(tool.result, "result for Protect");
+    const rejected = await post("/tool", { name: "lookup_move", arguments: { move: "Protect" } });
+    assert.equal(rejected.status, 400);
+    assert.deepEqual(await rejected.json(), { error: 'lookup_move needs a "name"' });
     assert.deepEqual(lookups, ["lookup_move"]);
     const context: { query: { after: string } } = await (
       await post("/context", { after: "ctx-00000001" })

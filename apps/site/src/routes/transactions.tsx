@@ -2,23 +2,40 @@ import { TeamTag } from "@/components/team";
 import { franchiseName, monName } from "@/lib/load";
 import { useSeason, useTitle } from "@/lib/season-context";
 
+const weekList = new Intl.ListFormat("en", { type: "conjunction" });
+
+function released(weeks: number[], complete: boolean): string {
+  if (weeks.length === 0) return "";
+  const one = weeks.length === 1;
+  const after = `after week${one ? "" : "s"} ${weekList.format(weeks.map(String))}`;
+  const windows = `${weeks.length} transaction window${one ? "" : "s"}`;
+  return complete
+    ? `This season had ${windows}, ${after}. `
+    : `So far ${windows} ${one ? "has" : "have"} been released, ${after}. `;
+}
+
 export function TransactionsPage() {
   const season = useSeason();
   useTitle("Transactions");
   const windows = season.transactions;
+  const complete = season.season.status === "complete";
   return (
     <>
       <section className="hero">
         <span className="label">Transactions</span>
         <h1>Trades and free agency</h1>
         <p className="sub">
-          Mid-season, each team may offer one trade and then swap from the undrafted pool. Each
-          offer shows the message the model sent and the reason it stated privately.
+          {released(
+            windows.map((window) => window.afterWeek),
+            complete,
+          )}
+          In a transaction window, each team may offer trades and then swap from the undrafted pool.
+          Each offer shows the message the model sent and the reason it stated privately.
         </p>
       </section>
       {windows.length === 0 ? (
         <p className="card card-pad hint">
-          {season.season.status === "complete"
+          {complete
             ? "This season had no transaction window."
             : "No transaction window has been released yet."}
         </p>
@@ -59,7 +76,11 @@ export function TransactionsPage() {
                       )}
                     </>
                   ) : (
-                    <span className="arrow">made no offer</span>
+                    <span className="arrow">
+                      {window.offers.some((other) => other.from === offer.from && other.to)
+                        ? "made no further offer"
+                        : "made no offer"}
+                    </span>
                   )}
                 </div>
                 {offer.message ? <blockquote>“{offer.message}”</blockquote> : null}

@@ -33,7 +33,6 @@ export type {
   RunTradeWindowOptions,
   TradeOffer,
   TradeOfferOutcome,
-  TradePromptRenderOptions,
   TradeSwap,
   TradeWindowArtifact,
   TradeWindowConfig,
@@ -44,9 +43,4 @@ export type {
   TradeWindowState,
   TransactionSchedule,
 } from "./trade-window-protocol.js";
-export {
-  renderFreeAgencyPrompt,
-  renderTradeOfferPrompt,
-  runTradeWindow,
-  transactionLogDir,
-} from "./trade-window-runtime.js";
+export { runTradeWindow, transactionLogDir } from "./trade-window-runtime.js";

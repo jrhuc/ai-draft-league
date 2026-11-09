@@ -311,6 +311,7 @@ export async function runSeasonReview(
       return review;
     },
   );
+  options.signal?.throwIfAborted();
   reviews.push(...fresh);
   return reviews;
 }

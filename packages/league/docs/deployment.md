@@ -20,11 +20,11 @@ Without `--out`, the exporter writes `artifacts/public/seasons/{run_id}/season-b
 
 The exporter validates the projection before writing it. Run `vp fmt apps/site/public` and commit `apps/site/public/season-bundle.json` so the build contains the release. The trace files are never committed: they are megabytes per game, so they deploy from the exporting machine as the separate `traces` assets-only Worker, routed at `/traces/*` on the site's zone. The exporter also writes `manifest.json` there; the site fetches it at boot and shows trace links and downloads only for the games it lists for the bundle's run, so a site deploy without a matching traces deploy simply shows no trace links.
 
-From the repository root, deploy the spectator app and then the traces:
-
 The trace contract includes `runId` in every game file and `digests` in the manifest, indexed by series and positive game number. This map is also the released-game index. Each digest is the SHA-256 of `JSON.stringify` applied to the schema-parsed game payload. The viewer validates that fingerprint before displaying a trace and refuses mismatched releases. Regenerate older trace exports before publishing this viewer; old manifests are rejected rather than treated as current. Rebuild the league package after protocol changes because the apps import its built protocol.
 
 Exports replace their output files individually, writing traces and the archive before the manifest and bundle. Other files in the destination are preserved, including earlier exports. Use a fresh trace destination for a clean deployment set. Publication across the bundle and trace files is not transactional.
+
+From the repository root, deploy the spectator app and then the traces:
 
 ```sh
 pnpm --filter site run deploy

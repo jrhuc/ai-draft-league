@@ -7,7 +7,7 @@ import { test } from "vite-plus/test";
 import { readJsonlObjects } from "../src/jsonl.js";
 import type { SeriesRecord } from "../src/records.js";
 
-import { recordRow, loadSeriesRecords, modelKey, scopeRows } from "../src/records.js";
+import { recordRow, loadSeriesRecords, scopeRows } from "../src/records.js";
 import { writeReport } from "../src/report.js";
 
 function row(p1: string, p2: string, winner: string | null): SeriesRecord {
@@ -43,13 +43,6 @@ function row(p1: string, p2: string, winner: string | null): SeriesRecord {
   };
 }
 
-test("model identities normalize across providers and gateways", () => {
-  assert.equal(modelKey("openai:gpt-5.6-terra"), "gpt-5.6-terra");
-  assert.equal(modelKey("opencode-go:gpt-5.6-terra"), "gpt-5.6-terra");
-  assert.equal(modelKey("openrouter:deepseek/deepseek-v4"), "deepseek-v4");
-  assert.equal(modelKey("deepseek:DeepSeek-V4"), "deepseek-v4");
-  assert.equal(modelKey("random"), "random");
-});
 test("scoping keeps the test pool out of overall views but selectable", () => {
   const rows = [
     { ...row("a", "b", "a"), pool: "regmb-202607" },

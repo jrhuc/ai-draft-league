@@ -162,7 +162,8 @@ export async function runPlayoffPhase(
       outcome: "You won the final. You are the league champion and the season is over.",
     },
   ]);
+  await finish();
+  if (options.signal?.aborted) return;
   runtime.transition({ phase: "done", champion });
   options.onEvent?.({ type: "draft", draft: runtime.draftView(true) });
-  return finish();
 }

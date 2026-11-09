@@ -134,6 +134,60 @@ test("readPredictions understands both result vocabularies and forced-switch tur
   );
 });
 
+test("what-if estimates and a target that healed first are not held against the calculator", () => {
+  const whatIf = (prefix: string): Call => {
+    const call = damage("Garchomp", "Pikachu", "Earthquake", "5-9%", "No OHKO at either.");
+    return { ...call, result: `${prefix}\n${call.result}` };
+  };
+  const ordered = damage("Garchomp", "Pikachu", "Earthquake", "5-9%", "No OHKO at either.");
+  const predictions = readPredictions([
+    trace("p1", 1, [
+      whatIf("Hypothetical: weather rain (live: none)."),
+      whatIf("Hypothetical Mega Evolution: projected forme, ability, and raw stats."),
+      whatIf("Hypothetical switch-in into either slot (the result is the same for each)."),
+      {
+        ...ordered,
+        result: `${ordered.result} Turn order matters: that range is Garchomp acting before Pikachu.`,
+      },
+      {
+        ...order("Garchomp", "Pikachu", ["Earthquake", "Fake Out"]),
+        result: "Hypothetical: Tailwind up for Garchomp.\nGarchomp is guaranteed to act first",
+      },
+    ]),
+  ]);
+  assert.deepEqual(predictions, { damage: [], order: [] });
+
+  const healed = [
+    "|switch|p1a: Garchomp|Garchomp, L50, M|185/185",
+    "|switch|p2a: Pikachu|Pikachu, L50, M|40/100",
+    "|turn|1",
+    "|move|p2a: Pikachu|Recover|p2a: Pikachu",
+    "|-heal|p2a: Pikachu|75/100",
+    "|move|p1a: Garchomp|Dragon Claw|p2a: Pikachu",
+    "|-damage|p2a: Pikachu|30/100",
+    "|turn|2",
+  ];
+  const call = damage("Garchomp", "Pikachu", "Dragon Claw", "40-50%", "");
+  const audit = auditGame(1, healed, {
+    p1: [
+      trace("p1", 1, [
+        {
+          ...call,
+          result: call.result
+            .replace("Target HP shown: 100%.", "Target HP shown: 40%.")
+            .replace("applied", "KO from the shown 40% at both evaluated endpoints. applied"),
+        },
+      ]),
+    ],
+    p2: [],
+  });
+  assert.deepEqual(
+    audit.findings.map((finding) => finding.kind),
+    [],
+    "the hit landed on more HP than the estimate was shown",
+  );
+});
+
 test("auditGame reports falsified KO calls, out-of-range hits, and inverted order", () => {
   const p1 = [
     trace("p1", 1, [

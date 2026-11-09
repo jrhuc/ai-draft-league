@@ -9,7 +9,6 @@ import {
   teamBuildArtifactSchema,
   teamBuildJournalRowSchema,
   TEAMBUILD_NOTEBOOK_LIMIT,
-  TEAMBUILD_RATIONALE_LIMIT,
   type TeamBuildRefereeOptions,
   validateTeamBuildTask,
 } from "./teambuild-protocol.js";
@@ -42,8 +41,7 @@ export function decodeTeamBuildJournalRow(
     !Number.isSafeInteger(provenance.entrant) ||
     Number(provenance.entrant) < 0 ||
     !Number.isSafeInteger(provenance.opponent) ||
-    Number(provenance.opponent) < 0 ||
-    artifact.task.objective.kind !== "matchup"
+    Number(provenance.opponent) < 0
   ) {
     throw new Error(`${label} does not carry complete draft-league provenance and a valid action`);
   }
@@ -85,11 +83,7 @@ export function replayTeamBuildArtifact(
   const normalized = normalizeStageEvidence(
     artifact.evidence.rationale,
     artifact.evidence.supplied.notebookUpdate ? artifact.evidence.notebook : undefined,
-    {
-      currentNotebook: task.notebook,
-      rationaleLimit: TEAMBUILD_RATIONALE_LIMIT,
-      notebookLimit: TEAMBUILD_NOTEBOOK_LIMIT,
-    },
+    { currentNotebook: task.notebook, notebookLimit: TEAMBUILD_NOTEBOOK_LIMIT },
   );
   if (
     artifact.evidence.rationale !== normalized.rationale ||
