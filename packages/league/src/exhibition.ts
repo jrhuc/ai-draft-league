@@ -9,7 +9,7 @@ import { type AgentRuntime, withAgentHost, type AgentProgress } from "./agent-ru
 import { LLMEngine } from "./llm-engine.js";
 import { defaultPsDir, RESULTS_PATH } from "./paths.js";
 import type { ReasoningLevel } from "./providers.js";
-import { parseSpec, validateReasoning } from "./providers.js";
+import { isModelSeat, parseSpec, validateReasoning } from "./providers.js";
 import { resolveSeed, seededRng } from "./random.js";
 import type { SeriesRecord } from "./records.js";
 import { recordRow } from "./records.js";
@@ -57,7 +57,7 @@ async function executeExhibition(
   const seatSide: Pid = options.seat ?? "p1";
   const oppSide: Pid = seatSide === "p1" ? "p2" : "p1";
   const seatName = options.name ?? "cli-agent";
-  if (options.opponent !== "random") parseSpec(options.opponent);
+  parseSpec(options.opponent);
   validateReasoning(options.reasoning);
   const notice = options.onNotice ?? (() => {});
   const psDir = options.psDir ?? defaultPsDir();
@@ -90,7 +90,7 @@ async function executeExhibition(
       isolated: false,
     },
     [oppSide]: {
-      adapter: options.opponent === "random" ? "random-engine" : "pi-agent",
+      adapter: isModelSeat(options.opponent) ? "pi-agent" : `${options.opponent}-engine`,
     },
   };
   writeAtomicJson(

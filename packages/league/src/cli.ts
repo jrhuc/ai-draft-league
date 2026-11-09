@@ -133,7 +133,7 @@ Commands:
       --provenance disclosed (default) may name the event and teams; placements/finishes stay withheld
       blind withholds the event context too
       --resume continues a stopped bracket: finished series stand; only an eligible interrupted series
-      with matching native requests replays recorded decisions without provider calls. Random-seat,
+      with matching recorded requests replays its decisions without provider calls. Random-seat,
       timer-autodefault, and other ineligible cases may restart or continue live (models, pool, seed,
       and provenance come from the run's recorded config)
   monitor <run-dir|run-id> [--json]   harness monitors for a league run: decision integrity, tool predictions
@@ -175,7 +175,7 @@ Commands:
   exhibition --opponent <spec>        host one bo3 where a terminal agent plays a seat over a local bridge
       [--seat p1|p2] [--name <label>] [--pool <name>] [--seed <n>] [--port <n>] [--reasoning <level>]
       [--agent-dir <path>]
-      opponent specs: <provider>:<model-id> or random
+      opponent specs: <provider>:<model-id>, random, or bot
   outcomes [--pool <name>]            print contextual per-series outcomes without an aggregate ranking
   report [--out <path>] [--pool <name>]  write an HTML report
   export-season --run <id> --through-week <n> [--title <text>] [--out <file>] [--traces-dir <dir>]
@@ -186,7 +186,7 @@ Commands:
       atomically write one validated public tournament bundle for a pool bracket;
       every recorded series is released, unplayed bracket slots stay open
 
-Model specs are <provider>:<model-id> from the pi-ai catalog, or random. Each provider reads
+Model specs are <provider>:<model-id> from the pi-ai catalog, random, or bot. Each provider reads
 its API key from the environment (OPENCODE_API_KEY, OPENROUTER_API_KEY, GEMINI_API_KEY, ...).
 --reasoning sets a thinking level: minimal, low, medium, high, or xhigh and max where the model offers them.
 --progress streams live agent activity and session spend on stderr for every run mode.
