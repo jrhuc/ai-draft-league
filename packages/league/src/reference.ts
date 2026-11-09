@@ -23,6 +23,7 @@ import type {
   SpeedProfile,
   SpeedProfileInput,
 } from "./reference-contracts.js";
+import { bulkToSurvive, findSpecies, findSpeciesArgumentsSchema } from "./reference-search.js";
 import {
   baseStats,
   canonicalWeather,
@@ -39,6 +40,7 @@ import {
   statSet,
   STAT_IDS,
   TARGET_TAGS,
+  piercesGhostImmunity,
   typeModifier,
   uniqueNames,
   visibleDamageBlock,
@@ -353,11 +355,16 @@ export class ShowdownReference {
           const target = this.dex.species.get(defender.species);
           if (!target.exists) continue;
           examined = true;
-          const modifier = typeModifier(this.dex, moveType, target.types);
+          const ability = attacker.ability ?? "";
+          const modifier = typeModifier(this.dex, moveType, target.types, ability);
           const blockedBy = visibleDamageBlock(attacker, defender, move, moveType, modifier);
           if (blockedBy)
             bits.push(
               `${target.name} immune via ${blockedBy} (type chart ${effectivenessLabel(modifier)})`,
+            );
+          else if (piercesGhostImmunity(ability, moveType, target.types))
+            bits.push(
+              `${target.name} ${effectivenessLabel(modifier)} (${ability} ignores the Ghost immunity)`,
             );
           else if (modifier !== 1) bits.push(`${target.name} ${effectivenessLabel(modifier)}`);
         }
@@ -503,6 +510,10 @@ export class ShowdownReference {
     if (name === "lookup_matchup") return this.lookupMatchup(matchupArgumentsSchema.parse(args));
     if (name === "estimate_damage")
       return estimateDamage(this.calculationContext(), estimateDamageArgumentsSchema.parse(args));
+    if (name === "find_species")
+      return findSpecies(this.calculationContext(), findSpeciesArgumentsSchema.parse(args));
+    if (name === "bulk_to_survive")
+      return bulkToSurvive(this.calculationContext(), estimateDamageArgumentsSchema.parse(args));
     return `Unknown tool: ${name}`;
   }
 
@@ -632,7 +643,22 @@ export class ShowdownReference {
     const type = this.dex.types.get(attackType);
     if (!type.exists) return `No type data for ${JSON.stringify(attackType)}.`;
     const source = moveName ? `${moveName} (${type.name}${typeNote})` : type.name;
-    return `${source} into ${defender.name} (${defender.types.join("/")}): ${effectivenessDetail(this.dex, type.name, defender.types)}.`;
+    const abilities = attacker?.exists
+      ? Object.values(attacker.abilities).flatMap((entry) => (entry ? [entry] : []))
+      : [];
+    const piercing = abilities.find((ability) =>
+      piercesGhostImmunity(ability, type.name, defender.types),
+    );
+    const chart = effectivenessDetail(this.dex, type.name, defender.types);
+    const pierced = piercing
+      ? effectivenessDetail(this.dex, type.name, defender.types, piercing)
+      : undefined;
+    const detail = !pierced
+      ? chart
+      : abilities.length === 1
+        ? pierced
+        : `${chart}; with ${piercing}: ${pierced}`;
+    return `${source} into ${defender.name} (${defender.types.join("/")}): ${detail}.`;
   }
 
   private lookupOne(

@@ -7,17 +7,29 @@ import { z } from "zod";
 import type { AgentProgress } from "./agent-runtime.js";
 import type { DraftLeagueOptions } from "./draftleague-protocol.js";
 import type { ExhibitionOptions } from "./exhibition.js";
+import { serveBridge } from "./eval-bridge.js";
 import { exportSeasonBundle } from "./export-season.js";
 import { draftLeagueConfigSchema } from "./league-store.js";
-import { makeRunDirectory, prepareDataDirectories, RESULTS_PATH, RUNS_DIR } from "./paths.js";
+import {
+  defaultPsDir,
+  makeRunDirectory,
+  prepareDataDirectories,
+  RESULTS_PATH,
+  RUNS_DIR,
+} from "./paths.js";
+import { servePositions } from "./position-value.js";
 import type { ReasoningLevel } from "./providers.js";
 import { isReasoningLevel } from "./providers.js";
 import type { ParsedSeriesRecord, SeriesRecord } from "./records.js";
 import { monitorRun, renderMonitorReport } from "./monitor.js";
 import { loadSeriesRecords, scopeRows, TEST_POOL } from "./records.js";
+import { ShowdownReference } from "./reference.js";
+import { loadReplay } from "./replay-log.js";
+import { replayCallSchema, replayForkSchema, ReplayReview } from "./replay-review.js";
 import { writeReport } from "./report.js";
 import { runRotation } from "./rotation.js";
 import { withRunStatus } from "./run-status.js";
+import { loadShowdown } from "./showdown.js";
 import type { ExperimentOptions } from "./series.js";
 import { teamProvenanceSchema, type Team } from "./teams.js";
 import { parseTimerScale } from "./timer.js";
@@ -25,6 +37,16 @@ import type { TournamentOptions } from "./tournament.js";
 import { tournamentConfigSchema } from "./tournament.js";
 import type { TimerScale } from "./types.js";
 import { asRecord, count, text } from "./value.js";
+
+const DEFAULT_DEX_FORMAT = "gen9championsvgc2026regmcbo3";
+
+const dexCallSchema = z.object({
+  tool: z.string(),
+  args: z.record(z.string(), z.json()).default({}),
+});
+
+const listed = <T extends z.ZodType>(schema: T) =>
+  z.union([schema.transform((one): z.output<T>[] => [one]), z.array(schema)]);
 
 const EXPERIMENT_CLI_OPTIONS = {
   models: { type: "string", multiple: true },
@@ -116,6 +138,23 @@ Commands:
       and provenance come from the run's recorded config)
   monitor <run-dir|run-id> [--json]   harness monitors for a league run: decision integrity, tool predictions
       against the simulator, draft horizon, roster usage and retention, memory continuity per barrier
+  bridge                              play one battle for an external driver over JSON lines on stdio:
+      open, tools, system, start, call, submit, outcome, audit (used by the league-evals Inspect tasks)
+  positions                           value recorded turn decisions: one game per JSON line on stdin
+      (source, log, settings, only), one line out per game and per valued decision with the win rate
+      of every accepted action under a damage-greedy continuation
+  replay <url|id|file>... [--as <player|p1|p2>] [--team <export file>]
+      print public Showdown replays as one player saw them: both sheets, the state at every decision
+      with the calculators' type and Speed references, and what happened; --team gives exact own stats
+      [--calc <json|->] run calculator and lookup tools against one replay instead: {turn, tool, args}
+      or a list of them, turn 0 being team preview, - reading the JSON from stdin
+      [--fork <json|->] what-ifs from the game rebuilt in the simulator: {turn, do: options | play | table,
+      you?, they?, samples?}, where you and they are Showdown commands and default to what was played
+  dex <json|-> [--format <id>]       run the calculator and lookup tools with no game: {tool, args} or a list,
+      - reading the JSON from stdin; the format defaults to ${DEFAULT_DEX_FORMAT}. Besides the
+      replay tools, find_species lists format-legal species by moves, types, and abilities, and
+      bulk_to_survive takes estimate_damage arguments and finds the cheapest defender investment
+      that survives the max roll
   draft --models <spec> <spec>...     snake-draft rosters from a board, then a weekly round robin and playoffs
       each coach drafts 10 within a 100-point budget, then picks 6 and builds every set before each match
       [--board <name>] [--seed <n>] [--concurrency <n>] [--reasoning <level>] [--timer-scale <n|off>]
@@ -218,6 +257,91 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   prepareDataDirectories();
   const [command, ...rest] = argv;
   if (command === "selfcheck") return selfcheck();
+  if (command === "bridge") {
+    await serveBridge();
+    return 0;
+  }
+  if (command === "positions") {
+    await servePositions();
+    return 0;
+  }
+  if (command === "dex") {
+    const { values, positionals } = parseArgs({
+      args: rest,
+      allowPositionals: true,
+      options: { format: { type: "string", default: DEFAULT_DEX_FORMAT } },
+    });
+    const [requests] = positionals;
+    if (requests === undefined || positionals.length > 1)
+      throw new Error("dex takes one JSON tool call, a list of them, or - for stdin");
+    if (!loadShowdown(defaultPsDir()).Dex.formats.get(values.format).exists)
+      throw new Error(`the pinned Showdown has no format ${values.format}`);
+    const reference = new ShowdownReference(values.format);
+    const input = JSON.parse(requests === "-" ? fs.readFileSync(0, "utf8") : requests);
+    for (const call of listed(dexCallSchema).parse(input)) {
+      let result: string;
+      try {
+        result = reference.lookup(call.tool, call.args);
+      } catch (error) {
+        result = error instanceof Error ? error.message : String(error);
+      }
+      console.log(`## ${call.tool} ${JSON.stringify(call.args)}\n${result}\n`);
+    }
+    return 0;
+  }
+  if (command === "replay") {
+    const { values, positionals } = parseArgs({
+      args: rest,
+      allowPositionals: true,
+      options: {
+        as: { type: "string" },
+        team: { type: "string" },
+        calc: { type: "string" },
+        fork: { type: "string" },
+      },
+    });
+    if (!positionals.length) throw new Error("replay needs a replay URL, replay id, or file");
+    const options = {
+      as: values.as,
+      paste: values.team === undefined ? undefined : fs.readFileSync(values.team, "utf8"),
+    };
+    const games = [];
+    for (const ref of positionals) games.push(await loadReplay(ref));
+    games.sort((a, b) => (a.series?.game ?? 0) - (b.series?.game ?? 0));
+    const reviews = games.map((game) => new ReplayReview(game, options));
+    const requests = values.calc ?? values.fork;
+    if (requests === undefined) {
+      console.log(reviews.map((review) => review.render()).join("\n\n"));
+      return 0;
+    }
+    const [review] = reviews;
+    if (!review || reviews.length > 1) throw new Error("--calc and --fork take exactly one replay");
+    const input = JSON.parse(requests === "-" ? fs.readFileSync(0, "utf8") : requests);
+    const answers =
+      values.calc === undefined
+        ? listed(replayForkSchema)
+            .parse(input)
+            .map((request) => ({
+              title: `turn ${request.turn} ${request.do}`,
+              run: () => review.fork(request),
+            }))
+        : listed(replayCallSchema)
+            .parse(input)
+            .map((call) => ({
+              title: `turn ${call.turn} ${call.tool} ${JSON.stringify(call.args)}`,
+              run: () => review.call(call),
+            }));
+    for (const answer of answers) {
+      let result: string;
+      try {
+        result = answer.run();
+      } catch (error) {
+        result = error instanceof Error ? error.message : String(error);
+      }
+      console.log(`## ${answer.title}\n${result}\n`);
+    }
+    return 0;
+  }
   if (command === "rotation") {
     const { values, positionals } = parseArgs({
       args: rest,

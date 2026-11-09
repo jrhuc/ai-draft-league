@@ -176,10 +176,28 @@ export function effectivenessDetail(
   },
   attackType: string,
   defenderTypes: string[],
+  attackerAbility = "",
 ): string {
-  const modifier = typeModifier(dex, attackType, defenderTypes);
-  const parts = defenderTypes.map((type) => `vs ${type} ${typeModifier(dex, attackType, [type])}x`);
-  return `${effectivenessLabel(modifier)} = ${attackType} ${parts.join(" × ")}`;
+  const modifier = typeModifier(dex, attackType, defenderTypes, attackerAbility);
+  const parts = defenderTypes.map(
+    (type) => `vs ${type} ${typeModifier(dex, attackType, [type], attackerAbility)}x`,
+  );
+  const pierced = piercesGhostImmunity(attackerAbility, attackType, defenderTypes)
+    ? ` (${attackerAbility} ignores the Ghost immunity)`
+    : "";
+  return `${effectivenessLabel(modifier)} = ${attackType} ${parts.join(" × ")}${pierced}`;
+}
+
+export function piercesGhostImmunity(
+  attackerAbility: string,
+  attackType: string,
+  defenderTypes: string[],
+): boolean {
+  return (
+    ["scrappy", "mindseye"].includes(id(attackerAbility)) &&
+    ["normal", "fighting"].includes(id(attackType)) &&
+    defenderTypes.some((type) => id(type) === "ghost")
+  );
 }
 
 export function typeModifier(
@@ -189,8 +207,13 @@ export function typeModifier(
   },
   attackType: string,
   defenderTypes: string[],
+  attackerAbility = "",
 ): number {
-  if (!dex.getImmunity(attackType, defenderTypes)) return 0;
+  if (
+    !dex.getImmunity(attackType, defenderTypes) &&
+    !piercesGhostImmunity(attackerAbility, attackType, defenderTypes)
+  )
+    return 0;
   return 2 ** dex.getEffectiveness(attackType, defenderTypes);
 }
 

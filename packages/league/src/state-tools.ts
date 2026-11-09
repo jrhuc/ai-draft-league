@@ -437,8 +437,9 @@ export function estimateDamage(
     switches.push(`${entry.mon.species} replaces ${outgoing.mon.species}`);
   }
 
+  /** A side read from a public log has no stats, and its HP is out of 100. */
   const exactStats = (entry: MonEntry, includeHp: boolean) => {
-    if (entry.pid !== state.pid) return {};
+    if (entry.pid !== state.pid || !Object.keys(entry.mon.stats).length) return {};
     const stats = { ...entry.mon.stats };
     if (includeHp) {
       const maximum = /\/(\d+)/.exec(entry.mon.hp ?? "")?.[1];

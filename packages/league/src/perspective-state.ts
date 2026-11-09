@@ -49,6 +49,8 @@ const TIMED_SIDE_CONDITIONS = new Map<string, number>([
   ["luckychant", 5],
 ]);
 
+const TERRAIN_NAME = /terrain$/i;
+
 const WEATHER_ROCKS = new Map([
   ["raindance", "damprock"],
   ["sunnyday", "heatrock"],
@@ -162,7 +164,8 @@ export class PerspectiveState {
     } else if ((kind === "-damage" || kind === "-heal") && args.length >= 2) {
       const mon = this.mon(args[0]!);
       this.setHp(mon, args[1]!);
-      if (kind === "-damage" && !args.some((arg) => arg.startsWith("[from]"))) mon.timesAttacked += 1;
+      if (kind === "-damage" && !args.some((arg) => arg.startsWith("[from]")))
+        mon.timesAttacked += 1;
     } else if (kind === "-sethp") {
       for (let index = 0; index < args.length - 1; index += 2) {
         if (args[index]!.startsWith("p")) this.setHp(this.mon(args[index]!), args[index + 1]!);
@@ -214,6 +217,10 @@ export class PerspectiveState {
       }
     } else if (kind === "-fieldstart" && args[0]) {
       const name = this.effect(args[0]);
+      /** Showdown sends no -fieldend for the terrain a new terrain replaces. */
+      if (TERRAIN_NAME.test(name))
+        for (const [key, field] of this.fields)
+          if (TERRAIN_NAME.test(field.name)) this.fields.delete(key);
       this.fields.set(this.speciesKey(name), {
         name,
         startedTurn: this.effectStartTurn(),

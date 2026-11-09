@@ -51,7 +51,9 @@ export const decisionSchema = z.object({
     .array(z.int().min(0))
     .min(1)
     .describe("The menu index chosen for each displayed slot, in slot order."),
-  rationale: reviewText.optional().describe("Why this joint action; kept in your private history."),
+  rationale: reviewText
+    .optional()
+    .describe("Why this joint action, in full; kept in your private history."),
   notebook: notebookSchema.optional(),
 });
 export const reflectionSchema = z.object({
@@ -149,10 +151,14 @@ export function decisionTools(sheets: SheetPolicy): ToolDefinition[] {
           ...parameters,
           properties: {
             ...Object.fromEntries(
-              ["attacker", "defender", "move", "helping_hand", "is_critical_hit", "attacker_hits_taken"].map((name) => [
-                name,
-                parameters.properties[name] ?? null,
-              ]),
+              [
+                "attacker",
+                "defender",
+                "move",
+                "helping_hand",
+                "is_critical_hit",
+                "attacker_hits_taken",
+              ].map((name) => [name, parameters.properties[name] ?? null]),
             ),
             weather: {
               type: "string",

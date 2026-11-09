@@ -5,6 +5,7 @@ gui.log
 
 runs/
 records/
+replays/
 pokemon-showdown/
 boards/sources/
 *.sqlite

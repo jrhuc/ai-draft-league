@@ -741,6 +741,20 @@ test("field weather and screens render remaining turns", () => {
   assert.match(rendered, /Reflect \(7 turns? left\)/);
 });
 
+test("a new terrain replaces the live one", () => {
+  const state = new PerspectiveState("p1");
+  state.feed([
+    "|switch|p1a: Pincurchin|Pincurchin, L50|155/155",
+    "|-fieldstart|move: Psychic Terrain|[from] ability: Psychic Surge|[of] p2a: Indeedee",
+    "|-fieldstart|move: Electric Terrain|[from] ability: Electric Surge|[of] p1a: Pincurchin",
+    "|-fieldstart|move: Trick Room",
+    "|turn|1",
+  ]);
+  const rendered = state.render({});
+  assert.match(rendered, /Field: Electric Terrain \(\d turns? left\), Trick Room/);
+  assert.doesNotMatch(rendered, /Psychic Terrain/);
+});
+
 test("hazards persist without a timer", () => {
   const state = new PerspectiveState("p1");
   state.feed([

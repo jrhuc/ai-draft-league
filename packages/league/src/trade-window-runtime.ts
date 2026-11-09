@@ -238,12 +238,10 @@ export function renderTradeOfferPrompt(
 ): string {
   validateLeagueRosterState(state);
   return [
-    offerSystemPrompt(
-      state,
-      entrant,
-      options.position ?? RENDER_POSITION,
-      { number: 1, allowed: DEFAULT_TRADES_ALLOWED },
-    ),
+    offerSystemPrompt(state, entrant, options.position ?? RENDER_POSITION, {
+      number: 1,
+      allowed: DEFAULT_TRADES_ALLOWED,
+    }),
     "",
     offerUserPrompt(state, entrant, psDir),
   ].join("\n");

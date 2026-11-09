@@ -113,7 +113,56 @@ pnpm run vgcleague monitor run_id
 pnpm run vgcleague monitor run_id --json
 ```
 
-The monitor reads `league.sqlite` and the decision, trace, and game files of every completed series. It reports per-seat decision integrity (substitution and parse-failure rates, tool queries, latency, tokens), a mechanics audit that replays every `estimate_damage` and `compare_action_order` result against what the simulator then did (wrong KO calls, damage outside the predicted range, inverted action order, with forme changes in the same turn marked), the share of draft reasons that name another coach or the season ahead, per-entry roster usage by week and opponent, entries never registered while owned, and how many board Pokémon each memory barrier names, carries, or drops. Findings are evidence to inspect, not verdicts.
+The monitor reads `league.sqlite` and the decision, trace, and game files of every completed series. It reports per-seat decision integrity (substitution and parse-failure rates, tool queries, latency, tokens), a mechanics audit that replays every `estimate_damage` and `compare_action_order` result against what the simulator then did (wrong KO calls, damage outside the predicted range, inverted action order, with forme changes in the same turn marked; a prediction is paired through the species the result names, so slot labels such as `foe 1` count, and results projected under a hypothetical weather or Mega Evolution are counted but never paired), the share of draft reasons that name another coach or the season ahead, per-entry roster usage by week and opponent, entries never registered while owned, and how many board Pokémon each memory barrier names, carries, or drops. Findings are evidence to inspect, not verdicts.
+
+## Drive one battle from outside
+
+`vgcleague bridge` plays one battle for an external driver over JSON lines on stdin and stdout, one game per process. The driver sees exactly what a league coach sees: the same rendered state and menus, the same reference tools, the same submission rules, and the mechanics audit afterwards. The [league-evals](https://github.com/jrhuc/league-evals) Inspect tasks are the first driver.
+
+```sh
+printf '%s\n' \
+  '{"id":1,"method":"open","params":{"format":"gen9championsvgc2026regmcbo3","sheets":"open"}}' \
+  '{"id":2,"method":"pool","params":{"name":"test"}}' \
+  | pnpm run vgcleague bridge
+```
+
+Each request is `{"id","method","params"}`; each reply is `{"id","result"}` or `{"id","error"}`, answered strictly in order. `open` returns the harness and Showdown commits. `tools` returns the decision tool catalog (minus the series history tool), `system` the battle system prompt, and `pool` a team pool as packed strings. `start` takes the format, a seed, both players (`{name, team}`), the external seats (`["p1"]` or both), and the fixed policy for a seat that is not external (`opponent`: `random`, or `greedy`, which plays the largest damage the harness's own calculator projects). It returns the first decision event: `{kind:"decision", pid, decision, turn, phase, prompt, slot_names, menus, error, request}`, where `prompt` is the coach's full observation and `error` carries a simulator rejection of the previous choice. `call` runs a catalog tool for a seat (`{pid, name, arguments}`); `submit` takes menu indices (`{pid, choices}`) or `"default"`, validates them as the league would, and returns `{choice, next}` with the next event, which is either another decision or `{kind:"end", outcome}`. After the end, `outcome` returns the winner, turn count, canonical log and its sha256, error counts, and every external submission with its source and simulator verdict; `audit` returns the mechanics audit for the game. Turns with a single legal option never reach the driver, exactly as they never reach a model.
+
+`start` also accepts `script`: the recorded Showdown choices for each seat (`{p1: [...], p2: [...]}`), automatic ones included. Each seat replays its choices and then hands over, so with the same seed and teams an external seat's first decision is the recorded game's decision at that point, and its observation carries the whole game so far. A rejected recorded choice ends the game with an error.
+
+## Value recorded decisions
+
+`vgcleague positions` reads one recorded game per JSON line on stdin: `{id, source: {format, seed, names, packed, choices}, log, settings?, only?}`. It replays the game, reports `{kind:"game", verified}`, and values nothing unless the replay reproduces the recorded log. For every simultaneous turn decision (or only the `{pid, choice_index, commands?}` entries in `only`, where `commands` restricts the actions valued; an action's value does not depend on which others are valued) it writes `{kind:"position", focal, turn, recorded, greedy, hidden_opponents, actions}`, where each accepted joint action has its win rate over `samples` reseeded rollouts against the opponent's damage-greedy reply and its recorded reply. Both sides continue with the damage-greedy policy (`value`), or with a random action `epsilon` of the time (`explored`). The simulator sees both full teams; `hidden_opponents` counts the opposing Pokémon the focal seat had not yet seen. Forced switches and team preview are not valued.
+
+## Review a Showdown replay
+
+`vgcleague replay` reads public Pokémon Showdown replays, by URL, by replay id, or from a saved replay JSON file, and prints each game as one of its players saw it. Fetched replays are kept in `replays/`, which is local state like `runs/`.
+
+```sh
+pnpm run vgcleague replay https://replay.pokemonshowdown.com/gen9championsvgc2026regmcbo3-2697755008 --as CoolMeDownB
+pnpm run vgcleague replay REPLAY_ID --team replays/team.txt --calc '{"turn":2,"tool":"estimate_damage","args":{"attacker":"ally 1","defender":"foe 1","move":"Draco Meteor"}}'
+```
+
+The output holds both sheets at team preview and then, for every turn, the state at the decision as a league coach is shown it (with the Speed and type references) followed by the Showdown lines of what happened. Chat and room lines are dropped. Several replays print in best-of-three game order. The player is named with `--as` (a Showdown name, `p1`, or `p2`), or found by matching the six Pokémon of the `--team` export, or taken from a `?p2` replay link.
+
+A public replay carries both open team sheets with natures but no stat points, and HP as percentages for both sides. Without `--team` every stat on both sides is therefore a range under the sheet's nature. `--team` takes the reviewed player's own export: their stats, Mega Evolution included, and maximum HP become exact, and their current HP is the percentage applied to it. The opponent's stats stay ranges.
+
+Each printed game also says whether the simulator could rebuild it. The rebuild replays the game inside the pinned Showdown from the public log alone: each side's choices are read off the log (a Pokémon that never acted gets any move that keeps the log true), every random outcome is steered until the simulator writes the same lines, and HP is pulled to the recorded percentages. Stat points no team file supplies start from the nature (full investment where it points) and a Pokémon's Speed is moved the least distance that reproduces the order the log shows; each such move is reported as a bound ("needs at least 21"). A sleep or confusion whose length only shows turns later is redrawn where it began. Where the simulator cannot follow the log, the header names the turn and the two lines that differ. On 240 public Reg M-C Bo3 ladder replays from October 2026, 226 rebuild line for line and 96% of turns are followed; Illusion is not supported.
+
+`--fork` asks what-ifs of the rebuilt game, one `{turn, do, you?, they?, samples?}` request or a list: `options` lists every legal choice of both sides at the start of the turn as Showdown commands with labels, and what was played; `play` plays your command (`you`) against theirs (`they`), both defaulting to what was played, over `samples` reseeded rolls (200 by default), reporting knockout rates, HP ranges, and the turn with every roll at its usual value; `table` plays every choice of yours against every reply of theirs once with usual rolls, ranking yours by the worst reply on the turn's material swing (HP fractions plus one per knockout), then lists the replies that hurt the played line most and your best choices against what they played. Attacks aimed at an ally and switches to a Pokémon the log never showed are left out. A recorded pivot switch is reused when a forked turn needs one.
+
+`--calc` runs the decision tools against one replay instead of printing it: one `{turn, tool, args}` object or a list of them, where `turn` is the state at the start of that turn and `0` is team preview, and `-` reads the JSON from stdin. `estimate_damage` and `compare_action_order` read the live state exactly as they do for a league coach; every other name is a reference lookup. The `review-replay` Claude Code skill at the repository root drives both modes to review a finished game.
+
+## Ask the calculators without a game
+
+`vgcleague dex` runs the same lookup and calculator tools against the pinned format with no replay or league run: one `{tool, args}` object or a list of them, `-` reading the JSON from stdin, and `--format` naming any format the pinned Showdown knows (the Reg M-C best-of-three format by default).
+
+```sh
+pnpm run vgcleague dex '{"tool":"find_species","args":{"moves":["Sunny Day","Thunderbolt"]}}'
+pnpm run vgcleague dex '{"tool":"bulk_to_survive","args":{"attacker":"Cinderace","attacker_ability":"Libero","move":"Smack Down","defender":"Charizard"}}'
+```
+
+Two tools exist only here. `find_species` lists the format-legal species that learn every move in `moves`, carry every type in `types`, and can have every ability in `abilities`; Mega formes are left to `lookup_species`. `bulk_to_survive` takes `estimate_damage` arguments and, for a neutral nature and for the natures that raise the defending stat (or just `defender_nature`), reports the cheapest HP and defending-stat investment at which the defender survives the max roll from full HP, or the best it reaches when nothing does. The attacker is at its legal maximum unless `attacker_stats` pins it. The `teambuild` Claude Code skill at the repository root drives this command.
 
 ## Archive and publish
 

@@ -22,6 +22,7 @@ export const PINNED_PS_DIR = path.join(LEAGUE_ROOT, "pokemon-showdown");
 export const TEAMS_DIR = path.join(DATA_DIR, "teams");
 export const BOARDS_DIR = path.join(LEAGUE_ROOT, "boards");
 export const RUNS_DIR = path.join(DATA_DIR, "runs");
+export const REPLAYS_DIR = path.join(DATA_DIR, "replays");
 export const RESULTS_PATH = path.join(DATA_DIR, "records", "results.jsonl");
 
 export function prepareDataDirectories(): void {

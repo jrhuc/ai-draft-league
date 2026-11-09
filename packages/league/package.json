@@ -42,15 +42,15 @@
     "@earendil-works/pi-agent-core": "1.5.0",
     "@earendil-works/pi-ai": "1.5.0",
     "@earendil-works/pi-codemode": "1.5.0",
-    "zod": "4.6.1"
+    "zod": "4.6.7"
   },
   "devDependencies": {
-    "@babel/parser": "8.0.4",
-    "@types/node": "24.13.4",
+    "@babel/parser": "8.0.7",
+    "@types/node": "26.6.5",
     "typescript": "7.0.2",
-    "vite-plus": "0.3.1"
+    "vite-plus": "catalog:"
   },
   "engines": {
-    "node": ">=24.21.0 <25"
+    "node": ">=26.12.1 <27"
   }
 }

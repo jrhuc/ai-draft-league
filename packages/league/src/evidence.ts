@@ -33,7 +33,6 @@ const runConfigSchema = tournamentConfigSchema.partial().extend({
 
 type RunConfig = z.output<typeof runConfigSchema>;
 
-
 interface PoolProvenance {
   event: TournamentEventView | null;
   teams: Map<string, BracketEntrantView>;
@@ -280,7 +279,6 @@ function foldTournament(
   };
 }
 
-
 function archiveTournament(
   runId: string,
   rows: ParsedSeriesRecord[],
@@ -316,7 +314,6 @@ function archiveTournament(
     },
   };
 }
-
 
 export function buildTournaments(
   allRows: ParsedSeriesRecord[],

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
-import type { Plugin } from "vite";
+import type { Plugin } from "vite-plus";
 import { defineConfig } from "vite-plus";
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };

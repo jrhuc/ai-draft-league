@@ -45,13 +45,19 @@ test("an oversized page is the only thing not saved and the rejection carries th
       current,
       { notebookField: "plan" },
     );
-  assert.throws(attempt, (error: unknown) => {
+  assert.throws(attempt, (error) => {
     assert.ok(error instanceof MemoryRejection);
     assert.deepEqual(error.memory, { notebook: "old", keep: "k", fine: "ok" });
-    assert.match(error.message, /Not saved: plan is 8001 characters; the limit is 8000, so cut at least 1/);
+    assert.match(
+      error.message,
+      /Not saved: plan is 8001 characters; the limit is 8000, so cut at least 1/,
+    );
     assert.match(error.message, /page "big" is 8040 characters/);
     assert.match(error.message, /Saved: page "fine"; every other page is kept/);
-    assert.match(error.message, /Memory now: plan 3, page "fine" 2, page "keep" 1 \(6 of 48000 characters\)/);
+    assert.match(
+      error.message,
+      /Memory now: plan 3, page "fine" 2, page "keep" 1 \(6 of 48000 characters\)/,
+    );
     return true;
   });
   const full = Object.fromEntries([
@@ -60,7 +66,7 @@ test("an oversized page is the only thing not saved and the rejection carries th
   ]);
   assert.throws(
     () => parseMemoryReply({ set_pages: { p6: "z".repeat(2000) } }, full),
-    (error: unknown) => {
+    (error) => {
       assert.ok(error instanceof MemoryRejection);
       assert.match(
         error.message,

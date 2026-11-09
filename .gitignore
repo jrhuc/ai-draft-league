@@ -7,3 +7,4 @@ dist/
 *.tsbuildinfo
 CLAUDE.md
 .pnpm-store/
+.vitest/

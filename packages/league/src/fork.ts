@@ -32,6 +32,7 @@ export interface Replay {
   verified: boolean;
   positions: Position[];
   log: string[];
+  publicLog: string[];
   pov: Record<Pid, string[]>;
   turns: number;
   winner: string | null;
@@ -140,7 +141,7 @@ interface ShowdownRequestBridge {
   side: { pokemon: readonly { ident: string }[] };
 }
 
-function battleRequest(request: ShowdownRequestBridge): BattleRequest {
+export function battleRequest(request: ShowdownRequestBridge): BattleRequest {
   return (
     // SAFETY: BattleRequest mirrors the fields consumed from the pinned Showdown ChoiceRequest.
     request as BattleRequest
@@ -155,19 +156,28 @@ export function acceptedLegalActionEntries(
   pid: Pid,
   candidates: readonly LegalActionEntry[],
 ): LegalActionEntry[] {
-  const BattleClass = nativeBattleConstructor(battle);
-  const serialized = battle.toJSON();
   const accepted: LegalActionEntry[] = [];
   for (const candidate of candidates) {
     try {
-      const clone = BattleClass.fromJSON(structuredClone(serialized));
-      clone.restart(() => {});
+      const clone = cloneBattle(battle);
       if (clone.getSide(pid).choose(candidate.command) === true) {
         accepted.push({ ...structuredClone(candidate), number: accepted.length });
       }
     } catch {}
   }
   return accepted;
+}
+
+export function cloneBattle(battle: Battle): Battle {
+  const clone = nativeBattleConstructor(battle).fromJSON(structuredClone(battle.toJSON()));
+  clone.restart(() => {});
+  return clone;
+}
+
+export function battleActionCandidates(battle: Battle, pid: Pid): string[] {
+  const request = battle.getSide(pid).activeRequest;
+  if (!request || request.wait) return [];
+  return requestActionCandidateEntries(battleRequest(request)).map((entry) => entry.command);
 }
 
 export function acceptedBattleActionEntries(battle: Battle, pid: Pid): LegalActionEntry[] {
@@ -284,6 +294,7 @@ export function replayGame(source: GameSource, recordedLog?: string[]): Replay {
     verified,
     positions,
     log: state.log,
+    publicLog: state.publicLog,
     pov: state.pov,
     turns: battle.turn,
     winner: battle.winner || null,
@@ -291,7 +302,7 @@ export function replayGame(source: GameSource, recordedLog?: string[]): Replay {
   };
 }
 
-export function openPosition(position: Position, psDir = defaultPsDir()): Battle {
+export function openPosition(position: Pick<Position, "snapshot">, psDir = defaultPsDir()): Battle {
   const { Battle: BattleClass } = loadShowdown(psDir);
   const battle = BattleClass.fromJSON(position.snapshot);
   battle.restart(() => {});

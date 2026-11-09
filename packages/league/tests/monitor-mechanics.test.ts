@@ -281,3 +281,40 @@ test("mechanics counts only canonical submissions after native decision recovery
   assert.equal(audit.orderPredictions, 1);
   assert.equal(traces.get("canonical:1")?.latency_ms, 104490);
 });
+
+test("auditGame pairs slot-label arguments through the species the result names and skips hypotheticals", () => {
+  const applied =
+    "Live battle and known team-sheet state applied: attacker Pikachu (Static); defender Whimsicott (Prankster).\n";
+  const live: Call = {
+    name: "estimate_damage",
+    arguments: { attacker: "foe 1", defender: "ally 2", move: "Fake Out" },
+    result: `${applied}Pikachu Fake Out into Whimsicott: 15-25% of maximum HP before survival effects. Target HP shown: 100%. No KO at either evaluated endpoint.`,
+  };
+  const projected: Call = {
+    name: "estimate_damage",
+    arguments: { attacker: "foe 1", defender: "ally 2", move: "Fake Out", weather: "sun" },
+    result: `Hypothetical field: weather sun (live: none).\n${applied}Pikachu Fake Out into Whimsicott: 60-70% of maximum HP before survival effects. Target HP shown: 100%. No KO at either evaluated endpoint.`,
+  };
+  const speed: Call = {
+    name: "compare_action_order",
+    arguments: {
+      first: "ally 1",
+      second: "foe 1",
+      first_move: "Earthquake",
+      second_move: "Fake Out",
+    },
+    result:
+      "Garchomp: raw Speed 169; effective Speed 169\nPikachu: raw Speed 110; effective Speed 110\nGarchomp is guaranteed to act first (equal priority).",
+  };
+  const audit = auditGame(1, LOG, { p1: [trace("p1", 1, [live, projected, speed])], p2: [] });
+  assert.equal(audit.damagePredictions, 2);
+  assert.equal(audit.damageHypothetical, 1);
+  assert.equal(audit.damageMatched, 1, "the live prediction pairs with the observed Fake Out");
+  assert.equal(audit.orderPredictions, 1);
+  assert.equal(audit.orderMatched, 1, "slot labels resolve through the raw Speed lines");
+  assert.deepEqual(
+    audit.findings.map((finding) => finding.kind),
+    ["order"],
+    "the in-range live hit is clean; the projected sun range is not audited; Fake Out priority falsifies the order call",
+  );
+});

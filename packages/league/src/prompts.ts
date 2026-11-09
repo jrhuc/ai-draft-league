@@ -58,7 +58,7 @@ const NOTEBOOK_OBJECT =
   '{"team_playbook":"transferable facts about piloting your team","series_memory":"facts and tendencies specific to this opponent","next_game_plan":"immediate plan and contingencies for the next game"}';
 
 const SUBMIT_ACTION =
-  "Submit your joint decision with submit_action: choices holds the zero-based menu index for each displayed slot in slot order, or the ordered team position at team preview. Add rationale for your final reason and, only when durable plans changed, the changed notebook fields. After acceptance, end your reply and await the next observation.";
+  "Submit your joint decision with submit_action: choices holds the zero-based menu index for each displayed slot in slot order, or the ordered team position at team preview. Explain the decision in full in rationale; there is no need to be brief. Only when durable plans changed, add the changed notebook fields. After acceptance, end your reply and await the next observation.";
 
 const TIMER_RULE =
   "The battle timer runs while you think and use tools. Submit your decision before the clock expires; match depth to the remaining turn time and bank.";

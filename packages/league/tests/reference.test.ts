@@ -208,6 +208,33 @@ test("missing Showdown checkout fails immediately", () => {
   );
 });
 
+test("Scrappy hits Ghost types in the matchup chart and lookup", () => {
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
+  const defenders = [{ species: "Annihilape", moves: [], ally: false }];
+  const scrappy = reference
+    .renderActiveMatchups(
+      [{ species: "Kangaskhan", ability: "Scrappy", moves: ["Double-Edge"], ally: true }],
+      defenders,
+    )
+    .join("\n");
+  assert.match(scrappy, /Annihilape neutral \(1x\) \(Scrappy ignores the Ghost immunity\)/);
+  const innerFocus = reference
+    .renderActiveMatchups(
+      [{ species: "Kangaskhan", ability: "Inner Focus", moves: ["Double-Edge"], ally: true }],
+      defenders,
+    )
+    .join("\n");
+  assert.match(innerFocus, /Annihilape immune \(0x\)/);
+  assert.match(
+    reference.lookup("lookup_matchup", {
+      attacker: "Kangaskhan",
+      move: "Double-Edge",
+      defender: "Annihilape",
+    }),
+    /immune \(0x\).*; with Scrappy: neutral \(1x\)/,
+  );
+});
+
 test("matchup and damage tools stay within open information", () => {
   const reference = new ShowdownReference("gen9championsvgc2026regmc");
   assert.match(
@@ -836,4 +863,96 @@ test("damage estimates carry no repeated standing caveats", () => {
       !text.includes(boilerplate),
       `standing caveat "${boilerplate}" belongs in the tool description`,
     );
+});
+
+test("find_species lists format-legal base species matching every filter", () => {
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
+  const sunbolt = reference.lookup("find_species", { moves: ["Sunny Day", "Thunderbolt"] });
+  assert.match(
+    sunbolt,
+    /^- \d+ species in gen9championsvgc2026regmc with moves Sunny Day \+ Thunderbolt/,
+  );
+  assert.match(sunbolt, /Rotom-Heat \(Electric\/Fire\)/);
+  assert.doesNotMatch(sunbolt, /-Mega/);
+  assert.match(
+    reference.lookup("find_species", { types: ["Fire"], abilities: ["Libero"] }),
+    /^- 1 species .*: Cinderace \(Fire\)$/,
+  );
+  assert.match(
+    reference.lookup("find_species", {
+      moves: ["Follow Me"],
+      types: ["Dragon"],
+      abilities: ["Levitate"],
+    }),
+    /^- No species/,
+  );
+  assert.match(reference.lookup("find_species", { moves: ["notamove"] }), /No move data/);
+  assert.match(reference.lookup("find_species", { types: ["Shadow"] }), /No type/);
+  assert.equal(
+    reference.lookup("find_species", {}),
+    "At least one of moves, types, or abilities is required.",
+  );
+});
+
+test("bulk_to_survive finds the cheapest defender investment against the max roll", () => {
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
+  const args = {
+    attacker: "Cinderace",
+    attacker_ability: "Libero",
+    move: "Smack Down",
+    defender: "Charizard",
+  };
+  const search = reference.lookup("bulk_to_survive", args);
+  assert.match(search, /max roll with legal maximum atk \d+/);
+  assert.match(
+    search,
+    /- neutral nature: never survives; the best it reaches is HP 32 \/ def \d+ Stat Points/,
+  );
+  assert.match(
+    search,
+    /- Bold\/Impish\/Lax\/Relaxed \(\+def\): survives from HP \d+ \/ def \d+ Stat Points \(raw HP \d+, def \d+\) takes at most \d+ \(\d+(?:\.\d+)?%\)\./,
+  );
+  assert.match(
+    reference.lookup("bulk_to_survive", {
+      ...args,
+      defender_nature: "Impish",
+      attacker_stats: { atk: 168 },
+    }),
+    /max roll with atk 168 exact from request.*\n- Impish: survives from HP \d+ \/ def \d+ Stat Points/,
+  );
+  assert.match(
+    reference.lookup("bulk_to_survive", {
+      attacker: "Garchomp",
+      move: "Earthquake",
+      defender: "Charizard",
+    }),
+    /immune or absorbed; nothing to survive/,
+  );
+  assert.match(
+    reference.lookup("bulk_to_survive", {
+      attacker: "Chi-Yu",
+      move: "Heat Wave",
+      defender: "Rillaboom",
+      is_spread_hit: true,
+    }),
+    /\(\+spd\): survives from HP \d+ \/ spd \d+ Stat Points/,
+  );
+  assert.match(reference.lookup("bulk_to_survive", { ...args, move: "Protect" }), /status move/);
+});
+
+test("type-changing abilities reach the damage estimate", () => {
+  const reference = new ShowdownReference("gen9championsvgc2026regmc");
+  const args = {
+    attacker: "Cinderace",
+    move: "Smack Down",
+    defender: "Charizard",
+    attacker_stats: { atk: 184 },
+    defender_stats: { hp: 153, def: 110 },
+  };
+  const percent = (result: string) => Number(/^.*?: ([\d.]+)-/.exec(result)![1]);
+  const plain = percent(reference.lookup("estimate_damage", args));
+  const libero = percent(
+    reference.lookup("estimate_damage", { ...args, attacker_ability: "Libero" }),
+  );
+  assert.equal(Math.round((libero / plain) * 100), 150);
 });

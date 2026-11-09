@@ -34,4 +34,3 @@ export function normalizeStageEvidence(
     supplied: { rationale: hasRationale, notebookUpdate: hasNotebook },
   };
 }
-

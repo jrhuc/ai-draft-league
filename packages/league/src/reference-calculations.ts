@@ -121,7 +121,7 @@ interface ScratchAlly {
   item?: string | undefined;
 }
 
-interface ScratchDamage {
+export interface ScratchDamage {
   outcome: "immune" | "none" | "damage";
   damage: number;
   moveType: string;
@@ -321,24 +321,65 @@ function implausibleStat(
     : null;
 }
 
-export function estimateDamage(
+type Side = "attacker" | "defender";
+
+export interface DamagePlan {
+  attacker: Dex.Species;
+  defender: Dex.Species;
+  move: Dex.Move;
+  notes: string[];
+  items: Partial<Record<Side, string>>;
+  abilities: Partial<Record<Side, string>>;
+  statuses: Partial<Record<Side, string>>;
+  boosts: Record<Side, StatBoosts>;
+  screens: string[];
+  weatherId: string | undefined;
+  terrainId: string | undefined;
+  helpingHand: boolean;
+  attackerTimesAttacked: number;
+  crit: boolean;
+  isSpread: boolean;
+  allies: Partial<Record<Side, ScratchAlly>>;
+  offFromDefender: boolean;
+  offStat: Exclude<StatId, "hp">;
+  defStat: Exclude<StatId, "hp">;
+  exactOff: number | undefined;
+  exactDef: number | undefined;
+  exactHp: number | undefined;
+  offLow: number;
+  offHigh: number;
+  defLow: number;
+  defHigh: number;
+  hpLow: number;
+  hpHigh: number;
+  hpPercent: number | undefined;
+  run: (
+    offValue: number,
+    defValue: number,
+    defenderMaxHp: number,
+    rollPercent: 85 | 100,
+  ) => ScratchDamage;
+}
+
+export function prepareDamage(
   context: ReferenceCalculationContext,
   args: EstimateDamageArguments,
-): string {
+): { error: string; plan?: undefined } | { error?: undefined; plan: DamagePlan } {
   const attackerName = args.attacker;
   const defenderName = args.defender;
   const moveName = args.move;
   if (!attackerName.trim() || !defenderName.trim() || !moveName.trim())
-    return "attacker, defender, and move are required.";
+    return { error: "attacker, defender, and move are required." };
   const attacker = context.getSpecies(attackerName);
   const defender = context.getSpecies(defenderName);
   const move = context.dex.moves.get(moveName);
-  if (!attacker.exists) return `No species data for ${JSON.stringify(attackerName)}.`;
-  if (!defender.exists) return `No species data for ${JSON.stringify(defenderName)}.`;
-  if (!move.exists) return `No move data for ${JSON.stringify(moveName)}.`;
+  if (!attacker.exists) return { error: `No species data for ${JSON.stringify(attackerName)}.` };
+  if (!defender.exists) return { error: `No species data for ${JSON.stringify(defenderName)}.` };
+  if (!move.exists) return { error: `No move data for ${JSON.stringify(moveName)}.` };
   const moveError = context.formatLegalityError("move", moveName);
-  if (moveError) return moveError;
-  if (move.category === "Status") return `${move.name} is a status move; no damage estimate.`;
+  if (moveError) return { error: moveError };
+  if (move.category === "Status")
+    return { error: `${move.name} is a status move; no damage estimate.` };
   if (
     !move.basePower &&
     !move.basePowerCallback &&
@@ -346,7 +387,7 @@ export function estimateDamage(
     !move.damageCallback &&
     !move.ohko
   )
-    return `${move.name} has no standard damage output to estimate.`;
+    return { error: `${move.name} has no standard damage output to estimate.` };
 
   const notes: string[] = [];
   const items: Partial<Record<"attacker" | "defender", string>> = {};
@@ -358,15 +399,15 @@ export function estimateDamage(
     const itemRaw = args[`${side}_item`];
     if (itemRaw?.trim()) {
       const item = context.dex.items.get(itemRaw);
-      if (!item.exists) return `No item data for ${JSON.stringify(itemRaw)}.`;
+      if (!item.exists) return { error: `No item data for ${JSON.stringify(itemRaw)}.` };
       const itemError = context.formatLegalityError("item", itemRaw);
-      if (itemError) return itemError;
+      if (itemError) return { error: itemError };
       items[side] = item.name;
     }
     const abilityRaw = args[`${side}_ability`];
     if (abilityRaw?.trim()) {
       const ability = context.dex.abilities.get(abilityRaw);
-      if (!ability.exists) return `No ability data for ${JSON.stringify(abilityRaw)}.`;
+      if (!ability.exists) return { error: `No ability data for ${JSON.stringify(abilityRaw)}.` };
       abilities[side] = ability.name;
       const species = side === "attacker" ? attacker : defender;
       if (!Object.values(species.abilities).some((name) => id(String(name)) === ability.id))
@@ -376,31 +417,36 @@ export function estimateDamage(
     if (statusRaw?.trim()) {
       const status = STATUS_IDS.get(id(statusRaw));
       if (!status)
-        return `Unknown ${side}_status ${JSON.stringify(statusRaw)}; accepted: brn, par, psn, tox, slp, frz.`;
+        return {
+          error: `Unknown ${side}_status ${JSON.stringify(statusRaw)}; accepted: brn, par, psn, tox, slp, frz.`,
+        };
       statuses[side] = status;
     }
     const natureRaw = args[`${side}_nature`];
     if (natureRaw?.trim()) {
       const nature = context.dex.natures.get(natureRaw);
-      if (!nature.exists) return `No nature data for ${JSON.stringify(natureRaw)}.`;
+      if (!nature.exists) return { error: `No nature data for ${JSON.stringify(natureRaw)}.` };
       natures[side] = nature;
     }
     const boostsRaw = args[`${side}_boosts`];
     if (boostsRaw !== undefined && boostsRaw !== null) {
       const parsedBoosts = boostInputSchema.safeParse(boostsRaw);
       if (!parsedBoosts.success)
-        return `${side}_boosts must be an object of integer stat stages from -6 to 6.`;
+        return { error: `${side}_boosts must be an object of integer stat stages from -6 to 6.` };
       boosts[side] = parsedBoosts.data;
     }
   }
   const screens: string[] = [];
   if (args.defender_screens !== undefined && args.defender_screens !== null) {
     const parsedScreens = screenInputSchema.safeParse(args.defender_screens);
-    if (!parsedScreens.success) return "defender_screens must be an array of screen names.";
+    if (!parsedScreens.success)
+      return { error: "defender_screens must be an array of screen names." };
     for (const raw of parsedScreens.data) {
       const screen = SCREEN_IDS.get(id(raw));
       if (!screen)
-        return `Unknown screen ${JSON.stringify(raw)}; accepted: reflect, lightscreen, auroraveil.`;
+        return {
+          error: `Unknown screen ${JSON.stringify(raw)}; accepted: reflect, lightscreen, auroraveil.`,
+        };
       if (!screens.includes(screen)) screens.push(screen);
     }
   }
@@ -408,13 +454,17 @@ export function estimateDamage(
   if (args.weather?.trim()) {
     weatherId = WEATHER_IDS.get(canonicalWeather(args.weather));
     if (!weatherId)
-      return `Unknown weather ${JSON.stringify(args.weather)}; accepted: sun, rain, sand, snow, desolateland, primordialsea, deltastream.`;
+      return {
+        error: `Unknown weather ${JSON.stringify(args.weather)}; accepted: sun, rain, sand, snow, desolateland, primordialsea, deltastream.`,
+      };
   }
   let terrainId: string | undefined;
   if (args.terrain?.trim()) {
     terrainId = TERRAIN_IDS.get(id(args.terrain.replace(/\s*terrain\s*$/i, "")));
     if (!terrainId)
-      return `Unknown terrain ${JSON.stringify(args.terrain)}; accepted: electric, grassy, misty, psychic.`;
+      return {
+        error: `Unknown terrain ${JSON.stringify(args.terrain)}; accepted: electric, grassy, misty, psychic.`,
+      };
   }
 
   const offFromDefender = move.overrideOffensivePokemon === "target";
@@ -481,7 +531,7 @@ export function estimateDamage(
     const raw = args[`${side}_ally`];
     if (!raw?.trim()) continue;
     const species = context.dex.species.get(raw);
-    if (!species.exists) return `No species data for ${JSON.stringify(raw)}.`;
+    if (!species.exists) return { error: `No species data for ${JSON.stringify(raw)}.` };
     const abilityRaw = args[`${side}_ally_ability`];
     const itemRaw = args[`${side}_ally_item`];
     allies[side] = {
@@ -520,6 +570,79 @@ export function estimateDamage(
       defenderHpPercent: hpPercent,
       rollPercent,
     });
+  return {
+    plan: {
+      attacker,
+      defender,
+      move,
+      notes,
+      items,
+      abilities,
+      statuses,
+      boosts,
+      screens,
+      weatherId,
+      terrainId,
+      helpingHand,
+      attackerTimesAttacked,
+      crit,
+      isSpread,
+      allies,
+      offFromDefender,
+      offStat,
+      defStat,
+      exactOff,
+      exactDef,
+      exactHp,
+      offLow,
+      offHigh,
+      defLow,
+      defHigh,
+      hpLow,
+      hpHigh,
+      hpPercent,
+      run,
+    },
+  };
+}
+
+export function estimateDamage(
+  context: ReferenceCalculationContext,
+  args: EstimateDamageArguments,
+): string {
+  const { error, plan } = prepareDamage(context, args);
+  if (plan === undefined) return error;
+  const {
+    attacker,
+    defender,
+    move,
+    notes,
+    items,
+    abilities,
+    statuses,
+    boosts,
+    screens,
+    weatherId,
+    terrainId,
+    helpingHand,
+    attackerTimesAttacked,
+    crit,
+    isSpread,
+    allies,
+    offFromDefender,
+    offStat,
+    exactOff,
+    exactDef,
+    exactHp,
+    offLow,
+    offHigh,
+    defLow,
+    defHigh,
+    hpLow,
+    hpHigh,
+    hpPercent,
+    run,
+  } = plan;
   let low: ScratchDamage;
   let high: ScratchDamage;
   try {
@@ -597,7 +720,8 @@ export function estimateDamage(
   if (weatherId) applied.push(WEATHER_WORDS.get(weatherId) ?? weatherId);
   if (terrainId) applied.push(TERRAIN_WORDS.get(terrainId) ?? terrainId);
   if (helpingHand) applied.push("Helping Hand");
-  if (attackerTimesAttacked) applied.push(`attacker hit ${attackerTimesAttacked} times since entering`);
+  if (attackerTimesAttacked)
+    applied.push(`attacker hit ${attackerTimesAttacked} times since entering`);
   if (crit) applied.push("critical hit");
   if (isSpread) applied.push("spread (0.75x)");
   for (const side of ["attacker", "defender"] as const) {
@@ -715,6 +839,7 @@ function scratchDamage(
     battle.singleEvent("ModifyMove", active, null, att, def, active, active);
     active = battle.runEvent("ModifyType", att, def, active, active);
     active = battle.runEvent("ModifyMove", att, def, active, active);
+    battle.runEvent("PrepareHit", att, def, active);
     if (cfg.spread) active.spreadHit = true;
 
     const hits = (
